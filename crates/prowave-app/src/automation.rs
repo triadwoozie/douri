@@ -748,8 +748,12 @@ pub fn plugin_values(s: &crate::plugins::PluginSlot, slot: u8) -> Vec<(AutoTarge
         .collect()
 }
 
-/// The values of a built-in instrument's parameters (none have any).
-fn instrument_values(_: &crate::plugins::PluginSlot) -> Box<dyn Fn(u32) -> Option<f32>> {
+/// The values of a built-in instrument's parameters (the 808).
+fn instrument_values(s: &crate::plugins::PluginSlot) -> Box<dyn Fn(u32) -> Option<f32>> {
+    if crate::bass808::is_808(s) {
+        let slot = s.clone();
+        return Box::new(move |k| crate::bass808::value(&slot, k));
+    }
     Box::new(|_| None)
 }
 
@@ -935,6 +939,18 @@ pub fn plugin_params(
                         true,
                     ),
                 ]
+            })
+            .collect();
+    }
+    if crate::bass808::is_808(s) {
+        return prowave_engine::BASS808_PARAMS
+            .iter()
+            .enumerate()
+            .map(|(k, a)| {
+                let mut d =
+                    ParamDesc::plugin(slot, k as u32, a.name.to_string(), a.lo, a.hi, a.stepped);
+                d.unit = a.unit.to_string();
+                d
             })
             .collect();
     }

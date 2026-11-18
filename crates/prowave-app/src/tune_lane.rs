@@ -20,6 +20,7 @@
 use crate::i18n::tr;
 use crate::model::{Project, Track, TrackKind};
 use crate::piano_tools::Tool;
+use crate::vocal::VocalRole;
 use egui::{pos2, vec2, Align2, Color32, Painter, Pos2, Rect, Response, Sense, Stroke, Ui};
 use prowave_engine::tune::{self, TargetNote, TuneRemote, TuneTargets};
 use prowave_engine::{AutoPoint, AutoTarget};
@@ -195,6 +196,15 @@ pub fn midi_source(p: &Project, ti: usize, values: &[f32]) -> Option<usize> {
             .map(|_| chosen - 1);
     }
     let t = p.tracks.get(ti)?;
+    if let Some(VocalRole::Output { link }) = &t.vocal {
+        if let Some(i) = p
+            .tracks
+            .iter()
+            .position(|s| matches!(&s.vocal, Some(VocalRole::Score(v)) if v.link == *link))
+        {
+            return Some(i);
+        }
+    }
     if has_notes(t) {
         return Some(ti);
     }
@@ -243,6 +253,18 @@ pub fn targets_for(p: &Project, ti: usize, values: &[f32]) -> TuneTargets {
         a4: p.tuning_hz,
         notes,
     }
+}
+
+/// For a bounce (an engine with no sound card): tells the Pro Wave Tune in `slot` of strip
+/// `ti`, reached through `remote`, the key and the notes it corrects to, as [`frame`] tells
+/// the running ones. Returns whether it took them.
+pub(crate) fn tell_offline(
+    p: &Project,
+    ti: usize,
+    slot: &crate::plugins::PluginSlot,
+    remote: &mut TuneRemote,
+) -> bool {
+    remote.send(Arc::new(targets_for(p, ti, &values(slot))))
 }
 
 /// Once a frame: tells every running effect what changed, keeps what they heard while
@@ -1500,23 +1522,7 @@ mod tests {
     /// A top line: a MIDI track with a 4-bar region at bar 1, and the audio track under it
     /// that sings its notes (what an effect there follows in MIDI mode).
     fn top_line(p: &mut Project) -> (usize, usize) {
-        {
-            use crate::model::{Region, RegionParams};
-            let score = p.add_track(TrackKind::Instrument);
-            p.tracks[score].regions.push(Region {
-                missing: None,
-                name: "Top Line 1".into(),
-                start_bar: 1.0,
-                len_bars: 4.0,
-                notes: vec![],
-                controls: vec![],
-                folder: None,
-                audio: None,
-                params: RegionParams::default(),
-                generated: None,
-            });
-            p.add_track(TrackKind::Audio);
-        }
+        crate::vocal::new_track(p, &mut crate::UiState::new());
         (p.tracks.len() - 2, p.tracks.len() - 1)
     }
 

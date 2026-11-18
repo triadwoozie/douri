@@ -1,0 +1,15 @@
+# Vendored from github.com/jamesondh/chimera-vocal-synth (crates/chimera, commit 09fb776) by
+# Jameson Hodge, MIT licence (see LICENSE and NOTICE). The engine's source is unchanged; the
+# upstream tests, golden fixtures, examples, CLI and wasm crates are not vendored.
+[package]
+name = "chimera"
+description = "CHIMERA physical-modelling voice engine: airway acoustics, anatomy, phonetics, creatures"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+libm = "=0.2.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -77,6 +77,8 @@ pub struct Block {
 #[derive(Default)]
 pub struct ClipShared {
     request: AtomicU64,
+    /// The disk thread cannot read the clip's file: no block will come.
+    failed: std::sync::atomic::AtomicBool,
 }
 
 impl ClipShared {
@@ -89,6 +91,15 @@ impl ClipShared {
     fn load(&self) -> (u16, u64) {
         let v = self.request.load(Ordering::Acquire);
         ((v >> 48) as u16, v & 0x0000_FFFF_FFFF_FFFF)
+    }
+    /// The disk thread gives the clip up: a clip that waits for its blocks (an engine with
+    /// no sound card) stops waiting.
+    fn fail(&self) {
+        self.failed.store(true, Ordering::Release);
+    }
+    /// Whether the disk thread gave the clip up (its file cannot be opened or read).
+    pub fn failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
     }
 }
 
@@ -597,6 +608,7 @@ impl Stream {
             Err(e) => {
                 tracing::error!("disk seek failed: {e}");
                 self.out_frame = self.out_len; // stop producing
+                self.shared.fail();
             }
         }
     }
@@ -803,6 +815,7 @@ impl DiskThread {
         };
         if self.tx.send(msg).is_err() {
             tracing::error!("disk thread is not running");
+            shared.fail();
         }
         AudioClip::new(track, start_beat, out_len, edit, consumer, shared)
     }
@@ -832,6 +845,8 @@ fn handle(msg: Msg, streams: &mut Vec<Stream>) -> bool {
             if producer.is_abandoned() {
                 return true;
             }
+            // A clip that waits for its blocks is told when its file cannot be opened.
+            let (gave_up, before) = (shared.clone(), streams.len());
             match Source::open(&file.path) {
                 Ok(src) => streams.push(Stream {
                     ratio: src.sample_rate as f64 / out_rate.max(1) as f64,
@@ -849,6 +864,9 @@ fn handle(msg: Msg, streams: &mut Vec<Stream>) -> bool {
                     offset,
                 }),
                 Err(e) => tracing::error!("cannot open {}: {e}", file.path.display()),
+            }
+            if streams.len() == before {
+                gave_up.fail();
             }
         }
         Msg::Quit => return false,

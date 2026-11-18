@@ -63,6 +63,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         .to_string();
 
     p.tracks.push(Track {
+        vocal: None,
         name: name.clone(),
         kind: TrackKind::Audio,
         color: crate::theme::TRACK_PALETTE[2],
@@ -94,6 +95,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         height: 1.0,
         indent: 0,
         folded: false,
+        hidden: false,
         vca: None,
         midi_port: None,
         soundfont: None,

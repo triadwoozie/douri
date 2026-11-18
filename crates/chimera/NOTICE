@@ -1,0 +1,20 @@
+CHIMERA voice engine (vendored)
+
+Source:  https://github.com/jamesondh/chimera-vocal-synth, crates/chimera, commit 09fb776
+Author:  Jameson Hodge
+Licence: MIT. The upstream workspace's Cargo.toml declares `license = "MIT"`. The repository
+         had no LICENSE file at commit 09fb776; it added one in commit 5ab44de
+         (2026-11-08), and LICENSE here is byte for byte that file (checked 2026-11-18).
+
+What is here: the engine's src/ unchanged, and its manifest rewritten to stand alone (version,
+edition and licence written out instead of inherited from the upstream workspace; the
+dev-dependency used only by the upstream tests dropped).
+
+What is not: the upstream tests and golden fixtures, the examples, the CLI (crates/chimera-cli),
+the browser crate (crates/chimera-wasm), the web app, and anything derived from the Children's
+Song Dataset (CC BY-NC-SA), which the upstream keeps out of its repository too.
+
+data/cmudict.txt.gz is the CMU Pronouncing Dictionary as the upstream ships it
+(public/data/cmudict.txt.gz), under the BSD-style licence in data/CMUDICT-LICENSE.txt
+(Copyright (C) 1993-2015 Carnegie Mellon University). The engine's English
+letter-to-sound uses it to sing lyrics.

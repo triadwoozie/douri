@@ -978,6 +978,10 @@ fn midi_track_from(
 /// temporary folder could be prepared by another user), the temporary one only when there is
 /// none.
 pub(crate) fn cache_dir() -> PathBuf {
+    // Test runs keep their sounds out of the user's folder: they filled it with gigabytes.
+    if cfg!(test) {
+        return std::env::temp_dir().join(format!("prowave-flex-test-{}", std::process::id()));
+    }
     crate::recent_files::config_dir()
         .map(|d| d.join("flex-cache"))
         .unwrap_or_else(|| {

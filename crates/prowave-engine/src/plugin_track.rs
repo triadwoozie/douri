@@ -282,6 +282,8 @@ impl LaneWork {
                     a = b;
                 }
             }
+            let [l, r] = &mut self.inst;
+            silence_unless_finite(&mut l[..n], &mut r[..n]);
             if let Some(t) = self.slot_ns.first_mut() {
                 *t = started.ns();
             }
@@ -327,6 +329,7 @@ impl LaneWork {
                         a = b;
                     }
                 }
+                silence_unless_finite(&mut tl[..n], &mut tr[..n]);
                 ol[..n].copy_from_slice(&tl[..n]);
                 or[..n].copy_from_slice(&tr[..n]);
                 if let Some(t) = self.slot_ns.get_mut(j + 1) {
@@ -489,6 +492,26 @@ impl LaneWork {
         while let Ok(e) = self.ev_rx.pop() {
             keep(e);
         }
+    }
+}
+
+/// Whether `x` holds a NaN or an infinity. One pass over the bits with no early exit, so the
+/// compiler can make it a vector loop.
+#[inline]
+fn has_non_finite(x: &[f32]) -> bool {
+    const EXPONENT: u32 = 0x7f80_0000;
+    x.iter()
+        .fold(false, |bad, v| bad | (v.to_bits() & EXPONENT == EXPONENT))
+}
+
+/// A block a plug-in returned: when either side holds a NaN or an infinity, the whole block
+/// is made silent, so a broken plug-in cannot reach the mixer (one such sample would spread
+/// through every bus, effect tail and meter after it). No allocation, no lock.
+#[inline]
+fn silence_unless_finite(l: &mut [f32], r: &mut [f32]) {
+    if has_non_finite(l) | has_non_finite(r) {
+        l.fill(0.0);
+        r.fill(0.0);
     }
 }
 
@@ -1453,6 +1476,100 @@ pub(crate) mod tests {
             if index == 0 {
                 self.due = Some((offset, value));
             }
+        }
+    }
+
+    /// A plug-in whose output is broken in the blocks listed in `bad`: one sample of `value`
+    /// (NaN or an infinity) on one side, the rest as a working plug-in's (0.5 from an
+    /// instrument, the input from an effect).
+    struct Broken {
+        instrument: bool,
+        value: f32,
+        bad: [bool; 4],
+        block: usize,
+    }
+
+    impl BlockProcessor for Broken {
+        fn midi(&mut self, _status: u8, _d1: u8, _d2: u8, _offset: u32) {}
+        fn process(&mut self, input: (&[f32], &[f32]), out: (&mut [f32], &mut [f32])) {
+            for i in 0..out.0.len() {
+                out.0[i] = if self.instrument { 0.5 } else { input.0[i] };
+                out.1[i] = if self.instrument { 0.5 } else { input.1[i] };
+            }
+            if self.bad.get(self.block).copied().unwrap_or(false) {
+                if let Some(x) = out.1.get_mut(3) {
+                    *x = self.value;
+                }
+            }
+            self.block += 1;
+        }
+        fn latency_seconds(&self) -> f64 {
+            0.0
+        }
+    }
+
+    #[test]
+    fn a_block_with_nan_or_infinity_from_a_plugin_is_silenced_and_does_not_allocate() {
+        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            // An instrument: its second block is broken, the first and third are not.
+            let inst = Broken {
+                instrument: true,
+                value,
+                bad: [false, true, false, false],
+                block: 0,
+            };
+            let mut p = PluginTrack::new(Some(Box::new(inst)), Vec::new(), 64);
+            for block in 0..3 {
+                assert_no_alloc::assert_no_alloc(|| p.end_block(64));
+                let want = if block == 1 { 0.0 } else { 0.5 };
+                for i in 0..64 {
+                    assert_eq!(p.instrument_frame(i), (want, want), "{value} block {block}");
+                }
+            }
+
+            // An effect, with a working effect after it: what comes back is silent for the
+            // broken block only, and the effect after it never sees the bad sample.
+            let fx = Broken {
+                instrument: false,
+                value,
+                bad: [true, false, false, false],
+                block: 0,
+            };
+            let mut p = PluginTrack::new(None, vec![Box::new(fx), Box::new(Fake::halver())], 64);
+            for block in 0..2 {
+                for i in 0..64 {
+                    p.through_effects(i, 1.0, -1.0);
+                }
+                assert_no_alloc::assert_no_alloc(|| p.end_block(64));
+                let want = if block == 0 { (0.0, 0.0) } else { (0.5, -0.5) };
+                for i in 0..64 {
+                    let heard = p.through_effects(i, 1.0, -1.0);
+                    assert_eq!(heard, want, "{value} block {block} frame {i}");
+                }
+                // The frames just fed are the next block's input: process it to stay in step.
+                assert_no_alloc::assert_no_alloc(|| p.end_block(64));
+            }
+        }
+    }
+
+    #[test]
+    fn only_nan_and_infinity_count_as_broken_output() {
+        let fine = [
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            f32::MAX,
+            f32::MIN,
+            f32::MIN_POSITIVE,
+            1e-45,
+        ];
+        assert!(!has_non_finite(&fine));
+        assert!(!has_non_finite(&[]));
+        for bad in [f32::NAN, -f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut x = [0.25f32; 37];
+            x[36] = bad;
+            assert!(has_non_finite(&x), "{bad}");
         }
     }
 

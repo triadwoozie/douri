@@ -1,6 +1,6 @@
 [package]
 name = "prowave-app"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 description = "Pro Wave desktop app (egui) - clean-room DAW UI inspired by Logic Pro"
 license = "GPL-3.0-or-later"
@@ -27,11 +27,18 @@ midir = "0.11.1"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "platform-verifier"] }
 sha2 = "0.10"
 serde_json = "1.0.154"
+# The CHIMERA voice engine, the Singer's and Vocal Top Line's voice (crates/chimera, vendored,
+# MIT; see its LICENSE and NOTICE).
+chimera = { version = "0.1.0", path = "../chimera" }
 base64 = "0.23"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 rhai = { version = "1", features = ["no_module"] }
+
+# This computer's time zone, for the time shown with a recovery copy (see src/recovery.rs).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # The menus in the macOS system menu bar (see src/native_menu.rs).
 [target.'cfg(target_os = "macos")'.dependencies]

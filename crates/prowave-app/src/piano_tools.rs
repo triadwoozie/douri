@@ -166,33 +166,90 @@ pub fn draw_icon(g: &Painter, c: Pos2, tool: Tool, col: Color32) {
     }
 }
 
+/// A tool that the Tool menu (T) offers: the Piano Roll's [`Tool`] and the Tracks area's
+/// `TrackTool` share the menu, its keys and its look.
+pub trait MenuTool: Copy + PartialEq + 'static {
+    /// The tools in menu order, each with its key, whether Shift goes with the key, and the
+    /// legend printed on the key cap.
+    fn entries() -> &'static [(Self, Key, bool, &'static str)];
+    fn label(self) -> &'static str;
+    fn paint(self, g: &Painter, c: Pos2, col: Color32);
+
+    /// The tool a key (with Shift held or not) picks in the open Tool menu.
+    fn for_key(key: Key, shift: bool) -> Option<Self> {
+        Self::entries()
+            .iter()
+            .find(|(_, k, sh, _)| *k == key && *sh == shift)
+            .map(|(t, ..)| *t)
+    }
+}
+
+/// The Piano Roll's tools for the menu: [`Tool::ALL`], none with Shift.
+const PIANO_ENTRIES: [(Tool, Key, bool, &str); 11] = {
+    let mut out = [(Tool::Pointer, Key::T, false, "T"); 11];
+    let mut i = 0;
+    while i < 11 {
+        let (t, k, l) = Tool::ALL[i];
+        out[i] = (t, k, false, l);
+        i += 1;
+    }
+    out
+};
+
+impl MenuTool for Tool {
+    fn entries() -> &'static [(Self, Key, bool, &'static str)] {
+        &PIANO_ENTRIES
+    }
+    fn label(self) -> &'static str {
+        self.name()
+    }
+    fn paint(self, g: &Painter, c: Pos2, col: Color32) {
+        draw_icon(g, c, self, col);
+    }
+}
+
 /// The Tool menu that T opens at the pointer: a click or the tool's key picks a tool, Esc or
 /// a click elsewhere closes it. Returns the tool picked, and whether the menu stays open.
-pub fn tool_menu(ctx: &egui::Context, at: Pos2, current: Tool) -> (Option<Tool>, bool) {
+/// The keys it uses are taken out of the frame's input, so that (say) R picking a tool does
+/// not also start recording.
+pub fn tool_menu<T: MenuTool>(
+    ctx: &egui::Context,
+    salt: &str,
+    at: Pos2,
+    current: T,
+) -> (Option<T>, bool) {
     let mut picked = None;
     let mut open = true;
-    let keys = ctx.input(|i| {
-        i.events
-            .iter()
-            .filter_map(|e| match e {
-                egui::Event::Key {
-                    key,
-                    pressed: true,
-                    modifiers,
-                    ..
-                } if !modifiers.command => Some(*key),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
+    ctx.input_mut(|i| {
+        i.events.retain(|e| {
+            let egui::Event::Key {
+                key,
+                pressed,
+                modifiers,
+                ..
+            } = e
+            else {
+                return true;
+            };
+            if modifiers.command || modifiers.alt || modifiers.ctrl {
+                return true;
+            }
+            if *key == Key::Escape {
+                open &= !*pressed;
+                return false;
+            }
+            match T::for_key(*key, modifiers.shift) {
+                Some(t) => {
+                    if *pressed {
+                        picked = Some(t);
+                    }
+                    false
+                }
+                None => true,
+            }
+        });
     });
-    for key in keys {
-        if key == Key::Escape {
-            open = false;
-        } else if let Some(t) = Tool::for_key(key) {
-            picked = Some(t);
-        }
-    }
-    let area = egui::Area::new(egui::Id::unique("piano_tool_menu"))
+    let area = egui::Area::new(egui::Id::unique(("tool_menu", salt.to_owned())))
         .order(egui::Order::Foreground)
         .fixed_pos(at)
         .show(ctx, |ui| {
@@ -203,7 +260,7 @@ pub fn tool_menu(ctx: &egui::Context, at: Pos2, current: Tool) -> (Option<Tool>,
                 .stroke(egui::Stroke::new(1.0, theme::CAP_EDGE))
                 .show(ui, |ui| {
                     ui.set_min_width(200.0);
-                    for (tool, _, letter) in Tool::ALL {
+                    for &(tool, _, _, letter) in T::entries() {
                         let (r, resp) =
                             ui.allocate_exact_size(vec2(200.0, 24.0), egui::Sense::click());
                         let g = ui.painter();
@@ -212,19 +269,24 @@ pub fn tool_menu(ctx: &egui::Context, at: Pos2, current: Tool) -> (Option<Tool>,
                             g.rect_filled(r, 3.0, theme::CAP_TOP);
                         }
                         let col = if on { theme::ORANGE } else { theme::ON_DARK };
-                        draw_icon(g, pos2(r.left() + 14.0, r.center().y), tool, col);
+                        tool.paint(g, pos2(r.left() + 14.0, r.center().y), col);
                         hw::text(
                             g,
                             pos2(r.left() + 32.0, r.center().y),
                             Align2::LEFT_CENTER,
-                            &tool.name().to_uppercase(),
+                            &tool.label().to_uppercase(),
                             Face::Bold,
                             11.5,
                             col,
                         );
+                        let cap_w = if letter.chars().count() > 1 {
+                            26.0
+                        } else {
+                            18.0
+                        };
                         let cap = Rect::from_center_size(
-                            pos2(r.right() - 16.0, r.center().y - 1.0),
-                            vec2(18.0, 17.0),
+                            pos2(r.right() - 7.0 - cap_w / 2.0, r.center().y - 1.0),
+                            vec2(cap_w, 17.0),
                         );
                         let face = hw::paint_key(g, cap, hw::Cap::Bone, false, false);
                         hw::text(

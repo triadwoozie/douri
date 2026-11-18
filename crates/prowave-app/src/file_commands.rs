@@ -1,5 +1,6 @@
 //! File > New… / Open… / Open Recent / Save / Save As… / Save A Copy As… / Revert to Saved:
-//! native dialogs (rfd), key commands and the "save changes?" and "revert?" prompts.
+//! native dialogs (rfd), key commands and the "save changes?" and "revert?" prompts. Quitting
+//! with unsaved changes asks the same "save changes?" question.
 use crate::i18n::{tr, trf};
 use crate::model::Project;
 use crate::start_screen::Template;
@@ -25,6 +26,8 @@ pub enum FileCmd {
     OpenRecent,
     /// Starts a new project from a template (Project Chooser).
     NewFrom(Template),
+    /// Closes the window, which ends the program (its close button, Quit Pro Wave).
+    Quit,
 }
 
 impl FileCmd {
@@ -43,7 +46,8 @@ impl FileCmd {
             | FileCmd::SaveCopy
             | FileCmd::Revert
             | FileCmd::OpenRecent
-            | FileCmd::NewFrom(_) => return None,
+            | FileCmd::NewFrom(_)
+            | FileCmd::Quit => return None,
         };
         Some(KeyboardShortcut::new(modifiers, key))
     }
@@ -65,6 +69,10 @@ impl FileCmd {
 
 /// The file command whose key command was pressed this frame, if any (consumes the keys).
 pub fn pressed(ctx: &egui::Context) -> Option<FileCmd> {
+    // egui matches Command-N with Option held too; Option-Command-N is New Tracks.
+    if ctx.input(|i| i.modifiers.alt) {
+        return None;
+    }
     FileCmd::ALL.into_iter().find(|c| {
         c.shortcut()
             .is_some_and(|s| ctx.input_mut(|i| i.consume_shortcut(&s)))
@@ -81,8 +89,8 @@ pub fn content(p: &Project) -> ProjectDoc {
 }
 
 /// Whether the project has changes that are not in its file: what every "save changes?"
-/// question asks (New, Open, Open Recent, Close, Revert, the updater; a prompt on Quit would
-/// ask it too). The project's own data is compared with what was last saved or opened, and the
+/// question asks (New, Open, Open Recent, Close, Revert, Quit, the updater) and what decides
+/// whether a recovery copy is written. The project's own data is compared with what was last saved or opened, and the
 /// running plug-ins are asked whether their settings changed, because a knob turned in a
 /// plug-in's window changes nothing in the project until its settings are read.
 pub fn unsaved(p: &Project, saved: &ProjectDoc, plugins: &crate::plugins::PluginHost) -> bool {
@@ -105,7 +113,7 @@ fn dialog() -> FileDialog {
 
 /// The answer to the "save changes?" prompt.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Answer {
+pub(crate) enum Answer {
     Save,
     DontSave,
     Cancel,
@@ -122,6 +130,7 @@ impl App {
                 | FileCmd::Open
                 | FileCmd::OpenRecent
                 | FileCmd::NewFrom(_)
+                | FileCmd::Quit
         );
         if cmd == FileCmd::Revert {
             self.request_revert();
@@ -162,6 +171,12 @@ impl App {
                 }
             }
             FileCmd::Revert => self.revert(ctx),
+            FileCmd::Quit => {
+                // The question was answered (or there was nothing to ask about): this close
+                // is not held back.
+                self.autosave.quit_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 
@@ -203,6 +218,15 @@ impl App {
             return;
         };
         self.ui.ask_save = None;
+        self.answer_save_prompt(cmd, answer, ctx);
+    }
+
+    /// What the "save changes?" prompt was asked for goes ahead (after a save, or without
+    /// one) or is dropped.
+    pub(crate) fn answer_save_prompt(&mut self, cmd: FileCmd, answer: Answer, ctx: &egui::Context) {
+        // Quit without saving: the exit keeps what would be lost for good (see
+        // `App::prepare_exit`).
+        self.autosave.dont_save = cmd == FileCmd::Quit && answer == Answer::DontSave;
         let proceed = match answer {
             Answer::Save => self.save(),
             Answer::DontSave => true,
@@ -353,6 +377,8 @@ impl App {
                 self.saved = content(&self.project);
                 self.ui.status = None;
                 self.report_missing(&missing);
+                // What the recovery copy held is in the project file now.
+                self.drop_recovery_copy();
                 true
             }
             Err(e) => {
@@ -407,7 +433,9 @@ impl App {
     }
 
     /// Swaps in a whole new project and resets editor state that indexes into the old one.
-    fn replace(&mut self, mut p: Project, path: Option<PathBuf>) {
+    pub(crate) fn replace(&mut self, mut p: Project, path: Option<PathBuf>) {
+        // The project that goes was saved or given up: its recovery copy goes with it.
+        self.drop_recovery_copy();
         // A new song revision makes `EngineSync` rebuild and swap the engine's song.
         p.song_rev = self.project.song_rev.wrapping_add(1);
         self.project = p;
@@ -423,10 +451,10 @@ impl App {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn app() -> App {
+    pub(crate) fn app() -> App {
         let project = Project::demo();
         App {
             saved: content(&project),
@@ -446,6 +474,9 @@ mod tests {
             clock_in: crate::clock_in::ClockIn::default(),
             clock_follow: crate::clock_follow::ClockFollower::default(),
             chase: crate::mtc_in::Chase::default(),
+            autosave: crate::autosave::Autosave::off(),
+            #[cfg(unix)]
+            control: None,
             updater: crate::updater::Updater::new(),
         }
     }

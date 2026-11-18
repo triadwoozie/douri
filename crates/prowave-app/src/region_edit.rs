@@ -89,16 +89,38 @@ pub(crate) fn paste_at_playhead(p: &mut Project, v: &mut TracksView, clip: &Regi
 /// Whether every region of a drag (track, region, start) would find a track of its kind
 /// `rows` tracks further down (up when negative): audio regions go on audio tracks, the others
 /// on tracks that play MIDI.
-pub(crate) fn fits_rows(p: &Project, group: &[(usize, usize, f64)], rows: isize) -> bool {
+pub(crate) fn fits_rows(
+    p: &Project,
+    group: &[(usize, usize, f64)],
+    rows: isize,
+    show_hidden: bool,
+) -> bool {
     group.iter().all(|&(t, r, _)| {
         let Some(region) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
             return false;
         };
-        let Some(to) = t.checked_add_signed(rows).and_then(|to| p.tracks.get(to)) else {
+        let Some(i) = t.checked_add_signed(rows) else {
             return false;
         };
-        to.kind.has_regions() && region.is_audio() == (to.kind == TrackKind::Audio)
+        let Some(to) = p.tracks.get(i) else {
+            return false;
+        };
+        // Not onto a track that has no row (folded away, or hidden): it would vanish.
+        !crate::track_commands::takes_no_room(p, show_hidden, i)
+            && to.kind.has_regions()
+            && region.is_audio() == (to.kind == TrackKind::Audio)
     })
+}
+
+/// A drag of `group` by `delta` quarter notes, stopped where its earliest region reaches the
+/// start of the song: the regions keep their distances from each other, as in Logic.
+pub(crate) fn clamp_delta(group: &[(usize, usize, f64)], delta: f64) -> f64 {
+    let earliest = group.iter().map(|g| g.2).fold(f64::INFINITY, f64::min);
+    if earliest.is_finite() {
+        delta.max(-earliest)
+    } else {
+        delta
+    }
 }
 
 /// The bar (1-based) a region that started at `start` lands on, moved by `delta` quarter notes
@@ -128,7 +150,13 @@ pub(crate) fn drop_regions(
         .copied()
         .filter(|&(t, r, _)| p.tracks.get(t).is_some_and(|tr| r < tr.regions.len()))
         .collect();
-    let rows = if fits_rows(p, &group, rows) { rows } else { 0 };
+    // The drag that asked for `rows` already kept to the rows on screen.
+    let rows = if fits_rows(p, &group, rows, true) {
+        rows
+    } else {
+        0
+    };
+    let delta = clamp_delta(&group, delta);
     let mut landed: Vec<(usize, usize)> = Vec::new();
     if !copy && rows == 0 {
         // A plain move: each region takes its new place on its own track.
@@ -174,13 +202,6 @@ pub(crate) fn drop_regions(
     }
     p.song_rev += 1;
     landed
-}
-
-/// Whether Split at Playhead does anything to the selection.
-pub(crate) fn can_split(p: &Project, v: &TracksView) -> bool {
-    v.selection()
-        .into_iter()
-        .any(|(t, r)| p.can_split_region(t, r, p.position_beats))
 }
 
 /// Split at Playhead: every selected region the playhead is inside of is cut. The right pieces
@@ -264,6 +285,228 @@ pub(crate) fn move_to_playhead(p: &mut Project, v: &TracksView) {
     p.song_rev += 1;
 }
 
+/// Edit > Invert Selection (Shift-I): every region that was not selected, and none that was.
+pub(crate) fn invert_selection(p: &Project, v: &mut TracksView) {
+    let all: Vec<(usize, usize)> = p
+        .tracks
+        .iter()
+        .enumerate()
+        .flat_map(|(t, tr)| (0..tr.regions.len()).map(move |r| (t, r)))
+        .filter(|&(t, r)| !v.is_selected(t, r))
+        .collect();
+    v.select_many(&all);
+}
+
+/// Where the earliest selected region starts, in quarter notes.
+pub(crate) fn selection_start(p: &Project, v: &TracksView) -> Option<f64> {
+    v.selection()
+        .into_iter()
+        .filter_map(|(t, r)| p.tracks.get(t)?.regions.get(r))
+        .map(|reg| p.region_start_beats(reg))
+        .min_by(f64::total_cmp)
+}
+
+/// Edit > Select All Following (Shift-F): the selected regions and every region that starts
+/// after the earliest of them; with `same_track` (Control-Shift-F) only on the tracks that
+/// have a selected region. The selected regions stay selected and the primary one stays so.
+pub(crate) fn select_following(p: &Project, v: &mut TracksView, same_track: bool) {
+    let Some(from) = selection_start(p, v) else {
+        return;
+    };
+    let was = v.selection();
+    let mut all: Vec<(usize, usize)> = v.selected.into_iter().collect();
+    for (t, track) in p.tracks.iter().enumerate() {
+        if same_track && !was.iter().any(|x| x.0 == t) {
+            continue;
+        }
+        for (r, reg) in track.regions.iter().enumerate() {
+            if was.contains(&(t, r)) || p.region_start_beats(reg) >= from - 1e-9 {
+                all.push((t, r));
+            }
+        }
+    }
+    v.select_many(&all);
+}
+
+/// The regions a command on `clicked` acts on: the whole selection when `clicked` is part of
+/// it (or there is no `clicked`: a key or a menu), else `clicked` alone, as in Logic.
+fn targets(v: &TracksView, clicked: Option<(usize, usize)>) -> Vec<(usize, usize)> {
+    match clicked {
+        Some((t, r)) if !v.is_selected(t, r) => vec![(t, r)],
+        _ => v.selection(),
+    }
+}
+
+/// Mute On/Off (Control-M, the Mute tool, Mute Region in the right-click menu): the clicked
+/// region, or the primary one, changes, and every other region the command acts on takes the
+/// same state. Returns whether a region changed.
+pub(crate) fn toggle_mute(
+    p: &mut Project,
+    v: &TracksView,
+    clicked: Option<(usize, usize)>,
+) -> bool {
+    let lead = clicked.or(v.selected);
+    let Some(now) = lead
+        .and_then(|(t, r)| p.tracks.get(t)?.regions.get(r))
+        .map(|reg| reg.params.mute)
+    else {
+        return false;
+    };
+    let mut changed = false;
+    for (t, r) in targets(v, clicked) {
+        if let Some(reg) = p.tracks.get_mut(t).and_then(|tr| tr.regions.get_mut(r)) {
+            reg.params.mute = !now;
+            changed = true;
+        }
+    }
+    if changed {
+        p.song_rev += 1;
+    }
+    changed
+}
+
+/// How many more times a looped region plays when nothing in the project comes after it.
+const LOOP_REPEATS_ALONE: f64 = 7.0;
+
+/// Loop On/Off (L): with a looped region in the selection, no selected region loops any more;
+/// otherwise each one loops up to the next region on its track, or, with none there, up to
+/// the end of the last region of the project (Logic: up to the end of the project). A region
+/// with nothing after it anywhere plays [`LOOP_REPEATS_ALONE`] more times.
+pub(crate) fn toggle_loop(p: &mut Project, v: &TracksView) -> bool {
+    let sel: Vec<(usize, usize)> = v
+        .selection()
+        .into_iter()
+        .filter(|&(t, r)| p.tracks.get(t).is_some_and(|tr| r < tr.regions.len()))
+        .collect();
+    if sel.is_empty() {
+        return false;
+    }
+    let looped = sel
+        .iter()
+        .any(|&(t, r)| p.tracks[t].regions[r].params.loop_beats > 0.0);
+    let project_end = p
+        .tracks
+        .iter()
+        .flat_map(|t| t.regions.iter())
+        .map(|reg| p.region_end_beats(reg))
+        .fold(0.0, f64::max);
+    for &(t, r) in &sel {
+        let beats = if looped {
+            0.0
+        } else {
+            let reg = &p.tracks[t].regions[r];
+            let (end, len) = (p.region_end_beats(reg), p.region_len_beats(reg));
+            let next = p.tracks[t]
+                .regions
+                .iter()
+                .map(|o| p.region_start_beats(o))
+                .filter(|s| *s >= end - 1e-9)
+                .min_by(f64::total_cmp);
+            match next {
+                Some(next) => next - end,
+                None if project_end > end + 1e-9 => project_end - end,
+                None => len * LOOP_REPEATS_ALONE,
+            }
+        };
+        p.tracks[t].regions[r].params.loop_beats = beats as f32;
+    }
+    p.song_rev += 1;
+    true
+}
+
+/// The Scissors tool on region `clicked` at `at` (quarter notes): the region is cut there,
+/// and so is every other selected region `at` is inside of when the clicked one is selected
+/// (Logic: all selected regions are cut). With `equal` (Option held) the cuts go on after
+/// `at` in steps as long as the clicked region's first piece, so the pieces are equal. The
+/// pieces to the right of a cut are what gets selected. Returns whether anything was cut.
+pub(crate) fn scissors(
+    p: &mut Project,
+    v: &mut TracksView,
+    clicked: (usize, usize),
+    at: f64,
+    equal: bool,
+) -> bool {
+    let Some(start) = p
+        .tracks
+        .get(clicked.0)
+        .and_then(|t| t.regions.get(clicked.1))
+        .map(|r| p.region_start_beats(r))
+    else {
+        return false;
+    };
+    let step = at - start;
+    if step < 1e-6 {
+        return false;
+    }
+    let mut regions = targets(v, Some(clicked));
+    // Highest index first on each track: the cuts of one region leave the lower ones alone.
+    regions.sort_unstable();
+    regions.reverse();
+    let mut made: Vec<(usize, usize)> = Vec::new();
+    for (t, r) in regions {
+        let Some(reg) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
+            continue;
+        };
+        let end = p.region_end_beats(reg);
+        let mut cuts = vec![at];
+        if equal {
+            let mut next = at + step;
+            while next < end - 1e-6 {
+                cuts.push(next);
+                next += step;
+            }
+        }
+        // The last cut first: the piece left of it keeps the region's index.
+        let mut n = 0;
+        for &cut in cuts.iter().rev() {
+            if p.split_region(t, r, cut) {
+                n += 1;
+            }
+        }
+        if n > 0 {
+            for m in made.iter_mut().filter(|m| m.0 == t && m.1 > r) {
+                m.1 += n;
+            }
+            made.extend((1..=n).map(|k| (t, r + k)));
+        }
+    }
+    if made.is_empty() {
+        return false;
+    }
+    made.sort_unstable();
+    v.select_many(&made);
+    true
+}
+
+/// The Pencil on an empty stretch of track `t` (Logic): an empty MIDI region of one bar from
+/// `start` (quarter notes), named after the track. Only instrument and external MIDI tracks
+/// take one. Returns the new region's index.
+pub(crate) fn pencil_region(p: &mut Project, t: usize, start: f64) -> Option<usize> {
+    let track = p.tracks.get(t)?;
+    if !matches!(track.kind, TrackKind::Instrument | TrackKind::ExternalMidi) {
+        return None;
+    }
+    let name = track.name.clone();
+    let start_bar = p.beats_to_bar(start) as f32 + 1.0;
+    let end_bar = p.beats_to_bar(start + p.bar_len_at(start)) as f32 + 1.0;
+    let region = crate::model::Region {
+        name,
+        start_bar,
+        len_bars: (end_bar - start_bar).max(1.0 / 64.0),
+        notes: Vec::new(),
+        controls: Vec::new(),
+        folder: None,
+        audio: None,
+        missing: None,
+        params: crate::model::RegionParams::default(),
+        generated: None,
+    };
+    let regions = &mut p.tracks[t].regions;
+    regions.push(region);
+    p.song_rev += 1;
+    Some(p.tracks[t].regions.len() - 1)
+}
+
 /// Grid used by Functions > Quantize when the region's Quantize setting is Off: 1/16 note.
 pub const DEFAULT_QUANTIZE_GRID: f32 = 0.25;
 
@@ -306,6 +549,7 @@ pub(crate) fn quantize_selected(p: &mut Project, v: &TracksView) {
 mod tests {
     use super::*;
     use crate::model::{AudioRegion, Note};
+    use crate::region_commands::can_split;
 
     fn test_audio() -> AudioRegion {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -849,5 +1093,766 @@ mod tests {
         assert_eq!(p.tracks[0].regions.len(), 1);
         assert_eq!(p.tracks[0].regions[0].start_bar, 2.0);
         assert!(!history.can_undo(), "one step");
+    }
+
+    // ---- Shift-click, group moves and the rubber band (Logic: select and move regions)
+
+    fn click_with(
+        h: &mut Harness,
+        p: &mut Project,
+        s: &mut crate::UiState,
+        at: Pos2,
+        mods: Modifiers,
+    ) {
+        let meters = crate::mixer::Meters::default();
+        // Not a double-click of the click before.
+        h.time_passes(1.0);
+        h.modifiers = mods;
+        h.click(at, |ui| crate::tracks_area::show(ui, p, s, &meters));
+        h.modifiers = Modifiers::NONE;
+    }
+
+    /// The middle of region `r` of track `t` on screen.
+    fn middle(
+        h: &mut Harness,
+        p: &mut Project,
+        s: &mut crate::UiState,
+        t: usize,
+        r: usize,
+    ) -> Pos2 {
+        show(h, p, s);
+        rect_of(h, t, r).left_center() + vec2(20.0, 0.0)
+    }
+
+    fn places(p: &Project) -> Vec<Vec<(&str, f32)>> {
+        p.tracks
+            .iter()
+            .map(|t| {
+                t.regions
+                    .iter()
+                    .map(|r| (r.name.as_str(), r.start_bar))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn shift_click_adds_a_region_on_another_track_and_a_drag_moves_them_all_in_one_undo_step() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        let far = middle(&mut h, &mut p, &mut s, 1, 0);
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        assert_eq!(s.tracks.selection(), vec![(0, 0)]);
+        click_with(&mut h, &mut p, &mut s, far, Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (1, 0)]);
+
+        let mut history = crate::undo::History::new(&p);
+        let none = Modifiers::NONE;
+        // Dragged by the region on the first track: the one on the second goes along.
+        drag_with(&mut h, &mut p, &mut s, riff, vec2(BAR, 0.0), &[none, none]);
+        assert_eq!(
+            places(&p),
+            vec![vec![("Riff", 3.0)], vec![("Far", 10.0)]],
+            "both a bar later"
+        );
+        assert_eq!(
+            s.tracks.selection(),
+            vec![(0, 0), (1, 0)],
+            "still both selected"
+        );
+        assert!(history.record(&p));
+        assert!(history.undo(&mut p));
+        assert_eq!(places(&p), vec![vec![("Riff", 2.0)], vec![("Far", 9.0)]]);
+        assert!(!history.can_undo(), "the whole move was one step");
+    }
+
+    #[test]
+    fn shift_click_takes_a_region_out_again_and_a_plain_click_selects_one_alone() {
+        let (mut p, mut s) = drag_rig();
+        let mut third = p.tracks[0].regions[0].clone();
+        third.start_bar = 6.0;
+        third.name = "Third".into();
+        p.tracks[0].regions.push(third);
+        let mut h = Harness::new(1400.0, 600.0);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        let third = middle(&mut h, &mut p, &mut s, 0, 1);
+        let far = middle(&mut h, &mut p, &mut s, 1, 0);
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        click_with(&mut h, &mut p, &mut s, far, Modifiers::SHIFT);
+        click_with(&mut h, &mut p, &mut s, far, Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0)], "taken out again");
+        click_with(&mut h, &mut p, &mut s, far, Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (1, 0)]);
+        // A plain click on a region outside the selection selects it alone.
+        click_with(&mut h, &mut p, &mut s, third, Modifiers::NONE);
+        assert_eq!(s.tracks.selection(), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn a_drag_that_begins_with_shift_held_adds_the_region_and_moves_the_selection() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        let far = middle(&mut h, &mut p, &mut s, 1, 0);
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        let shift = Modifiers::SHIFT;
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            far,
+            vec2(-BAR, 0.0),
+            &[shift, shift],
+        );
+        assert_eq!(places(&p), vec![vec![("Riff", 1.0)], vec![("Far", 8.0)]]);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (1, 0)]);
+    }
+
+    #[test]
+    fn a_group_stops_at_the_start_of_the_song_and_keeps_its_spacing() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        // Dragged by the later region, four bars to the left: the earlier one has only one
+        // bar of room, so both go one bar.
+        let far = middle(&mut h, &mut p, &mut s, 1, 0);
+        let none = Modifiers::NONE;
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            far,
+            vec2(-4.0 * BAR, 0.0),
+            &[none, none, none],
+        );
+        assert_eq!(places(&p), vec![vec![("Riff", 1.0)], vec![("Far", 8.0)]]);
+        // The same when the regions are placed without a drag on screen.
+        assert_eq!(clamp_delta(&[(0, 0, 4.0), (1, 0, 32.0)], -12.0), -4.0);
+        assert_eq!(clamp_delta(&[(0, 0, 4.0), (1, 0, 32.0)], 3.0), 3.0);
+    }
+
+    #[test]
+    fn a_group_goes_to_other_tracks_together_or_not_at_all() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        let down = rect_of(&h, 1, 0).center().y - rect_of(&h, 0, 0).center().y;
+        let none = Modifiers::NONE;
+        // Two tracks: the lower region has no track under it, so nothing changes track.
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(-10.0, down),
+            &[none, none],
+        );
+        assert_eq!(places(&p), vec![vec![("Riff", 2.0)], vec![("Far", 9.0)]]);
+
+        // A third instrument track: both go down one track, a bar later.
+        p.add_track(TrackKind::Instrument);
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(BAR - 10.0, down),
+            &[none, none],
+        );
+        assert_eq!(
+            places(&p),
+            vec![vec![], vec![("Riff", 3.0)], vec![("Far", 10.0)]]
+        );
+        assert_eq!(s.tracks.selection(), vec![(1, 0), (2, 0)]);
+
+        // An audio track under them: a MIDI region cannot land there, so neither moves down.
+        p.add_track(TrackKind::Audio);
+        let riff = middle(&mut h, &mut p, &mut s, 1, 0);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(-10.0, down),
+            &[none, none],
+        );
+        assert_eq!(
+            places(&p),
+            vec![vec![], vec![("Riff", 3.0)], vec![("Far", 10.0)], vec![]]
+        );
+    }
+
+    #[test]
+    fn a_rubber_band_on_the_background_selects_what_it_touches_and_shift_switches() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        let (riff, far) = (rect_of(&h, 0, 0), rect_of(&h, 1, 0));
+        let meters = crate::mixer::Meters::default();
+        let band = |h: &mut Harness,
+                    p: &mut Project,
+                    s: &mut crate::UiState,
+                    from: Pos2,
+                    to: Pos2,
+                    mods: Modifiers| {
+            h.time_passes(1.0);
+            h.modifiers = mods;
+            let mid = from + (to - from) * 0.5;
+            h.drag(&[from, mid, to], PointerButton::Primary, |ui| {
+                crate::tracks_area::show(ui, p, s, &meters)
+            });
+            h.modifiers = Modifiers::NONE;
+        };
+        let none = Modifiers::NONE;
+        // From the empty first bar of the first track to just inside the region on the second.
+        let before = riff.left_center() - vec2(40.0, 0.0);
+        let into_far = far.left_center() + vec2(10.0, 0.0);
+        band(&mut h, &mut p, &mut s, before, into_far, none);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (1, 0)]);
+        assert_eq!(places(&p), vec![vec![("Riff", 2.0)], vec![("Far", 9.0)]]);
+
+        // A band over nothing selects nothing.
+        let gap = pos2_between(riff, far);
+        band(&mut h, &mut p, &mut s, gap, gap + vec2(60.0, 0.0), none);
+        assert!(s.tracks.selection().is_empty());
+
+        // Over the first region only; then Shift adds the second, and takes it out again.
+        let into_riff = riff.left_center() + vec2(10.0, 0.0);
+        band(&mut h, &mut p, &mut s, before, into_riff, none);
+        assert_eq!(s.tracks.selection(), vec![(0, 0)]);
+        let far_from = far.left_center() - vec2(40.0, 0.0);
+        band(&mut h, &mut p, &mut s, far_from, into_far, Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (1, 0)]);
+        band(&mut h, &mut p, &mut s, far_from, into_far, Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0)]);
+    }
+
+    /// A point on the second track's background, between the two regions of the rig.
+    fn pos2_between(riff: Rect, far: Rect) -> Pos2 {
+        egui::pos2(riff.right() + 60.0, far.center().y)
+    }
+
+    // ---- tools and keys on the whole selection, the left edge, drag modifiers
+
+    #[test]
+    fn the_scissors_cut_every_selected_region_and_option_cuts_equal_pieces() {
+        let (mut p, mut s) = drag_rig();
+        // A second region under the same bars on the other track.
+        let mut under = p.tracks[0].regions[0].clone();
+        under.name = "Under".into();
+        p.tracks[1].regions.insert(0, under);
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        s.tracks.tool = crate::tracks_area::TrackTool::Scissors;
+        // A click a bar into "Riff" (bars 2-3): both selected regions are cut at bar 3.
+        let at = rect_of(&h, 0, 0).left_center() + vec2(BAR, 0.0);
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::NONE);
+        assert_eq!(
+            places(&p),
+            vec![
+                vec![("Riff", 2.0), ("Riff", 3.0)],
+                vec![("Under", 2.0), ("Under", 3.0), ("Far", 9.0)]
+            ]
+        );
+        assert_eq!(s.tracks.selection(), vec![(0, 1), (1, 1)]);
+
+        // Option: a region of two bars clicked half a bar in is cut into four equal pieces.
+        let (mut p, mut s) = drag_rig();
+        show(&mut h, &mut p, &mut s);
+        s.tracks.tool = crate::tracks_area::TrackTool::Scissors;
+        let at = rect_of(&h, 0, 0).left_center() + vec2(BAR / 2.0, 0.0);
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::ALT);
+        let pieces: Vec<(f32, f32)> = p.tracks[0]
+            .regions
+            .iter()
+            .map(|r| (r.start_bar, r.len_bars))
+            .collect();
+        assert_eq!(pieces, vec![(2.0, 0.5), (2.5, 0.5), (3.0, 0.5), (3.5, 0.5)]);
+    }
+
+    #[test]
+    fn the_mute_tool_mutes_every_selected_region() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        s.tracks.tool = crate::tracks_area::TrackTool::Mute;
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        assert!(p.tracks[0].regions[0].params.mute && p.tracks[1].regions[0].params.mute);
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        assert!(!p.tracks[0].regions[0].params.mute && !p.tracks[1].regions[0].params.mute);
+        // A region outside the selection is muted alone.
+        s.tracks.select_only(1, 0);
+        click_with(&mut h, &mut p, &mut s, riff, Modifiers::NONE);
+        assert!(p.tracks[0].regions[0].params.mute && !p.tracks[1].regions[0].params.mute);
+    }
+
+    #[test]
+    fn dragging_the_left_edge_moves_the_start_and_the_notes_stay_where_they_were() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        let meters = crate::mixer::Meters::default();
+        // "Riff": bars 2-3, notes at beats 0 and 2.5 of the region (beats 4 and 6.5 of the song).
+        let grip = rect_of(&h, 0, 0).left_bottom() + vec2(2.0, -4.0);
+        let to = grip + vec2(BAR / 2.0, 0.0);
+        h.drag(
+            &[grip, grip + vec2(20.0, 0.0), to],
+            PointerButton::Primary,
+            |ui| crate::tracks_area::show(ui, &mut p, &mut s, &meters),
+        );
+        let r = &p.tracks[0].regions[0];
+        assert_eq!((r.start_bar, r.len_bars), (2.5, 1.5), "half a bar shorter");
+        assert_eq!(r.notes.len(), 1, "the note before the new start is gone");
+        assert_eq!(r.notes[0].start, 0.5, "still at beat 6.5 of the song");
+        assert_eq!(
+            r.controls.len(),
+            0,
+            "the controller before the new start too"
+        );
+
+        // Back out to bar 1.5: the end stays, the note is still at beat 6.5.
+        show(&mut h, &mut p, &mut s);
+        let grip = rect_of(&h, 0, 0).left_bottom() + vec2(2.0, -4.0);
+        let to = grip + vec2(-BAR, 0.0);
+        h.time_passes(1.0);
+        h.drag(
+            &[grip, grip + vec2(-20.0, 0.0), to],
+            PointerButton::Primary,
+            |ui| crate::tracks_area::show(ui, &mut p, &mut s, &meters),
+        );
+        let r = &p.tracks[0].regions[0];
+        assert_eq!((r.start_bar, r.len_bars), (1.5, 2.5));
+        assert_eq!(r.notes[0].start, 4.5);
+    }
+
+    #[test]
+    fn the_left_edge_of_an_audio_region_moves_through_its_file() {
+        let mut p = Project::empty();
+        p.tracks[0].kind = TrackKind::Audio;
+        let (mut riff, _) = (drag_rig().0.tracks[0].regions[0].clone(), ());
+        riff.notes.clear();
+        riff.controls.clear();
+        riff.audio = Some(test_audio());
+        riff.params = crate::model::RegionParams {
+            offset_secs: 1.0,
+            ..Default::default()
+        };
+        p.tracks[0].regions.push(riff);
+        // 120 bpm: two beats are a second. Two beats later: a second further into the file.
+        assert!(p.resize_region_start(0, 0, 6.0));
+        let r = &p.tracks[0].regions[0];
+        assert_eq!((r.start_bar, r.len_bars), (2.5, 1.5));
+        assert!((r.params.offset_secs - 2.0).abs() < 1e-9);
+        // Far to the left: no further than the start of the file (two seconds: four beats).
+        assert!(p.resize_region_start(0, 0, 0.0));
+        let r = &p.tracks[0].regions[0];
+        assert_eq!((r.start_bar, r.len_bars), (1.5, 2.5));
+        assert!(r.params.offset_secs.abs() < 1e-9);
+        assert!(!p.resize_region_start(0, 0, 0.0), "nothing more to show");
+    }
+
+    #[test]
+    fn shift_keeps_a_drag_to_one_direction_and_control_moves_in_divisions() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        let down = rect_of(&h, 1, 0).center().y - rect_of(&h, 0, 0).center().y;
+        assert!(down < BAR, "the drag below goes further along than down");
+        let (none, shift, ctrl) = (Modifiers::NONE, Modifiers::SHIFT, Modifiers::CTRL);
+        // A bar later and a track down with Shift pressed on the way: only the bar.
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(BAR, down),
+            &[none, shift, shift],
+        );
+        assert_eq!(places(&p), vec![vec![("Riff", 3.0)], vec![("Far", 9.0)]]);
+        // Mostly down: only the track changes.
+        let riff = middle(&mut h, &mut p, &mut s, 0, 0);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(down / 2.0, down),
+            &[none, shift, shift],
+        );
+        assert_eq!(places(&p), vec![vec![], vec![("Far", 9.0), ("Riff", 3.0)]]);
+        // Control: sixteenth notes whatever Snap says (30 points are 1.25 beats; Snap alone
+        // would go to the beat).
+        let riff = middle(&mut h, &mut p, &mut s, 1, 1);
+        drag_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            riff,
+            vec2(30.0, 0.0),
+            &[none, ctrl, ctrl],
+        );
+        assert_eq!(p.tracks[1].regions[1].start_bar, 3.0 + 1.25 / 4.0);
+    }
+
+    #[test]
+    fn a_click_on_a_track_header_selects_the_tracks_regions() {
+        let (mut p, mut s) = drag_rig();
+        let mut third = p.tracks[0].regions[0].clone();
+        third.start_bar = 6.0;
+        p.tracks[0].regions.push(third);
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        let (first, second) = (rect_of(&h, 0, 0), rect_of(&h, 1, 0));
+        let header = |row: Rect| egui::pos2(crate::tracks_area::HEADER_W * 0.62, row.top() + 6.0);
+        click_with(&mut h, &mut p, &mut s, header(second), Modifiers::NONE);
+        assert_eq!(p.selected_track, 1);
+        assert_eq!(s.tracks.selection(), vec![(1, 0)]);
+        click_with(&mut h, &mut p, &mut s, header(first), Modifiers::NONE);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (0, 1)]);
+        click_with(&mut h, &mut p, &mut s, header(second), Modifiers::SHIFT);
+        assert_eq!(s.tracks.selection(), vec![(0, 0), (0, 1), (1, 0)]);
+    }
+
+    #[test]
+    fn delete_removes_every_selected_region() {
+        let (mut p, mut s) = drag_rig();
+        s.tracks.select_many(&[(0, 0), (1, 0)]);
+        crate::tracks_area::delete_selected(&mut p, &mut s.tracks);
+        assert_eq!(places(&p), vec![vec![], vec![]]);
+        assert_eq!(p.tracks.len(), 2, "the tracks stay");
+        assert!(s.tracks.selection().is_empty());
+    }
+
+    // ---- the Tool menu (T), the Command-click tool, the Pencil, the Gain tool, the pointer
+
+    use crate::tracks_area::{Snap, TrackTool};
+    use egui::{pos2, Event, Key};
+
+    /// One frame as the app runs the Tracks area: the View keys, the area, the key commands.
+    fn app_frame(h: &mut Harness, p: &mut Project, s: &mut crate::UiState, events: Vec<Event>) {
+        let meters = crate::mixer::Meters::default();
+        h.frame(events, |ui| {
+            let ctx = ui.ctx().clone();
+            crate::key_commands::begin_frame(&ctx);
+            crate::menus::handle_keys(&ctx, p, s);
+            crate::tracks_area::show(ui, p, s, &meters);
+            crate::key_commands::handle(&ctx, p, s);
+        });
+    }
+
+    /// `key` pressed and let go with `mods` held, the pointer where it last was.
+    fn tap(h: &mut Harness, p: &mut Project, s: &mut crate::UiState, key: Key, mods: Modifiers) {
+        h.modifiers = mods;
+        let ev = |pressed| Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: mods,
+        };
+        app_frame(h, p, s, vec![ev(true), ev(false)]);
+        h.modifiers = Modifiers::NONE;
+        app_frame(h, p, s, vec![]);
+    }
+
+    #[test]
+    fn t_opens_the_tool_menu_at_the_pointer_and_logics_letters_pick_the_tool() {
+        let (mut p, mut s) = drag_rig();
+        let (p, s) = (&mut p, &mut s);
+        let mut h = Harness::new(1400.0, 600.0);
+        let over = middle(&mut h, p, s, 0, 0);
+        app_frame(&mut h, p, s, vec![Event::PointerMoved(over)]);
+        let none = Modifiers::NONE;
+        let (inspector, bottom, auto_mode, recording) =
+            (s.show_inspector, s.bottom, s.auto.mode, p.recording);
+        for (key, shift, tool) in [
+            (Key::P, false, TrackTool::Pencil),
+            (Key::E, false, TrackTool::Eraser),
+            (Key::T, true, TrackTool::Text),
+            (Key::I, false, TrackTool::Scissors),
+            (Key::J, false, TrackTool::Join),
+            (Key::M, false, TrackTool::Mute),
+            (Key::Y, false, TrackTool::Zoom),
+            (Key::A, false, TrackTool::Fade),
+            (Key::G, false, TrackTool::Gain),
+            (Key::R, false, TrackTool::Marquee),
+            (Key::S, false, TrackTool::Solo),
+            (Key::T, false, TrackTool::Pointer),
+        ] {
+            tap(&mut h, p, s, Key::T, none);
+            assert!(s.tracks.tool_menu_open(), "T opens the Tool menu");
+            let mods = if shift { Modifiers::SHIFT } else { none };
+            tap(&mut h, p, s, key, mods);
+            assert_eq!(s.tracks.tool, tool, "{key:?}");
+            assert!(!s.tracks.tool_menu_open(), "a tool's key closes the menu");
+        }
+        // The letters were the menu's only: I did not show the Inspector, P the Piano Roll,
+        // A Automation Mode; and T twice gave the Pointer (the last round above).
+        assert_eq!(s.show_inspector, inspector);
+        assert!(s.bottom == bottom);
+        assert_eq!(s.auto.mode, auto_mode);
+        assert_eq!(p.recording, recording);
+        // M and S picked tools, not Toggle Track Mute and Toggle Track Solo.
+        assert!(p.tracks.iter().all(|t| !t.mute && !t.solo));
+        // Escape closes the menu and keeps the tool.
+        s.tracks.tool = TrackTool::Mute;
+        tap(&mut h, p, s, Key::T, none);
+        tap(&mut h, p, s, Key::Escape, none);
+        assert!(!s.tracks.tool_menu_open());
+        assert_eq!(s.tracks.tool, TrackTool::Mute);
+        // Outside the menu the letters do what they did: I is Show Inspector.
+        tap(&mut h, p, s, Key::I, none);
+        assert_eq!(s.show_inspector, !inspector);
+        // Command-T is still Split at Playhead, not the menu.
+        tap(&mut h, p, s, Key::T, Modifiers::COMMAND);
+        assert!(!s.tracks.tool_menu_open());
+    }
+
+    #[test]
+    fn t_does_nothing_while_a_text_field_has_the_keyboard_or_the_piano_roll_has_the_keys() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let over = middle(&mut h, &mut p, &mut s, 0, 0);
+        let meters = crate::mixer::Meters::default();
+        let mut text = String::new();
+        let field = egui::Id::unique("a text field");
+        let mut with_field = |h: &mut Harness, p: &mut Project, s: &mut crate::UiState, ev| {
+            h.frame(ev, |ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut text).id(field));
+                r.request_focus();
+                crate::tracks_area::show(ui, p, s, &meters);
+            })
+        };
+        with_field(&mut h, &mut p, &mut s, vec![Event::PointerMoved(over)]);
+        let t = |pressed| Event::Key {
+            key: Key::T,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        with_field(&mut h, &mut p, &mut s, vec![t(true), t(false)]);
+        with_field(&mut h, &mut p, &mut s, vec![]);
+        assert!(
+            h.ctx.memory(|m| m.has_focus(field)),
+            "the field has the keyboard"
+        );
+        assert!(!s.tracks.tool_menu_open());
+        // The Piano Roll has the keys (the pointer is over it): its own T, not this one.
+        s.piano_focus = true;
+        tap(&mut h, &mut p, &mut s, Key::T, Modifiers::NONE);
+        assert!(!s.tracks.tool_menu_open());
+    }
+
+    #[test]
+    fn command_click_uses_the_command_click_tool_and_the_left_click_tool_stays() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        assert_eq!(s.tracks.tool, TrackTool::Pointer);
+        assert_eq!(
+            s.tracks.cmd_tool,
+            TrackTool::Marquee,
+            "Logic's Marquee on Command"
+        );
+        // The Scissors as the Command-click tool, picked in the toolbar's second menu.
+        s.tracks.cmd_tool = TrackTool::Scissors;
+        // "Riff" is bars 2-3 (beat 4 on); 1.4 beats in, Smart snap at this zoom is a beat.
+        let at = rect_of(&h, 0, 0).left_center() + vec2(1.4 * BAR / 4.0, 0.0);
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::COMMAND);
+        assert_eq!(places(&p)[0], vec![("Riff", 2.0), ("Riff", 2.25)]);
+        assert_eq!(s.tracks.tool, TrackTool::Pointer);
+        // A plain click selects and cuts nothing.
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::NONE);
+        assert_eq!(p.tracks[0].regions.len(), 2);
+        // Another Command-click tool: the Mute tool, picked in the toolbar's second menu.
+        s.tracks.cmd_tool = TrackTool::Mute;
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::COMMAND);
+        assert!(p.tracks[0].regions.iter().any(|r| r.params.mute));
+    }
+
+    #[test]
+    fn the_scissors_cut_on_the_snap_grid() {
+        // A click 2.6 beats into "Riff" (bar 2 = beat 4): beat 6.6 of the song.
+        for (snap, cut_bar) in [
+            (Snap::Bar, 3.0),        // the nearest bar line, beat 8
+            (Snap::Beat, 2.75),      // beat 7
+            (Snap::Division, 2.625), // beat 6.5
+            (Snap::Smart, 2.75),     // a beat at this zoom
+        ] {
+            let (mut p, mut s) = drag_rig();
+            let mut h = Harness::new(1400.0, 600.0);
+            s.tracks.snap = snap;
+            s.tracks.tool = TrackTool::Scissors;
+            show(&mut h, &mut p, &mut s);
+            let at = rect_of(&h, 0, 0).left_center() + vec2(2.6 * BAR / 4.0, 0.0);
+            click_with(&mut h, &mut p, &mut s, at, Modifiers::NONE);
+            assert_eq!(
+                places(&p)[0],
+                vec![("Riff", 2.0), ("Riff", cut_bar)],
+                "{}",
+                snap.label()
+            );
+        }
+    }
+
+    #[test]
+    fn each_tool_action_is_one_undo_step() {
+        use crate::undo::History;
+        // Option-Scissors: four pieces, one step back to one region.
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let mut hist = History::new(&p);
+        show(&mut h, &mut p, &mut s);
+        s.tracks.tool = TrackTool::Scissors;
+        let at = rect_of(&h, 0, 0).left_center() + vec2(BAR / 2.0, 0.0);
+        click_with(&mut h, &mut p, &mut s, at, Modifiers::ALT);
+        assert_eq!(p.tracks[0].regions.len(), 4);
+        assert!(hist.record(&p));
+        assert!(hist.undo(&mut p));
+        assert_eq!(places(&p)[0], vec![("Riff", 2.0)]);
+        assert!(!hist.can_undo(), "one step");
+        // The Pencil, the Eraser, the Mute tool: each click one step.
+        for tool in [TrackTool::Pencil, TrackTool::Eraser, TrackTool::Mute] {
+            let (mut p, mut s) = drag_rig();
+            let mut hist = History::new(&p);
+            let before = places(&p).concat().len();
+            show(&mut h, &mut p, &mut s);
+            s.tracks.tool = tool;
+            let at = if tool == TrackTool::Pencil {
+                rect_of(&h, 0, 0).right_center() + vec2(2.0 * BAR, 0.0)
+            } else {
+                rect_of(&h, 0, 0).left_center() + vec2(20.0, 0.0)
+            };
+            click_with(&mut h, &mut p, &mut s, at, Modifiers::NONE);
+            assert!(hist.record(&p), "{tool:?} changed the project");
+            assert!(!hist.record(&p));
+            assert!(hist.undo(&mut p));
+            assert!(!hist.can_undo());
+            assert_eq!(places(&p).concat().len(), before);
+            assert!(!p.tracks[0].regions[0].params.mute);
+        }
+    }
+
+    #[test]
+    fn the_pencil_makes_an_empty_bar_on_an_instrument_track_from_the_grid_line_before() {
+        let (mut p, mut s) = drag_rig();
+        let audio = p.add_track(TrackKind::Audio);
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        s.tracks.tool = TrackTool::Pencil;
+        let riff = rect_of(&h, 0, 0);
+        // Bar 6.7 of the first track (bars 4 on are empty there): at this zoom the snap is a
+        // beat, so the region starts on beat 3 of bar 6 and is a bar long.
+        let x = |bar: f32| riff.left() + (bar - 2.0) * BAR;
+        click_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            pos2(x(6.7), riff.center().y),
+            Modifiers::NONE,
+        );
+        let made = &p.tracks[0].regions[1];
+        assert_eq!((made.start_bar, made.len_bars), (6.5, 1.0));
+        assert!(made.notes.is_empty() && made.audio.is_none());
+        assert_eq!(made.name, p.tracks[0].name);
+        assert_eq!(s.tracks.selection(), vec![(0, 1)]);
+        // With Snap set to Bar it starts on the bar.
+        s.tracks.snap = Snap::Bar;
+        click_with(
+            &mut h,
+            &mut p,
+            &mut s,
+            pos2(x(9.7), riff.center().y),
+            Modifiers::NONE,
+        );
+        assert_eq!(p.tracks[0].regions[2].start_bar, 9.0);
+        // On a region the Pencil is the Pointer: no new region.
+        click_with(&mut h, &mut p, &mut s, riff.center(), Modifiers::NONE);
+        assert_eq!(p.tracks[0].regions.len(), 3);
+        assert_eq!(s.tracks.selection(), vec![(0, 0)]);
+        // An audio track takes no MIDI region.
+        show(&mut h, &mut p, &mut s);
+        let row = h
+            .ctx
+            .read_response(egui::Id::unique(("tracks_area", "lanes")))
+            .unwrap()
+            .rect;
+        let y = row.top() + 70.0 * audio as f32 + 35.0;
+        click_with(&mut h, &mut p, &mut s, pos2(x(6.2), y), Modifiers::NONE);
+        assert!(p.tracks[audio].regions.is_empty());
+    }
+
+    #[test]
+    fn the_gain_tool_drags_audio_regions_up_and_down_in_half_decibels() {
+        let (mut p, mut s) = drag_rig();
+        let t = p.add_track(TrackKind::Audio);
+        let mut take = p.tracks[0].regions[0].clone();
+        take.notes.clear();
+        take.missing = Some(crate::model::MissingAudio {
+            source: "/prowave-test/take.wav".into(),
+            flex: None,
+        });
+        p.tracks[t].regions.push(take);
+        let mut h = Harness::new(1400.0, 600.0);
+        show(&mut h, &mut p, &mut s);
+        s.tracks.tool = TrackTool::Gain;
+        let meters = crate::mixer::Meters::default();
+        let drag = |h: &mut Harness, p: &mut Project, s: &mut crate::UiState, ti, up: f32| {
+            let from = rect_of(h, ti, 0).center();
+            h.time_passes(1.0);
+            h.drag(
+                &[from, from - vec2(0.0, up / 2.0), from - vec2(0.0, up)],
+                PointerButton::Primary,
+                |ui| crate::tracks_area::show(ui, p, s, &meters),
+            );
+        };
+        drag(&mut h, &mut p, &mut s, t, 30.0);
+        assert_eq!(p.tracks[t].regions[0].params.gain_db, 3.0);
+        drag(&mut h, &mut p, &mut s, t, -55.0);
+        assert_eq!(p.tracks[t].regions[0].params.gain_db, -2.5);
+        assert_eq!(p.tracks[t].regions[0].start_bar, 2.0, "it does not move");
+        // A MIDI region has no gain to change, and the Gain tool does not move it.
+        drag(&mut h, &mut p, &mut s, 0, 30.0);
+        assert_eq!(p.tracks[0].regions[0].params.gain_db, 0.0);
+        assert_eq!(places(&p)[0], vec![("Riff", 2.0)]);
+    }
+
+    #[test]
+    fn the_pointer_shows_the_tool_over_the_lanes() {
+        let (mut p, mut s) = drag_rig();
+        let mut h = Harness::new(1400.0, 600.0);
+        let over = middle(&mut h, &mut p, &mut s, 0, 0);
+        let meters = crate::mixer::Meters::default();
+        let look = |h: &mut Harness, p: &mut Project, s: &mut crate::UiState, mods| {
+            h.modifiers = mods;
+            h.move_to(over, |ui| crate::tracks_area::show(ui, p, s, &meters));
+            h.modifiers = Modifiers::NONE;
+            h.cursor
+        };
+        assert_eq!(
+            look(&mut h, &mut p, &mut s, Modifiers::NONE),
+            egui::CursorIcon::Default
+        );
+        // Command held: the Command-click tool (the Marquee), drawn in place of the arrow.
+        let cmd = look(&mut h, &mut p, &mut s, Modifiers::COMMAND);
+        assert_eq!(cmd, egui::CursorIcon::None);
+        for (tool, _, _, _) in TrackTool::ALL.into_iter().skip(1) {
+            s.tracks.tool = tool;
+            assert_eq!(
+                look(&mut h, &mut p, &mut s, Modifiers::NONE),
+                egui::CursorIcon::None,
+                "{tool:?}"
+            );
+        }
     }
 }

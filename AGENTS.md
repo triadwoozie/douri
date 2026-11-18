@@ -1,7 +1,7 @@
 # AGENTS.md: how to work in this repository
 
 For AI coding agents and people. Every statement here was checked against the code on
-2026-11-09. If you find one that is no longer true, fix this file in the same change.
+2026-11-09 (the bounce entry again on 2026-11-18). If you find one that is no longer true, fix this file in the same change.
 
 ## What this is
 
@@ -15,10 +15,19 @@ is not built. `README.md` has a status count made from the code (`cargo xtask st
 | Path | What it is | Main files |
 | :--- | :--- | :--- |
 | `crates/prowave-engine` | The real-time engine and everything that makes or changes sound. | `core.rs` (`EngineCore::process`, the `Command` enum), `output.rs` (cpal stream, the command sender), `duplex.rs` (macOS input and output in one callback), `wasapi.rs` (Windows output), `disk.rs` and `mapped.rs` (audio files streamed from disk), `capture.rs` (recording), `fx.rs`, `convolver.rs` and `native_fx/` (effects), `routing.rs` (sends, buses, automation), `synth.rs`, `soundfont.rs`, `sample_rack.rs` (instruments), `plugin_track.rs`, `au.rs`, `vst3.rs`, `plugin_handle.rs` (plug-in hosting, macOS), `prerender.rs` (playback threads), `tempo_map.rs`, `triple.rs` (lock-free state for the interface), `flex.rs`, `analysis.rs`, `note_render.rs` (offline audio work) |
-| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
+| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `autosave.rs` and `recovery.rs` (recovery copies, the session folder), `crash_log.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
 | `crates/prowave-project` | The `.prowave` file format: a zip with `project.json` and `media/`. | `lib.rs` |
 | `xtask` | The checks, run as `cargo xtask <task>`. | `main.rs`, `bench.rs`, `status.rs` |
 
+`crates/chimera` is a vendored voice engine (MIT, not a workspace member, not linted or tested
+as ours): the Singer's and Vocal Top Line's voice (`chimera_singer.rs`).
+
+The control interface: the running app takes requests on a Unix socket (`control.sock` in the
+settings folder) so that another program on the Mac, such as an AI coding agent, can drive it.
+The app's side is `crates/prowave-app/src/control_api/` (`registry.rs` is the one list of
+methods; `mod.rs` says how a request travels), the client and MCP server is the crate
+`crates/prowavectl`, and `docs/CONTROL-API.md` is the reference (its method table is made from
+the registry; a test fails when it is stale).
 
 There are no other crates. Earlier versions of this file named `prowave-dsp`,
 `prowave-instruments`, `prowave-midi`, `prowave-mixer`, `prowave-plugin-host`, `prowave-ui`,
@@ -34,12 +43,19 @@ Do not assume any of these:
   there is no plug-in hosting on Windows or Linux). A plug-in that crashes takes Pro Wave with
   it. Two things limit the damage: each `.vst3` bundle is scanned in a helper process with a
   30-second limit (`vst3_scan.rs`), and a plug-in that crashed the program while opening is not
-  opened automatically again (`plugins.rs`, "crash quarantine").
+  opened automatically again (`plugins.rs`, "crash quarantine"). A project with unsaved
+  changes has a recovery copy written every two minutes, offered at the next start
+  (`autosave.rs`, `recovery.rs`); a panic is written to `crash.log` in the settings folder
+  (`crash_log.rs`); and a block a plug-in returns with a NaN or an infinity in it is made
+  silent (`plugin_track.rs`).
 - **No CLAP hosting.**
-- **No bounce, mixdown or audio export of a project.** The Bounce and Export menu entries are
-  listed in `menus.rs` but are not enabled.
-- **No autosave, and no "save changes?" question when the program quits.** New, Open and Close
-  Project do ask.
+- **No second renderer.** The bounce (`bounce.rs`: File > Bounce > Project or Section, File >
+  Export > All Tracks as Audio Files, `export.bounce`) plays the project through
+  `EngineCore::process` itself, on an engine that has no sound card (`Engine::offline`), set
+  up by `EngineSync` and `PluginHost` as the running one is. Do not add code that renders a
+  project another way: it would leave things out. Bounce > Regions in Place, Tracks in Place,
+  Join of audio from different files and Convert Regions to New Audio Files use it too
+  (`bounce_in_place.rs`). Track as Audio File and MP3 or FLAC files are not built.
 - **No fuzzing.**
 - **No browser version.** The only wasm work is a build check of the engine (see below).
 - **No preset-compatibility tests** against Logic presets.

@@ -1495,7 +1495,7 @@ mod tests {
     #[test]
     fn the_shipped_script_lists_its_plug_ins() {
         let text = shipped_list();
-        assert_eq!(text.lines().count(), 183);
+        assert_eq!(text.lines().count(), 190);
         for l in text.lines() {
             let f: Vec<&str> = l.split('\t').collect();
             assert_eq!(f.len(), 8, "{l:?}");
@@ -1504,17 +1504,17 @@ mod tests {
             assert!(parse_entry(l).is_some(), "{l:?}");
         }
         let ids: HashSet<&str> = text.lines().filter_map(|l| l.split('\t').next()).collect();
-        assert_eq!(ids.len(), 183, "an id is listed twice");
+        assert_eq!(ids.len(), 190, "an id is listed twice");
         let list = parse_list(&text);
-        assert_eq!(list.len(), 183);
+        assert_eq!(list.len(), 190);
         let n = |f: &dyn Fn(&Entry) -> bool| list.iter().filter(|e| f(e)).count();
-        assert_eq!(n(&|e| e.kind == Kind::Synth), 58);
-        assert_eq!(n(&|e| e.kind == Kind::Effect), 125);
-        assert_eq!(n(&|e| e.mode == Mode::Auto), 140);
+        assert_eq!(n(&|e| e.kind == Kind::Synth), 63);
+        assert_eq!(n(&|e| e.kind == Kind::Effect), 127);
+        assert_eq!(n(&|e| e.mode == Mode::Auto), 147);
         assert_eq!(n(&|e| e.mode == Mode::Manual), 43);
         for e in &list {
             assert!(
-                ["", "Needs account", "Free edition"].contains(&e.tag.as_str()),
+                ["", "Needs account", "Free edition", "Needs ROM"].contains(&e.tag.as_str()),
                 "{e:?}"
             );
             assert!(

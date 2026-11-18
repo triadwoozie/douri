@@ -450,6 +450,24 @@ impl AuInstance {
         self.kind
     }
 
+    /// Tells the unit it renders offline, for an engine with no sound card
+    /// (`kAudioUnitProperty_OfflineRender`): one that loads samples or works in the background
+    /// then finishes each block before it returns it. A unit without the property refuses
+    /// it, which is fine. Returns whether it took it.
+    pub fn set_offline_render(&self, on: bool) -> bool {
+        let flag = u32::from(on);
+        // SAFETY: a property set on a unit this instance owns; `flag` lives across the call.
+        unsafe {
+            set_prop(
+                self.unit,
+                objc2_audio_toolbox::kAudioUnitProperty_OfflineRender,
+                kAudioUnitScope_Global,
+                0,
+                &flag,
+            ) == 0
+        }
+    }
+
     /// A handle for the plug-in's window and settings, used from the UI thread while the
     /// instance renders on the audio thread. Valid as long as this instance lives.
     pub fn handle(&self) -> AuHandle {

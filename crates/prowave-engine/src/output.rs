@@ -552,6 +552,45 @@ enum Output {
     /// macOS: one Core Audio callback for input and output.
     #[cfg(target_os = "macos")]
     Duplex(#[allow(dead_code)] Box<crate::duplex::DuplexStream>),
+    /// No sound card: the blocks are asked for through an [`OfflineOutput`].
+    Offline,
+}
+
+/// The audio side of an engine that has no sound card ([`Engine::offline`]). Whoever holds it
+/// asks for the blocks, as fast as it likes and on any one thread: the engine then plays what
+/// its [`Engine`] was sent exactly as the callback of a sound card would, only not in real
+/// time. Every plug-in runs in the block it is asked for (there are no playback threads), and
+/// an audio region waits for the disk thread instead of dropping out.
+pub struct OfflineOutput {
+    core: EngineCore,
+    shared: Arc<Shared>,
+    block: usize,
+}
+
+impl OfflineOutput {
+    /// Frames of every block: `out` of [`OfflineOutput::process`] holds twice as many samples.
+    pub fn block_frames(&self) -> usize {
+        self.block
+    }
+
+    /// The next block, interleaved stereo. Blocks of another size than
+    /// [`OfflineOutput::block_frames`] put the delay compensation out, so there are none.
+    pub fn process(&mut self, out: &mut [f32]) {
+        debug_assert_eq!(out.len(), self.block * 2);
+        self.core.set_device_time(self.block as u32, 0, 0);
+        self.core.process(out);
+    }
+
+    /// Once the transport plays, it stops by itself after `frames` frames, on the frame;
+    /// what is on its way out then (releases, tails, delay compensation) is still heard.
+    pub fn play_for(&mut self, frames: u64) {
+        self.core.play_for(frames);
+    }
+
+    /// Audio regions that had frames left out so far (a file that could not be read).
+    pub fn underruns(&self) -> u32 {
+        self.shared.underruns.load(Ordering::Relaxed)
+    }
 }
 
 /// macOS: the way to the input inside the duplex callback.
@@ -1171,6 +1210,54 @@ impl Engine {
         })
     }
 
+    /// An engine with no sound card, at `sample_rate`, played in blocks of `block_frames`
+    /// through the [`OfflineOutput`] that comes with it (a bounce). It takes the commands a
+    /// running engine takes and streams audio regions from disk the same way.
+    pub fn offline(
+        sample_rate: u32,
+        block_frames: usize,
+    ) -> Result<(Self, OfflineOutput), EngineError> {
+        let block = block_frames.clamp(16, MAX_BLOCK_FRAMES);
+        let (tx, rx) = RingBuffer::<Command>::new(1024);
+        let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
+        let shared = Arc::new(Shared::new());
+        let mut core = EngineCore::new(sample_rate, rx, gtx, shared.clone());
+        let readers = core.take_readers();
+        let state = readers
+            .state
+            .ok_or_else(|| EngineError::Backend("no state reader".into()))?;
+        let engine = Self {
+            commands: CommandQueue::new(tx, grx, shared.clone()),
+            shared: shared.clone(),
+            state,
+            midi_out: readers.midi,
+            mtc_out: readers.mtc,
+            audition: readers.audition,
+            sample_rate,
+            device_name: "offline".into(),
+            _output: Output::Offline,
+            _worker: Vec::new(),
+            worker_trash: Vec::new(),
+            disk: DiskThread::spawn(),
+            #[cfg(target_os = "macos")]
+            tap: None,
+            buffer_frames: block as u32,
+        };
+        Ok((
+            engine,
+            OfflineOutput {
+                core,
+                shared,
+                block,
+            },
+        ))
+    }
+
+    /// Whether this engine has no sound card ([`Engine::offline`]).
+    pub fn is_offline(&self) -> bool {
+        matches!(self._output, Output::Offline)
+    }
+
     /// Queue a command (Logic: transport or project edit). Returns `false` if command or
     /// state-reclamation capacity is exhausted. The rejected command is freed here on the
     /// UI thread; callers must retry their desired change before marking it synchronized.
@@ -1247,6 +1334,14 @@ impl Engine {
         edit: ClipEdit,
         clips_in_song: usize,
     ) -> AudioClip {
+        // Without a sound card the clip waits for the disk thread instead of dropping out.
+        if self.is_offline() {
+            let ring = crate::disk::ring_blocks_for(clips_in_song);
+            return self
+                .disk
+                .stream_with_ring(file, self.sample_rate, track, start_beat, edit, ring)
+                .waiting();
+        }
         self.disk.stream_with_ring(
             file,
             self.sample_rate,
@@ -1266,6 +1361,12 @@ impl Engine {
         start_beat: f64,
         edit: ClipEdit,
     ) -> AudioClip {
+        if self.is_offline() {
+            return self
+                .disk
+                .stream_with(file, self.sample_rate, track, start_beat, edit)
+                .waiting();
+        }
         self.disk
             .stream_with(file, self.sample_rate, track, start_beat, edit)
     }

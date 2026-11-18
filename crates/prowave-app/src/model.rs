@@ -188,6 +188,8 @@ pub struct RegionParams {
     /// and again after its end for this many quarter notes; the last repeat may be cut short.
     /// 0 = no loop.
     pub loop_beats: f32,
+    /// The region's own colour (Logic: View > Show Colors), or `None` for its track's colour.
+    pub color: Option<egui::Color32>,
 }
 
 /// Project Settings > Metronome: the click's level range in dB, and where it starts (the
@@ -393,6 +395,9 @@ pub struct Track {
     pub indent: u8,
     /// A `Folder` track whose tracks are hidden in the Tracks area.
     pub folded: bool,
+    /// Hidden in the Tracks area (Logic: the track header's Hide key, Control-H); it still
+    /// plays. Shown again while Track > Show Hidden Tracks (H) is on.
+    pub hidden: bool,
     /// The `Vca` track (its index in the project) that moves this track's level, if any.
     pub vca: Option<usize>,
     /// External MIDI tracks: the MIDI output port (by name) and the channel, 1-16.
@@ -411,6 +416,9 @@ pub struct Track {
     pub au_effects: Vec<crate::plugins::PluginSlot>,
     /// The icon the user picked (Track > Assign Track Icon); `None` is the automatic one.
     pub icon: Option<crate::track_icons::IconKind>,
+    /// Vocal Top Line: this track's notes and lyrics are sung (or this audio track holds what
+    /// a Vocal Top Line track sang). See `vocal.rs`.
+    pub vocal: Option<crate::vocal::VocalRole>,
 }
 
 /// A SoundFont instrument on a track: the `.sf2` file and the preset played from it.
@@ -462,12 +470,14 @@ impl Track {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
             au_instrument: None,
             au_effects: Vec::new(),
             icon: None,
+            vocal: None,
             midi_channel: 1,
             midi_program: None,
             midi_bank: None,
@@ -629,6 +639,9 @@ pub struct Project {
     pub show_master_track: bool,
     /// Parts hidden from every track header (Track > Configure Track Header). Empty: all shown.
     pub header_hidden: Vec<HeaderPart>,
+    /// The region (track, region) the Solo tool is held on: the only one heard meanwhile
+    /// (`region_solo.rs`). Not saved.
+    pub region_solo: Option<(usize, usize)>,
 }
 
 /// Deterministic pseudo-random so demo content is stable across runs.
@@ -722,6 +735,7 @@ impl Project {
         let mut p = Self::demo();
         p.name = "Untitled".into();
         p.tracks = vec![Track {
+            vocal: None,
             name: "Inst 1".into(),
             kind: TrackKind::Instrument,
             color: crate::theme::TRACK_PALETTE[1],
@@ -742,6 +756,7 @@ impl Project {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
@@ -765,6 +780,7 @@ impl Project {
         let [orange, black, grey] = [0, 1, 2].map(|i| crate::theme::TRACK_PALETTE[i]);
         let graphite = crate::theme::TRACK_PALETTE[9];
         let mk = |name: &str, kind, color, ins: Vec<&'static str>, seed, vol| Track {
+            vocal: None,
             name: name.into(),
             kind,
             color,
@@ -800,6 +816,7 @@ impl Project {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
@@ -897,6 +914,7 @@ impl Project {
             song_rev: 0,
             show_master_track: false,
             header_hidden: Vec::new(),
+            region_solo: None,
             tempo_ramp: false,
             groove_onsets: Default::default(),
             groove_key: 0,
@@ -1322,6 +1340,65 @@ impl Project {
         let regions = &mut self.tracks[ti].regions;
         regions[ri] = left;
         regions.insert(ri + 1, right);
+        self.song_rev += 1;
+        true
+    }
+
+    /// A drag of a region's left edge (Logic: resize from the lower-left corner): region `ri`
+    /// of track `ti` now starts at `at` (quarter notes) and still ends where it did. What it
+    /// plays stays where it was in the song: an audio region starts that much later (or
+    /// earlier) in its file, and it cannot start before the file does; the notes of a MIDI
+    /// region keep their places, and the ones that began before the new start are dropped, as
+    /// when the region is cut there. Take folders, Pattern and Drummer regions and reversed
+    /// audio are left alone. Returns whether the region changed.
+    pub fn resize_region_start(&mut self, ti: usize, ri: usize, at: f64) -> bool {
+        let Some(r) = self.tracks.get(ti).and_then(|t| t.regions.get(ri)) else {
+            return false;
+        };
+        if r.folder.is_some() || r.generated.is_some() || r.params.reverse {
+            return false;
+        }
+        let (start, end) = (self.region_start_beats(r), self.region_end_beats(r));
+        let audio = r.audio.is_some() || r.missing.is_some();
+        // An audio region reaches back no further than the start of its file.
+        let earliest = if audio {
+            let map = self.tempo_map();
+            map.beat_at((map.seconds_at(start) - r.params.offset_secs).max(0.0))
+        } else {
+            0.0
+        };
+        let at = at.max(earliest).max(0.0).min(end - 1.0 / 64.0);
+        if (at - start).abs() < 1e-9 {
+            return false;
+        }
+        let rel = (at - start) as f32;
+        let secs = self.seconds_between(start, at);
+        let new_bar = self.beats_to_bar(at) as f32 + 1.0;
+        let mut out = r.clone();
+        out.len_bars = (r.start_bar + r.len_bars - new_bar).max(1.0 / 64.0);
+        out.start_bar = new_bar;
+        out.notes = r
+            .notes
+            .iter()
+            .filter(|n| n.start >= rel)
+            .map(|n| Note {
+                start: n.start - rel,
+                ..*n
+            })
+            .collect();
+        out.controls = r
+            .controls
+            .iter()
+            .filter(|c| c.start >= rel)
+            .map(|c| Control {
+                start: c.start - rel,
+                ..*c
+            })
+            .collect();
+        if audio {
+            out.params.offset_secs = (r.params.offset_secs + secs).max(0.0);
+        }
+        self.tracks[ti].regions[ri] = out;
         self.song_rev += 1;
         true
     }

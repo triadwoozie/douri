@@ -412,9 +412,16 @@ impl AudioRecorder {
         let start = p.position_beats.max(0.0);
         let (start_bar, mut error) = (p.beats_to_bar(start) as f32 + 1.0, None);
         for t in targets(p) {
-            self.count += 1;
             let track = &mut p.tracks[t];
-            let path = dir.join(file_name(&track.name, self.count));
+            // Never over a take that is there already (a recovered project's session folder
+            // holds the takes of the run before).
+            let path = loop {
+                self.count += 1;
+                let path = dir.join(file_name(&track.name, self.count));
+                if !path.exists() {
+                    break path;
+                }
+            };
             match capture.start(&path, track.input, latency_us) {
                 Ok(id) => {
                     track.regions.push(Region {

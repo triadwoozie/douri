@@ -1,0 +1,15 @@
+[package]
+name = "prowavectl"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Command-line client and MCP server for Pro Wave's control API"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+serde_json = "1.0.154"
+base64 = "0.23"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"

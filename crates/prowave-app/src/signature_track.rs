@@ -13,7 +13,7 @@ use crate::model::{Project, SIGNATURE_DENOMINATORS};
 use crate::theme;
 use crate::tracks_area::hw_tracks;
 use crate::widgets::context_menu;
-use egui::{pos2, Rect, Sense, Stroke, Ui};
+use egui::{pos2, Rect, Sense, Ui};
 
 /// Height of the Signature track, in points.
 pub const HEIGHT: f32 = 28.0;
@@ -115,10 +115,9 @@ pub fn show(
         if x1 < lane.left() || x0 > lane.right() {
             continue;
         }
-        let block = Rect::from_min_max(
-            pos2(x0 + 1.0, lane.top() + 4.0),
-            pos2(x1 - 1.0, lane.bottom() - 4.0),
-        );
+        // From its time to the next one's, edge to edge on the grid (the ink line at its
+        // start, drawn inside it, tells it from the one before).
+        let block = Rect::from_min_max(pos2(x0, lane.top() + 4.0), pos2(x1, lane.bottom() - 4.0));
         let resp = ui.interact(
             block.intersect(lane),
             egui::Id::unique(("signature", i)),
@@ -163,10 +162,12 @@ pub fn show(
 
         // In the well: an ink line where the signature changes, and the signature in
         // segments after it.
-        g.vline(
+        hw_tracks::time_line(
+            &g,
             x0,
             lane.top() + 2.0..=lane.bottom() - 2.0,
-            Stroke::new(2.0, theme::INK),
+            2.0,
+            theme::INK,
         );
         let text_x = x0.max(lane.left()) + 7.0;
         if text_x + 10.0 < x1 {

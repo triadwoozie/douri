@@ -16,6 +16,7 @@ pub mod au;
 #[cfg(target_os = "macos")]
 mod au_host_time;
 mod audition;
+mod bass808;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
 mod clock;
@@ -49,6 +50,7 @@ mod rt_thread;
 mod sample_buf;
 mod sample_rack;
 pub mod sample_tools;
+mod singer;
 mod soundfont;
 mod spectral;
 mod synth;
@@ -72,6 +74,12 @@ pub use crate::analysis::{
 };
 pub use crate::audition::{
     AuditionLayers, AuditionMsg, AuditionRemote, AuditionStatus, Auditioner, AUDITION_LAYERS,
+};
+pub use crate::bass808::{
+    can_sustain as bass808_can_sustain, measure_root_hz as bass808_measure_root_hz,
+    prepare_sample as bass808_prepare_sample, Bass808, Bass808Param, Bass808Params, Bass808Spec,
+    BASS808_DECAY, BASS808_HIGH_PASS, BASS808_PARAMS, BASS808_RELEASE, BASS808_SINE,
+    BASS808_SQUARE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::capture::{
@@ -111,6 +119,7 @@ pub use crate::native_fx::{
     NativeFxInfo, NativeParam, NativePreset,
 };
 pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
+pub use crate::output::OfflineOutput;
 pub use crate::output::{peak_of, Engine, EngineError};
 pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
 pub use crate::plugin_track::{BlockProcessor, BlockTransport, PluginTrack};
@@ -126,6 +135,7 @@ pub use crate::sample_buf::SampleBuf;
 pub use crate::sample_rack::{
     RackChannelSpec, SampleRack, MAX_RACK_CHANNELS, RACK_BASE_NOTE, RACK_PARAMS_PER_CHANNEL,
 };
+pub use crate::singer::{SingerClip, SingerPlayer, SingerRemote, SingerScore, SingerStatus};
 pub use crate::soundfont::{PresetInfo, SfPlayer, SoundFontBank, MAX_SOUNDFONT_BYTES};
 pub use crate::spectral::{
     paint, spectrogram, Fft, FreqScale, PaintSettings, Picture, Spectrogram, MAX_PAINT_SECONDS,

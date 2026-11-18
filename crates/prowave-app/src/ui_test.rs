@@ -9,6 +9,8 @@ pub struct Harness {
     pub size: Vec2,
     /// The keys held down for the next frames (Shift, Option, Command…).
     pub modifiers: Modifiers,
+    /// The pointer's look the last frame asked for.
+    pub cursor: egui::CursorIcon,
 }
 
 impl Harness {
@@ -18,6 +20,7 @@ impl Harness {
             time: 0.0,
             size: Vec2::new(width, height),
             modifiers: Modifiers::NONE,
+            cursor: egui::CursorIcon::Default,
         }
     }
 
@@ -33,6 +36,7 @@ impl Harness {
             ..RawInput::default()
         };
         let mut out = self.ctx.run_ui(input, |u| ui(u));
+        self.cursor = out.platform_output.cursor_icon;
         // Nothing paints these frames, so the texture changes are not needed.
         out.textures_delta.clear();
     }
@@ -118,9 +122,22 @@ pub fn render_png(
     height: f32,
     scale: f32,
     background: egui::Color32,
-    mut ui: impl FnMut(&mut Ui),
+    ui: impl FnMut(&mut Ui),
     path: &std::path::Path,
 ) -> Result<(), String> {
+    let (img, _) = render_image(width, height, scale, background, ui)?;
+    img.save(path).map_err(|e| e.to_string())
+}
+
+/// [`render_png`] without the file: the picture (`scale` pixels per point) and the context it
+/// was drawn in, so a test can read both the pixels and where egui laid things out.
+pub fn render_image(
+    width: f32,
+    height: f32,
+    scale: f32,
+    background: egui::Color32,
+    mut ui: impl FnMut(&mut Ui),
+) -> Result<(image::RgbaImage, Context), String> {
     use egui::epaint::{ImageData, Primitive};
     use std::collections::HashMap;
     let ctx = Context::default();
@@ -254,7 +271,7 @@ pub fn render_png(
             image::Rgba([c[0], c[1], c[2], 255]),
         );
     }
-    out.save(path).map_err(|e| e.to_string())
+    Ok((out, ctx))
 }
 
 /// Bilinear texel lookup (premultiplied RGBA, 0..1).

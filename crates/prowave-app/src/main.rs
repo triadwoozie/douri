@@ -13,17 +13,35 @@ static ALLOC_COUNTER: prowave_engine::rt_alloc::CountingAlloc =
 
 mod alloc_report;
 mod apple_loops;
+#[cfg(test)]
+mod arrange_integration_tests;
+mod arrange_nav;
+mod arrange_select;
+mod arrange_zoom;
 mod audio_rec;
 mod automation;
 mod automation_ui;
+mod autosave;
+mod bass808;
 mod bench;
+mod bounce;
+mod bounce_in_place;
+mod bounce_ui;
 mod channel_rack;
 mod clock_follow;
 mod clock_in;
+/// The control interface: another program drives the app over a Unix socket.
+#[cfg(unix)]
+mod control_api;
+mod crash_log;
+mod cycle_area;
+mod drag_modes;
 mod dsp_load_check;
 mod engine_mode;
 mod engine_sync;
 mod event_list;
+mod fade_curve;
+mod fade_tool;
 mod file_browser;
 mod file_commands;
 mod fit_grid;
@@ -41,10 +59,16 @@ mod hw_sampler;
 mod i18n;
 mod import;
 mod inspector;
+mod key_commands;
 mod lyrics;
+mod lyrics_ui;
 #[cfg(test)]
 mod manual_pictures;
+mod marker_edit;
+mod marker_list;
+mod marker_number;
 mod marker_track;
+mod marquee;
 mod menus;
 mod midi_draw;
 mod midi_file;
@@ -74,13 +98,21 @@ mod project_io;
 mod project_settings;
 mod recent_files;
 mod recorder;
+mod recovery;
+mod region_colors;
+mod region_commands;
 mod region_edit;
 mod region_loop;
+mod region_solo;
 mod score;
 mod scripter;
+mod section_edit;
+mod select_similar;
+mod shuffle_edit;
 mod side_panes;
 mod signature_track;
 mod smart_tempo;
+mod snap_grid;
 mod soundfonts;
 mod space_designer_ui;
 mod spectrogram_view;
@@ -88,11 +120,14 @@ mod start_screen;
 mod step_editor;
 mod sync_menu;
 mod sysex;
+mod take_pack;
 mod takes;
 mod tempo_track;
 mod theme;
+mod track_commands;
 mod track_dialogs;
 mod track_icons;
+mod track_selection;
 mod tracks_area;
 mod transform;
 mod transform_ui;
@@ -105,7 +140,10 @@ mod ui_test;
 mod undo;
 // The private build has no updater: its releases (on the upstream project) are not this
 // program, which is built from its own checkout.
+mod chimera_singer;
+mod singer;
 mod updater;
+mod vocal;
 mod vst3_scan;
 mod widgets;
 mod window_chrome;
@@ -158,10 +196,22 @@ pub struct UiState {
     pub update_check: bool,
     /// Help > Check for Updates Automatically.
     pub update_auto: bool,
+    /// Help > Allow Control by Other Programs (the public edition's control socket is off
+    /// until it is chosen).
+    #[cfg(unix)]
+    pub control_allowed: bool,
     /// Record > Software Monitoring (off: listen on the audio interface's direct monitoring).
     pub software_monitoring: bool,
     /// Record > Low Latency Mode.
     pub low_latency: bool,
+    /// Vocal Top Line: its window and the renders running.
+    pub vocal: vocal::VocalState,
+    /// The Singer instrument's window and a bounce asked for.
+    pub singer: singer::SingerUi,
+    /// The 808's window.
+    pub bass808: bass808::Bass808Ui,
+    /// File > Bounce: its dialog, the bounce running and how the last one ended.
+    pub bounce: bounce_ui::BounceUi,
     /// File > Import > Paint Image to Audio…: its dialog and the paintings running.
     pub paint: paint_image::PaintState,
     /// The Spectrogram window (an audio region's Show Spectrogram).
@@ -220,6 +270,8 @@ pub struct UiState {
     pub settings_tab: Option<project_settings::SettingsTab>,
     /// A Track menu window (rename, colour, icon, header), when one is open.
     pub track_dialog: Option<track_dialogs::TrackDialog>,
+    /// What the Tracks area's track commands remember (`track_commands`).
+    pub arrange: track_commands::ArrangeView,
     /// The audio output the engine plays on (name, sample rate), for Project Settings > Audio.
     pub audio_info: Option<(String, u32)>,
     /// Event list > SysEx…: the message being typed, while its window is open.
@@ -293,8 +345,14 @@ impl UiState {
             open_paths: Vec::new(),
             update_check: false,
             update_auto: true,
+            #[cfg(unix)]
+            control_allowed: false,
             software_monitoring: true,
             low_latency: false,
+            vocal: vocal::VocalState::default(),
+            singer: singer::SingerUi::default(),
+            bass808: bass808::Bass808Ui::default(),
+            bounce: bounce_ui::BounceUi::default(),
             paint: paint_image::PaintState::default(),
             spectrogram: spectrogram_view::SpectrogramView::default(),
             native_window: None,
@@ -331,6 +389,7 @@ impl UiState {
             show_midi_fx: false,
             settings_tab: None,
             track_dialog: None,
+            arrange: track_commands::ArrangeView::default(),
             audio_info: None,
             sysex_entry: None,
             transform: transform_ui::TransformView::default(),
@@ -365,7 +424,12 @@ impl UiState {
     fn reset_views(&mut self) {
         self.status = None;
         self.tracks = tracks_area::TracksView::default();
-        self.mixer = mixer::MixerView::default();
+        // The plug-ins on this Mac and the input choices are not the project's: they stay.
+        self.mixer = mixer::MixerView {
+            au_list: std::mem::take(&mut self.mixer.au_list),
+            inputs: std::mem::take(&mut self.mixer.inputs),
+            ..mixer::MixerView::default()
+        };
         self.group_watch.reset();
         self.inspector = inspector::InspectorView::default();
         self.piano = piano_roll::PianoView::default();
@@ -406,6 +470,11 @@ struct App {
     clock_follow: clock_follow::ClockFollower,
     /// Makes the transport follow that time code.
     chase: mtc_in::Chase,
+    /// Recovery copies of a project with unsaved changes, and the question at quit.
+    autosave: autosave::Autosave,
+    /// The control socket and what its methods keep (`None`: turned off, or it could not open).
+    #[cfg(unix)]
+    control: Option<control_api::Control>,
     /// Looks for a newer release and installs it (Windows).
     updater: updater::Updater,
 }
@@ -413,11 +482,25 @@ struct App {
 impl App {
     /// Help > Check for Updates…, and the updater's notices and install.
     fn updates(&mut self, ctx: &egui::Context) {
+        // Help > Allow Control by Other Programs: the socket opens or closes with it.
+        #[cfg(unix)]
+        if self.ui.control_allowed != self.control.is_some() {
+            self.control = if self.ui.control_allowed {
+                control_api::Control::start()
+            } else {
+                None
+            };
+            if self.ui.control_allowed && self.control.is_none() {
+                self.ui.control_allowed = false;
+            }
+        }
         if std::mem::take(&mut self.ui.update_check) {
             self.updater.start_check(true);
         }
         let unsaved = || file_commands::unsaved_polled(&self.project, &self.saved, &self.plugins);
         if self.updater.show(ctx, &unsaved) == updater::Action::Quit {
+            // The updater has asked about unsaved changes itself.
+            self.autosave.quit_confirmed = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -679,6 +762,7 @@ impl App {
             }
         }
         let engine = self.sync.as_mut().map(|sync| &mut sync.engine);
+        let mut take_ended = false;
         match s.audio_rec.update(
             &mut s.mixer.inputs,
             &mut self.project,
@@ -687,6 +771,7 @@ impl App {
             ctx,
         ) {
             audio_rec::Outcome::Finished(kept, warning) => {
+                take_ended = true;
                 if kept.is_some() {
                     s.tracks.set_primary(kept);
                 }
@@ -696,6 +781,10 @@ impl App {
             }
             audio_rec::Outcome::Failed(message) => s.status = Some(message),
             audio_rec::Outcome::Nothing => {}
+        }
+        if take_ended {
+            // A take is only safe once a recovery copy points at it: do not wait two minutes.
+            self.autosave.due_now();
         }
         // The feed is taken once the engine has room for it (a refused one would be lost).
         if let Some(sync) = self.sync.as_mut() {
@@ -752,15 +841,28 @@ impl App {
         }
         self.show_save_prompt(ctx);
         self.show_missing_audio(ctx);
+        self.show_recover_prompt(ctx);
+        self.autosave_tick(ctx);
         window_chrome::resize_edges(ctx);
     }
 }
 
 impl eframe::App for App {
+    /// Before every frame, and when a control request arrives while the window is hidden:
+    /// the requests that are waiting are run.
+    #[cfg(unix)]
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        control_api::pump(self, ctx);
+        // A bounce goes on while the window is hidden, too.
+        bounce_ui::tend(self, ctx);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let _frame_time = bench::frame_timer();
         let dt = ctx.input(|i| i.stable_dt) as f64;
+        #[cfg(not(unix))]
+        bounce_ui::tend(self, &ctx);
         // Before anything reads the keyboard: Caps Lock and the keys that play notes.
         musical_typing::poll(&ctx, &mut self.ui.typing);
         musical_typing::show(&ctx, &mut self.ui.typing);
@@ -773,7 +875,10 @@ impl eframe::App for App {
         // PROWAVE_QUIT_AFTER=<seconds>: closes the window then, the way a user quits (for
         // checking the quit path with plug-ins loaded).
         match vst3_scan::quit_due() {
-            Some(true) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Some(true) => {
+                self.autosave.quit_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             Some(false) => ctx.request_repaint_after(std::time::Duration::from_millis(250)),
             None => {}
         }
@@ -795,11 +900,16 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
+        // The close button or Quit: asks about unsaved changes before the window goes.
+        self.handle_close_request(&ctx);
         if self.ui.chooser.is_some() {
             self.chooser_ui(ui, &ctx);
             return;
         }
-        if (!ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)))
+        key_commands::begin_frame(&ctx);
+        // Shift-Space is Play from Selection (`key_commands`).
+        if (!ctx.egui_wants_keyboard_input()
+            && ctx.input(|i| i.key_pressed(egui::Key::Space) && !i.modifiers.shift))
             || musical_typing::take_plugin_space()
         {
             self.project.playing = !self.project.playing;
@@ -904,6 +1014,30 @@ impl eframe::App for App {
             self.plugins.tend_windows();
             self.plugins.show_units(&ctx, &mut self.project);
             let opened = self.ui.mixer.open_plugin.take();
+            // The Singer opens its own window.
+            let opened = opened.filter(|(uid, _)| {
+                let sings = self.project.tracks.iter().any(|t| {
+                    t.au_instrument
+                        .as_ref()
+                        .is_some_and(|s| s.uid == *uid && singer::is_singer(s))
+                });
+                if sings {
+                    self.ui.singer.open = Some(*uid);
+                }
+                !sings
+            });
+            // The 808 opens its own window.
+            let opened = opened.filter(|(uid, _)| {
+                let is_808 = self.project.tracks.iter().any(|t| {
+                    t.au_instrument
+                        .as_ref()
+                        .is_some_and(|s| s.uid == *uid && bass808::is_808(s))
+                });
+                if is_808 {
+                    self.ui.bass808.open = Some(*uid);
+                }
+                !is_808
+            });
             if let Some((uid, title)) = opened {
                 // The Channel Rack opens its own window; an Audio Unit its plug-in's.
                 let rack = self.project.tracks.iter().enumerate().find(|(_, t)| {
@@ -1065,6 +1199,11 @@ impl eframe::App for App {
         side_panes::tips(&ctx, &mut self.ui);
         native_fx_ui::show(&ctx, &mut self.project, &mut self.ui);
         piano_roll::show_window(&ctx, &mut self.project, &mut self.ui);
+        vocal::frame(&ctx, &mut self.project, &mut self.ui);
+        singer::frame(&ctx, &mut self.project, &mut self.ui);
+        singer::run_bounce(&mut self.project, &mut self.plugins, &mut self.ui);
+        bass808::show(&ctx, &mut self.project, &mut self.ui);
+        bounce_ui::show(&ctx, &self.project, &mut self.ui);
         paint_image::show(&ctx, &mut self.project, &mut self.ui);
         spectrogram_view::show(&ctx, &mut self.ui);
         for path in std::mem::take(&mut self.ui.open_paths) {
@@ -1115,15 +1254,20 @@ impl eframe::App for App {
         if self.ui.settings_tab.is_some() && self.ui.audio_info.is_none() {
             self.ui.audio_info = self.sync.as_ref().map(|s| s.audio_info());
         }
+        // Before the dialogs: the Return that closes one is not also Go to Beginning.
+        key_commands::handle(&ctx, &mut self.project, &mut self.ui);
         project_settings::show(&ctx, &mut self.project, &mut self.ui);
         track_dialogs::show(&ctx, &mut self.project, &mut self.ui);
+        region_colors::show(&ctx, &mut self.project, &mut self.ui);
         midi_fx_ui::show(&ctx, &mut self.project, &mut self.ui);
         transform_ui::show(&ctx, &mut self.project, &mut self.ui);
         smart_tempo::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
         self.show_missing_audio(&ctx);
+        self.show_recover_prompt(&ctx);
         self.track_history(&ctx);
+        self.autosave_tick(&ctx);
         window_chrome::resize_edges(&ctx);
     }
 }
@@ -1402,6 +1546,12 @@ fn main() -> eframe::Result {
     if let Some(i) = plain.iter().position(|a| a == "--midi-timing") {
         std::process::exit(midi_timing::run(&plain[i + 1..]));
     }
+    // The app without a window, serving the control socket (see control_api/headless.rs).
+    #[cfg(unix)]
+    if let Some(i) = plain.iter().position(|a| a == "--control-headless") {
+        init_logging();
+        vst3_scan::exit_now(control_api::headless::run(&plain[i + 1..]));
+    }
     let all_args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let bench_out = bench::requested(&all_args);
     let shots_dir = bench::shots_requested(&all_args);
@@ -1415,6 +1565,8 @@ fn main() -> eframe::Result {
         APP_NAME,
         env!("CARGO_PKG_VERSION")
     ));
+    // Every panic is written to the crash log first (see crash_log.rs).
+    crash_log::install();
     init_logging();
     i18n::init();
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
@@ -1517,11 +1669,46 @@ fn main() -> eframe::Result {
                 clock_in: clock_in::ClockIn::default(),
                 clock_follow: clock_follow::ClockFollower::default(),
                 chase: mtc_in::Chase::default(),
+                autosave: autosave::Autosave::off(),
+                #[cfg(unix)]
+                control: None,
                 updater: updater::Updater::new(),
             };
+            if measuring {
+                // A measuring run closes by itself and never asks.
+                app.autosave.quit_confirmed = true;
+            } else {
+                // This run's session folder and its lock, then what earlier runs left: a
+                // recovery copy from a run that crashed, or was quit without saving audio it
+                // had recorded, is offered.
+                recovery::session_dir();
+                let offers = recovery::sweep(&recovery::root(), std::time::SystemTime::now());
+                for c in &offers {
+                    tracing::info!(
+                        "recovery copy of \"{}\" in {} ({})",
+                        c.name,
+                        c.dir.display(),
+                        if c.unclean {
+                            "that run did not end cleanly"
+                        } else {
+                            "that run was quit without saving"
+                        }
+                    );
+                }
+                app.autosave = autosave::Autosave::on(offers);
+                // The control socket (off with PROWAVE_NO_CONTROL=1).
+                #[cfg(unix)]
+                {
+                    app.control = control_api::Control::start();
+                }
+            }
             if !measuring {
                 {
                     app.ui.update_auto = updater::auto_enabled();
+                    #[cfg(unix)]
+                    {
+                        app.ui.control_allowed = control_api::allowed();
+                    }
                 }
                 app.ui.software_monitoring = audio_rec::software_monitoring();
                 app.ui.fit.on_drop = fit_grid::on_drop_setting();
@@ -1720,8 +1907,9 @@ fn main() -> eframe::Result {
             Ok(Box::new(app))
         }),
     );
-    // The app (and with it the engine's open media files) is gone by now.
-    project_io::remove_session_media();
+    // The app (and with it the engine's open media files) is gone by now: the session folder
+    // goes too, unless it holds a recovery copy for the next start.
+    recovery::end_session();
     // OpenGL can't draw to this window: the app never started, so try the system's own API.
     let step = std::env::var(graphics::STEP_VAR)
         .ok()

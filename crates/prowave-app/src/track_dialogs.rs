@@ -21,10 +21,40 @@ pub const MAX_TRACK_NAME: usize = 64;
 /// A window of the Track menu, and the track it is about (by index).
 #[derive(Clone, Debug, PartialEq)]
 pub enum TrackDialog {
-    Rename { track: usize, name: String },
-    Color { track: usize },
-    Icon { track: usize },
+    Rename {
+        track: usize,
+        name: String,
+    },
+    Color {
+        track: usize,
+    },
+    Icon {
+        track: usize,
+    },
     Header,
+    /// Navigate > Go to Position (Slash): the position typed so far.
+    GoTo {
+        text: String,
+    },
+    /// Navigate > Go to Marker Number… (Option-Slash): the number typed so far
+    /// (`marker_number.rs`).
+    GoToMarker {
+        text: String,
+    },
+    /// Edit > Repeat… (Command-R): the number of copies typed so far and the adjustment.
+    Repeat {
+        copies: String,
+        adjust: crate::region_commands::RepeatAdjust,
+    },
+    /// Edit > Rename Regions (Shift-N): the name typed so far.
+    RenameRegions {
+        name: String,
+    },
+    /// Track > New Tracks…: the kind of track and how many.
+    NewTracks {
+        kind: crate::model::TrackKind,
+        count: u32,
+    },
 }
 
 /// The track a dialog is about, if it is about one.
@@ -34,7 +64,12 @@ impl TrackDialog {
             TrackDialog::Rename { track, .. }
             | TrackDialog::Color { track }
             | TrackDialog::Icon { track } => Some(*track),
-            TrackDialog::Header => None,
+            TrackDialog::Header
+            | TrackDialog::GoTo { .. }
+            | TrackDialog::GoToMarker { .. }
+            | TrackDialog::Repeat { .. }
+            | TrackDialog::RenameRegions { .. }
+            | TrackDialog::NewTracks { .. } => None,
         }
     }
 }
@@ -73,7 +108,7 @@ pub fn set_header_part(p: &mut Project, part: HeaderPart, shown: bool) {
 
 /// A key laid out in `ui`, `w` wide, with `label`; latched and its LED lit while `on` (when
 /// `led`).
-fn dialog_key(
+pub(crate) fn dialog_key(
     ui: &mut egui::Ui,
     id: &str,
     label: &str,
@@ -99,7 +134,7 @@ fn dialog_key(
 }
 
 /// A key's width for `label` (8 a letter, and room for the LED).
-fn key_w(label: &str) -> f32 {
+pub(crate) fn key_w(label: &str) -> f32 {
     (label.chars().count() as f32 * 8.0 + 36.0).max(72.0)
 }
 
@@ -115,12 +150,25 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     if dialog.track().is_some_and(|t| t >= p.tracks.len()) {
         return;
     }
+    // A window of another kind took this one's place (from a menu): the fields of the next
+    // one take the keyboard again.
+    let kind = std::mem::discriminant(&dialog);
+    let kind_id = egui::Id::unique("track_dialog_kind");
+    if ctx.data(|d| d.get_temp::<std::mem::Discriminant<TrackDialog>>(kind_id)) != Some(kind) {
+        forget_focus(ctx);
+        ctx.data_mut(|d| d.insert_temp(kind_id, kind));
+    }
     let mut done = false;
     let title = match &dialog {
         TrackDialog::Rename { .. } => tr("Rename Track"),
         TrackDialog::Color { .. } => tr("Assign Track Color…"),
         TrackDialog::Icon { .. } => tr("Assign Track Icon…"),
         TrackDialog::Header => tr("Configure Track Header…"),
+        TrackDialog::GoTo { .. } => tr("Go to Position…"),
+        TrackDialog::GoToMarker { .. } => tr("Go to Marker Number…"),
+        TrackDialog::Repeat { .. } => tr("Repeat Regions"),
+        TrackDialog::RenameRegions { .. } => tr("Rename Regions"),
+        TrackDialog::NewTracks { .. } => tr("New Tracks…"),
     };
     let (_, closed) = hwm::dialog(
         ctx,
@@ -132,11 +180,44 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
             TrackDialog::Color { track } => color_body(ui, p, *track, &mut done),
             TrackDialog::Icon { track } => icon_body(ui, p, *track, &mut done),
             TrackDialog::Header => header_body(ui, p),
+            TrackDialog::GoTo { text } => go_to_body(ui, p, text, &mut done),
+            TrackDialog::GoToMarker { text } => crate::marker_number::body(ui, p, text, &mut done),
+            TrackDialog::Repeat { copies, adjust } => {
+                crate::region_commands::repeat_body(ui, p, s, copies, adjust, &mut done)
+            }
+            TrackDialog::RenameRegions { name } => {
+                crate::region_commands::rename_body(ui, p, s, name, &mut done)
+            }
+            TrackDialog::NewTracks { kind, count } => {
+                crate::track_commands::new_tracks_body(ui, p, s, kind, count, &mut done)
+            }
         },
     );
     if !closed && !done {
         s.track_dialog = Some(dialog);
+    } else {
+        // However the window closed (OK, Cancel or its close key), the next one of each kind
+        // takes the keyboard again.
+        forget_focus(ctx);
+        ctx.data_mut(|d| {
+            d.remove::<std::mem::Discriminant<TrackDialog>>(egui::Id::unique("track_dialog_kind"))
+        });
     }
+}
+
+/// Forgets that the windows' text fields were given the keyboard, so each takes it again when
+/// it opens (`region_commands::focus_once`, `marker_number`, Rename Track).
+fn forget_focus(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        for id in [
+            egui::Id::unique("rename_track_opened"),
+            egui::Id::unique(("region_dialog_opened", "repeat")),
+            egui::Id::unique(("region_dialog_opened", "rename")),
+            egui::Id::unique("go_to_marker_number_opened"),
+        ] {
+            d.remove::<bool>(id);
+        }
+    });
 }
 
 /// Rename Track: the name in a dark field, then OK (the black key) and Cancel at the right.
@@ -149,7 +230,7 @@ fn rename_body(
 ) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
     hw::paint_field(ui.painter(), r, "", false, false);
-    ui.put(
+    let field = ui.put(
         r.shrink2(vec2(4.0, 0.0)),
         egui::TextEdit::singleline(name)
             .char_limit(MAX_TRACK_NAME)
@@ -161,6 +242,14 @@ fn rename_body(
             .min_size(vec2(r.width() - 8.0, r.height()))
             .align(egui::Align2::LEFT_CENTER),
     );
+    // The name can be typed as soon as the window opens (Logic's Name Track, Shift-Return),
+    // and Return takes it.
+    let opened = egui::Id::unique("rename_track_opened");
+    if !ui.data(|d| d.get_temp::<bool>(opened).unwrap_or(false)) {
+        field.request_focus();
+        ui.data_mut(|d| d.insert_temp(opened, true));
+    }
+    let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     ui.add_space(4.0);
     let ok = !name.trim().is_empty();
     ui.allocate_ui_with_layout(
@@ -177,11 +266,88 @@ fn rename_body(
                     dialog_key(ui, "ok", ok_label, key_w(ok_label), Cap::Dark, false, false)
                 })
                 .inner;
-            if ok_clicked && rename_track(p, track, name.as_str()) {
+            if (ok_clicked || entered) && rename_track(p, track, name.as_str()) {
                 *done = true;
             }
         },
     );
+}
+
+/// A position as Go to Position shows and reads it: bar and beat, from 1 (`5.3`).
+pub fn position_text(p: &Project, beats: f64) -> String {
+    let bar = p.beats_to_bar(beats.max(0.0)).floor();
+    let beat = ((beats - p.bar_to_beats(bar)) / p.beat_unit_at(beats)).floor();
+    format!("{}.{}", bar as i64 + 1, beat as i64 + 1)
+}
+
+/// The position typed in Go to Position, in quarter notes: a bar (`5`), or a bar and a beat
+/// with a point, a space or a colon between them (`5.3`, `5 3`). Fractions are read too
+/// (`5.2.5` is not; `5 2.5` is halfway through beat 2). `None` when it is not a position.
+pub fn parse_position(p: &Project, text: &str) -> Option<f64> {
+    let text = text.trim();
+    let (bar, beat) = match text.split_once([' ', ':']) {
+        Some((bar, beat)) => (bar.trim(), beat.trim()),
+        None => text.split_once('.').unwrap_or((text, "1")),
+    };
+    let bar: f64 = bar.parse().ok()?;
+    let beat: f64 = beat.parse().ok()?;
+    if !(bar >= 1.0 && beat >= 1.0 && bar.is_finite() && beat.is_finite()) {
+        return None;
+    }
+    let bar = bar.floor().min(f64::from(crate::model::MAX_SIG_BAR));
+    let start = p.bar_to_beats(bar - 1.0);
+    Some(start + (beat - 1.0) * p.beat_unit_at(start))
+}
+
+/// Go to Position: the position in a dark field (Return goes there), then OK and Cancel.
+fn go_to_body(ui: &mut egui::Ui, p: &mut Project, text: &mut String, done: &mut bool) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
+    hw::paint_field(ui.painter(), r, "", false, false);
+    let field = ui.put(
+        r.shrink2(vec2(4.0, 0.0)),
+        egui::TextEdit::singleline(text)
+            .char_limit(16)
+            .font(theme::font(Face::Bold, 13.0))
+            .text_color(theme::ON_DARK)
+            .frame(egui::Frame::NONE)
+            .margin(vec2(6.0, 6.0))
+            .desired_width(r.width() - 8.0)
+            .min_size(vec2(r.width() - 8.0, r.height()))
+            .align(egui::Align2::LEFT_CENTER),
+    );
+    // The field has the keyboard as soon as the window opens, so the position can be typed.
+    let opened = egui::Id::unique("go_to_position_opened");
+    if !ui.data(|d| d.get_temp::<bool>(opened).unwrap_or(false)) {
+        field.request_focus();
+        ui.data_mut(|d| d.insert_temp(opened, true));
+    }
+    let at = parse_position(p, text);
+    let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    ui.add_space(4.0);
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), 30.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            let cancel = tr("Cancel");
+            if dialog_key(ui, "cancel", cancel, key_w(cancel), Cap::Bone, false, false) || escaped {
+                *done = true;
+            }
+            let ok_label = tr("OK");
+            let ok_clicked = ui
+                .add_enabled_ui(at.is_some(), |ui| {
+                    dialog_key(ui, "ok", ok_label, key_w(ok_label), Cap::Dark, false, false)
+                })
+                .inner;
+            if let (true, Some(at)) = (ok_clicked || entered, at) {
+                p.position_beats = at;
+                *done = true;
+            }
+        },
+    );
+    if *done {
+        ui.data_mut(|d| d.remove::<bool>(opened));
+    }
 }
 
 /// Assign Track Color: the track's plate material sixteen times, eight to a row, each with
@@ -366,6 +532,35 @@ pub fn open_for(label: &str, p: &Project) -> Option<TrackDialog> {
 mod tests {
     use super::*;
     use crate::ui_test::Harness;
+
+    #[test]
+    fn go_to_position_reads_a_bar_or_a_bar_and_a_beat() {
+        let p = Project::empty();
+        assert_eq!(parse_position(&p, "5"), Some(16.0));
+        assert_eq!(parse_position(&p, " 5.3 "), Some(18.0));
+        assert_eq!(parse_position(&p, "5 3"), Some(18.0));
+        assert_eq!(parse_position(&p, "5:2.5"), Some(17.5));
+        assert_eq!(parse_position(&p, "1"), Some(0.0));
+        for bad in ["", "0", "x", "5.0", "-2"] {
+            assert_eq!(parse_position(&p, bad), None, "{bad:?}");
+        }
+        assert_eq!(position_text(&p, 18.0), "5.3");
+        assert_eq!(position_text(&p, 0.0), "1.1");
+    }
+
+    #[test]
+    fn go_to_position_moves_the_playhead_when_return_is_pressed() {
+        let mut p = Project::empty();
+        let mut s = crate::UiState::new();
+        s.track_dialog = Some(TrackDialog::GoTo { text: "9".into() });
+        let mut h = Harness::new(900.0, 600.0);
+        h.settle(|ui| show(ui.ctx(), &mut p, &mut s));
+        assert!(s.track_dialog.is_some(), "open until a position is given");
+        h.key(egui::Key::Enter, |ui| show(ui.ctx(), &mut p, &mut s));
+        h.settle(|ui| show(ui.ctx(), &mut p, &mut s));
+        assert_eq!(p.position_beats, 32.0);
+        assert!(s.track_dialog.is_none());
+    }
 
     #[test]
     fn every_colour_and_icon_has_a_distinct_choice() {

@@ -272,7 +272,7 @@ fn automation_from_doc(t: &prowave_project::TrackDoc) -> crate::model::Automatio
 }
 
 /// The plug-in lanes of a strip from a file.
-fn plugin_lanes_from_doc(
+pub(crate) fn plugin_lanes_from_doc(
     a: &mut crate::model::Automation,
     docs: &[prowave_project::AutoPluginDoc],
 ) {
@@ -289,7 +289,7 @@ fn plugin_lanes_from_doc(
         {
             let points = points_from_doc(target, &l.points);
             if !points.is_empty() {
-                a.plugins.push(crate::model::PluginLane {
+                let mut lane = crate::model::PluginLane {
                     slot: l.slot,
                     param: l.param,
                     plugin: l.plugin.clone(),
@@ -297,7 +297,9 @@ fn plugin_lanes_from_doc(
                     hi: l.hi,
                     stepped: l.stepped,
                     points,
-                });
+                };
+                crate::bass808::update_lane(&mut lane);
+                a.plugins.push(lane);
             }
         }
     }
@@ -528,6 +530,7 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
             height: t.height,
             indent: t.indent,
             folded: t.folded,
+            hidden: t.hidden,
             vca: t.vca,
             midi_port: t.midi_port.clone(),
             midi_channel: t.midi_channel,
@@ -539,6 +542,7 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
             au_instrument: t.au_instrument.as_ref().map(plugin_doc),
             au_effects: t.au_effects.iter().map(plugin_doc).collect(),
             icon: t.icon.map(|k| k.name().to_string()),
+            vocal: t.vocal.as_ref().map(crate::vocal::to_doc),
             input: match t.input {
                 InputSource::Mono(c) | InputSource::Stereo(c) => c,
             },
@@ -663,6 +667,7 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                         }),
                     crossfade: r.params.crossfade,
                     loop_beats: r.params.loop_beats,
+                    color: r.params.color.map(|c| [c.r(), c.g(), c.b()]),
                     pattern: match r.generated.as_ref().map(|g| &g.source) {
                         Some(Generator::Pattern(p)) => Some(pattern_to_doc(p)),
                         _ => None,
@@ -928,6 +933,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     },
                     crossfade: r.crossfade,
                     loop_beats: finite_in(r.loop_beats, 0.0, MAX_BEATS, 0.0),
+                    color: r.color.map(|[r, g, b]| Color32::from_rgb(r, g, b)),
                 },
             };
             // A Flex edit plays its recording until its sound is made again: from the same
@@ -974,6 +980,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
             height: finite_in(t.height, Track::MIN_HEIGHT, Track::MAX_HEIGHT, 1.0),
             indent: t.indent,
             folded: t.folded,
+            hidden: t.hidden,
             vca: t.vca,
             midi_port: port_name(&t.midi_port),
             midi_channel: t.midi_channel.clamp(1, 16),
@@ -986,6 +993,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                 .icon
                 .as_deref()
                 .and_then(crate::track_icons::IconKind::from_name),
+            vocal: t.vocal.as_ref().and_then(crate::vocal::from_doc),
             input: input_source(t.input, t.input_stereo),
             output: if usize::from(t.output) <= prowave_engine::MAX_BUSES {
                 t.output
@@ -1298,14 +1306,14 @@ fn port_name(name: &Option<String>) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
-/// Root of all extracted project media.
-fn media_root() -> PathBuf {
+/// Where the program kept its sessions' media before the recovery folder: the temp folder.
+fn old_media_root() -> PathBuf {
     std::env::temp_dir().join("prowave-media")
 }
 
 /// Where this session's audio recordings go until the project is saved.
 pub fn recordings_dir() -> PathBuf {
-    session_media_dir().join("recordings")
+    crate::recovery::recordings_in(&session_media_dir())
 }
 
 /// A track's input from a project file, which can hold any number.
@@ -1318,9 +1326,10 @@ fn input_source(channel: u16, stereo: bool) -> InputSource {
     }
 }
 
-/// This process's media folder (`<temp>/prowave-media/<pid>`), removed on exit.
+/// This run's media folder: its session folder in the recovery folder (see `recovery.rs`),
+/// removed on exit unless a recovery copy needs it.
 fn session_media_dir() -> PathBuf {
-    media_root().join(std::process::id().to_string())
+    crate::recovery::session_dir()
 }
 
 /// Folder the media of an opened project is extracted to (unique per open).
@@ -1331,23 +1340,21 @@ pub fn media_dir_for(path: &Path) -> PathBuf {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("project");
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    session_media_dir().join(format!("{stem}-{n}"))
-}
-
-/// On exit (after the engine has closed its files): delete the media this session extracted.
-pub fn remove_session_media() {
-    let dir = session_media_dir();
-    if dir.exists() {
-        if let Err(e) = std::fs::remove_dir_all(&dir) {
-            tracing::warn!("cannot remove {}: {e}", dir.display());
+    let session = session_media_dir();
+    // A session folder taken over with a recovered project has folders from the run before.
+    loop {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = session.join(format!("{stem}-{n}"));
+        if !dir.exists() {
+            return dir;
         }
     }
 }
 
-/// On launch: delete media left by sessions that crashed more than `max_age` ago.
+/// On launch: delete media that versions before the recovery folder left in the temp folder
+/// more than `max_age` ago.
 pub fn remove_stale_media(max_age: std::time::Duration) {
-    let Ok(entries) = std::fs::read_dir(media_root()) else {
+    let Ok(entries) = std::fs::read_dir(old_media_root()) else {
         return;
     };
     for e in entries.flatten() {
@@ -1357,16 +1364,16 @@ pub fn remove_stale_media(max_age: std::time::Duration) {
             .ok()
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age > max_age);
-        if old && e.path() != session_media_dir() {
+        if old {
             let _ = std::fs::remove_dir_all(e.path());
         }
     }
 }
 
 /// How a media file is told to the user: its name when it is one of a project's own copies
-/// (they are unpacked to a temporary folder nobody knows), else its whole path.
+/// (they are unpacked to a session folder nobody knows), else its whole path.
 pub fn shown_media(source: &Path) -> String {
-    if source.starts_with(media_root()) {
+    if source.starts_with(crate::recovery::root()) || source.starts_with(old_media_root()) {
         source
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
@@ -1417,7 +1424,7 @@ fn note_archived(path: &Path, files: impl Iterator<Item = (PathBuf, String)>) {
 
 /// The archive and entry that hold the audio of `source`, if that archive is still the file
 /// it was.
-fn archived(source: &Path) -> Option<(PathBuf, String)> {
+pub(crate) fn archived(source: &Path) -> Option<(PathBuf, String)> {
     let map = ARCHIVED.lock().ok()?;
     let (stamp, entry) = map.as_ref()?.get(source)?;
     (ArchiveStamp::of(&stamp.path).as_ref() == Some(stamp))

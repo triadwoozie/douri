@@ -1,8 +1,10 @@
 //! Inspector (Logic Pro: the "i" panel): Region Inspector, Track Inspector and the two
 //! channel strips (selected track and its output).
 //!
-//! Works today: Region Mute, Quantize, Transpose, Velocity, and for audio regions Gain, Fade
-//! In / Out, Curve and Reverse; Track Transpose, Velocity,
+//! Works today: Region Mute, Loop, Quantize, Transpose, Velocity, and for audio regions Gain,
+//! Fade In / Out, Curve and Reverse, each on every selected region (`region_commands::
+//! spread_params`); a double-click on the region's name renames the selected regions (Logic:
+//! the top line of the Region Inspector); Track Transpose, Velocity,
 //! Key Limit and Vel Limit (all applied non-destructively when the engine song is built);
 //! both channel strips (fader, pan, M/S, meters). Fields Logic has that are not implemented
 //! yet keep their black fields with dim print and do nothing.
@@ -127,7 +129,8 @@ fn label_ink(enabled: bool) -> Color32 {
 }
 
 /// A section head (A.2: inspector section heads): a disclosure triangle, the title in
-/// silkscreen ink, the name in print colour, and a rule under it. Returns true when toggled.
+/// silkscreen ink, the name in print colour, and a rule under it. Returns its response (clicked:
+/// toggled).
 fn section_header(
     ui: &Ui,
     g: &Painter,
@@ -136,7 +139,7 @@ fn section_header(
     open: bool,
     title: &str,
     name: &str,
-) -> bool {
+) -> egui::Response {
     let resp = ui.interact(r, id(("section", key)), Sense::click());
     if resp.hovered() {
         g.rect_filled(r, 0.0, Color32::from_black_alpha(8));
@@ -190,7 +193,7 @@ fn section_header(
         r.bottom() - 4.0,
         Stroke::new(1.0, theme::INK2.gamma_multiply(0.35)),
     );
-    resp.clicked()
+    resp
 }
 
 /// A row label: silkscreen caps, right-aligned against the value column (shrunk to fit).
@@ -333,7 +336,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         p.tracks[t].regions[r].name.clone()
     });
     let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
-    if section_header(
+    let head = section_header(
         ui,
         &g,
         hdr,
@@ -341,8 +344,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         s.inspector.region_open,
         tr("Region:"),
         &region_name,
-    ) {
+    );
+    if head.clicked() {
         s.inspector.region_open = !s.inspector.region_open;
+    }
+    // A double-click on the header opens Rename Regions for the selected regions (Logic: the
+    // top line of the Region Inspector). Its two clicks open and close the section again.
+    if sel.is_some() && head.double_clicked() {
+        crate::menus::apply("Rename Regions", p, s);
     }
     y += HEADER_H + 2.0;
     if s.inspector.region_open {
@@ -351,9 +360,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         });
         let has = sel.is_some();
         let midi = has && !is_audio;
-        let mut params = sel
+        let before = sel
             .map(|(t, r)| p.tracks[t].regions[r].params)
             .unwrap_or_default();
+        let mut params = before;
         let vx = left + VALUE_LEFT;
         let vw = w - VALUE_LEFT - 10.0;
 
@@ -361,6 +371,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         if checkbox(ui, &g, pos2(vx, y), "region_mute", params.mute, has) {
             params.mute = !params.mute;
         }
+        y += ROW_H;
+        // Loop: each selected region loops up to the next region on its track (as L does).
+        label(&g, left, y, tr("Loop:"), has);
+        let looped = params.loop_beats > 0.0;
+        let loop_click = checkbox(ui, &g, pos2(vx, y), "region_loop", looped, has);
         y += ROW_H;
         label(&g, left, y, tr("Quantize:"), midi);
         let q_text = QUANTIZE
@@ -505,10 +520,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         }
         y += ROW_H;
 
-        if let Some((t, r)) = sel {
-            if p.tracks[t].regions[r].params != params {
-                p.tracks[t].regions[r].params = params;
-                changed_song = true;
+        if let Some(primary) = sel {
+            changed_song |=
+                crate::region_commands::spread_params(p, &s.tracks, primary, before, params);
+            if loop_click {
+                changed_song |= crate::region_commands::set_loop(p, &s.tracks, !looped);
             }
         }
         y += 4.0;
@@ -526,7 +542,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         s.inspector.track_open,
         tr("Track:"),
         &track_name,
-    ) {
+    )
+    .clicked()
+    {
         s.inspector.track_open = !s.inspector.track_open;
     }
     y += HEADER_H + 2.0;

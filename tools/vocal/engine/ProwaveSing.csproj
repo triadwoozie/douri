@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pro Wave's headless singer: renders a score with OpenUtau.Core (its DiffSinger runtime),
+       no window. Built by tools/vocal/setup.sh against a pinned OpenUtau checkout.
+       The assembly is named OpenUtau.Test because OpenUtau.Core opens its internals (the
+       phonemizer runner, the export adapter) to that name only. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>OpenUtau.Test</AssemblyName>
+    <RootNamespace>ProwaveSing</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(OpenUtauDir)/OpenUtau.Core/OpenUtau.Core.csproj" />
+    <ProjectReference Include="$(OpenUtauDir)/OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj" />
+  </ItemGroup>
+</Project>

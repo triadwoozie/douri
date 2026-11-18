@@ -63,6 +63,11 @@ krakli-kxtra	synth	KXtra	Krakli	auto		https://www.krakli.com/	Hybrid FM synth wi
 krakli-rmpx	synth	RMPx	Krakli	auto		https://www.krakli.com/	Physical modelling, FM and supersaw oscillator sections.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=RMPX_64bit\.zip	first
 krakli-sk7	synth	SK7	Krakli	auto		https://www.krakli.com/	Styled after a 1970s synth.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=SK7_64bit\.zip	first
 krakli-xakt	synth	Xakt	Krakli	auto		https://www.krakli.com/	Combines two additive waveforms. Randomize.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=XAKT\.zip	first
+lemus-ro-drums-808	synth	ro-drums-808	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-808 model; MIDI plays the voices. Without your own CPU ROM there is no sequencer. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-808-[0-9.]+-mac\.pkg"	first
+lemus-ro-drums-909	synth	ro-drums-909	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-909 model; MIDI plays the voices. Without your own program ROM there is no sequencer. Open source.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-909-[0-9.]+-mac\.pkg"	first
+lemus-ro-mono-101	synth	ro-mono-101	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland SH-101 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-101-[0-9.]+-mac\.pkg"	first
+lemus-ro-mono-303	synth	ro-mono-303	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TB-303 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-303-[0-9.]+-mac\.pkg"	first
+lemus-ac-digital-vc	synth	ac-digital-vc	Lemus	auto	Needs ROM	https://github.com/lemus-dev/lemus/releases	Access Virus C: runs the real firmware, so it is silent until you add your own Virus C ROM. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ac-digital-vc-[0-9.]+-mac\.pkg"	first
 midilab-jc303	synth	JC303	midilab	auto		https://github.com/midilab/jc303/releases	Roland TB-303 bass line clone. Open source.	https://api.github.com/repos/midilab/jc303/releases	https://github\.com/[^"]+/releases/download/[^"]+/jc303-[0-9.]+-macos[_-]universal-plugins\.zip"	first
 socalabs-organ	synth	Organ	SocaLabs	auto		https://socalabs.com/synths/organ/	Tonewheel organ with drawbars, vibrato and chorus.	https://socalabs.com/files/get.php?id=Organ.pkg		first
 socalabs-papu	synth	PAPU	SocaLabs	auto		https://socalabs.com/synths/papu/	Nintendo Game Boy sound chip.	https://socalabs.com/files/get.php?id=PAPU.pkg		first
@@ -84,6 +89,7 @@ u-he-tyrell-n6	synth	Tyrell N6	u-he	auto		https://u-he.com/products/tyrelln6/	Vi
 u-he-zebralette-3	synth	Zebralette 3	u-he	manual		https://u-he.com/products/zebralette3/	One-oscillator synth from u-he's Zebra line.			
 adb-records-adb-smart-eq	effect	ADB Smart EQ	ADB Records	auto		https://adbrecords.com/adbsmarteq/	Adaptive EQ: four engines correct resonances and tonal balance, plus a 12-band manual EQ.	https://api.github.com/repos/adbrecords/ADB-Smart-EQ/releases	https://github\.com/[^"]+/releases/download/[^"]+/ADB_Smart_EQ_[0-9.]+_macOS\.zip"	first
 airwindows-airwindows-consolidated	effect	Airwindows Consolidated	Airwindows	auto		https://github.com/baconpaul/airwin2rack/releases	The Airwindows effects in one plug-in. Open source.	https://api.github.com/repos/baconpaul/airwin2rack/releases	https://github\.com/[^"]+/releases/download/[^"]+/airwindows-consolidated-macOS-[^"]+\.dmg"	first
+analog-obsession-mastertone	effect	MasterTone	Analog Obsession	auto		https://www.patreon.com/analogobsession	Transformer-balanced active Baxandall EQ.	https://analogobsession.com/wp-content/uploads/2026/11/MasterTone_1.1.pkg		first
 auburn-sounds-couture	effect	Couture	Auburn Sounds	auto	Free edition	https://www.auburnsounds.com/products/Couture.html	Dynamics: transient shaping.	https://www.auburnsounds.com/products/Couture.html	[^"]*downloads/Couture-FREE-[0-9.]+\.zip	first
 auburn-sounds-graillon-3	effect	Graillon 3	Auburn Sounds	auto	Free edition	https://www.auburnsounds.com/products/Graillon.html	Live voice changer and pitch correction.	https://www.auburnsounds.com/products/Graillon.html	[^"]*downloads/Graillon-FREE-[0-9.]+\.zip	first
 auburn-sounds-inner-pitch-2	effect	Inner Pitch 2	Auburn Sounds	auto	Free edition	https://www.auburnsounds.com/products/InnerPitch.html	Pitch changer.	https://www.auburnsounds.com/products/InnerPitch.html	[^"]*downloads/Inner-Pitch-FREE-[0-9.]+\.zip	first
@@ -108,6 +114,7 @@ full-bucket-music-fbvc	effect	FBVC	Full Bucket Music	auto		https://www.fullbucke
 full-bucket-music-frequency-shifter	effect	Frequency Shifter	Full Bucket Music	auto		https://www.fullbucket.de/music/freqshifter.html	Frequency shifter.	https://www.fullbucket.de/music/freqshifter.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
 full-bucket-music-grain-strain	effect	Grain Strain	Full Bucket Music	auto		https://www.fullbucket.de/music/grainstrain.html	Granular effect.	https://www.fullbucket.de/music/grainstrain.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
 full-bucket-music-phaser	effect	Phaser	Full Bucket Music	auto		https://www.fullbucket.de/music/fbphaser.html	Simulates classic analog phasers.	https://www.fullbucket.de/music/fbphaser.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
+joe-croskey-aurora	effect	Aurora	Joe Croskey	auto		https://joecroskey.com/Aurora	Meter and visualiser: waveform, spectrum, stereo, 3D. Audio passes through unchanged. Open source, preview.	https://joecroskey.com/Aurora	/aurora/downloads/Aurora-[0-9.]+-macOS-universal\.zip	first
 kilohearts-3-band-eq	effect	3-Band EQ	Kilohearts	manual	Needs account	https://kilohearts.com/products/3band_eq	3-band EQ.			
 kilohearts-bitcrush	effect	Bitcrush	Kilohearts	manual	Needs account	https://kilohearts.com/products/bitcrush	Low sample rate and bit depth.			
 kilohearts-channel-mixer	effect	Channel Mixer	Kilohearts	manual	Needs account	https://kilohearts.com/products/channel_mixer	Stereo and phase utility.			
@@ -237,7 +244,25 @@ chmod 700 "$WORK"
 MOUNTS="$WORK/mounts.txt"; : > "$MOUNTS"
 ROOTSH="$WORK/root.sh"; ROOTLOG="$WORK/root.log"; DONE="$WORK/done.txt"
 : > "$DONE"; : > "$ROOTLOG"
+squote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 printf '#!/bin/sh\n' > "$ROOTSH"
+# fix NAME: after an installer, clear quarantine on the plug-in bundle NAME it put in the
+# plug-in folders and, when the maker did not sign it, sign it for this Mac (Apple Silicon
+# refuses unsigned code). Runs as root; a bundle in the user's folder keeps its owner.
+cat >> "$ROOTSH" <<ROOTFIX
+fix() {
+  for d in /Library/Audio/Plug-Ins/Components /Library/Audio/Plug-Ins/VST3 $(squote "$HOME/Library/Audio/Plug-Ins/Components") $(squote "$HOME/Library/Audio/Plug-Ins/VST3"); do
+    f="\$d/\$1"
+    [ -d "\$f" ] || continue
+    u="\$(stat -f %u:%g "\$f")"
+    xattr -dr com.apple.quarantine "\$f" 2>/dev/null
+    if ! codesign --verify --deep "\$f" >/dev/null 2>&1; then
+      codesign --force --deep -s - "\$f" >/dev/null 2>&1 && echo "signed \$f for this Mac"
+    fi
+    chown -R "\$u" "\$f" 2>/dev/null
+  done
+}
+ROOTFIX
 PKGIDS="$WORK/pkgids.txt"; : > "$PKGIDS"
 N_OK=0; N_FAIL=0; N_MANUAL=0
 
@@ -353,8 +378,6 @@ copy_bundle() {
   say "  copied $name to ${dest#$HOME/}"
 }
 
-squote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
-
 # ---- choose rows ----
 ROWS="$WORK/rows.tsv"
 if [ -n "$ONLY" ]; then
@@ -410,7 +433,16 @@ while IFS="$US" read -r id kind name maker mode tag page desc src pat pick; do
     while IFS= read -r p; do
       say "  installer: $(basename "$p")"
       printf 'installer -pkg %s -target / >/dev/null 2>&1 || r=1\n' "$(squote "$p")" >> "$ROOTSH"
+      # the plug-in bundles this installer holds, for fix after it runs
+      ex="$WORK/$id.expand.$RANDOM"
+      if pkgutil --expand "$p" "$ex" >/dev/null 2>&1; then
+        find "$ex" -name Bom -exec lsbom -s {} \; 2>/dev/null | grep -oE '[^/]+\.(component|vst3)(/|$)' | sed 's#/$##' >> "$WORK/$id.inst"
+      fi
+      rm -rf "$ex"
     done < "$WORK/$id.pkgs"
+    if [ -s "$WORK/$id.inst" ]; then
+      sort -u "$WORK/$id.inst" | while IFS= read -r b; do printf 'fix %s\n' "$(squote "$b")"; done >> "$ROOTSH"
+    fi
     printf 'if [ $r = 0 ]; then echo "@@ ok %s"; else echo "@@ fail %s the installer reported an error"; fi\n' "$id" "$id" >> "$ROOTSH"
   elif [ -s "$WORK/$id.bundles" ]; then
     bad=0

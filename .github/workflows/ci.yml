@@ -1,4 +1,5 @@
-# Roadmap Phase 0: CI for macOS, Windows, Linux + wasm. The `check` job runs `cargo xtask check`
+# CI of the public edition: macOS only (the edition is released for macOS; its newer parts have
+# not been built on Windows or Linux) + the engine's wasm build check. The `check` job runs `cargo xtask check`
 # (fmt, clippy -D warnings, tests, rt-check, miri on the triple buffer, cargo-deny, wasm-check;
 # xtask/src/main.rs has the exact list, and every cargo feature set it covers); `bench` checks
 # the lightweight targets on macOS and Windows (`cargo xtask bench`).
@@ -21,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -107,8 +108,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: macos-latest, target: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}

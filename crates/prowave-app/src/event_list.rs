@@ -13,12 +13,12 @@ use crate::UiState;
 use egui::{pos2, vec2, Align2, Rect, Sense, Stroke, Ui};
 
 pub const WIDTH: f32 = 400.0;
-const ROW_H: f32 = 18.0;
+pub(crate) const ROW_H: f32 = 18.0;
 const TICKS_PER_BEAT: i64 = 960;
 const TICKS_PER_DIVISION: i64 = 240;
 /// The title row (a menu row with keys) and the column titles.
-const BAR_H: f32 = 46.0;
-const COLS_H: f32 = 24.0;
+pub(crate) const BAR_H: f32 = 46.0;
+pub(crate) const COLS_H: f32 = 24.0;
 /// The columns: right edges of the position, channel, number and value (right-aligned
 /// numbers), and the left edges of the status and the length or info, from the list's left.
 const COL_POS: f32 = 104.0;
@@ -34,6 +34,10 @@ pub struct ListView {
     pub scroll: f32,
     /// Logic's Catch Playhead: the list follows the playhead while the song plays.
     pub follow: bool,
+    /// The Marker list is shown instead of the Event list (see `marker_list.rs`).
+    pub markers: bool,
+    /// Pixels the Marker list is scrolled down.
+    pub marker_scroll: f32,
 }
 
 impl Default for ListView {
@@ -41,6 +45,8 @@ impl Default for ListView {
         Self {
             scroll: 0.0,
             follow: true,
+            markers: false,
+            marker_scroll: 0.0,
         }
     }
 }
@@ -65,6 +71,30 @@ struct Event {
     len: f64,
     /// The note's index in its region (notes of the region edited only).
     note: Option<usize>,
+}
+
+/// The dark well the rows print on, from `y` to the bottom of `area`, in whole rows. Returns
+/// the room for the rows.
+pub(crate) fn rows_well(g: &egui::Painter, area: Rect, y: f32) -> Rect {
+    let well = Rect::from_min_max(pos2(area.left() + 4.0, y + 2.0), area.max - vec2(4.0, 4.0));
+    let rows_fit = ((well.height() - 6.0) / ROW_H).floor().max(0.0);
+    let well = Rect::from_min_size(well.min, vec2(well.width(), rows_fit * ROW_H + 6.0));
+    g.rect_filled(well.translate(vec2(0.0, 1.0)), 3.0, theme::BONE_HI);
+    hw::gradient(
+        g,
+        well,
+        3.0,
+        egui::Color32::from_rgb(0x25, 0x23, 0x21),
+        egui::Color32::from_rgb(0x15, 0x14, 0x13),
+    );
+    hw::inner_shadow(g, well, 3.0, 0.5);
+    g.rect_stroke(
+        well,
+        3.0,
+        Stroke::new(1.0, theme::CAP_EDGE),
+        egui::StrokeKind::Inside,
+    );
+    well.shrink2(vec2(0.0, 3.0))
 }
 
 /// The events to show: those of the selected MIDI region, with the other regions of its track
@@ -169,7 +199,7 @@ fn position_parts(beats: f64, bpb: f64) -> ([i64; 3], i64) {
 }
 
 /// [`position_parts`] for a position in the song: bars have the length of their signature.
-fn position_in(p: &Project, beats: f64) -> ([i64; 3], i64) {
+pub(crate) fn position_in(p: &Project, beats: f64) -> ([i64; 3], i64) {
     let bar0 = p.beats_to_bar(beats).floor();
     let (mut parts, tick) = position_parts(beats - p.bar_to_beats(bar0), p.bar_len(bar0 as u32));
     parts[0] += bar0 as i64;
@@ -177,7 +207,7 @@ fn position_in(p: &Project, beats: f64) -> ([i64; 3], i64) {
 }
 
 /// A length as Logic shows it: bars, beats, divisions and ticks, all counted from zero.
-fn length_parts(len: f64, bpb: f64) -> [i64; 4] {
+pub(crate) fn length_parts(len: f64, bpb: f64) -> [i64; 4] {
     let total = (len * TICKS_PER_BEAT as f64).round().max(0.0) as i64;
     let per_bar = ((bpb * TICKS_PER_BEAT as f64).round() as i64).max(1);
     let rem = total % per_bar;
@@ -295,27 +325,23 @@ fn sysex_window(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
 
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     sysex_window(ui.ctx(), p, s);
+    if s.lists.markers {
+        crate::marker_list::show(ui, p, s);
+        return;
+    }
     let area = ui.max_rect();
     let g = ui.painter_at(area);
     hw::chassis(&g, area);
     let events = events(p, s);
 
-    // Title bar: "EVENT", the playhead's position on a small LCD, SysEx and Catch Playhead
-    // (the Marker, Tempo and Signature lists, the local menus, the event-type filters and the
-    // list's Quantize are not built).
+    // Title bar: the EVENT and MARKER tabs, the playhead's position on a small LCD, SysEx and
+    // Catch Playhead (the Tempo and Signature lists, the local menus, the event-type filters
+    // and the list's Quantize are not built).
     let mut y = area.top();
     let bar = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), BAR_H));
     crate::piano_roll::menu_row(&g, bar);
     let cy = bar.center().y - 1.0;
-    let title = hw::text(
-        &g,
-        pos2(bar.left() + 14.0, cy),
-        Align2::LEFT_CENTER,
-        &tr("Event").to_uppercase(),
-        Face::SilkX,
-        14.0,
-        theme::INK,
-    );
+    let title = crate::marker_list::tabs(ui, &g, bar, s);
     // Catch: a toggle key with the playhead-chasing icon.
     let catch = Rect::from_min_size(pos2(bar.right() - 54.0, cy - 14.0), vec2(44.0, 28.0));
     let resp = crate::piano_roll::icon_key(
@@ -398,25 +424,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     y += COLS_H;
 
     // The rows, bone print on the dark field material, in whole rows.
-    let well = Rect::from_min_max(pos2(area.left() + 4.0, y + 2.0), area.max - vec2(4.0, 4.0));
-    let rows_fit = ((well.height() - 6.0) / ROW_H).floor().max(0.0);
-    let well = Rect::from_min_size(well.min, vec2(well.width(), rows_fit * ROW_H + 6.0));
-    g.rect_filled(well.translate(vec2(0.0, 1.0)), 3.0, theme::BONE_HI);
-    hw::gradient(
-        &g,
-        well,
-        3.0,
-        egui::Color32::from_rgb(0x25, 0x23, 0x21),
-        egui::Color32::from_rgb(0x15, 0x14, 0x13),
-    );
-    hw::inner_shadow(&g, well, 3.0, 0.5);
-    g.rect_stroke(
-        well,
-        3.0,
-        Stroke::new(1.0, theme::CAP_EDGE),
-        egui::StrokeKind::Inside,
-    );
-    let list = well.shrink2(vec2(0.0, 3.0));
+    let list = rows_well(&g, area, y);
     let content_h = events.len() as f32 * ROW_H;
     let max_scroll = (content_h - list.height() + ROW_H).max(0.0);
     let resp = ui.interact(

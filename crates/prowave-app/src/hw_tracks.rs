@@ -130,6 +130,32 @@ pub fn hatch(g: &Painter, rect: Rect, width: f32, period: f32, color: Color32) {
     }
 }
 
+/// The time grid on screen. Every time position in the Tracks area (bar and beat lines,
+/// regions, the cycle, markers, the selection) goes through [`pixel_edge`], so two things that
+/// meet at one beat meet on one pixel boundary, and a region that starts on a bar line starts
+/// on the bar line's pixel column. egui rounds a plain filled rectangle to pixels by itself,
+/// but not the meshes `hw::gradient` builds, nor lines (rounded to pixel centres instead).
+///
+/// `x` (points) moved to the nearest physical pixel boundary at `ppp` pixels per point.
+pub fn pixel_edge(x: f32, ppp: f32) -> f32 {
+    let ppp = ppp.max(1e-3);
+    (x * ppp).round() / ppp
+}
+
+/// A vertical line of the time grid at the pixel edge `x`: it fills the pixel columns from
+/// `x` to the right, `width` points rounded to whole pixels (at least one), so that it covers
+/// the first column of whatever starts at that time.
+pub fn time_line(g: &Painter, x: f32, y: impl Into<egui::Rangef>, width: f32, color: Color32) {
+    let ppp = g.pixels_per_point().max(1e-3);
+    let w = (width * ppp).round().max(1.0) / ppp;
+    let y = y.into();
+    g.rect_filled(
+        Rect::from_min_max(pos2(x, y.min), pos2(x + w, y.max)),
+        0.0,
+        color,
+    );
+}
+
 /// A soft drop shadow under `rect` (blur approximated by stacked translucent rects).
 pub fn drop_shadow(g: &Painter, rect: Rect, radius: f32, dy: f32, alpha: u8) {
     for (grow, k) in [(1.5, 0.35), (0.5, 0.65)] {
@@ -224,23 +250,38 @@ pub fn plate_fill(color: Color32, lit: bool) -> Color32 {
     }
 }
 
+/// The shadow a region casts: only below it, never to the sides, so it does not darken the
+/// region before it on the track (regions that touch in time touch on screen).
+fn shadow_below(g: &Painter, rect: Rect, dy: f32, alpha: u8) {
+    for (h, k) in [(dy + 1.0, 0.35), (dy, 0.65)] {
+        g.rect_filled(
+            Rect::from_min_max(
+                pos2(rect.left(), rect.bottom()),
+                pos2(rect.right(), rect.bottom() + h),
+            ),
+            0.0,
+            Color32::from_black_alpha((f32::from(alpha) * k) as u8),
+        );
+    }
+}
+
 /// A coloured plate (a marker): raised a little, with an ink ring when `lit`.
 pub fn plate(g: &Painter, rect: Rect, color: Color32, lit: bool) {
     if rect.width() <= 0.0 {
         return;
     }
-    drop_shadow(g, rect, 3.0, 1.5, 36);
+    shadow_below(g, rect, 1.5, 36);
     let fill = plate_fill(color, lit);
     hw::gradient(
         g,
         rect,
-        3.0,
+        0.0,
         hw::lerp(fill, Color32::WHITE, 0.08),
         hw::lerp(fill, Color32::BLACK, 0.06),
     );
     g.rect_stroke(
         rect,
-        3.0,
+        0.0,
         Stroke::new(
             1.0,
             if lit {
@@ -258,17 +299,24 @@ pub fn dark_plate(g: &Painter, rect: Rect) {
     if rect.width() <= 0.0 {
         return;
     }
-    g.rect_filled(rect.translate(vec2(0.0, 1.0)), 3.0, theme::BONE_HI);
+    g.rect_filled(
+        Rect::from_min_max(
+            pos2(rect.left(), rect.bottom()),
+            pos2(rect.right(), rect.bottom() + 1.0),
+        ),
+        0.0,
+        theme::BONE_HI,
+    );
     hw::gradient(
         g,
         rect,
-        3.0,
+        0.0,
         Color32::from_rgb(0x25, 0x23, 0x21),
         Color32::from_rgb(0x15, 0x14, 0x13),
     );
     g.rect_stroke(
         rect,
-        3.0,
+        0.0,
         Stroke::new(1.0, theme::CAP_EDGE),
         StrokeKind::Inside,
     );
@@ -554,6 +602,10 @@ pub enum Glyph {
     Mute,
     Zoom,
     Fade,
+    Pencil,
+    Gain,
+    Marquee,
+    Solo,
 }
 
 /// Draws `glyph` `size` points square, centred at `c`, in `color`.
@@ -654,6 +706,37 @@ pub fn glyph(g: &Painter, c: Pos2, size: f32, glyph: Glyph, color: Color32) {
             line(&[(4.0, 5.0), (20.0, 19.0)]);
             line(&[(4.0, 5.0), (4.0, 19.0)]);
         }
+        Glyph::Pencil => {
+            // A pencil from the upper right down to its point at the lower left.
+            line(&[
+                (18.0, 3.5),
+                (21.0, 6.5),
+                (8.0, 19.5),
+                (5.0, 16.5),
+                (18.0, 3.5),
+            ]);
+            fill(&[(5.0, 16.5), (8.0, 19.5), (3.5, 21.0)]);
+        }
+        Glyph::Gain => {
+            // A level arrow up and down beside a fader cap.
+            line(&[(8.0, 4.0), (8.0, 20.0)]);
+            line(&[(4.5, 7.5), (8.0, 4.0), (11.5, 7.5)]);
+            line(&[(4.5, 16.5), (8.0, 20.0), (11.5, 16.5)]);
+            rect(14.0, 9.0, 6.0, 6.0);
+        }
+        Glyph::Marquee => {
+            // A crosshair, as Logic's Marquee pointer.
+            line(&[(12.0, 3.0), (12.0, 9.0)]);
+            line(&[(12.0, 15.0), (12.0, 21.0)]);
+            line(&[(3.0, 12.0), (9.0, 12.0)]);
+            line(&[(15.0, 12.0), (21.0, 12.0)]);
+        }
+        Glyph::Solo => {
+            // A speaker: its box, its cone and one wave.
+            fill(&[(4.0, 9.0), (8.0, 9.0), (8.0, 15.0), (4.0, 15.0)]);
+            fill(&[(8.0, 9.0), (13.0, 4.5), (13.0, 19.5), (8.0, 15.0)]);
+            line(&[(16.5, 8.5), (18.0, 12.0), (16.5, 15.5)]);
+        }
     }
 }
 
@@ -738,10 +821,14 @@ pub fn region_header_h(h: f32) -> f32 {
 
 /// Paints a region in `rect` (body, header with type chip and "NN NAME", outline, drop
 /// shadow). Returns the body under the header, for the notes, hits or waveform.
+///
+/// `rect` is the region's whole stretch of time, edge to edge on the grid: the corners are
+/// square, the outline is drawn inside it and the shadow falls only below it, so regions that
+/// touch in time touch on screen and the outlines are what tell them apart (as in Logic).
 pub fn region(g: &Painter, rect: Rect, rp: &RegionPaint<'_>) -> Rect {
-    let radius = 3.0;
+    let radius = 0.0;
     let faded = rp.muted || rp.dim;
-    drop_shadow(g, rect, radius, 2.0, 46);
+    shadow_below(g, rect, 2.0, 46);
     // Body.
     let body_c = rp.look.body;
     let (top, bottom) = match rp.material {
@@ -896,22 +983,24 @@ pub fn region(g: &Painter, rect: Rect, rp: &RegionPaint<'_>) -> Rect {
             text_c,
         );
     }
-    // Outline: 1 point of ink at 75 %; 2 points of ink outside a selected region, orange
+    // Outline: 1 point of ink at 75 %; 2 points of ink inside a selected region, orange
     // when the selected region is silent (muted, or another track soloed).
     if rp.selected {
         g.rect_stroke(
             rect,
             radius,
             Stroke::new(2.0, if faded { theme::ORANGE } else { theme::INK }),
-            StrokeKind::Outside,
-        );
-    } else {
-        g.rect_stroke(
-            rect,
-            radius,
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(20, 20, 19, 191)),
             StrokeKind::Inside,
         );
+    } else {
+        // On the black MIDI material an ink outline would vanish: there it is a lighter edge,
+        // so two regions that touch still read as two.
+        let edge = if rp.material == Material::Inst && !rp.recording {
+            hw::lerp(rp.look.body, theme::BONE, if faded { 0.15 } else { 0.28 })
+        } else {
+            Color32::from_rgba_unmultiplied(20, 20, 19, 191)
+        };
+        g.rect_stroke(rect, radius, Stroke::new(1.0, edge), StrokeKind::Inside);
     }
     Rect::from_min_max(pos2(rect.left(), head.bottom()), rect.max)
 }
@@ -1026,6 +1115,21 @@ pub fn playhead_flag(g: &Painter, x: f32, top: f32, color: Color32) {
 /// A "bar beat division tick" position as the Hardware LCD sets it: "003 1 1 001".
 pub fn bbdt_text((bar, beat, div, tick): (u32, u32, u32, u32)) -> String {
     format!("{bar:03} {beat} {div} {tick:03}")
+}
+
+/// The pointer of a Tracks area tool other than the Pointer (Logic shows the tool as the
+/// pointer): the system arrow is hidden and this is drawn instead, a small cross on the exact
+/// spot a click acts on and the tool's glyph on a bone chip beside it.
+pub fn tool_cursor(g: &Painter, at: Pos2, glyph: Glyph) {
+    for (w, c) in [(3.0, theme::BONE_HI), (1.0, theme::INK)] {
+        let st = Stroke::new(w, c);
+        g.line_segment([at - vec2(5.0, 0.0), at + vec2(5.0, 0.0)], st);
+        g.line_segment([at - vec2(0.0, 5.0), at + vec2(0.0, 5.0)], st);
+    }
+    let chip = Rect::from_min_size(at + vec2(7.0, 7.0), vec2(22.0, 22.0));
+    g.rect_filled(chip, 3.0, theme::BONE_HI);
+    g.rect_stroke(chip, 3.0, Stroke::new(1.0, theme::INK), StrokeKind::Inside);
+    self::glyph(g, chip.center(), 16.0, glyph, theme::INK);
 }
 
 #[cfg(test)]

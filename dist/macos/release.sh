@@ -35,6 +35,11 @@ lipo -create -output "$APP/Contents/MacOS/prowave" \
   "$TARGET_DIR/aarch64-apple-darwin/release/prowave" \
   "$TARGET_DIR/x86_64-apple-darwin/release/prowave"
 cp dist/macos/prowave.icns "$APP/Contents/Resources/prowave.icns"
+# The licence and the notices of the works inside the program (fonts, CMUdict, CHIMERA, WORLD,
+# the Rust crates).
+cp THIRD-PARTY-NOTICES.md crates/prowave-app/assets/fonts/OFL-*.txt "$APP/Contents/Resources/"
+cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
+cp crates/chimera/LICENSE "$APP/Contents/Resources/CHIMERA-LICENSE.txt"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

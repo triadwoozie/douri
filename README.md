@@ -20,6 +20,19 @@ It is the public edition of a personal fork of [Pro Wave](https://github.com/fab
   plus Channel EQ, Compressor, Space Designer-style convolution reverb, Tape Delay, Chorus,
   Phaser, Overdrive, Filter, Gate, Limiter, multi-band EQ and an amp designer.
 - **Channel Rack:** a step-sequenced sample rack.
+- **808:** a tuned, monophonic 808 bass, synthesized or played from a one-shot you choose.
+- **Bounce:** File > Bounce > Project or Section, File > Export > All Tracks as Audio Files,
+  Bounce Regions or Tracks in Place (WAV or AIFF).
+- **Singer and Vocal Top Line:** type words on Piano Roll notes and the
+  [CHIMERA](https://github.com/jamesondh/chimera-vocal-synth) voice (MIT, a physical model of
+  the vocal tract, built in; nothing to download) sings them. A second singer, DiffSinger, is
+  installed by `bash tools/vocal/setup.sh` (about 800 MB); its voice you download yourself, and
+  that voice's vocoder is licensed for non-commercial use only (the script says so before it
+  installs it; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)).
+- **Control interface:** another program on the Mac (a script, or an AI agent through the MCP
+  server `prowavectl mcp`) can drive the running app over a Unix socket; see
+  [`docs/CONTROL-API.md`](docs/CONTROL-API.md). It is off until you choose Help > Allow Control
+  by Other Programs.
 - **Piano Roll** with Logic's editing commands: quantize, scale quantize, velocity lane, MIDI
   draw lanes; Score, Step and Event List editors.
 - **Pro Wave Tune** (pitch correction, with a drawn correction lane) and the **Pitch Editor**
@@ -41,7 +54,7 @@ to update this section.
 
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
-| Menu entries | 96 | 0 | 201 | 47.76% |
+| Menu entries | 161 | 0 | 278 | 57.91% |
 | Roadmap items | 24 | 14 | 77 | 31.17% |
 <!-- status:end -->
 

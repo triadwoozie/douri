@@ -694,6 +694,8 @@ pub struct PianoView {
     humanize_ticks: u32,
     humanize_vel: u8,
     humanize_seed: u32,
+    /// Typing lyrics on notes (Return) and Paste Lyrics (Vocal Top Line, see `lyrics_ui.rs`).
+    pub lyrics: crate::lyrics_ui::LyricEditor,
 }
 
 impl PianoView {
@@ -757,6 +759,7 @@ impl Default for PianoView {
             humanize_ticks: 20,
             humanize_vel: 10,
             humanize_seed: 0x5eed,
+            lyrics: Default::default(),
         }
     }
 }
@@ -1088,6 +1091,9 @@ fn toolbar(
         }
         if item(ui, can_paste, tr("Paste"), &shortcut_text(ui, cmd, Key::V)) {
             act.ops.push(Op::Paste);
+        }
+        if item(ui, true, tr("Paste Lyrics…"), "") {
+            v.lyrics.open_paste();
         }
         // Logic's Repeat is Command-R; Command-D does the same here.
         if item(ui, has_sel, tr("Repeat"), &shortcut_text(ui, cmd, Key::R)) {
@@ -2001,7 +2007,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     // ---- Tool menu (T)
     let menu_open = v.tool_menu.is_some();
     if let Some(at) = v.tool_menu {
-        let (picked, open) = crate::piano_tools::tool_menu(ui.ctx(), at, v.tool);
+        let (picked, open) = crate::piano_tools::tool_menu(ui.ctx(), "piano", at, v.tool);
         if let Some(t) = picked {
             v.tool = t;
         }
@@ -2937,6 +2943,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let hover_pt = ui
         .input(|i| i.pointer.hover_pos())
         .filter(|pt| grid.contains(*pt));
+    // Lyrics (Vocal Top Line) show on their notes in place of the note names.
+    let sung = notes
+        .iter()
+        .any(|n| !n.lyric.is_empty())
+        .then(|| crate::lyrics::shown(notes));
     for (i, n) in notes.iter().enumerate() {
         let r = note_rect(n, 0.0);
         if !visible(&r) {
@@ -2945,6 +2956,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let selected = v.selected.contains(&i);
         let hot = hover_pt.is_some_and(|pt| r.contains(pt));
         let print = paint_note(&gg, r, n.vel, selected, n.mute, hot);
+        {
+            let lyric = sung.as_ref().map_or("", |s| s[i].as_str());
+            if !lyric.is_empty() && key_h >= 8.0 && r.width() >= 10.0 {
+                hw::text(
+                    &gg.with_clip_rect(r.intersect(grid)),
+                    pos2(r.left() + 4.0, r.center().y - 0.5),
+                    Align2::LEFT_CENTER,
+                    lyric,
+                    Face::Bold,
+                    label_size,
+                    print,
+                );
+                continue;
+            }
+        }
         // The name only where the whole of it fits on the note; never cut short.
         if v.note_labels && key_h >= 10.0 {
             let name = note_edit::note_name(n.pitch);
@@ -3168,6 +3194,24 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let px = x_of(position);
     if px >= grid.left() && px <= grid.right() {
         playhead(&gg, &gr, px, grid, ruler.top() + 1.0);
+    }
+
+    // Lyrics: Return types the selected note's, Tab or Space goes on to the next note.
+    {
+        let lyric_keys = hovered && !menu_open && !ui.ctx().egui_wants_keyboard_input();
+        let lyric_rect = |n: &Note| note_rect(n, 0.0);
+        let notes = &mut p.tracks[ti].regions[ri].notes;
+        if crate::lyrics_ui::show(
+            ui,
+            &mut v.lyrics,
+            notes,
+            &v.selected,
+            grid,
+            lyric_keys,
+            &lyric_rect,
+        ) {
+            v.dirty = true;
+        }
     }
 
     // A click on a dimmed note of another region opens that region, the view kept in place.

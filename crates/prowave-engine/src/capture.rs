@@ -920,12 +920,12 @@ mod tests {
         assert_eq!(&stereo[..4], &[0.0, 1.0, 10.0, 11.0], "Input 1 + 2");
     }
 
-    /// A 16-input interface (an SSL BiG SiX) through the duplex path: sixteen tracks record
+    /// A 16-input interface through the duplex path: sixteen tracks record
     /// at once, each its own input.
     #[test]
     fn sixteen_inputs_record_at_once_each_to_its_own_track() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut cap, mut tap) = Capture::tapped(16, 48_000, "BiG SiX");
+        let (mut cap, mut tap) = Capture::tapped(16, 48_000, "16 In");
         assert_eq!(cap.channels(), 16);
         let paths: Vec<_> = (0..16)
             .map(|c| dir.path().join(format!("in{c}.wav")))

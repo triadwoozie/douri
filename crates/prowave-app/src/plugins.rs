@@ -304,6 +304,9 @@ pub fn choices() -> Vec<AuChoice> {
 
 /// Whether a built-in instrument is made again when its settings change (the Channel Rack).
 fn remade_on_change(s: &PluginSlot) -> bool {
+    if crate::bass808::is_808(s) {
+        return true;
+    }
     crate::channel_rack::is_rack(s)
 }
 
@@ -508,6 +511,20 @@ pub struct PluginHost {
     /// slot they held may run a new instance on another track by then.
     retired_tracks: std::collections::HashSet<usize>,
     master_retired: bool,
+    /// Set on the host of an engine with no sound card (a bounce): what it opens is apart
+    /// from the running app's instruments (see [`OfflineLinks`]).
+    pub(crate) offline: Option<OfflineLinks>,
+}
+
+/// The app's ends of the built-in instruments a host opened for an engine with no sound card.
+/// The running app's instruments are reached through tables by slot uid that the windows and
+/// the frame keep (`singer::attach`, `tune_lane::attach`, ...); a bounce's copies stay out of
+/// those tables, so nothing the app does to its own instruments reaches them and nothing the
+/// bounce does reaches the app's. The bounce hands each what it plays itself.
+#[derive(Default)]
+pub(crate) struct OfflineLinks {
+    pub singers: Vec<(u64, prowave_engine::SingerRemote)>,
+    pub tunes: Vec<(u64, prowave_engine::tune::TuneRemote)>,
 }
 
 /// A plug-in just opened, not yet the engine's.
@@ -525,6 +542,12 @@ impl PluginHost {
     fn register_opened(&mut self) {
         #[cfg(target_os = "macos")]
         for o in std::mem::take(&mut self.opened) {
+            // A bounce's plug-ins have no window to watch.
+            if self.offline.is_some() {
+                self.params.insert(o.uid, o.params);
+                self.handles.insert(o.uid, o.handle);
+                continue;
+            }
             if let prowave_engine::plugin_handle::PluginHandle::Au(h) = &o.handle {
                 let ids: Vec<u32> = o.params.iter().map(|a| a.id).collect();
                 if let Some(w) = prowave_engine::au::AuParamWatch::new(*h, &ids) {
@@ -689,6 +712,17 @@ impl PluginHost {
     /// Reads every running plug-in's settings into the project, before it is saved.
     pub fn save_states(&mut self, p: &mut Project) {
         self.pull_states(p);
+    }
+
+    /// Puts every running plug-in's settings as they are now into `p`, a copy of the project
+    /// (for a recovery copy). Nothing here notes that they were read: the project itself
+    /// still has them as unsaved changes.
+    pub fn states_into(&self, p: &mut Project) {
+        for slot in slots_mut(p) {
+            if let Some(state) = self.live_state(slot.uid) {
+                slot.state = Some(state);
+            }
+        }
     }
 
     /// [`PluginHost::save_states`]; returns the slots whose settings were read.
@@ -1135,10 +1169,28 @@ impl PluginHost {
                 if crate::tune_lane::is_tune(slot) {
                     // Pro Wave Tune hears the project's key and MIDI notes from the app.
                     let (fx, remote) = prowave_engine::open_tune_block(sample_rate, &values);
+                    if let Some(o) = self.offline.as_mut() {
+                        o.tunes.push((slot.uid, remote));
+                        return Some(fx);
+                    }
                     crate::tune_lane::attach(slot.uid, remote);
                     return Some(fx);
                 }
                 return prowave_engine::open_native_block(&slot.id, sample_rate, &values);
+            }
+            if crate::singer::is_singer(slot) {
+                let (player, remote) = prowave_engine::SingerPlayer::new(sample_rate, max_frames);
+                match self.offline.as_mut() {
+                    Some(o) => o.singers.push((slot.uid, remote)),
+                    None => crate::singer::attach(slot.uid, remote),
+                }
+                return Some(Box::new(player));
+            }
+            if crate::bass808::is_808(slot) {
+                let (bass, errors) =
+                    prowave_engine::Bass808::new(&crate::bass808::spec(slot), sample_rate);
+                failed.extend(errors);
+                return Some(Box::new(bass));
             }
             if crate::channel_rack::is_rack(slot) {
                 let (rack, errors) =
@@ -1163,6 +1215,9 @@ impl PluginHost {
             opening(Some(&slot.id));
             let opened = match AuInstance::new(&info, sample_rate, max_frames) {
                 Ok(au) => {
+                    if self.offline.is_some() {
+                        au.set_offline_render(true);
+                    }
                     let h = au.handle();
                     if let Some(state) = &slot.state {
                         h.set_state(state);
@@ -1197,6 +1252,77 @@ impl PluginHost {
         }
     }
 
+    /// Opens track `i`'s Audio FX (the ones not bypassed) again, as new instances apart from
+    /// the running ones, for an offline render (the Singer's bounce). Keep `self` until the
+    /// instances are gone.
+    pub(crate) fn open_effects_offline(
+        &mut self,
+        p: &Project,
+        i: usize,
+        sample_rate: u32,
+        max_frames: usize,
+        failed: &mut Vec<String>,
+    ) -> Vec<Box<dyn prowave_engine::BlockProcessor>> {
+        let Some(t) = p.tracks.get(i) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        #[cfg(target_os = "macos")]
+        for slot in t.au_effects.iter().filter(|s| !s.bypass) {
+            // A copy: the running instance keeps its slot's uid to itself.
+            let mut copy = slot.clone();
+            copy.uid = new_uid();
+            if let Some(fx) = self.open_slot(&mut copy, sample_rate, max_frames, failed) {
+                out.push(fx);
+            }
+        }
+        // They are the caller's, not the engine's: nothing here reaches them.
+        self.forget_opened();
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (sample_rate, max_frames);
+            if t.au_effects.iter().any(|s| !s.bypass) {
+                failed.push("plug-ins run on macOS only".into());
+            }
+        }
+        out
+    }
+
+    /// For the control interface: the running plug-in in slot `uid`, when it is running.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn running(&self, uid: u64) -> Option<&prowave_engine::plugin_handle::PluginHandle> {
+        self.handles.get(&uid)
+    }
+
+    /// For the control interface: whether the plug-in in slot `uid` has its own window open.
+    pub(crate) fn window_is_open(&self, uid: u64) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.windows.get(&uid).is_some_and(|w| w.is_open()) || self.units.contains_key(&uid)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = uid;
+            false
+        }
+    }
+
+    /// For the control interface: closes the window and the rack unit of the plug-in in slot
+    /// `uid`. Returns whether one was open.
+    pub(crate) fn close_window(&mut self, uid: u64) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            let window = self.windows.remove(&uid).is_some();
+            let unit = self.units.remove(&uid).is_some();
+            window || unit
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = uid;
+            false
+        }
+    }
+
     /// Opens the VST3 in `slot` (with the same crash guard as Audio Units).
     #[cfg(target_os = "macos")]
     fn open_vst3(
@@ -1225,6 +1351,11 @@ impl PluginHost {
             return None;
         }
         opening(Some(&slot.id));
+        // A bounce's plug-ins are told they process offline.
+        let _offline = self
+            .offline
+            .is_some()
+            .then(prowave_engine::vst3::OfflineScope::enter);
         let opened =
             match Vst3Instance::new(std::path::Path::new(&path), &cid, sample_rate, max_frames) {
                 Ok(inst) => {

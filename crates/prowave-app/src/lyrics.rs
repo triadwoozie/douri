@@ -1,4 +1,20 @@
 //! Lyrics on notes: each note can carry a word or syllable, kept in the note and saved with it.
+//!
+//! The Vocal Top Line track (see `vocal.rs`) sings them. Like Synthesizer V and UTAU, each
+//! note carries a word, or a sign that it goes on with the word before:
+//!
+//! - a word (`row`, `gently`): the note sings that word, or its first syllable when the next
+//!   notes are `+`;
+//! - `+`: the next syllable of the word before (`gently` `+` sings "gent" then "ly");
+//! - `-`: holds the vowel before (a melisma: `you` `-` `-` `-`).
+//!
+//! Syllables are counted with a dictionary made from CMUdict (the words its vowels count
+//! differently from the spelling rules; `tools/vocal/syllables.py` makes it) and the spelling
+//! rules for every other word (`lyric_words.rs`). Pasted lines are spread over notes with these
+//! counts.
+#[path = "lyric_words.rs"]
+mod words;
+pub use words::*;
 
 /// Most bytes of a lyric (UTF-8); longer text is cut at a character boundary.
 pub const MAX_LYRIC: usize = 31;

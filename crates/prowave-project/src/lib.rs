@@ -61,6 +61,37 @@ pub struct NoteDoc {
     pub lyric: String,
 }
 
+/// A Vocal Top Line track's part: `score` (its notes are sung, with these settings) or
+/// `output` (the audio track holding what the score track with the same `link` sang).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct VocalDoc {
+    pub role: String,
+    pub link: u64,
+    pub voice: String,
+    pub color: String,
+    pub language: String,
+    pub gender: f32,
+    pub breathiness: f32,
+    pub tension: f32,
+    pub voicing: f32,
+    pub velocity: f32,
+    pub vibrato_depth: f32,
+    pub vibrato_rate: f32,
+    pub transition_ms: f32,
+    /// Where it is sung: `auto`, `mac` or `studio`.
+    pub place: String,
+    /// The singer: `diffsinger` (also when empty, in files from before CHIMERA) or `chimera`.
+    pub singer: String,
+    /// CHIMERA's body (0..100 toward the female and the child anatomies), breathiness,
+    /// brightness and ring (0..100 each).
+    pub body_female: f32,
+    pub body_child: f32,
+    pub chimera_breathiness: f32,
+    pub brightness: f32,
+    pub ring: f32,
+}
+
 /// One take of a take folder.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(default)]
@@ -137,6 +168,10 @@ pub struct RegionDoc {
     pub drummer: Option<DrummerDoc>,
     /// Flex Time and Flex Pitch edits of an audio region (`audio` is then the recording).
     pub flex: Option<FlexDoc>,
+    /// The region's own colour (Logic: the Colors window), RGB; left out when the region
+    /// takes its track's colour (older files have none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 3]>,
 }
 
 /// The Flex edit of an audio region.
@@ -375,6 +410,9 @@ pub struct TrackDoc {
     pub indent: u8,
     /// A `Folder` track whose tracks are hidden in the Tracks area.
     pub folded: bool,
+    /// Hidden in the Tracks area (Logic: the track header's Hide key, Control-H); it still
+    /// plays. Shown again while Track > Show Hidden Tracks (H) is on.
+    pub hidden: bool,
     /// The `Vca` track (its index in `tracks`) that controls this track's level.
     pub vca: Option<usize>,
     /// External MIDI tracks: the MIDI output port (by name) and the channel, 1-16.
@@ -403,6 +441,9 @@ pub struct TrackDoc {
     /// The Groove Track, and the tracks that follow it.
     pub groove: bool,
     pub follow_groove: bool,
+    /// Vocal Top Line (older files have none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocal: Option<VocalDoc>,
     pub regions: Vec<RegionDoc>,
 }
 
@@ -538,6 +579,7 @@ impl Default for TrackDoc {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             midi_channel: 1,
@@ -555,6 +597,7 @@ impl Default for TrackDoc {
             midi_fx: Vec::new(),
             groove: false,
             follow_groove: false,
+            vocal: None,
             regions: Vec::new(),
         }
     }

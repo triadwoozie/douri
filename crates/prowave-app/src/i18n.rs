@@ -405,9 +405,6 @@ pub(crate) mod tests {
                 add(it);
             }
         }
-        for t in crate::tracks_area::TOOLS {
-            add(t);
-        }
         for (t, _) in crate::inspector::QUANTIZE {
             add(t);
         }
@@ -438,6 +435,25 @@ pub(crate) mod tests {
     fn every_language_translates_every_text() {
         let keys = interface_texts();
         assert!(keys.len() > 300, "found {} texts", keys.len());
+        // `PROWAVE_LOCALE_PRUNE=1` (tools/export_public.py): the lines no text of this source
+        // uses are taken out of the files, so a cut-down source keeps exactly what this test
+        // counts. The rest of the test runs on the next build.
+        if std::env::var_os("PROWAVE_LOCALE_PRUNE").is_some() {
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+            for lang in Lang::ALL.into_iter().filter(|l| *l != Lang::En) {
+                let path = dir.join(format!("{}.txt", lang.code()));
+                let text = std::fs::read_to_string(&path).unwrap();
+                let kept: Vec<&str> = text
+                    .lines()
+                    .filter(|l| match l.split_once(" = ") {
+                        Some((k, _)) if !l.starts_with('#') => keys.iter().any(|x| x == k),
+                        _ => true,
+                    })
+                    .collect();
+                std::fs::write(&path, kept.join("\n") + "\n").unwrap();
+            }
+            return;
+        }
         let mut problems = Vec::new();
         for lang in Lang::ALL.into_iter().filter(|l| *l != Lang::En) {
             let table = table(lang).unwrap();

@@ -58,6 +58,14 @@ const FILE: &[&str] = &[
 const SUBMENUS: &[(&str, &[&str])] = &[
     ("Revert to", &["Revert to Saved"]),
     (
+        "Cut/Insert Time",
+        &[
+            "Cut Section Between Locators",
+            "Insert Silence Between Locators",
+            "Repeat Section Between Locators",
+        ],
+    ),
+    (
         "Alternatives",
         &[
             "New Alternative…",
@@ -111,6 +119,53 @@ const SUBMENUS: &[(&str, &[&str])] = &[
         ],
     ),
     ("Share", &["Song to File…", "Song to Mobile Device…"]),
+    // Edit > Convert (`bounce_in_place.rs`).
+    ("Convert", &["Convert Regions to New Audio Files"]),
+    // Edit > Nudge Value (Logic: the Set Nudge Value to … key commands).
+    (
+        "Nudge Value",
+        &[
+            "Set Nudge Value to Tick",
+            "Set Nudge Value to Division",
+            "Set Nudge Value to Beat",
+            "Set Nudge Value to Bar",
+        ],
+    ),
+    (
+        "Select",
+        &[
+            "Select All",
+            "Select All Following",
+            "Select All Following of Same Track",
+            "Select Inside Locators",
+            "Select Overlapped Regions",
+            "Select Muted Regions",
+            "Select Similar Regions",
+            "Select Equal Regions",
+            "Select Same Colored Regions",
+            "Invert Selection",
+            "Deselect All",
+            "-",
+            "Select Next Region",
+            "Select Previous Region",
+            "Add Next Region to Selection",
+            "Add Previous Region to Selection",
+            "-",
+            "Select Next Track",
+            "Select Previous Track",
+            "Add Next Track to Selection",
+            "Add Previous Track to Selection",
+        ],
+    ),
+    (
+        "Snap",
+        &[
+            "Snap to Grid",
+            "-",
+            "Snap Regions to Relative Value",
+            "Snap Regions to Absolute Value",
+        ],
+    ),
     ("Language", LANGUAGE),
     ("I/O Buffer Size", BUFFER_SIZES),
     ("Process Buffer", &["Small", "Medium", "Large"]),
@@ -178,25 +233,58 @@ const EDIT: &[&str] = &[
     "Paste Replace",
     "Delete",
     "-",
-    "Select All",
-    "Deselect All",
+    "Select",
+    "Snap",
     "-",
     "Split at Playhead",
     "Join",
     "Bounce and Join",
+    "Pack Take Folder",
+    "Convert",
+    "-",
+    "Set Region Start to Playhead",
+    "Set Region End to Playhead",
+    "Repeat…",
+    "Cut/Insert Time",
+    "-",
+    "Mute On/Off",
+    "Loop On/Off",
+    "Reverse Region",
+    "Rename Regions",
+    "Quantize Selected Events",
+    "Move to Playhead",
+    "Nudge Left",
+    "Nudge Right",
+    "Nudge Value",
+    "Shuffle Left within Selection",
+    "Shuffle Right within Selection",
+    "-",
+    "Color Regions by Track Color",
 ];
 const TRACK: &[&str] = &[
+    "New Tracks…",
     "New",
+    "New Track with Duplicate Settings",
     "New Software Instrument Track",
     "New Audio Track",
     "New Aux Track",
     "New VCA Track",
     "New External MIDI Track",
+    "New Vocal Top Line Track",
+    "Vocal Top Line…",
     "New Pattern Region",
     "New Drummer Region",
     "MIDI FX…",
     "Rename Track",
     "Delete Track",
+    "Delete Unused Tracks",
+    "-",
+    "Hide Track",
+    "Show Hidden Tracks",
+    "Unhide All Tracks",
+    "-",
+    "Toggle Track Mute",
+    "Toggle Track Solo",
     "-",
     "Create Track Stack…",
     "Release Track Stack",
@@ -212,24 +300,45 @@ const TRACK: &[&str] = &[
     "Configure Track Header…",
 ];
 const NAVIGATE: &[&str] = &[
+    "Play",
+    "Stop",
+    "Play from Selection",
+    "Play from Left Locator",
+    "-",
+    "Rewind",
+    "Forward",
+    "Fast Rewind",
+    "Fast Forward",
+    "-",
     "Go to Beginning",
     "Go to End",
     "Go to Position…",
     "-",
+    "Cycle Mode",
+    "Set Locators by Regions",
     "Go to Left Locator",
     "Go to Right Locator",
+    "Move Locators Forward by Cycle Length",
+    "Move Locators Backward by Cycle Length",
     "-",
     "Go to Next Marker",
     "Go to Previous Marker",
+    "Go to Marker Number…",
     "Create Marker",
+    "Create Marker Without Rounding",
+    "Create Markers by Regions",
     "Delete Marker",
+    "Set Locators by Marker and Enable Cycle",
     "-",
     "Go to Next Region",
     "Go to Previous Region",
     "-",
     "Zoom to Fit",
-    "Zoom In",
-    "Zoom Out",
+    "Toggle Zoom to Fit Selection or All Contents",
+    "Zoom Horizontal In",
+    "Zoom Horizontal Out",
+    "Zoom Vertical In",
+    "Zoom Vertical Out",
 ];
 const RECORD: &[&str] = &[
     "Record",
@@ -287,6 +396,7 @@ const VIEW: &[&str] = &[
     "Show Advanced Tools",
     "Show Smart Controls",
     "-",
+    "Show Editor",
     "Show Piano Roll",
     "Show Score Editor",
     "Show Step Sequencer",
@@ -346,6 +456,8 @@ const HELP: &[&str] = &[
     "-",
     "Check for Updates…",
     "Check for Updates Automatically",
+    #[cfg(unix)]
+    "Allow Control by Other Programs",
     "-",
     "About Pro Wave (Yuri's Version)",
 ];
@@ -386,6 +498,10 @@ pub(crate) const MENUS: [(&str, &[&str]); 9] = [
 
 /// Entries that can show a check mark (see [`checked`]).
 pub(crate) const CHECKABLE: &[&str] = &[
+    "Show Editor",
+    "Cycle Mode",
+    "Show Global Tracks",
+    "Show Hidden Tracks",
     "Show Automation",
     "Show Tempo Track",
     "Show Marker Track",
@@ -399,6 +515,8 @@ pub(crate) const CHECKABLE: &[&str] = &[
     "Show Project Notes",
     "Show Media Browser",
     "Check for Updates Automatically",
+    #[cfg(unix)]
+    "Allow Control by Other Programs",
     "Software Monitoring",
     "Low Latency Mode",
     "Fit to Grid on Drop",
@@ -421,11 +539,17 @@ pub(crate) const CHECKABLE: &[&str] = &[
     "Show Ruler",
     "Show Colors",
     "Show Grid",
+    "Set Nudge Value to Tick",
+    "Set Nudge Value to Division",
+    "Set Nudge Value to Beat",
+    "Set Nudge Value to Bar",
 ];
 
 /// Whether `label` shows a check mark when it is on: [`CHECKABLE`] and the Language entries.
 pub(crate) fn is_checkable(label: &str) -> bool {
-    CHECKABLE.contains(&label) || Lang::from_native_name(label).is_some()
+    CHECKABLE.contains(&label)
+        || Lang::from_native_name(label).is_some()
+        || crate::arrange_nav::checkable(label)
 }
 
 /// Whether the menu bar is drawn inside the window. On macOS the menus go in the system menu
@@ -495,7 +619,7 @@ pub fn bar_fill(light: bool) -> Color32 {
 }
 
 /// Logic's default key commands for the entries this app implements.
-fn shortcut(label: &str) -> Option<KeyboardShortcut> {
+pub(crate) fn shortcut(label: &str) -> Option<KeyboardShortcut> {
     if let Some(cmd) = FileCmd::from_menu(label) {
         return cmd.shortcut();
     }
@@ -534,7 +658,8 @@ fn shortcut(label: &str) -> Option<KeyboardShortcut> {
         "Show List Editors" => Key::D,
         "Show Mixer" => Key::X,
         "Show Piano Roll" => Key::P,
-        _ => return None,
+        // Logic's transport, selection and region keys (run by `key_commands::handle`).
+        _ => return crate::key_commands::combo_of(label).map(|c| c.shortcut()),
     };
     Some(KeyboardShortcut::new(Modifiers::NONE, key))
 }
@@ -582,9 +707,23 @@ fn show_space_designer(
     }
 }
 
+/// Whether Join has audio regions to bounce into a new file.
+fn bounce_join_ok(p: &Project, s: &crate::UiState) -> bool {
+    crate::bounce_in_place::can(p, s, crate::bounce_in_place::What::Join)
+}
+
 /// Whether `label` can be chosen now. Entries that are not implemented yet are greyed out,
 /// so a click never silently does nothing; others are greyed while there is nothing to act on.
 pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
+    if let Some(on) = crate::arrange_nav::enabled(label, p, s) {
+        return on;
+    }
+    if let Some(on) = crate::select_similar::enabled(label, p, s) {
+        return on;
+    }
+    if let Some(on) = crate::marker_number::enabled(label, p) {
+        return on;
+    }
     if FileCmd::from_menu(label).is_some() || is_checkable(label) && !CHECKABLE.contains(&label) {
         return true;
     }
@@ -595,8 +734,29 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Undo" => s.can_undo,
         "Redo" => s.can_redo,
         "Delete Undo History" => s.can_undo || s.can_redo,
-        "Delete" => s.tracks.selected.is_some() || p.tracks.len() > 1,
-        "Deselect All" | "Copy" | "Cut" => s.tracks.selected.is_some(),
+        "Delete" => {
+            s.tracks.selected.is_some()
+                || s.tracks.range.active().is_some()
+                || s.tracks.selected_marker.is_some()
+                || p.tracks.len() > 1
+                    && p.tracks
+                        .get(p.selected_track)
+                        .is_some_and(|t| t.kind.has_regions() && t.regions.is_empty())
+        }
+        "Copy" | "Cut" => s.tracks.selected.is_some() || crate::marquee::has_material(p, &s.tracks),
+        "Deselect All"
+        | "Play from Selection"
+        | "Set Locators by Regions"
+        | "Select All Following"
+        | "Select All Following of Same Track"
+        | "Mute On/Off"
+        | "Loop On/Off"
+        | "Move to Playhead"
+        | "Nudge Left"
+        | "Nudge Right" => s.tracks.selected.is_some(),
+        "Shuffle Left within Selection" | "Shuffle Right within Selection" => {
+            crate::shuffle_edit::can_shuffle(p, &s.tracks)
+        }
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
@@ -616,17 +776,49 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
             master_has_room(p)
         }
         "Paste" => crate::region_edit::can_paste(p, &s.region_clip),
-        "Select All" => p.tracks.iter().any(|t| !t.regions.is_empty()),
-        "Join" => crate::region_edit::can_join(p, &s.tracks),
-        "Split at Playhead" => crate::region_edit::can_split(p, &s.tracks),
+        "Select All" | "Invert Selection" => p.tracks.iter().any(|t| !t.regions.is_empty()),
+        "Set Region Start to Playhead" => crate::region_commands::can_set_start(p, &s.tracks),
+        "Set Region End to Playhead" => crate::region_commands::can_set_end(p, &s.tracks),
+        "Repeat…" | "Rename Regions" => {
+            crate::region_commands::rename_start(p, &s.tracks).is_some()
+        }
+        "Reverse Region" => crate::region_commands::can_reverse(p, &s.tracks),
+        "Quantize Selected Events" => crate::region_edit::can_quantize(p, &s.tracks),
+        "Pack Take Folder" => crate::take_pack::can_pack(p, &s.tracks),
+        "Split at Playhead" => crate::marquee::can_split_any(p, &s.tracks),
+        "Join" => crate::region_edit::can_join(p, &s.tracks) || bounce_join_ok(p, s),
+        "Regions in Place…" => {
+            crate::bounce_in_place::can(p, s, crate::bounce_in_place::What::Regions)
+        }
+        "Tracks in Place…" => {
+            crate::bounce_in_place::can(p, s, crate::bounce_in_place::What::Tracks)
+        }
+        "Convert Regions to New Audio Files" => {
+            crate::bounce_in_place::can(p, s, crate::bounce_in_place::What::Convert)
+        }
         "Delete Track" => p.tracks.len() > 1,
+        "Hide Track" => p.tracks.get(p.selected_track).is_some(),
+        "Unhide All Tracks" => crate::track_commands::any_hidden(p),
+        "Color Regions by Track Color" => crate::region_colors::can_reset(p, s),
+        "Delete Unused Tracks" => crate::track_commands::can_delete_unused(p),
         "Release Track Stack" => p
             .tracks
             .get(p.selected_track)
             .is_some_and(|t| t.kind == TrackKind::Folder),
+        "New Track with Duplicate Settings" => crate::track_selection::can_duplicate(p, &s.tracks),
+        "Create Track Stack…" => crate::track_selection::can_create_stack(p, &s.tracks),
+        "Toggle Track Mute" | "Toggle Track Solo" => p.tracks.get(p.selected_track).is_some(),
         "Go to Next Marker" => p.next_marker(p.position_beats).is_some(),
         "Go to Previous Marker" => p.previous_marker(p.position_beats).is_some(),
-        "Delete Marker" => p.marker_at(p.position_beats).is_some(),
+        "Delete Marker" | "Set Locators by Marker and Enable Cycle" => {
+            crate::marker_edit::target(p, &s.tracks).is_some()
+        }
+        "Create Markers by Regions" => s.tracks.selected.is_some(),
+        "Cut Section Between Locators"
+        | "Insert Silence Between Locators"
+        | "Repeat Section Between Locators" => crate::section_edit::can_apply(p),
+        "Move Locators Forward by Cycle Length" => p.cycle_end > p.cycle_start,
+        "Move Locators Backward by Cycle Length" => crate::cycle_area::can_move_back(p),
         // Pattern and Drummer regions go on a track that plays MIDI.
         "New Pattern Region" | "New Drummer Region" => p
             .tracks
@@ -647,24 +839,36 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
 const ALWAYS: &[&str] = &[
     "MIDI Monitor",
     "Get Free Plug-ins",
+    // File > Bounce > Project or Section, File > Export > All Tracks as Audio Files.
+    "Project or Section…",
+    "All Tracks as Audio Files…",
     "Send All Notes Off",
     "Channel Rack",
     "Pitch Editor",
     "New Software Instrument Track",
     "New Audio Track",
+    "New Tracks…",
     "New from Template…",
     "New",
     "New Aux Track",
     "New VCA Track",
     "New External MIDI Track",
-    "Create Track Stack…",
+    "New Vocal Top Line Track",
+    "Vocal Top Line…",
     "Go to Beginning",
     "Go to End",
+    "Go to Position…",
     "Go to Left Locator",
     "Go to Right Locator",
+    "Play",
+    "Stop",
+    "Play from Left Locator",
+    "Rewind",
+    "Forward",
+    "Fast Rewind",
+    "Fast Forward",
+    "Cycle Mode",
     "Zoom to Fit",
-    "Zoom In",
-    "Zoom Out",
     "Record",
     "Capture Recording",
     "Tips",
@@ -678,6 +882,8 @@ const ALWAYS: &[&str] = &[
     "Show List Editors",
     "Check for Updates…",
     "Check for Updates Automatically",
+    #[cfg(unix)]
+    "Allow Control by Other Programs",
     "Software Monitoring",
     "Low Latency Mode",
     "Fit to Grid on Drop",
@@ -686,11 +892,20 @@ const ALWAYS: &[&str] = &[
     "Show Tempo Track",
     "Show Marker Track",
     "Show Signature Track",
+    "Show Global Tracks",
+    "Show Hidden Tracks",
+    "Show Colors",
+    "Show Editor",
     "MIDI File…",
     "Paint Image to Audio…",
     "MIDI FX…",
     "Selection as MIDI File…",
     "Create Marker",
+    "Set Nudge Value to Tick",
+    "Set Nudge Value to Division",
+    "Set Nudge Value to Beat",
+    "Set Nudge Value to Bar",
+    "Create Marker Without Rounding",
     "Mixer",
     "Open Piano Roll",
     "Bigger Interface",
@@ -700,6 +915,16 @@ const ALWAYS: &[&str] = &[
 
 /// Entries that work only in some states (see [`enabled`]).
 const CONTEXTUAL: &[&str] = &[
+    "Create Track Stack…",
+    "Toggle Track Mute",
+    "Toggle Track Solo",
+    "Shuffle Left within Selection",
+    "Shuffle Right within Selection",
+    "Color Regions by Track Color",
+    "Delete Unused Tracks",
+    "Hide Track",
+    "Unhide All Tracks",
+    "New Track with Duplicate Settings",
     "Show Automation",
     "Delete Automation",
     "Undo",
@@ -711,8 +936,25 @@ const CONTEXTUAL: &[&str] = &[
     "Copy",
     "Paste",
     "Select All",
+    "Invert Selection",
+    "Select All Following",
+    "Select All Following of Same Track",
+    "Play from Selection",
+    "Set Locators by Regions",
+    "Mute On/Off",
+    "Loop On/Off",
+    "Move to Playhead",
+    "Nudge Left",
+    "Nudge Right",
     "Split at Playhead",
     "Join",
+    "Set Region Start to Playhead",
+    "Set Region End to Playhead",
+    "Repeat…",
+    "Rename Regions",
+    "Reverse Region",
+    "Quantize Selected Events",
+    "Pack Take Folder",
     "Rename Track",
     "Assign Track Color…",
     "Assign Track Icon…",
@@ -727,10 +969,21 @@ const CONTEXTUAL: &[&str] = &[
     "Go to Next Marker",
     "Go to Previous Marker",
     "Delete Marker",
+    "Create Markers by Regions",
+    "Set Locators by Marker and Enable Cycle",
+    "Cut Section Between Locators",
+    "Insert Silence Between Locators",
+    "Repeat Section Between Locators",
+    "Move Locators Forward by Cycle Length",
+    "Move Locators Backward by Cycle Length",
     "New Pattern Region",
     "New Drummer Region",
     "Go to Next Region",
     "Go to Previous Region",
+    // File > Bounce > Regions in Place, Tracks in Place (`bounce_in_place.rs`).
+    "Regions in Place…",
+    "Tracks in Place…",
+    "Convert Regions to New Audio Files",
 ];
 
 /// Whether `label` does anything at all. Entries that are not built yet are not shown, so
@@ -748,6 +1001,9 @@ pub(crate) fn implemented(label: &str) -> bool {
         || Lang::from_native_name(label).is_some()
         || ALWAYS.contains(&label)
         || CONTEXTUAL.contains(&label)
+        || crate::arrange_nav::handles(label)
+        || crate::select_similar::handles(label)
+        || crate::marker_number::handles(label)
         || buffer_frames(label).is_some()
         || crate::engine_mode::process_frames(label).is_some()
 }
@@ -784,6 +1040,9 @@ fn region_starts(p: &Project) -> Vec<f64> {
 
 /// Whether `label` shows a check mark (what it shows is visible).
 pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
+    if let Some(on) = crate::arrange_nav::checked(label, &s.tracks) {
+        return on;
+    }
     match label {
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
         "Open Piano Roll" => s.bottom == Bottom::PianoRoll,
@@ -795,6 +1054,8 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Project Notes" => s.show_notes,
         "Show Media Browser" => s.browser.open == Some(crate::file_browser::Tab::Files),
         "Check for Updates Automatically" => s.update_auto,
+        #[cfg(unix)]
+        "Allow Control by Other Programs" => s.control_allowed,
         "Software Monitoring" => s.software_monitoring,
         "Low Latency Mode" => s.low_latency,
         "Fit to Grid on Drop" => s.fit.on_drop,
@@ -810,13 +1071,21 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Tempo Track" => s.tracks.show_tempo,
         "Show Marker Track" => s.tracks.show_markers,
         "Show Signature Track" => s.tracks.show_signatures,
+        "Show Global Tracks" => crate::track_commands::global_tracks_shown(s),
+        "Show Hidden Tracks" => s.tracks.show_hidden,
         "Show Master Track" => p.show_master_track,
         "Show Automation" => s.auto.mode,
+        "Cycle Mode" => p.cycle,
+        _ if crate::region_commands::NudgeValue::from_menu(label).is_some() => {
+            crate::region_commands::NudgeValue::from_menu(label) == Some(s.tracks.nudge)
+        }
         _ if Lang::from_native_name(label).is_some() => {
             Lang::from_native_name(label) == Some(i18n::current())
         }
         // Always visible in this app.
-        "Show Track Header" | "Show Ruler" | "Show Colors" | "Show Grid" => true,
+        "Show Track Header" | "Show Ruler" | "Show Grid" => true,
+        "Show Colors" => s.arrange.colors,
+        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor),
         _ => false,
     }
 }
@@ -831,6 +1100,15 @@ fn forget_region_selection(s: &mut crate::UiState) {
 pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
     if let Some(lang) = Lang::from_native_name(label) {
         i18n::choose(lang);
+        return;
+    }
+    if crate::arrange_nav::apply(label, p, s) {
+        return;
+    }
+    if crate::select_similar::apply(label, p, s) {
+        return;
+    }
+    if crate::marker_number::apply(label, p, s) {
         return;
     }
     match label {
@@ -856,7 +1134,12 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             }
         }
         "Select All" => s.tracks.select_all(p),
-        "Join" => crate::region_edit::join_selected(p, &mut s.tracks),
+        "Pack Take Folder" => crate::take_pack::pack(p, &mut s.tracks),
+        "Join" => {
+            // Audio regions that are not pieces of one file are bounced into a new one.
+            crate::bounce_in_place::ask_join(p, s);
+            crate::region_edit::join_selected(p, &mut s.tracks);
+        }
         "Show Mixer" | "Mixer" => {
             s.show_mixer = !(s.show_mixer && s.bottom == Bottom::Mixer);
             s.bottom = Bottom::Mixer;
@@ -872,6 +1155,11 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Check for Updates Automatically" => {
             s.update_auto = !s.update_auto;
             crate::updater::set_auto_enabled(s.update_auto);
+        }
+        #[cfg(unix)]
+        "Allow Control by Other Programs" => {
+            s.control_allowed = !s.control_allowed;
+            crate::control_api::set_allowed(s.control_allowed);
         }
         "Fit to Grid on Drop" => {
             s.fit.on_drop = !s.fit.on_drop;
@@ -918,17 +1206,39 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Show Tempo Track" => s.tracks.show_tempo = !s.tracks.show_tempo,
         "Show Marker Track" => s.tracks.show_markers = !s.tracks.show_markers,
         "Show Signature Track" => s.tracks.show_signatures = !s.tracks.show_signatures,
+        "Show Global Tracks" => crate::track_commands::toggle_global_tracks(s),
+        "Show Hidden Tracks" => s.tracks.show_hidden = !s.tracks.show_hidden,
+        "Hide Track" => crate::track_selection::hide_tracks(p, s),
+        "Unhide All Tracks" => crate::track_commands::unhide_all(p),
+        "Show Colors" => s.arrange.colors = !s.arrange.colors,
+        "Color Regions by Track Color" => crate::region_colors::color_by_track(p, s),
+        "Delete Unused Tracks" => {
+            crate::track_commands::delete_unused(p, s);
+        }
+        "Show Editor" => crate::track_commands::toggle_editor(p, s),
         // Logic: Create Marker puts it at the playhead, rounded to the nearest bar.
-        "Create Marker" => {
-            let bar = p.beats_to_bar(p.position_beats).round();
-            p.add_marker(p.bar_to_beats(bar));
+        "Create Marker" | "Create Marker Without Rounding" => {
+            crate::marker_edit::create(p, p.position_beats, label == "Create Marker");
+            s.tracks.selected_marker = None;
             s.tracks.show_markers = true;
         }
-        "Delete Marker" => {
-            if let Some(i) = p.marker_at(p.position_beats) {
-                p.markers.remove(i);
+        "Create Markers by Regions" => {
+            if crate::marker_edit::create_for_regions(p, &s.tracks).is_some() {
+                s.tracks.selected_marker = None;
+                s.tracks.show_markers = true;
             }
         }
+        "Delete Marker" => crate::marker_edit::delete(p, &mut s.tracks),
+        // Edit > Cut/Insert Time: the regions' indexes change, so the selection goes.
+        _ if crate::section_edit::SectionEdit::from_menu(label).is_some() => {
+            if let Some(edit) = crate::section_edit::SectionEdit::from_menu(label) {
+                crate::section_edit::apply(p, edit);
+                forget_region_selection(s);
+            }
+        }
+        "Set Locators by Marker and Enable Cycle" => crate::marker_edit::set_locators(p, &s.tracks),
+        "Move Locators Forward by Cycle Length" => crate::cycle_area::move_by_length(p, true),
+        "Move Locators Backward by Cycle Length" => crate::cycle_area::move_by_length(p, false),
         "Go to Next Marker" => {
             if let Some(b) = p.next_marker(p.position_beats) {
                 p.position_beats = b;
@@ -956,6 +1266,15 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         }
         "New from Template…" => s.chooser = Some(crate::start_screen::Chooser::templates()),
         // Track > New: a software instrument track, as the + button above the tracks adds.
+        "New Tracks…" => {
+            s.track_dialog = Some(track_dialogs::TrackDialog::NewTracks {
+                kind: TrackKind::Instrument,
+                count: 1,
+            });
+        }
+        "New Track with Duplicate Settings" => {
+            crate::track_selection::duplicate_tracks(p, s);
+        }
         "New" | "New Software Instrument Track" => {
             p.selected_track = p.add_track(TrackKind::Instrument);
         }
@@ -968,6 +1287,8 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "New External MIDI Track" => {
             p.add_track(TrackKind::ExternalMidi);
         }
+        "New Vocal Top Line Track" => crate::vocal::new_track(p, s),
+        "Vocal Top Line…" => s.vocal.open = !s.vocal.open,
         "MIDI FX…" => s.show_midi_fx = !s.show_midi_fx,
         // Mix > Space Designer > Show: the window of the selected track's Space Designer.
         "Show" => {
@@ -986,6 +1307,15 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "MIDI File…" => s.midi_cmd = Some(crate::midi_file::MidiCmd::Import),
         "Paint Image to Audio…" => s.paint.pick = true,
         "Selection as MIDI File…" => s.midi_cmd = Some(crate::midi_file::MidiCmd::Export),
+        "Project or Section…" => crate::bounce_ui::open(p, s, false),
+        "All Tracks as Audio Files…" => crate::bounce_ui::open(p, s, true),
+        "Regions in Place…" => {
+            crate::bounce_in_place::open(s, crate::bounce_in_place::What::Regions)
+        }
+        "Tracks in Place…" => {
+            crate::bounce_in_place::open(s, crate::bounce_in_place::What::Tracks)
+        }
+        "Convert Regions to New Audio Files" => crate::bounce_in_place::ask_convert(p, s),
         "New Pattern Region" | "New Drummer Region" => {
             // On the selected track, at the bar the playhead is in.
             let bar = p.beats_to_bar(p.position_beats).floor() as f32 + 1.0;
@@ -1016,7 +1346,34 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 what,
             );
         }
-        "Split at Playhead" => crate::region_edit::split_at_playhead(p, &mut s.tracks),
+        "Set Region Start to Playhead" => {
+            crate::region_commands::set_start_to_playhead(p, &s.tracks);
+        }
+        "Set Region End to Playhead" => {
+            crate::region_commands::set_end_to_playhead(p, &s.tracks);
+        }
+        "Repeat…" => {
+            s.track_dialog = Some(track_dialogs::TrackDialog::Repeat {
+                copies: "1".into(),
+                adjust: crate::region_commands::RepeatAdjust::Auto,
+            });
+        }
+        "Rename Regions" => {
+            if let Some(name) = crate::region_commands::rename_start(p, &s.tracks) {
+                s.track_dialog = Some(track_dialogs::TrackDialog::RenameRegions { name });
+            }
+        }
+        "Reverse Region" => {
+            crate::region_commands::reverse(p, &s.tracks, None);
+        }
+        "Quantize Selected Events" => crate::region_edit::quantize_selected(p, &s.tracks),
+        _ if crate::region_commands::NudgeValue::from_menu(label).is_some() => {
+            if let Some(n) = crate::region_commands::NudgeValue::from_menu(label) {
+                s.tracks.nudge = n;
+                n.save();
+            }
+        }
+        "Split at Playhead" => crate::marquee::split_any(p, &mut s.tracks),
         "Deselect All" => s.tracks.clear_selection(),
         "Go to End" => {
             p.position_beats = p
@@ -1040,15 +1397,12 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 p.position_beats = b;
             }
         }
-        "Zoom In" => s.tracks.bar_w = (s.tracks.bar_w * 1.25).min(600.0),
-        "Zoom Out" => s.tracks.bar_w = (s.tracks.bar_w / 1.25).max(6.0),
         "Zoom to Fit" => {
             let w = s.tracks.lanes_w;
             crate::tracks_area::zoom_to_fit(p, &mut s.tracks, w);
         }
         "Create Track Stack…" => {
-            p.create_track_stack(p.selected_track);
-            forget_region_selection(s);
+            crate::track_selection::create_stack(p, s);
         }
         "Bigger Interface" | "Smaller Interface" | "Actual Interface Size" => {
             let dir = match label {
@@ -1060,10 +1414,10 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             crate::ui_scale::save(s.ui_scale);
         }
         "Delete Track" => {
-            if p.delete_track(p.selected_track) {
-                forget_region_selection(s);
-            }
+            crate::track_selection::delete_tracks(p, s);
         }
+        "Toggle Track Mute" => crate::track_selection::toggle_mute(p, &s.tracks),
+        "Toggle Track Solo" => crate::track_selection::toggle_solo(p, &s.tracks),
         "Release Track Stack" => {
             if p.release_track_stack(p.selected_track) {
                 forget_region_selection(s);
@@ -1071,6 +1425,51 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         }
         "Go to Beginning" => p.position_beats = 0.0,
         "Record" => p.recording = !p.recording,
+        "Play" => p.playing = true,
+        "Stop" => crate::transport::stop(p),
+        "Play from Selection" => {
+            if let Some(at) = crate::region_edit::selection_start(p, &s.tracks) {
+                p.position_beats = at;
+                p.playing = true;
+            }
+        }
+        "Play from Left Locator" => {
+            p.position_beats = p.cycle_start;
+            p.playing = true;
+        }
+        "Rewind" => crate::transport::rewind(p, 1),
+        "Forward" => crate::transport::forward(p, 1),
+        "Fast Rewind" => crate::transport::rewind(p, crate::transport::FAST_BARS),
+        "Fast Forward" => crate::transport::forward(p, crate::transport::FAST_BARS),
+        "Cycle Mode" => p.cycle = !p.cycle,
+        "Go to Position…" => {
+            s.track_dialog = Some(track_dialogs::TrackDialog::GoTo {
+                text: track_dialogs::position_text(p, p.position_beats),
+            });
+        }
+        "Set Locators by Regions" => crate::tracks_area::set_locators_by_region(p, &s.tracks),
+        "Invert Selection" => crate::region_edit::invert_selection(p, &mut s.tracks),
+        "Select All Following" => crate::region_edit::select_following(p, &mut s.tracks, false),
+        "Select All Following of Same Track" => {
+            crate::region_edit::select_following(p, &mut s.tracks, true)
+        }
+        "Mute On/Off" => {
+            crate::region_edit::toggle_mute(p, &s.tracks, None);
+        }
+        "Loop On/Off" => {
+            crate::region_edit::toggle_loop(p, &s.tracks);
+        }
+        "Move to Playhead" => crate::tracks_area::move_to_playhead(p, s),
+        "Nudge Left" | "Nudge Right" => {
+            crate::region_commands::nudge(p, s, label == "Nudge Right");
+        }
+        "Shuffle Left within Selection" | "Shuffle Right within Selection" => {
+            crate::shuffle_edit::shuffle_selected(
+                p,
+                &s.tracks,
+                label == "Shuffle Right within Selection",
+            );
+        }
         _ => {
             if let Some(cmd) = FileCmd::from_menu(label) {
                 s.file_cmd = Some(cmd);
@@ -1414,9 +1813,9 @@ pub fn handle_keys(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState)
     if ctx.egui_wants_keyboard_input() {
         return;
     }
-    // While the Piano Roll's Tool menu is open, a plain letter picks a tool (P Pencil,
-    // I Scissors), so the View keys wait.
-    let view_keys: &[&str] = if s.piano.tool_menu_open() {
+    // While the Piano Roll's or the Tracks area's Tool menu is open, a plain letter picks a
+    // tool (P Pencil, I Scissors), so the View keys wait.
+    let view_keys: &[&str] = if s.piano.tool_menu_open() || s.tracks.tool_menu_open() {
         &[]
     } else {
         &[
@@ -1427,8 +1826,14 @@ pub fn handle_keys(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState)
             "Record / Mix Mode",
         ]
     };
+    // A plain letter is not that letter with Shift (Shift-I and Shift-D are Logic's Invert
+    // Selection and Deselect All, in `key_commands`).
+    let shifted = ctx.input(|i| i.modifiers.shift);
     for &label in view_keys {
         if let Some(k) = shortcut(label) {
+            if shifted && !k.modifiers.shift {
+                continue;
+            }
             if ctx.input_mut(|i| i.consume_shortcut(&k)) {
                 apply(label, p, s);
             }
@@ -1570,8 +1975,12 @@ mod tests {
     use crate::file_commands::content;
 
     /// Help > Check for Updates… and Check for Updates Automatically.
-    fn updates(s: &crate::UiState) -> (bool, bool) {
-        (s.update_check, s.update_auto)
+    fn updates(s: &crate::UiState) -> (bool, bool, bool) {
+        #[cfg(unix)]
+        let control = s.control_allowed;
+        #[cfg(not(unix))]
+        let control = false;
+        (s.update_check, s.update_auto, control)
     }
 
     /// Everything a menu entry can change, to compare before and after.
@@ -1582,7 +1991,7 @@ mod tests {
                 content(p) == content(&Project::demo()),
                 p.tracks.len(),
                 p.position_beats,
-                p.recording,
+                (p.recording, p.playing, p.cycle),
                 (s.show_mixer, s.show_inspector, s.show_lists),
                 (
                     updates(s),
@@ -1626,9 +2035,29 @@ mod tests {
                     s.tracks.show_tempo,
                     s.tracks.show_markers,
                     s.tracks.show_signatures,
-                    s.auto.mode
+                    s.auto.mode,
+                    s.tracks.nudge,
+                    (
+                        p.selected_track,
+                        s.tracks.selection(),
+                        s.tracks.row_h,
+                        s.tracks.scroll_x,
+                        s.tracks.scroll_y,
+                        (s.tracks.grid, s.tracks.zoom.clone())
+                    ),
+                    s.tracks.show_hidden,
+                    s.arrange.colors
                 ),
-                (i18n::chosen(), i18n::current(),),
+                (
+                    i18n::chosen(),
+                    i18n::current(),
+                    s.vocal.open,
+                    s.bounce.dialog.clone(),
+                    (
+                        s.bounce.in_place_dialog.clone(),
+                        s.bounce.in_place_go.clone()
+                    ),
+                ),
             )
         )
     }
@@ -1703,11 +2132,27 @@ mod tests {
             // These may already be where they would take you.
             let may_stay = [
                 "Go to Next Region",
+                // The selected region may be the last one on its track.
+                "Select All Following of Same Track",
+                // The selected region may be at the start of the song, and so may the playhead.
+                "Nudge Left",
+                // The selected region's notes may already sit on its grid.
+                "Quantize Selected Events",
+                "Rewind",
+                "Fast Rewind",
+                "Stop",
                 "Actual Interface Size",
                 "English (Default)",
                 // The buffer sizes it starts with.
                 "64 Samples",
                 "Small",
+                // The nudge value it starts with.
+                "Set Nudge Value to Division",
+                // Logic's default.
+                "Snap Regions to Relative Value",
+                // The selected region may be the only one like it.
+                "Select Equal Regions",
+                "Select Same Colored Regions",
             ]
             .contains(&label);
             assert!(

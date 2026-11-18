@@ -45,6 +45,7 @@ enum Icon {
     Rewind,
     Forward,
     ToStart,
+    Stop,
     Play,
     Record,
     Capture,
@@ -138,6 +139,7 @@ fn icon(g: &Painter, ic: Icon, c: Pos2, size: f32, color: Color32) {
             rect(4.0, 6.0, 2.6, 12.0);
             fill(&[(20.0, 6.0), (20.0, 18.0), (8.0, 12.0)]);
         }
+        Icon::Stop => rect(6.5, 6.5, 11.0, 11.0),
         Icon::Play => fill(&[(7.0, 4.5), (20.0, 12.0), (7.0, 19.5)]),
         Icon::Record => {
             g.circle_filled(p(12.0, 12.0), 6.5 * u, color);
@@ -1499,6 +1501,44 @@ pub(crate) fn master_volume(
     thumb(g, tr);
 }
 
+// ---------------------------------------------------------------- transport commands
+
+/// Bars that Fast Rewind and Fast Forward move by (Logic: eight).
+pub(crate) const FAST_BARS: u32 = 8;
+
+/// Rewind (Comma): back to the start of this bar, or of the one before when already there;
+/// `bars` times.
+pub(crate) fn rewind(p: &mut Project, bars: u32) {
+    for _ in 0..bars {
+        let bar = p.beats_to_bar(p.position_beats);
+        let back = if bar.fract() < 1e-6 {
+            bar - 1.0
+        } else {
+            bar.floor()
+        };
+        p.position_beats = p.bar_to_beats(back.max(0.0));
+    }
+}
+
+/// Forward (Period): on to the start of the next bar; `bars` times.
+pub(crate) fn forward(p: &mut Project, bars: u32) {
+    for _ in 0..bars {
+        p.position_beats = p.next_bar_start(p.position_beats);
+    }
+}
+
+/// Stop (0, the Stop key): stops the song. When it has stopped already, the playhead goes to
+/// the start of the project, or to the left locator while Cycle is on, as in Logic.
+pub(crate) fn stop(p: &mut Project) {
+    if p.playing {
+        p.playing = false;
+    } else if p.cycle {
+        p.position_beats = p.cycle_start;
+    } else {
+        p.position_beats = 0.0;
+    }
+}
+
 // ---------------------------------------------------------------- the bar
 
 pub fn control_bar(
@@ -1646,14 +1686,7 @@ pub fn control_bar(
     )
     .clicked()
     {
-        // Back to the start of this bar, or of the one before when already there.
-        let bar = p.beats_to_bar(p.position_beats);
-        let back = if bar.fract() < 1e-6 {
-            bar - 1.0
-        } else {
-            bar.floor()
-        };
-        p.position_beats = p.bar_to_beats(back.max(0.0));
+        rewind(p, 1);
     }
     if icon_key(
         ui,
@@ -1671,7 +1704,7 @@ pub fn control_bar(
     .on_hover_text(tr("Forward"))
     .clicked()
     {
-        p.position_beats = p.next_bar_start(p.position_beats);
+        forward(p, 1);
     }
     if icon_key(
         ui,
@@ -1681,15 +1714,20 @@ pub fn control_bar(
         Cap::Dark,
         false,
         None,
-        Icon::ToStart,
+        // Logic's Stop button: Stop while the song runs, Go to Beginning once it has stopped.
+        if p.playing { Icon::Stop } else { Icon::ToStart },
         1.0,
         None,
         None,
     )
-    .on_hover_text(tr("Go to Beginning"))
+    .on_hover_text(if p.playing {
+        tr("Stop")
+    } else {
+        tr("Go to Beginning")
+    })
     .clicked()
     {
-        p.position_beats = 0.0;
+        stop(p);
     }
     if icon_key(
         ui,

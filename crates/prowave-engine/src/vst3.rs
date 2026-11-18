@@ -442,6 +442,40 @@ pub struct Vst3Instance {
     max_frames: usize,
     latency_s: f64,
     errors: u64,
+    /// `ProcessModes`: real time, or offline for an engine with no sound card.
+    mode: i32,
+}
+
+thread_local! {
+    /// Plug-ins opened on this thread while this is set are opened for offline processing.
+    static OPEN_OFFLINE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While one of these lives, the VST 3 plug-ins this thread opens are told they process
+/// offline (`kOffline`), for an engine with no sound card: one that loads samples or works in
+/// the background then finishes each block before it returns it.
+pub struct OfflineScope(());
+
+impl OfflineScope {
+    pub fn enter() -> Self {
+        OPEN_OFFLINE.with(|c| c.set(true));
+        Self(())
+    }
+}
+
+impl Drop for OfflineScope {
+    fn drop(&mut self) {
+        OPEN_OFFLINE.with(|c| c.set(false));
+    }
+}
+
+/// The `ProcessModes` value a plug-in opened on this thread now gets.
+fn open_mode() -> i32 {
+    if OPEN_OFFLINE.with(std::cell::Cell::get) {
+        vst3::Steinberg::Vst::ProcessModes_::kOffline as i32
+    } else {
+        kRealtime as i32
+    }
 }
 
 // SAFETY: a VST 3 processor may be used from another thread than the one that made it, one
@@ -631,7 +665,7 @@ impl Vst3Instance {
         }
         let max_frames = max_frames.max(64);
         let mut setup = ProcessSetup {
-            processMode: kRealtime as i32,
+            processMode: open_mode(),
             symbolicSampleSize: kSample32 as i32,
             maxSamplesPerBlock: max_frames as i32,
             sampleRate: f64::from(sample_rate),
@@ -684,6 +718,7 @@ impl Vst3Instance {
             max_frames,
             latency_s: f64::from(latency) / f64::from(sample_rate.max(1)),
             errors: 0,
+            mode: open_mode(),
             processor,
             shared,
         };
@@ -917,7 +952,7 @@ impl Vst3Instance {
             b.silenceFlags = 0;
         }
         let mut data = ProcessData {
-            processMode: kRealtime as i32,
+            processMode: self.mode,
             symbolicSampleSize: kSample32 as i32,
             numSamples: n as i32,
             numInputs: self.in_bufs.len() as i32,

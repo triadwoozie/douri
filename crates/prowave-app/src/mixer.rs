@@ -1707,7 +1707,7 @@ fn send_slot(
 }
 
 /// What the user chose in an Audio FX slot's menu.
-enum InsertAct {
+pub(crate) enum InsertAct {
     Add(prowave_engine::FxKind),
     Remove,
     Bypass,
@@ -1973,6 +1973,14 @@ fn instrument_slot(
             built_in = Some(crate::channel_rack::new_slot);
             ui.close();
         }
+        if ui.button(tr("Singer")).clicked() {
+            built_in = Some(crate::singer::new_slot);
+            ui.close();
+        }
+        if ui.button("808").clicked() {
+            built_in = Some(crate::bass808::new_slot);
+            ui.close();
+        }
         ui.separator();
         if let Some(c) = au_menu(ui, list, true) {
             pick = Some(c.clone());
@@ -2154,7 +2162,7 @@ fn au_effect_slot(
 
 /// Carries out what the user chose in the menu of plug-in effect `j` of strip `i` (a track or
 /// [`MASTER_STRIP`]). Choices that do not fit do nothing.
-fn apply_plugin(p: &mut Project, v: &mut MixerView, i: usize, j: usize, act: InsertAct) {
+pub(crate) fn apply_plugin(p: &mut Project, v: &mut MixerView, i: usize, j: usize, act: InsertAct) {
     let Some((fx, auto)) = p.strip_plugins_mut(i) else {
         return;
     };
@@ -2182,7 +2190,7 @@ fn apply_plugin(p: &mut Project, v: &mut MixerView, i: usize, j: usize, act: Ins
 
 /// Carries out what the user chose in the menu of Audio FX slot `k` of track `i`. Choices that
 /// do not fit (a slot that is not there) do nothing.
-fn apply_insert(p: &mut Project, v: &mut MixerView, i: usize, k: usize, act: InsertAct) {
+pub(crate) fn apply_insert(p: &mut Project, v: &mut MixerView, i: usize, k: usize, act: InsertAct) {
     // The Stereo Out strip's envelopes are the project's master automation.
     let (inserts, mut auto) = if i == MASTER_STRIP {
         (&mut p.master_inserts, Some(&mut p.master_auto))

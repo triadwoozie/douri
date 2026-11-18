@@ -548,21 +548,6 @@ pub fn follow_drops(
     }
 }
 
-/// Repeat Regions: each repeated region's automation is repeated after it.
-pub fn follow_repeats(p: &mut Project, v: &AutoView, repeated: &[(usize, f64, f64)]) {
-    if !v.with_regions {
-        return;
-    }
-    for &(t, start, len) in repeated {
-        let Some(track) = p.tracks.get_mut(t) else {
-            continue;
-        };
-        for piece in pieces_of(&track.auto, start, start + len) {
-            paste_piece(track.auto.lane_mut(piece.target), &piece, start + len);
-        }
-    }
-}
-
 // ------------------------------------------------------------------ layout
 
 /// Whether `t` gets lanes in Automation Mode (a folder has no sound of its own).
@@ -1553,6 +1538,11 @@ pub fn set_mode(p: &mut Project, v: &mut AutoView, on: bool) {
     }
 }
 
+/// Whether a range is selected on an automation lane (Copy and Paste then act on it).
+pub fn has_range(v: &AutoView) -> bool {
+    v.mode && v.lanes.sel.is_some()
+}
+
 /// Keys in the Tracks area: A (Automation Mode), B (Draw Mode), and with a range selected on a
 /// lane Delete, Command-C, Command-V and Command-D. Returns whether a key was used (the Tracks
 /// area then leaves it alone).
@@ -1581,7 +1571,8 @@ pub fn keys(ui: &Ui, p: &mut Project, v: &mut AutoView) -> bool {
                 || i.consume_key(Modifiers::NONE, Key::Backspace),
             i.consume_key(Modifiers::COMMAND, Key::C),
             i.consume_key(Modifiers::COMMAND, Key::V),
-            i.consume_key(Modifiers::COMMAND, Key::D),
+            // Not Shift-Command-D (Create Track Stack), which egui would match too.
+            !i.modifiers.shift && i.consume_key(Modifiers::COMMAND, Key::D),
         )
     });
     let playhead = p.position_beats;
@@ -1769,7 +1760,8 @@ mod tests {
         p.selected_track = 0;
         paste_with_regions(&mut p, &v, 16.0);
         assert_eq!(lane_value(&p.tracks[0].auto.volume, 17.0), Some(-12.0));
-        follow_repeats(&mut p, &v, &[(0, to, len)]);
+        // Repeat: a copy right after the region (as `region_commands::repeat` asks).
+        follow_drops(&mut p, &v, &[(0, to, len, 0, to + len)], false);
         assert_eq!(
             lane_value(&p.tracks[0].auto.volume, to + len + 1.0),
             Some(-12.0)

@@ -670,12 +670,13 @@ fn playing_regions(p: &Project) -> impl Iterator<Item = (u16, &Track, &Region, f
     p.tracks
         .iter()
         .enumerate()
-        .filter_map(|(ti, t)| Some((track_index(ti)?, t)))
-        .flat_map(move |(track, t)| {
+        .filter_map(|(ti, t)| Some((ti, track_index(ti)?, t)))
+        .flat_map(move |(ti, track, t)| {
             t.regions
                 .iter()
-                .filter(|r| !r.params.mute)
-                .flat_map(move |r| {
+                .enumerate()
+                .filter(move |(ri, r)| crate::region_solo::heard(p, ti, *ri, r))
+                .flat_map(move |(_, r)| {
                     plays_of(p, r)
                         .into_iter()
                         .map(move |(origin, span)| (track, t, r, origin, span))
@@ -689,9 +690,9 @@ fn song_controls(p: &Project) -> Vec<ControlEvent> {
     p.tracks
         .iter()
         .enumerate()
-        .filter_map(|(ti, t)| Some((track_index(ti)?, t)))
-        .filter(|(_, t)| t.kind.has_regions() && t.kind != TrackKind::Audio)
-        .flat_map(|(track, t)| {
+        .filter_map(|(ti, t)| Some((ti, track_index(ti)?, t)))
+        .filter(|(_, _, t)| t.kind.has_regions() && t.kind != TrackKind::Audio)
+        .flat_map(|(ti, track, t)| {
             let mut out = Vec::new();
             let (mut from, mut to) = (f64::MAX, 0.0f64);
             // Only an external instrument gets System Exclusive.
@@ -699,7 +700,9 @@ fn song_controls(p: &Project) -> Vec<ControlEvent> {
             for (r, origin, span) in t
                 .regions
                 .iter()
-                .filter(|r| !r.params.mute)
+                .enumerate()
+                .filter(|(ri, r)| crate::region_solo::heard(p, ti, *ri, r))
+                .map(|(_, r)| r)
                 .flat_map(|r| plays_of(p, r).into_iter().map(move |(o, s)| (r, o, s)))
             {
                 from = from.min(origin);
@@ -759,13 +762,14 @@ fn song_notes(p: &Project) -> Vec<NoteEvent> {
     p.tracks
         .iter()
         .enumerate()
-        .filter_map(|(ti, t)| Some((track_index(ti)?, t)))
-        .flat_map(|(track, t)| {
+        .filter_map(|(ti, t)| Some((ti, track_index(ti)?, t)))
+        .flat_map(|(ti, track, t)| {
             let mut notes: Vec<NoteEvent> = t
                 .regions
                 .iter()
-                .filter(|r| !r.params.mute)
-                .flat_map(|r| {
+                .enumerate()
+                .filter(|(ri, r)| crate::region_solo::heard(p, ti, *ri, r))
+                .flat_map(|(_, r)| {
                     plays_of(p, r)
                         .into_iter()
                         .flat_map(move |(origin, span)| played_notes(t, r, origin, span, track))
@@ -852,6 +856,30 @@ fn build_song(engine: &Engine, p: &Project) -> Song {
 /// `Engine` to stream). Used by the offline benchmark.
 pub fn offline_song(p: &Project) -> Song {
     Song::new(song_notes(p), track_mixes(p))
+}
+
+/// What an engine with no sound card needs to play `p` as the app plays it, apart from
+/// plug-ins and audio regions: the MIDI and the mix, the tempo map, every strip's effects,
+/// routes and automation, at unity master gain (the Singer's offline bounce).
+pub(crate) fn offline_setup(p: &Project, sample_rate: u32) -> Vec<Command> {
+    let sr = sample_rate as f32;
+    let mut out = vec![
+        Command::SetMasterGain { linear: 1.0 },
+        Command::SetSong(Box::new(offline_song(p))),
+        tempo_map(p),
+    ];
+    for (i, t) in p.tracks.iter().enumerate().take(MAX_TRACKS) {
+        out.push(Command::SetInserts {
+            track: i as u16,
+            chain: chain_of(&inserts_for(t, false, sr), sr),
+        });
+        out.push(Command::SetRoute {
+            track: i as u16,
+            route: route_of(p, i),
+        });
+    }
+    out.push(Command::SetAutomation(automation_lanes(p)));
+    out
 }
 
 /// The project's Tempo track and time signature as an engine tempo map.
@@ -1404,6 +1432,20 @@ impl EngineSync {
         self.output_delay.map_or(0, |d| d.1)
     }
 
+    /// Whether the engine has everything the project asks for: the song, every strip and
+    /// its delay compensation, the Space Designer responses, and the transport as `p` has
+    /// it. A bounce starts once this holds (its engine has no sound card and is run by the
+    /// bounce between calls of [`EngineSync::sync`]).
+    pub(crate) fn settled(&self, p: &Project) -> bool {
+        !self.retry
+            && self.irs.is_empty()
+            && self.layout.is_some()
+            && self.song_rev == Some(p.song_rev)
+            && self.output_delay.is_some()
+            && self.position.is_some()
+            && self.playing == p.playing
+    }
+
     /// The effects of the Stereo Out strip, sent like a track's: a new chain when the kinds
     /// change, else the changed settings. Returns false when the engine's queue was full.
     fn sync_master_fx(&mut self, p: &Project, sr: f32, live: bool) -> bool {
@@ -1631,6 +1673,7 @@ mod tests {
 
     fn track(notes: Vec<Note>) -> Track {
         Track {
+            vocal: None,
             name: "t".into(),
             kind: TrackKind::Instrument,
             color: egui::Color32::GREEN,
@@ -1662,6 +1705,7 @@ mod tests {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             icon: None,
             vca: None,
             midi_port: None,

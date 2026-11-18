@@ -5,6 +5,41 @@ being released into the GitHub Release notes, so keep one `## <version>` heading
 
 ## Unreleased
 
+### 2026-11-18: the public edition gets more of the private build
+
+- File > Bounce > Project or Section, File > Export > All Tracks as Audio Files, Bounce >
+  Regions in Place and Tracks in Place, Join into a new file, Convert Regions to New Audio
+  Files.
+- The 808 (a tuned, monophonic 808 bass, synthesized or from a one-shot you choose).
+- The Singer and Vocal Top Line: words typed on Piano Roll notes (Paste Lyrics…, or Return on
+  a note) are sung by CHIMERA, a physical model of the voice built into the program, or by
+  DiffSinger, which `tools/vocal/setup.sh` installs (its voice is downloaded by hand and is for
+  non-commercial use only).
+- The control interface (a Unix socket in the settings folder; `crates/prowavectl` is its
+  command-line client and MCP server; `docs/CONTROL-API.md`). It is off until Help > Allow
+  Control by Other Programs is chosen.
+- `tools/stems` and `tools/chops`: the scripts that separate songs into stems and cut loops
+  from them (Python; the models they download have their own licences, listed in the scripts).
+- THIRD-PARTY-NOTICES.md, also inside the app.
+
+### 2026-11-10: autosave and crash recovery
+
+Checked by tests only; not yet tried in the running program.
+
+- While a project has unsaved changes, a recovery copy is written every two minutes, and right
+  after an audio recording ends. It goes to `recovery/<session>/recovery.prowave` in the
+  settings folder, never over the project's own file, and holds no audio: the session's
+  recordings and unpacked media now live in that same session folder instead of the temp
+  folder.
+- At the next start after a crash, the program asks whether to recover the project or discard
+  the copy. A recovered project is unsaved and keeps its file, so Save writes there.
+- Quitting or closing the window with unsaved changes asks Save / Don't Save / Cancel. After
+  Don't Save, audio recorded in the session that is in no saved file is kept with a recovery
+  copy and offered at the next start; discarding it there deletes it.
+- A panic is written to `crash.log` in the settings folder (time, version, thread, message,
+  backtrace; the last 10 are kept).
+- A block a plug-in returns with a NaN or an infinity in it is replaced by silence.
+
 ### 2026-11-05 to 2026-11-09, by area
 
 A summary of `git log --no-merges --since="2026-11-05 00:00"` (320 commits; the 22 that came

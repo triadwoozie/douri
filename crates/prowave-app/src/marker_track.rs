@@ -1,8 +1,11 @@
 //! The Marker track (Logic Pro: Global Tracks > Marker), shown above the tracks with Track > Show
 //! Marker Track. Each marker is a named, coloured section from its start to the next marker.
 //!
-//! - Double-click an empty spot (or Navigate > Create Marker): new marker there.
-//! - Click a marker: the playhead goes to its start. Drag it to move it (snapped to the grid).
+//! - Double-click an empty spot (or Navigate > Create Marker, or the + key in the header): new
+//!   marker there (the + key and Create Marker: at the playhead, rounded to the nearest bar).
+//! - Click a marker: it is selected (orange) and the playhead goes to its start; Delete removes
+//!   the selected marker. Drag it to move it (snapped to the grid). The marker the playhead is in
+//!   is lit in its own colour.
 //! - Double-click a marker, or right-click > Rename Marker: edit its name.
 //! - Right-click: colour, or Delete Marker.
 use crate::i18n::tr;
@@ -10,7 +13,7 @@ use crate::model::{Project, MARKER_COLORS};
 use crate::theme::{self, Face};
 use crate::tracks_area::hw_tracks;
 use crate::widgets::context_menu;
-use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Stroke, Ui};
+use egui::{pos2, vec2, Align2, Color32, Rect, Sense, Ui};
 
 /// Height of the Marker track, in points.
 pub const HEIGHT: f32 = 28.0;
@@ -22,8 +25,21 @@ enum Action {
     Delete(usize),
 }
 
+/// The id of the + key in the header (tests find it on screen with this).
+pub(crate) fn add_key_id() -> egui::Id {
+    egui::Id::unique("marker_track_add")
+}
+
+/// The id of marker `i` on screen.
+pub(crate) fn marker_id(i: usize) -> egui::Id {
+    egui::Id::unique(("marker", i))
+}
+
 /// Draws the Marker track's `header` and `lane` and handles its editing. `x_of` / `beat_of`
 /// convert between beats and screen x as in the Tracks area; `snap` snaps a position.
+/// `selected` is the selected marker. Returns whether a marker was selected now (the Tracks
+/// area then deselects its regions).
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     p: &mut Project,
@@ -32,7 +48,9 @@ pub fn show(
     x_of: impl Fn(f64) -> f32,
     beat_of: impl Fn(f32) -> f64,
     snap: &dyn Fn(f64) -> f64,
-) {
+    selected: &mut Option<usize>,
+) -> bool {
+    let mut picked = false;
     let rename_id = egui::Id::unique("marker_track_rename");
     let grab_id = egui::Id::unique("marker_track_grab");
 
@@ -46,11 +64,11 @@ pub fn show(
             Face::Bold,
             11.0,
             0.05,
-            header.width() * 0.45,
+            header.width() * 0.4,
         );
         hw_tracks::label(
             &gh,
-            pos2(header.right() - 20.0, header.center().y),
+            pos2(header.right() - 30.0, header.center().y),
             Align2::RIGHT_CENTER,
             &name,
             Face::Bold,
@@ -60,6 +78,28 @@ pub fn show(
         );
     }
 
+    // The + key (Logic's Marker track header): Create Marker at the playhead.
+    let add = Rect::from_center_size(
+        pos2(header.right() - 14.0, header.center().y),
+        vec2(20.0, 20.0),
+    );
+    let add_resp = ui.interact(add, add_key_id(), Sense::click());
+    hw_tracks::small_key(
+        &gh,
+        add,
+        crate::hw::Cap::Bone,
+        false,
+        add_resp.is_pointer_button_down_on(),
+        add_resp.hovered(),
+        false,
+        "+",
+        None,
+    );
+    if add_resp.clicked() {
+        *selected = Some(crate::marker_edit::create(p, p.position_beats, true));
+        picked = true;
+    }
+
     // ---- lane: double-click an empty spot to add a marker
     let g = ui.painter_at(lane);
     hw_tracks::global_lane(&g, lane);
@@ -67,6 +107,8 @@ pub fn show(
     if lane_resp.double_clicked() {
         if let Some(pt) = lane_resp.interact_pointer_pos() {
             let i = p.add_marker(snap(beat_of(pt.x)));
+            *selected = Some(i);
+            picked = true;
             ui.ctx()
                 .data_mut(|m| m.insert_temp(rename_id, (i, p.markers[i].name.clone())));
         }
@@ -85,17 +127,16 @@ pub fn show(
         if x1 < lane.left() || x0 > lane.right() {
             continue;
         }
-        let block = Rect::from_min_max(
-            pos2(x0 + 1.0, lane.top() + 4.0),
-            pos2(x1 - 1.0, lane.bottom() - 4.0),
-        );
-        let resp = ui.interact(
-            block.intersect(lane),
-            egui::Id::unique(("marker", i)),
-            Sense::click_and_drag(),
-        );
-        if resp.clicked() {
-            p.position_beats = start;
+        // From its time to the next one's, edge to edge on the grid (the ink line at its
+        // start, drawn inside it, tells it from the one before).
+        let block = Rect::from_min_max(pos2(x0, lane.top() + 4.0), pos2(x1, lane.bottom() - 4.0));
+        let resp = ui.interact(block.intersect(lane), marker_id(i), Sense::click_and_drag());
+        if resp.clicked() || resp.drag_started() {
+            if resp.clicked() {
+                p.position_beats = start;
+            }
+            *selected = Some(i);
+            picked = true;
         }
         if resp.double_clicked() {
             action = Some(Action::Rename(i));
@@ -135,12 +176,15 @@ pub fn show(
         });
 
         let m = &p.markers[i];
-        // The marker the playhead is in is an orange cap; the others are black caps. The
-        // marker's own colour is a stripe at its left.
+        // The selected marker is an orange cap, the one the playhead is in is lit in its own
+        // colour, the others are black caps. The marker's own colour is a stripe at its left.
         let current = p.marker_at(p.position_beats) == Some(i);
+        let is_selected = *selected == Some(i);
         let cap = block.intersect(lane.expand2(vec2(4.0, 0.0)));
-        if current {
+        if is_selected {
             hw_tracks::plate(&g, cap, theme::ORANGE, true);
+        } else if current {
+            hw_tracks::plate(&g, cap, m.color, true);
         } else {
             hw_tracks::dark_plate(&g, cap);
         }
@@ -151,7 +195,7 @@ pub fn show(
                 m.color,
             );
         }
-        g.vline(x0, lane.top()..=lane.bottom(), Stroke::new(2.0, theme::INK));
+        hw_tracks::time_line(&g, x0, lane.top()..=lane.bottom(), 2.0, theme::INK);
         let text_x = x0.max(lane.left()) + 11.0;
         if text_x + 10.0 < x1 {
             let clip = g.with_clip_rect(block.shrink(1.0).intersect(lane));
@@ -163,12 +207,26 @@ pub fn show(
                 Face::Silk,
                 12.0,
                 0.1,
-                if current { theme::INK } else { theme::BONE_HI },
+                if is_selected || current {
+                    theme::text_on(if is_selected { theme::ORANGE } else { m.color })
+                } else {
+                    theme::BONE_HI
+                },
             );
         }
     }
     if moved {
+        // Sorting may give the selected marker another index: follow it.
+        let held = selected
+            .and_then(|i| p.markers.get(i))
+            .map(|m| (m.beat, m.name.clone()));
         p.tidy_markers();
+        if let Some((beat, name)) = held {
+            *selected = p
+                .markers
+                .iter()
+                .position(|m| (m.beat - beat).abs() <= 1e-6 && m.name == name);
+        }
     }
 
     match action {
@@ -179,6 +237,7 @@ pub fn show(
         Some(Action::Color(i, c)) => p.markers[i].color = c,
         Some(Action::Delete(i)) => {
             p.markers.remove(i);
+            *selected = None;
         }
         None => {}
     }
@@ -188,7 +247,7 @@ pub fn show(
         let Some(m) = p.markers.get(i) else {
             ui.ctx()
                 .data_mut(|m| m.remove::<(usize, String)>(rename_id));
-            return;
+            return picked;
         };
         let x0 = x_of(m.beat).max(lane.left());
         let r = Rect::from_min_size(pos2(x0, lane.top() + 1.0), vec2(160.0, HEIGHT - 2.0));
@@ -224,4 +283,5 @@ pub fn show(
     }
 
     // The playhead runs through this lane from the Tracks area's ruler.
+    picked
 }

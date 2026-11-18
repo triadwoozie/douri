@@ -244,6 +244,9 @@ impl Song {
     }
 }
 
+/// The longest an offline clip waits for the disk thread before it gives the frame up.
+const OFFLINE_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Audio-thread side of a streamed audio region (Logic Pro: audio region on an audio track).
 /// Reads [`Block`]s produced by the disk thread; never allocates or blocks.
 pub struct AudioClip {
@@ -261,6 +264,9 @@ pub struct AudioClip {
     /// Next clip-relative frame to play (negative = before the region starts).
     pos: i64,
     underruns: u32,
+    /// Played by an engine with no sound card: a frame the disk thread has not read yet is
+    /// waited for instead of being left out.
+    wait: bool,
 }
 
 /// Non-destructive region edits (Logic Pro: Region Inspector Gain, Fade In/Out, Reverse).
@@ -359,6 +365,39 @@ impl AudioClip {
             cur: None,
             pos: 0,
             underruns: 0,
+            wait: false,
+        }
+    }
+
+    /// The clip for an engine with no sound card ([`crate::Engine::offline`]): it waits for
+    /// the disk thread wherever a clip played live would count an underrun. Never for a clip
+    /// the audio callback plays.
+    pub(crate) fn waiting(mut self) -> Self {
+        self.wait = true;
+        self
+    }
+
+    /// Waits until the disk thread has put a block in the ring. False when none will come:
+    /// the file could not be read, or nothing arrived for [`OFFLINE_WAIT`].
+    fn wait_for_block(&mut self) -> bool {
+        let began = std::time::Instant::now();
+        let mut turns = 0u32;
+        loop {
+            if !self.rx.is_empty() {
+                return true;
+            }
+            if self.shared.failed() || self.rx.is_abandoned() {
+                return false;
+            }
+            turns += 1;
+            if turns < 64 {
+                std::thread::yield_now();
+            } else {
+                if began.elapsed() > OFFLINE_WAIT {
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_micros(200));
+            }
         }
     }
 
@@ -406,6 +445,9 @@ impl AudioClip {
                 Ok(b) if b.gen == self.gen => self.cur = Some(b),
                 Ok(_) => {}
                 Err(_) => {
+                    if self.wait && self.wait_for_block() {
+                        continue;
+                    }
                     self.underruns += 1;
                     return None;
                 }
@@ -1006,6 +1048,9 @@ pub struct EngineCore {
     /// A count-in is running: the clicks left, the frames to the next one, the frames
     /// between clicks and how many clicks it has.
     counting: bool,
+    /// Frames the transport still plays before it stops by itself, on that frame
+    /// ([`EngineCore::play_for`]); `u64::MAX`: until it is told to stop.
+    play_left: u64,
     count_left: u8,
     count_wait: u32,
     count_step: u32,
@@ -1271,6 +1316,7 @@ impl EngineCore {
             start_click: false,
             tuning_hz: 440.0,
             counting: false,
+            play_left: u64::MAX,
             count_left: 0,
             count_wait: 0,
             count_step: 1,
@@ -1354,6 +1400,14 @@ impl EngineCore {
             transport_pos: 0,
             wrap_beat: f64::NAN,
         }
+    }
+
+    /// Once it plays, the transport stops by itself after `frames` frames, on the frame, and
+    /// what is on its way out (delay compensation, notes waiting for a content delay, the
+    /// instruments' releases, the effects' tails) is still heard: the end of a bounce. A
+    /// Pause from the app would come at the start of a block and drop what was on its way.
+    pub(crate) fn play_for(&mut self, frames: u64) {
+        self.play_left = frames;
     }
 
     /// Connects the playback thread (see [`crate::prerender`]): the plug-ins of tracks that
@@ -3170,6 +3224,17 @@ impl EngineCore {
             // learn its beat: they play the start beat on the frame the notes and click do.
             if self.counting {
                 self.tick_count_in();
+            }
+            if self.playing && self.play_left != u64::MAX {
+                if self.play_left == 0 {
+                    // The notes end by themselves on this frame (a stopped transport
+                    // releases them) and nothing rendered so far is dropped.
+                    self.playing = false;
+                    self.play_left = u64::MAX;
+                    self.mtc_locate();
+                } else {
+                    self.play_left -= 1;
+                }
             }
             // Plug-in instruments sound whether or not the transport runs (tails, live notes).
             // An instrument that follows the transport (a drum machine) learns this frame's beat.
