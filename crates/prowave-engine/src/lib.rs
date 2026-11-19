@@ -11,6 +11,7 @@
 static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 mod analysis;
+pub mod bass808;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
 mod clock;
@@ -33,6 +34,7 @@ mod output;
 pub mod plugin;
 pub mod pult_eq;
 mod routing;
+pub mod rt_alloc;
 pub mod sample_file;
 pub mod sampler;
 mod sf2;
@@ -44,6 +46,13 @@ mod triple;
 mod wasapi;
 
 pub use crate::analysis::{tempo_curve, Analysis, Analyzer, TempoEstimate, STRENGTH_RATE};
+pub use crate::bass808::{
+    can_sustain as bass808_can_sustain, measure_root_hz as bass808_measure_root_hz,
+    prepare_sample as bass808_prepare_sample, Bass808, Bass808Param, Bass808Params, Bass808Spec,
+    BASS808_DECAY, BASS808_DRIVE, BASS808_GLIDE, BASS808_HIGH_PASS, BASS808_LEGATO, BASS808_LEVEL,
+    BASS808_PARAMS, BASS808_PUNCH, BASS808_PUNCH_TIME, BASS808_RELEASE, BASS808_SINE,
+    BASS808_SQUARE, BASS808_SUSTAIN, BASS808_TUNE,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::capture::{
     input_devices, Capture, CaptureError, InputInfo, InputSource, Recorded, MAX_INPUT_CHANNELS,

@@ -114,6 +114,89 @@ pub(crate) fn paste_replace(p: &mut Project, v: &mut TracksView, clip: &RegionCl
     paste_at_playhead(p, v, clip);
 }
 
+/// Whether every region of a drag (track, region, start) would find a track of its kind
+/// `rows` tracks further down (up when negative): audio regions go on audio tracks, the others
+/// on tracks that play MIDI.
+pub(crate) fn fits_rows(p: &Project, group: &[(usize, usize, f64)], rows: isize) -> bool {
+    group.iter().all(|&(t, r, _)| {
+        let Some(region) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
+            return false;
+        };
+        let Some(to) = t.checked_add_signed(rows).and_then(|to| p.tracks.get(to)) else {
+            return false;
+        };
+        to.kind.has_regions() && region.audio.is_some() == (to.kind == TrackKind::Audio)
+    })
+}
+
+/// The bar (1-based) a region that started at `start` lands on, moved by `delta` quarter notes
+/// (never before the start of the song).
+pub(crate) fn landing_bar(p: &Project, start: f64, delta: f64) -> f32 {
+    p.beats_to_bar((start + delta).max(0.0)) as f32 + 1.0
+}
+
+/// The end of a Pointer-tool drag of regions, as in Logic. Each region of `group` (track,
+/// region, its start in quarter notes when the drag began) lands `delta` quarter notes later
+/// and `rows` tracks further down. With `copy` (Option held when the button is let go) the
+/// regions stay where they were and copies of them land there instead, the same in everything
+/// but their place.
+/// Returns where the landed regions are now, to be selected.
+pub(crate) fn drop_regions(
+    p: &mut Project,
+    group: &[(usize, usize, f64)],
+    delta: f64,
+    rows: isize,
+    copy: bool,
+    xfade: bool,
+) -> Vec<(usize, usize)> {
+    let group: Vec<(usize, usize, f64)> = group
+        .iter()
+        .copied()
+        .filter(|&(t, r, _)| p.tracks.get(t).is_some_and(|tr| r < tr.regions.len()))
+        .collect();
+    let rows = if fits_rows(p, &group, rows) { rows } else { 0 };
+    let mut landed: Vec<(usize, usize)> = Vec::new();
+    if !copy && rows == 0 {
+        // A plain move: each region takes its new place on its own track.
+        for &(t, r, s0) in &group {
+            p.tracks[t].regions[r].start_bar = landing_bar(p, s0, delta);
+        }
+        landed.extend(group.iter().map(|&(t, r, _)| (t, r)));
+    } else {
+        let mut made: Vec<(usize, Region)> = Vec::new();
+        for &(t, r, s0) in &group {
+            // The region itself stays where it began (the drag may have moved it along).
+            let back = p.beats_to_bar(s0) as f32 + 1.0;
+            p.tracks[t].regions[r].start_bar = back;
+            let to = t.saturating_add_signed(rows);
+            let mut region = p.tracks[t].regions[r].clone();
+            region.start_bar = landing_bar(p, s0, delta);
+            made.push((to, region));
+        }
+        if !copy {
+            // Moved to other tracks: taken off their own ones, the highest index first so
+            // the lower ones stay valid.
+            let mut gone: Vec<(usize, usize)> = group.iter().map(|&(t, r, _)| (t, r)).collect();
+            gone.sort_unstable();
+            gone.dedup();
+            for &(t, r) in gone.iter().rev() {
+                p.tracks[t].regions.remove(r);
+            }
+        }
+        for (to, region) in made {
+            p.tracks[to].regions.push(region);
+            landed.push((to, p.tracks[to].regions.len() - 1));
+        }
+    }
+    for &(t, r) in &landed {
+        if p.tracks[t].kind == TrackKind::Audio && crate::tracks_area::overlaps_another(p, t, r) {
+            p.tracks[t].regions[r].params.crossfade = xfade;
+        }
+    }
+    p.song_rev += 1;
+    landed
+}
+
 /// Smallest piece (in quarter notes) a split may leave on either side.
 const MIN_PIECE: f64 = 1e-6;
 

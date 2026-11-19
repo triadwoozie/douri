@@ -772,6 +772,8 @@ pub struct Track {
     /// The Drum Machine the track plays: sixteen pads on the keys 36 to 51 (it wins over the
     /// Sampler and a SoundFont).
     pub drums: Option<crate::drum_kit::DrumsUse>,
+    /// The tuned 808 Bass synthesizer or sample player.
+    pub bass808: Option<prowave_engine::Bass808Spec>,
     /// The icon the user picked (Track > Assign Track Icon); `None` is the automatic one.
     pub icon: Option<crate::track_icons::IconKind>,
     /// The parent of a Summing Stack (Track > Create Track Stack > Summing Stack): an Aux strip
@@ -872,6 +874,7 @@ impl Track {
             sampler: None,
             epiano: None,
             drums: None,
+            bass808: None,
             icon: None,
             midi_channel: 1,
             midi_program: None,
@@ -1099,6 +1102,7 @@ impl Project {
             sampler: None,
             epiano: None,
             drums: None,
+            bass808: None,
             icon: None,
             summing_stack: false,
             midi_channel: 1,
@@ -1167,6 +1171,7 @@ impl Project {
             sampler: None,
             epiano: None,
             drums: None,
+            bass808: None,
             icon: None,
             summing_stack: false,
             midi_channel: 1,
@@ -1451,6 +1456,95 @@ impl Project {
             Some(last) => last.ramp = false,
             None => self.tempo_ramp = false,
         }
+    }
+
+    /// Whether region `ri` of track `ti` can be cut at beat `at`.
+    pub fn can_split_region(&self, ti: usize, ri: usize, at: f64) -> bool {
+        let Some(r) = self.tracks.get(ti).and_then(|t| t.regions.get(ri)) else {
+            return false;
+        };
+        let (start, end) = (self.region_start_beats(r), self.region_end_beats(r));
+        at > start + 1e-6
+            && at < end - 1e-6
+            && r.folder.is_none()
+            && r.generated.is_none()
+            && !r.params.reverse
+    }
+
+    /// Cuts region `ri` of track `ti` at `at` (quarter notes) into two.
+    pub fn split_region(&mut self, ti: usize, ri: usize, at: f64) -> bool {
+        let Some(r) = self.tracks.get(ti).and_then(|t| t.regions.get(ri)) else {
+            return false;
+        };
+        if !self.can_split_region(ti, ri, at) {
+            return false;
+        }
+        let start = self.region_start_beats(r);
+        let cut_bar = self.beats_to_bar(at) as f32 + 1.0;
+        let rel = (at - start) as f32;
+        let map = self.tempo_map();
+        let secs = map.seconds_at(at) - map.seconds_at(start);
+        let mut left = r.clone();
+        let mut right = r.clone();
+        left.len_bars = cut_bar - r.start_bar;
+        right.start_bar = cut_bar;
+        right.len_bars = r.start_bar + r.len_bars - cut_bar;
+        left.notes = r
+            .notes
+            .iter()
+            .filter(|n| n.start < rel)
+            .map(|n| Note {
+                len: n.len.min(rel - n.start),
+                ..*n
+            })
+            .collect();
+        right.notes = r
+            .notes
+            .iter()
+            .filter(|n| n.start >= rel)
+            .map(|n| Note {
+                start: n.start - rel,
+                ..*n
+            })
+            .collect();
+        left.controls = r
+            .controls
+            .iter()
+            .filter(|c| c.start < rel)
+            .copied()
+            .collect();
+        right.controls = r
+            .controls
+            .iter()
+            .filter(|c| c.start >= rel)
+            .map(|c| Control {
+                start: c.start - rel,
+                ..*c
+            })
+            .collect();
+        if let Some(a) = &r.audio {
+            let (part_start, total_frames) = a.part();
+            let sample_rate = a.file.sample_rate.max(1) as f64;
+            let before_frames = (secs * sample_rate).round().min(total_frames as f64) as u64;
+            left.audio = Some(AudioRegion {
+                start_frame: part_start,
+                len_frames: Some(before_frames),
+                ..a.clone()
+            });
+            right.audio = Some(AudioRegion {
+                start_frame: part_start + before_frames,
+                len_frames: Some(total_frames.saturating_sub(before_frames)),
+                ..a.clone()
+            });
+            left.params.fade_out = 0.0;
+            right.params.fade_in = 0.0;
+            right.params.crossfade = false;
+        }
+        let regions = &mut self.tracks[ti].regions;
+        regions[ri] = left;
+        regions.insert(ri + 1, right);
+        self.song_rev += 1;
+        true
     }
 
     /// The tempo and signature as the engine's tempo map.

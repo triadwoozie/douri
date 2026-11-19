@@ -99,6 +99,81 @@ impl DragMode {
 /// Where the Fade tool is in [`TOOLS`].
 const FADE_TOOL: usize = 9;
 
+#[derive(Clone)]
+enum ToolAct {
+    Drop(Vec<(usize, usize, f64)>, f64, isize, bool),
+}
+
+struct MarqueeInput {
+    started: Option<Pos2>,
+    at: Option<Pos2>,
+    stopped: bool,
+    clicked: Option<Pos2>,
+    other: bool,
+}
+
+impl Default for MarqueeInput {
+    fn default() -> Self {
+        Self {
+            started: None,
+            at: None,
+            stopped: false,
+            clicked: None,
+            other: false,
+        }
+    }
+}
+
+impl MarqueeInput {
+    fn read(&mut self, ui: &Ui, resp: &egui::Response) {
+        use egui::PointerButton::Primary;
+        if resp.drag_started_by(Primary) {
+            self.started = ui
+                .input(|i| i.pointer.press_origin())
+                .or(resp.interact_pointer_pos());
+        }
+        if resp.dragged_by(Primary) {
+            self.at = resp.interact_pointer_pos().or(self.at);
+        }
+        if resp.drag_stopped_by(Primary) {
+            self.stopped = true;
+        }
+        if resp.clicked() {
+            self.clicked = resp.interact_pointer_pos();
+        }
+    }
+}
+
+fn draw_marquee(
+    g: &Painter,
+    rows: &[(f32, f32)],
+    r: crate::marquee::Range,
+    x_of: &dyn Fn(f64) -> f32,
+    lanes: Rect,
+    scroll_y: f32,
+) {
+    let (x0, x1) = (x_of(r.start), x_of(r.end));
+    for (_t, &(top, h)) in rows.iter().enumerate().take(r.last + 1).skip(r.first) {
+        if h <= 0.0 {
+            continue;
+        }
+        let y = lanes.top() + top - scroll_y;
+        let band = Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 1.0), y + h));
+        let paint = band.intersect(lanes);
+        if paint.width() > 0.0 && paint.height() > 0.0 {
+            g.rect_filled(paint, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 38));
+            g.line_segment(
+                [pos2(x0, paint.top()), pos2(x0, paint.bottom())],
+                Stroke::new(1.5, Color32::from_rgb(0xff, 0x9f, 0x40)),
+            );
+            g.line_segment(
+                [pos2(x1, paint.top()), pos2(x1, paint.bottom())],
+                Stroke::new(1.5, Color32::from_rgb(0xff, 0x9f, 0x40)),
+            );
+        }
+    }
+}
+
 pub(crate) const TOOLS: [&str; 14] = [
     "Pointer Tool",
     "Pencil Tool",
@@ -132,6 +207,8 @@ pub enum TrackTool {
     Pointer,
     /// Drag on an audio region to set its fade in (left half) or fade out (right half).
     Fade,
+    /// Drag to select a stretch of time on one or more tracks (`marquee.rs`).
+    Marquee,
 }
 
 pub struct TracksView {
@@ -144,6 +221,14 @@ pub struct TracksView {
     pub snap: Snap,
     pub drag_mode: DragMode,
     pub tool: TrackTool,
+    /// The Command-click tool (Logic default: Marquee tool).
+    pub cmd_tool: TrackTool,
+    /// The Marquee tool's selection of a stretch of time (`marquee.rs`).
+    pub range: crate::marquee::State,
+    /// Snap to Grid, the division and Relative or Absolute (`snap_grid`).
+    pub grid: crate::snap_grid::Grid,
+    /// That drag so far: quarter notes later (snapped) and tracks down.
+    pub drag_by: (f64, isize),
     /// A Fade tool drag in progress: `true` for a fade in, `false` for a fade out.
     fade_drag: Option<bool>,
     /// A Flex Time marker being dragged: (track, region, marker, the result's length in
@@ -354,6 +439,10 @@ impl Default for TracksView {
             snap: Snap::Smart,
             drag_mode: DragMode::NoOverlap,
             tool: TrackTool::Pointer,
+            cmd_tool: TrackTool::Marquee,
+            range: crate::marquee::State::default(),
+            grid: crate::snap_grid::Grid::default(),
+            drag_by: (0.0, 0),
             fade_drag: None,
             flex_drag: None,
             catch: true,
@@ -527,7 +616,7 @@ fn flex_double_click(
 }
 
 /// Whether region `ri` of track `ti` overlaps another region of the track.
-fn overlaps_another(p: &Project, ti: usize, ri: usize) -> bool {
+pub(crate) fn overlaps_another(p: &Project, ti: usize, ri: usize) -> bool {
     let track = &p.tracks[ti];
     let (s, e) = (
         p.region_start_beats(&track.regions[ri]),
@@ -1085,13 +1174,37 @@ fn drag_menu(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) -> f32 
 /// "Snap:" menu ending at `rx`; returns where the next item to its left ends.
 fn snap_menu(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) -> f32 {
     let snap_r = Rect::from_min_size(pos2(rx - 150.0, cy - 10.0), vec2(150.0, 20.0));
-    let resp = popup_button(ui, g, snap_r, id(("popup", "snap")), v.snap.label());
+    let shown = if v.grid.on { v.snap.label() } else { tr("Off") };
+    let resp = popup_button(ui, g, snap_r, id(("popup", "snap")), shown);
     egui::Popup::menu(&resp).show(|ui| {
+        if ui.selectable_label(v.grid.on, tr("Snap to Grid")).clicked() {
+            v.grid.on = !v.grid.on;
+            ui.close();
+        }
+        ui.separator();
         for m in Snap::ALL {
-            if ui.selectable_label(v.snap == m, m.label()).clicked() {
+            if ui.selectable_label(v.grid.on && v.snap == m, m.label()).clicked() {
                 v.snap = m;
+                v.grid.on = true;
                 ui.close();
             }
+        }
+        ui.separator();
+        for d in crate::snap_grid::DIVISIONS {
+            let text = crate::snap_grid::division_label(d);
+            if ui.selectable_label(v.grid.division == d, text).clicked() {
+                v.grid.division = d;
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui.selectable_label(v.grid.relative, tr("Snap Regions to Relative Value")).clicked() {
+            v.grid.relative = true;
+            ui.close();
+        }
+        if ui.selectable_label(!v.grid.relative, tr("Snap Regions to Absolute Value")).clicked() {
+            v.grid.relative = false;
+            ui.close();
         }
     });
     let label = g.text(
@@ -1104,7 +1217,7 @@ fn snap_menu(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) -> f32 
     label.left() - 12.0
 }
 
-/// Left-click and Command-click tool menus ending at `rx` (only the Pointer works so far).
+/// Left-click and Command-click tool menus ending at `rx`.
 fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
     for (i, key) in ["tool_l", "tool_r"].iter().enumerate() {
         let r = Rect::from_min_size(
@@ -1116,12 +1229,11 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
             g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
         }
         let icon_at = pos2(r.left() + 13.0, cy);
-        if i == 0 && v.tool == TrackTool::Fade {
-            draw_fade_tool(g, icon_at, TEXT);
-        } else if i == 0 {
-            draw_pointer(g, icon_at, TEXT);
-        } else {
-            draw_crosshair(g, icon_at, TEXT);
+        let active_tool = if i == 0 { v.tool } else { v.cmd_tool };
+        match active_tool {
+            TrackTool::Fade => draw_fade_tool(g, icon_at, TEXT),
+            TrackTool::Pointer => draw_pointer(g, icon_at, TEXT),
+            TrackTool::Marquee => draw_crosshair(g, icon_at, TEXT),
         }
         let c = pos2(r.right() - 9.0, cy + 1.0);
         g.add(Shape::line(
@@ -1138,19 +1250,22 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
                 let tool = match n {
                     0 => Some(TrackTool::Pointer),
                     FADE_TOOL => Some(TrackTool::Fade),
+                    12 => Some(TrackTool::Marquee),
                     _ => None,
                 };
                 match tool {
-                    Some(tool) if i == 0 => {
-                        if ui.selectable_label(v.tool == tool, tr(t)).clicked() {
-                            v.tool = tool;
+                    Some(tool) => {
+                        let selected = if i == 0 { v.tool == tool } else { v.cmd_tool == tool };
+                        if ui.selectable_label(selected, tr(t)).clicked() {
+                            if i == 0 {
+                                v.tool = tool;
+                            } else {
+                                v.cmd_tool = tool;
+                            }
                             ui.close();
                         }
                     }
-                    Some(TrackTool::Pointer) => {
-                        let _ = ui.selectable_label(true, tr(t));
-                    }
-                    _ => todo_item(ui, t),
+                    None => todo_item(ui, t),
                 }
             }
         });
@@ -1685,6 +1800,10 @@ fn forget_track_indexes(s: &mut UiState) {
 // ------------------------------------------------------------------ actions
 
 pub(crate) fn delete_selected(p: &mut Project, v: &mut TracksView) {
+    if v.range.active().is_some() {
+        crate::marquee::delete(p, v);
+        return;
+    }
     let mut sel = v.selection();
     if sel.is_empty() {
         return;
@@ -2964,8 +3083,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     }
 
     // Click on an empty lane: select that track, deselect regions.
-    let lane_resp = ui.interact(lanes, id("lanes"), Sense::click());
+    let lane_resp = ui.interact(lanes, id("lanes"), Sense::click_and_drag());
     let mut picked: Option<CtxAction> = None;
+    let tool = if ui.input(|i| i.modifiers.command) {
+        v.cmd_tool
+    } else {
+        v.tool
+    };
     if lane_resp.clicked() || context_click(&lane_resp) {
         if let Some(pt) = lane_resp.interact_pointer_pos() {
             if let Some(row) = row_at(&rows, pt.y - lanes.top() + scroll_y) {
@@ -2978,7 +3102,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 }
             }
         }
-        v.clear_selection();
+        if tool != TrackTool::Marquee {
+            v.clear_selection();
+        }
     }
     // Double-click on an empty stretch of a Drummer track: a Drummer region there, as in Logic.
     if lane_resp.double_clicked() {
@@ -3026,18 +3152,29 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     });
 
     // ---- regions
-    let step = snap_step(v.snap, beat_px, bpb, p.beat_unit_at(beat_of(lanes.left())));
+    let unit = p.beat_unit_at(beat_of(lanes.left()));
+    let step = v.grid.step(v.snap, beat_px, bpb, unit);
     // Snapping to bars follows the signature, so it goes to the nearest bar line.
-    let snap_bars = snaps_to_bars(v.snap, beat_px, p.beat_unit_at(beat_of(lanes.left())));
+    let snap_bars = v.grid.snaps_to_bars(v.snap, beat_px, unit);
     let sig_owned = p.sigs().to_owned();
+    let grid_on = v.grid.on;
     let snap_pos = move |b: f64| -> f64 {
-        if snap_bars {
+        if !grid_on {
+            b
+        } else if snap_bars {
             sig_owned.as_ref().nearest_bar_line(b)
         } else {
             snap_to(b, step)
         }
     };
     let mut moved = false;
+    let mut tool_act: Option<ToolAct> = None;
+    let mut mq = MarqueeInput::default();
+    if tool == TrackTool::Marquee {
+        mq.read(ui, &lane_resp);
+    } else {
+        mq.other |= lane_resp.clicked() || lane_resp.drag_started_by(egui::PointerButton::Primary);
+    }
     for (ti, &(top, row_h)) in rows.iter().enumerate() {
         if row_h <= 0.0 {
             continue;
@@ -3059,6 +3196,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 continue;
             }
             let resp = ui.interact(rr, id(("region", ti, ri)), Sense::click_and_drag());
+            if tool == TrackTool::Marquee {
+                mq.read(ui, &resp);
+            } else {
+                mq.other |= resp.clicked() || resp.drag_started_by(egui::PointerButton::Primary);
+            }
             // Shift or Command click adds to the selection (or takes the region out of it). A
             // plain click or drag on a region that is selected keeps the whole selection.
             if resp.clicked() && ui.input(|i| i.modifiers.shift || i.modifiers.command) {
@@ -3173,37 +3315,41 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     v.group_drag = group;
                 }
                 if resp.dragged() {
+                    let copy = ui.input(|i| i.modifiers.alt);
                     if let Some(pt) = resp.interact_pointer_pos() {
-                        let nb = snap_pos((beat_of(pt.x) - v.grab_beats).max(0.0));
+                        let raw = (beat_of(pt.x) - v.grab_beats).max(0.0);
                         let grabbed = v
                             .group_drag
                             .iter()
                             .find(|g| (g.0, g.1) == (ti, ri))
                             .map_or(start_beat, |g| g.2);
+                        let nb = v.grid.region_start(raw, grabbed, &snap_pos);
                         let delta = nb - grabbed;
-                        let moves: Vec<(usize, usize, f32)> = v
-                            .group_drag
-                            .iter()
-                            .map(|&(gt, gr, s0)| {
-                                let bar = p.beats_to_bar((s0 + delta).max(0.0)) as f32 + 1.0;
-                                (gt, gr, bar)
-                            })
-                            .collect();
-                        for (gt, gr, bar) in moves {
-                            if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
-                                reg.start_bar = bar;
+                        let now_y = pt.y - lanes.top() + scroll_y;
+                        let row_under = row_at(&rows, now_y).unwrap_or(ti);
+                        let down = row_under as isize - ti as isize;
+                        v.drag_by = (delta, down);
+                        if !copy && down == 0 {
+                            let moves: Vec<(usize, usize, f32)> = v
+                                .group_drag
+                                .iter()
+                                .map(|&(gt, gr, s0)| {
+                                    (gt, gr, crate::region_edit::landing_bar(p, s0, delta))
+                                })
+                                .collect();
+                            for (gt, gr, bar) in moves {
+                                if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
+                                    reg.start_bar = bar;
+                                }
                             }
                         }
                     }
                 }
                 if resp.drag_stopped() {
-                    v.group_drag.clear();
-                    moved = true;
-                    // Dropped on another audio region: X-Fade crossfades them, the other
-                    // modes leave them overlapping.
-                    if p.tracks[ti].kind == TrackKind::Audio && overlaps_another(p, ti, ri) {
-                        p.tracks[ti].regions[ri].params.crossfade = v.drag_mode == DragMode::XFade;
-                    }
+                    let copy = ui.input(|i| i.modifiers.alt);
+                    let group = std::mem::take(&mut v.group_drag);
+                    let (delta, down) = std::mem::take(&mut v.drag_by);
+                    tool_act = Some(ToolAct::Drop(group, delta, down, copy));
                 }
             }
             let (is_audio, muted) = (
@@ -3317,6 +3463,95 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 ti as u32 * 77 + ri as u32 * 13 + 3,
             );
         }
+    }
+    // Ghost preview of Alt/Option copy or cross-track move
+    let copying = ui.input(|i| i.modifiers.alt);
+    if !v.group_drag.is_empty() && (copying || v.drag_by.1 != 0) {
+        let (delta, down) = v.drag_by;
+        for &(gt, gr, s0) in &v.group_drag {
+            let Some(region) = p.tracks.get(gt).and_then(|t| t.regions.get(gr)) else {
+                continue;
+            };
+            let to = gt.saturating_add_signed(down);
+            let Some(&(top, row_h)) = rows.get(to) else {
+                continue;
+            };
+            let y = lanes.top() + top - scroll_y;
+            let base_h = row_h - take_rows_height(&p.tracks[to]);
+            let start = (s0 + delta).max(0.0);
+            let full = Rect::from_min_max(
+                pos2(x_of(start), y + 1.0),
+                pos2(x_of(start + p.region_len_beats(region)), y + base_h - 1.0),
+            );
+            let paint = full.intersect(lanes);
+            if paint.width() > 0.0 && paint.height() > 0.0 {
+                draw_region(
+                    &g,
+                    paint,
+                    full,
+                    &p.tracks[to],
+                    region,
+                    p.effective_fades(gt, gr),
+                    beat_px,
+                    true,
+                    false,
+                    false,
+                    gt as u32 * 77 + gr as u32 * 13 + 3,
+                );
+            }
+        }
+    }
+    match tool_act {
+        Some(ToolAct::Drop(group, delta, down, copy)) => {
+            let xfade = v.drag_mode == DragMode::XFade;
+            let landed = crate::region_edit::drop_regions(p, &group, delta, down, copy, xfade);
+            if copy || down != 0 {
+                v.select_many(&landed);
+                if let Some(&(t, _)) = landed.first() {
+                    p.selected_track = t;
+                }
+            }
+        }
+        None => {}
+    }
+    // Marquee tool drag, click, and rendering
+    let adding = ui.input(|i| i.modifiers.shift);
+    let cell = |pt: Pos2| {
+        let row = row_at(&rows, pt.y - lanes.top() + scroll_y).unwrap_or_else(|| {
+            if pt.y < lanes.top() {
+                0
+            } else {
+                rows.len().saturating_sub(1)
+            }
+        });
+        (snap_pos(beat_of(pt.x)), row)
+    };
+    if let Some(pt) = mq.started {
+        v.range.begin(cell(pt), adding);
+    }
+    if let Some(pt) = mq.at {
+        v.range.drag_to(cell(pt));
+    }
+    if mq.stopped {
+        v.range.end();
+    }
+    if let Some(pt) = mq.clicked {
+        if adding && v.range.active().is_some() {
+            v.range.begin(cell(pt), true);
+            v.range.end();
+        } else {
+            v.range.clear();
+        }
+    }
+    if mq.other {
+        v.range.clear();
+    }
+    if let Some(r) = v
+        .range
+        .range
+        .filter(|r| !r.is_empty() || v.range.anchor.is_some())
+    {
+        draw_marquee(&g, &rows, r, &x_of, lanes, scroll_y);
     }
     if moved {
         p.song_rev += 1;

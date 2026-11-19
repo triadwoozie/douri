@@ -63,6 +63,8 @@ pub struct EngineSync {
     sampler_jobs: std::collections::HashMap<usize, SamplerJob>,
     /// The Electric Piano dials each track was last given (`None`: no Electric Piano), by track.
     pianos: Vec<Option<[f32; prowave_engine::epiano::PARAMS]>>,
+    /// The Bass 808 each track was last given (`None`: no Bass 808), by track.
+    bass808s: Vec<Option<prowave_engine::Bass808Spec>>,
     /// Which tracks the engine was told are external, by track.
     externals: Vec<bool>,
     /// The controller changes the engine has.
@@ -636,6 +638,7 @@ impl EngineSync {
             samplers: Vec::new(),
             sampler_jobs: std::collections::HashMap::new(),
             pianos: Vec::new(),
+            bass808s: Vec::new(),
             externals: Vec::new(),
             controls: Vec::new(),
             mtc: None,
@@ -810,6 +813,15 @@ impl EngineSync {
                 }
                 continue;
             }
+            if let Some(b808) = t.bass808.as_ref().filter(|_| !external) {
+                if !self.sync_bass808(i, b808, sample_rate) {
+                    break;
+                }
+                if let Some(slot) = self.pianos.get_mut(i) {
+                    *slot = None;
+                }
+                continue;
+            }
             // A Sampler wins over an Electric Piano and a SoundFont: it is loaded in the
             // background and handed over when ready; its dials move while it plays.
             if let Some(sampler) = t.sampler.as_ref().filter(|_| !external) {
@@ -829,7 +841,13 @@ impl EngineSync {
                 .get_mut(i)
                 .is_some_and(|d| d.take().is_some());
             self.drum_jobs.remove(&i);
-            let force = self.samplers.get_mut(i).is_some_and(|s| s.take().is_some()) || drums_were;
+            let bass808_was = self
+                .bass808s
+                .get_mut(i)
+                .is_some_and(|b| b.take().is_some());
+            let force = self.samplers.get_mut(i).is_some_and(|s| s.take().is_some())
+                || drums_were
+                || bass808_was;
             self.sampler_jobs.remove(&i);
             let want = if external { None } else { t.soundfont.as_ref() };
             let want_piano = if external {
@@ -1176,6 +1194,42 @@ impl EngineSync {
         true
     }
 
+    /// Keeps track `i`'s Bass 808 in step with `want`. Returns false when the engine's queue was full.
+    fn sync_bass808(&mut self, i: usize, want: &prowave_engine::Bass808Spec, sample_rate: f32) -> bool {
+        if self.bass808s.len() <= i {
+            self.bass808s.resize(i + 1, None);
+        }
+        if let Some(sent) = &self.bass808s[i] {
+            if sent.sample == want.sample && sent.root_hz == want.root_hz {
+                if sent.params != want.params {
+                    let cmd = Command::SetBass808Params {
+                        track: i as u16,
+                        params: want.params,
+                    };
+                    if !self.send(cmd) {
+                        return false;
+                    }
+                    self.bass808s[i] = Some(want.clone());
+                }
+                return true;
+            }
+        }
+        let (bass, _) = prowave_engine::Bass808::new(want, sample_rate.round().max(1.0) as u32);
+        let cmd = Command::SetTrackSoundFont {
+            track: i as u16,
+            player: Some(Box::new(SfPlayer::bass808(bass, sample_rate))),
+        };
+        if !self.send(cmd) {
+            return false;
+        }
+        self.bass808s[i] = Some(want.clone());
+        if self.soundfonts.len() <= i {
+            self.soundfonts.resize(i + 1, None);
+        }
+        self.soundfonts[i] = None;
+        true
+    }
+
     /// Keeps track `i`'s Sampler in step with `want`: moves its dials when only they changed,
     /// else loads the new instrument in the background and swaps it in when it is ready (the
     /// old instrument plays until then; one that cannot be loaded is logged and the old one
@@ -1496,6 +1550,7 @@ mod tests {
             sampler: None,
             epiano: None,
             drums: None,
+            bass808: None,
             summing_stack: false,
             midi_channel: 1,
             midi_program: None,

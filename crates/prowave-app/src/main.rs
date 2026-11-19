@@ -9,6 +9,7 @@ mod apple_loops;
 mod audio_prefs;
 mod audio_rec;
 mod automation;
+mod bass808_ui;
 mod bench;
 mod bounce;
 mod clock_follow;
@@ -33,6 +34,7 @@ mod inspector;
 mod ir_files;
 mod library;
 mod marker_track;
+mod marquee;
 mod menus;
 mod midi_file;
 mod midi_fx;
@@ -56,6 +58,7 @@ mod project_io;
 mod project_settings;
 mod recent_files;
 mod recorder;
+mod recovery;
 mod region_edit;
 mod sampler_load;
 mod score;
@@ -64,6 +67,7 @@ mod scripter;
 mod side_panes;
 mod signature_track;
 mod smart_tempo;
+mod snap_grid;
 mod soundfonts;
 mod space_designer_ui;
 mod stack_dialog;
@@ -239,6 +243,8 @@ pub struct UiState {
     pub drum_pad: usize,
     pub drum_held: Option<usize>,
     pub drum_error: Option<String>,
+    /// The track whose 808 Bass window is open.
+    pub show_bass808: Option<usize>,
     /// The text in the Plugin Manager's search field, and the manufacturer chosen in its list
     /// (`None`: Show All).
     pub plugin_manager_search: String,
@@ -331,6 +337,7 @@ impl UiState {
             drum_pad: 0,
             drum_held: None,
             drum_error: None,
+            show_bass808: None,
             plugin_manager_search: String::new(),
             plugin_manager_vendor: None,
             show_about: false,
@@ -1478,6 +1485,7 @@ impl eframe::App for App {
             .map(|t| t.name.clone());
         musical_typing::show(&ctx, &mut self.ui.typing, typed.as_deref());
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
+        bass808_ui::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
         show_about_dialog(&ctx, &mut self.ui.show_about);
@@ -2176,6 +2184,22 @@ fn main() -> eframe::Result {
                     .extension()
                     .is_some_and(|e| e.eq_ignore_ascii_case(prowave_project::EXTENSION))
             };
+            if !measuring {
+                recovery::session_dir();
+                let offers = recovery::sweep(&recovery::root(), std::time::SystemTime::now());
+                for c in &offers {
+                    tracing::info!(
+                        "recovery copy of \"{}\" in {} ({})",
+                        c.name,
+                        c.dir.display(),
+                        if c.unclean {
+                            "that run did not end cleanly"
+                        } else {
+                            "that run was quit without saving"
+                        }
+                    );
+                }
+            }
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
             }
@@ -2193,6 +2217,7 @@ fn main() -> eframe::Result {
     );
     // The app (and with it the engine's open media files) is gone by now.
     project_io::remove_session_media();
+    recovery::end_session();
     // OpenGL can't draw to this window: the app never started, so try the system's own API.
     let step = std::env::var(graphics::STEP_VAR)
         .ok()

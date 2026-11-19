@@ -103,6 +103,15 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Mastering Wide Hall",
         ],
     ),
+    (
+        "Snap",
+        &[
+            "Snap to Grid",
+            "-",
+            "Snap Regions to Relative Value",
+            "Snap Regions to Absolute Value",
+        ],
+    ),
 ];
 
 /// What is in the submenu opened by `label`, if it opens one.
@@ -142,6 +151,7 @@ const EDIT: &[&str] = &[
     "-",
     "Select All",
     "Deselect All",
+    "Snap",
     "-",
     "Split at Playhead",
     "Join",
@@ -426,6 +436,8 @@ fn shortcut(label: &str) -> Option<KeyboardShortcut> {
             ))
         }
         "Delete" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete)),
+        "Snap to Grid" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::G)),
+        "Split at Playhead" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::T)),
         _ => {}
     }
     let interface_key = match label {
@@ -507,7 +519,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Undo" => s.can_undo,
         "Redo" => s.can_redo,
         "Delete Undo History" => s.can_undo || s.can_redo,
-        "Delete" | "Deselect All" | "Copy" | "Cut" => s.tracks.selected.is_some(),
+        "Deselect All" => s.tracks.selected.is_some(),
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
@@ -529,7 +541,10 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Paste Replace" => crate::region_edit::can_paste(p, &s.region_clip),
         "Select All" => p.tracks.iter().any(|t| !t.regions.is_empty()),
         "Join" => crate::region_edit::can_join(p, &s.tracks),
-        "Split at Playhead" => crate::region_edit::can_split(p, &s.tracks),
+        "Split at Playhead" => crate::marquee::can_split_any(p, &s.tracks),
+        "Snap to Grid" | "Snap Regions to Relative Value" | "Snap Regions to Absolute Value" => true,
+        "Delete" => !s.tracks.selection().is_empty() || s.tracks.range.active().is_some(),
+        "Copy" | "Cut" => !s.tracks.selection().is_empty() || s.tracks.range.active().is_some(),
         // Mix > Show Automation: the Automation editor on the selected track.
         "Show Automation" => p.tracks.get(p.selected_track).is_some(),
         // Mix > Delete Automation: the lane the editor shows must have points.
@@ -666,6 +681,9 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Marker Track" => s.tracks.show_markers,
         "Show Signature Track" => s.tracks.show_signatures,
         "Show Master Track" => p.show_master_track,
+        "Snap to Grid" => s.tracks.grid.on,
+        "Snap Regions to Relative Value" => s.tracks.grid.relative,
+        "Snap Regions to Absolute Value" => !s.tracks.grid.relative,
         _ if Lang::from_native_name(label).is_some() => {
             Lang::from_native_name(label) == Some(i18n::current())
         }
@@ -832,14 +850,33 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Undo History…" => s.show_undo_history = true,
         "Redo" => s.undo_cmd = Some(UndoCmd::Redo),
         "Delete Undo History" => s.undo_cmd = Some(UndoCmd::Clear),
-        "Delete" => crate::tracks_area::delete_selected(p, &mut s.tracks),
-        "Copy" => {
-            crate::region_edit::copy_selected(p, &s.tracks, &mut s.region_clip);
+        "Delete" => {
+            if s.tracks.range.active().is_some() {
+                crate::marquee::delete(p, &mut s.tracks);
+            } else {
+                crate::tracks_area::delete_selected(p, &mut s.tracks);
+            }
         }
-        "Cut" => crate::region_edit::cut_selected(p, &mut s.tracks, &mut s.region_clip),
+        "Copy" => {
+            if s.tracks.range.active().is_some() {
+                crate::marquee::copy(p, &s.tracks, &mut s.region_clip);
+            } else {
+                crate::region_edit::copy_selected(p, &s.tracks, &mut s.region_clip);
+            }
+        }
+        "Cut" => {
+            if s.tracks.range.active().is_some() {
+                crate::marquee::cut(p, &mut s.tracks, &mut s.region_clip);
+            } else {
+                crate::region_edit::cut_selected(p, &mut s.tracks, &mut s.region_clip);
+            }
+        }
         "Paste" => crate::region_edit::paste_at_playhead(p, &mut s.tracks, &s.region_clip),
         "Paste Replace" => crate::region_edit::paste_replace(p, &mut s.tracks, &s.region_clip),
-        "Split at Playhead" => crate::region_edit::split_at_playhead(p, &mut s.tracks),
+        "Split at Playhead" => crate::marquee::split_any(p, &mut s.tracks),
+        "Snap to Grid" => s.tracks.grid.on = !s.tracks.grid.on,
+        "Snap Regions to Relative Value" => s.tracks.grid.relative = true,
+        "Snap Regions to Absolute Value" => s.tracks.grid.relative = false,
         "Deselect All" => s.tracks.clear_selection(),
         "Go to End" => {
             p.position_beats = p
@@ -1283,7 +1320,9 @@ mod tests {
                 (
                     s.tracks.show_tempo,
                     s.tracks.show_markers,
-                    s.tracks.show_signatures
+                    s.tracks.show_signatures,
+                    s.tracks.grid.on,
+                    s.tracks.grid.relative,
                 ),
                 (i18n::chosen(), i18n::current()),
             )
@@ -1351,6 +1390,7 @@ mod tests {
                 "Go to Next Region",
                 "Actual Interface Size",
                 "English (Default)",
+                "Snap Regions to Relative Value",
             ]
             .contains(&label);
             assert!(

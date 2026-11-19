@@ -1164,6 +1164,7 @@ dependencies = [
  "flate2",
  "human-panic",
  "image",
+ "libc",
  "midir",
  "muda",
  "prowave-engine",

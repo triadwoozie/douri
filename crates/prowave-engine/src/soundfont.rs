@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use crate::bass808::Bass808;
 use crate::drum_machine::DrumMachine;
 use crate::epiano::EPiano;
 use crate::sampler::Sampler;
@@ -97,6 +98,8 @@ pub struct SfPlayer {
     piano: Option<Box<EPiano>>,
     /// The Drum Machine, when this player is one (`SfPlayer::drum_machine`).
     drums: Option<Box<DrumMachine>>,
+    /// The 808 Bass, when this player is one (`SfPlayer::bass808`).
+    bass808: Option<Box<Bass808>>,
     channel: i32,
     sample_rate: i32,
 }
@@ -124,6 +127,7 @@ impl SfPlayer {
             sampler: None,
             piano: None,
             drums: None,
+            bass808: None,
             channel,
             sample_rate: rate,
         })
@@ -137,6 +141,7 @@ impl SfPlayer {
             sampler: None,
             piano: None,
             drums: Some(Box::new(drums)),
+            bass808: None,
             channel: 0,
             sample_rate: 0,
         }
@@ -158,6 +163,7 @@ impl SfPlayer {
             sampler: Some(Box::new(sampler)),
             piano: None,
             drums: None,
+            bass808: None,
             channel: 0,
             sample_rate: 0,
         }
@@ -180,6 +186,7 @@ impl SfPlayer {
             sampler: None,
             piano: Some(Box::new(EPiano::new(rate as f32, params))),
             drums: None,
+            bass808: None,
             channel: 0,
             sample_rate: rate,
         }
@@ -190,6 +197,27 @@ impl SfPlayer {
     pub fn set_piano_params(&mut self, params: [f32; crate::epiano::PARAMS]) {
         if let Some(p) = self.piano.as_mut() {
             p.set_params(params);
+        }
+    }
+
+    /// A player that plays the tuned 808 Bass (`crate::bass808`). Allocates; call off the audio thread.
+    pub fn bass808(bass: Bass808, sample_rate: f32) -> Self {
+        let rate = sample_rate.round().clamp(16_000.0, 192_000.0) as i32;
+        Self {
+            synth: None,
+            sampler: None,
+            piano: None,
+            drums: None,
+            bass808: Some(Box::new(bass)),
+            channel: 0,
+            sample_rate: rate,
+        }
+    }
+
+    /// Moves the 808 Bass's dials while it plays. Allocation free.
+    pub fn set_bass808_params(&mut self, params: crate::bass808::Bass808Params) {
+        if let Some(b) = self.bass808.as_mut() {
+            b.set_params(params);
         }
     }
 
@@ -210,6 +238,9 @@ impl SfPlayer {
         if let Some(d) = self.drums.as_mut() {
             d.note_on(pitch, vel);
         }
+        if let Some(b) = self.bass808.as_mut() {
+            b.midi(0x90, pitch, vel, 0);
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_on(self.channel, i32::from(pitch.min(127)), velocity);
         }
@@ -226,6 +257,9 @@ impl SfPlayer {
         if let Some(d) = self.drums.as_mut() {
             d.note_off(pitch);
         }
+        if let Some(b) = self.bass808.as_mut() {
+            b.midi(0x80, pitch, 0, 0);
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_off(self.channel, i32::from(pitch.min(127)));
         }
@@ -235,6 +269,14 @@ impl SfPlayer {
     /// (1 is the modulation wheel, 64 the sustain pedal), [`PITCH_BEND_CONTROL`] is the pitch
     /// bend with a 14-bit `value` (8192 is the centre). Allocation free.
     pub fn control(&mut self, number: u8, value: u16) {
+        if let Some(b) = self.bass808.as_mut() {
+            if number == PITCH_BEND_CONTROL {
+                let v = value.min(16383);
+                b.midi(0xE0, (v & 0x7F) as u8, ((v >> 7) & 0x7F) as u8, 0);
+            } else if number < 128 {
+                b.midi(0xB0, number, (value.min(127)) as u8, 0);
+            }
+        }
         // Only a SoundFont player takes controllers; the Sampler, Electric Piano and Drum
         // Machine ignore them.
         let Some(synth) = self.synth.as_mut() else {
@@ -264,6 +306,9 @@ impl SfPlayer {
         if let Some(d) = self.drums.as_mut() {
             d.all_notes_off();
         }
+        if let Some(b) = self.bass808.as_mut() {
+            b.midi(0xB0, 123, 0, 0);
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_off_all(false);
         }
@@ -279,6 +324,12 @@ impl SfPlayer {
         }
         if let Some(d) = self.drums.as_mut() {
             return d.render();
+        }
+        if let Some(b) = self.bass808.as_mut() {
+            let mut left = [0f32; 1];
+            let mut right = [0f32; 1];
+            b.process((&[], &[]), (&mut left, &mut right));
+            return (left[0], right[0]);
         }
         let mut left = [0f32; 1];
         let mut right = [0f32; 1];

@@ -536,6 +536,7 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                     name: r.name.clone(),
                     start_bar: r.start_bar,
                     len_bars: r.len_bars,
+                    audio_source: String::new(),
                     notes: r
                         .notes
                         .iter()
@@ -781,7 +782,7 @@ fn folder_from_doc(r: &RegionDoc) -> Option<TakeFolder> {
 
 pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Project, Vec<String>) {
     let mut warnings = Vec::new();
-    let mut opened: HashMap<String, Option<AudioFile>> = HashMap::new();
+    let mut opened: HashMap<(String, String), Option<AudioFile>> = HashMap::new();
     let mut tracks = Vec::new();
     for t in &doc.tracks {
         let mut regions = Vec::new();
@@ -794,8 +795,18 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     continue;
                 }
                 Some(zip_path) => {
-                    let file = opened.entry(zip_path.clone()).or_insert_with(|| {
-                        match AudioFile::open(media_dir.join(zip_path)) {
+                    let key = (zip_path.clone(), r.audio_source.clone());
+                    let file = opened.entry(key).or_insert_with(|| {
+                        let own = media_dir.join(zip_path);
+                        let outside = Path::new(&r.audio_source);
+                        let found = AudioFile::open(&own).or_else(|e| {
+                            if !r.audio_source.is_empty() && outside.exists() {
+                                AudioFile::open(outside)
+                            } else {
+                                Err(e)
+                            }
+                        });
+                        match found {
                             Ok(f) => Some(f),
                             Err(e) => {
                                 warnings.push(format!("{}: {e}", zip_path));
@@ -900,6 +911,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
             sampler: sampler_of(t),
             epiano: epiano_of(t),
             drums: drums_of(t),
+            bass808: None,
             icon: t
                 .icon
                 .as_deref()

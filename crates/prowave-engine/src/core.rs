@@ -469,6 +469,12 @@ pub enum Command {
         track: u16,
         params: [f32; crate::epiano::PARAMS],
     },
+    /// Moves the dials of the 808 Bass on `track` while it plays (no allocation). Ignored
+    /// when the track's instrument is not an 808 Bass.
+    SetBass808Params {
+        track: u16,
+        params: crate::bass808::Bass808Params,
+    },
     /// The effects of a channel strip (Logic: Audio FX slots), made off the audio thread. The
     /// strip's old effects come back through the garbage queue; their tails stop.
     SetInserts {
@@ -1730,6 +1736,11 @@ impl EngineCore {
                 Command::SetPianoParams { track, params } => {
                     if let Some(Some(player)) = self.sf.get_mut(track as usize) {
                         player.set_piano_params(params);
+                    }
+                }
+                Command::SetBass808Params { track, params } => {
+                    if let Some(Some(player)) = self.sf.get_mut(track as usize) {
+                        player.set_bass808_params(params);
                     }
                 }
                 Command::SetInserts { track, chain } => {

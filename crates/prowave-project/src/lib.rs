@@ -99,6 +99,10 @@ pub struct RegionDoc {
     pub comp: Vec<CompDoc>,
     /// Path inside the archive (`media/…`) for audio regions.
     pub audio: Option<String>,
+    /// Set when the region's audio file could not be read as the project was saved:
+    /// the file's path on disk then. Left out otherwise.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub audio_source: String,
     /// Audio regions: where the sound starts in that file, in the file's own frames, and how
     /// many frames it plays (none: to the end). Older files have neither: the whole file.
     pub audio_start: u64,
@@ -764,6 +768,17 @@ fn write_archive(tmp: &Path, doc: &ProjectDoc, media: &[MediaFile]) -> Result<()
         zip.finish()?;
     }
     Ok(())
+}
+
+/// The names of media entries stored in `path` (`media/…`).
+pub fn media_names(path: &Path) -> Result<Vec<String>, ProjectError> {
+    let zip = ZipArchive::new(File::open(path)?)?;
+    Ok(zip
+        .file_names()
+        .filter_map(|n| n.ok())
+        .filter(|n| is_media_path(n))
+        .map(|n| n.into_owned())
+        .collect())
 }
 
 /// Reads `path`. Media files are extracted into `media_dir` (keeping their `media/…` names);

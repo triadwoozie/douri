@@ -64,6 +64,10 @@ tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 rhai = { version = "1", features = ["no_module"] }
 
+# This computer's time zone, for the time shown with a recovery copy (see src/recovery.rs).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # The menus in the macOS system menu bar (see src/native_menu.rs).
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "=0.21.0", default-features = false }

@@ -994,8 +994,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 let piano = p.tracks[ti].epiano;
                 let sampler = p.tracks[ti].sampler.clone();
                 let has_drums = p.tracks[ti].drums.is_some();
+                let has_bass808 = p.tracks[ti].bass808.is_some();
                 let shown = match (&current, piano) {
                     _ if has_drums => tr("Drum Machine").to_string(),
+                    _ if has_bass808 => "808 Bass".to_string(),
                     _ if sampler.is_some() => {
                         let name = sampler
                             .as_ref()
@@ -1033,7 +1035,28 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             p.tracks[ti].soundfont = None;
                             p.tracks[ti].sampler = None;
                             p.tracks[ti].drums = None;
+                            p.tracks[ti].bass808 = None;
                             ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("808 Bass").clicked() {
+                            p.tracks[ti].bass808 = Some(prowave_engine::Bass808Spec::default());
+                            p.tracks[ti].soundfont = None;
+                            p.tracks[ti].sampler = None;
+                            p.tracks[ti].epiano = None;
+                            p.tracks[ti].drums = None;
+                            s.show_bass808 = Some(ti);
+                            ui.close();
+                        }
+                        if has_bass808 {
+                            if ui.button("Edit 808 Bass…").clicked() {
+                                s.show_bass808 = Some(ti);
+                                ui.close();
+                            }
+                            if ui.button("Remove 808 Bass").clicked() {
+                                p.tracks[ti].bass808 = None;
+                                ui.close();
+                            }
                         }
                         ui.separator();
                         if ui.button(tr("Drum Machine")).clicked() {
@@ -1041,6 +1064,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             p.tracks[ti].sampler = None;
                             p.tracks[ti].epiano = None;
                             p.tracks[ti].soundfont = None;
+                            p.tracks[ti].bass808 = None;
                             s.show_drum_machine = Some(ti);
                             ui.close();
                         }
