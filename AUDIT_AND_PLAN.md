@@ -1,4 +1,4 @@
-# Dōri (道理) — Multi-Source Architecture Audit & Implementation Plan
+# Dōri — Multi-Source Architecture Audit & Implementation Plan
 
 **Date:** November 2026  
 **Target:** Linux-First (Fedora/Nobara, PipeWire/ALSA, Wayland/X11) + Tier-1 Windows Cross-Builds (`cargo-zigbuild`)  
@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary & Architectural Tenets
 
-**Dōri** (道理) is an open-source digital audio workstation implemented in pure Rust + `egui`, engineered for low-latency music production, deep Logic Pro workflow parity, and uncompromising real-time audio thread discipline.
+**Dōri** is an open-source digital audio workstation implemented in pure Rust + `egui`, engineered for low-latency music production, deep Logic Pro workflow parity, and uncompromising real-time audio thread discipline.
 
 ### Core Non-Negotiables (from `AGENTS.md`)
 1. **Zero Allocations on Audio Thread (`assert_no_alloc`):**

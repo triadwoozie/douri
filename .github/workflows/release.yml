@@ -36,7 +36,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release -p prowave-app
+        run: cargo build --release -p douri
       # Same layout as the locally built dist/prowave-linux-x86_64.tar.gz: program, user
       # install script, menu entry, icon, .prowave MIME type and the Linux README.
       # `install -m` sets modes explicitly, so the scripts stay executable whatever git recorded.
@@ -319,8 +319,8 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
-          cargo build --release -p prowave-app --target aarch64-apple-darwin
-          cargo build --release -p prowave-app --target x86_64-apple-darwin
+          cargo build --release -p douri --target aarch64-apple-darwin
+          cargo build --release -p douri --target x86_64-apple-darwin
       - name: Bundle Pro Wave.app
         run: |
           APP="dist/Pro Wave.app"
@@ -329,7 +329,7 @@ jobs:
           lipo -create -output "$APP/Contents/MacOS/prowave" \
             target/aarch64-apple-darwin/release/prowave \
             target/x86_64-apple-darwin/release/prowave
-          VERSION=$(cargo pkgid -p prowave-app | sed 's/.*[#@]//')
+          VERSION=$(cargo pkgid -p douri | sed 's/.*[#@]//')
           cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -365,7 +365,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release -p prowave-app
+        run: cargo build --release -p douri
       - name: Package
         shell: pwsh
         run: |

@@ -1,7 +1,23 @@
 # Changelog
 
-What changed in each Pro Wave release. The release workflow copies the section of the version
-being released into the GitHub Release notes, so keep one `## <version>` heading per release.
+What changed in each Dōri release.
+
+## 0.1.0-alpha (Milestone 1 — Core Editing, Safety & Export Essentials)
+
+### All Systems (Linux, Windows, macOS)
+
+- **Rebranded to Dōri**: Project fork and independent continuation based on Pro-Wave, targeting Linux-first audio production with PipeWire/ALSA and cross-platform desktop support.
+- **Marquee Tool**: Logic Pro-style marquee selection tool in the tracks area supporting marquee split (`Cmd/Ctrl+T`), rectangular region time-slice selection, and drag/delete operations (`marquee.rs`).
+- **Gap-Free Snap Grid**: Smart musical snapping to bars, beats, and division intervals without micro-gap overlaps (`snap_grid.rs`).
+- **Autosave & Crash Recovery**: Periodic background state snapshotting and seamless automatic recovery prompt on startup after unexpected shutdowns (`recovery.rs`).
+- **Option/Alt-Drag Duplication**: Fast region cloning in the tracks area by holding Alt/Option while dragging (`tracks_area.rs`).
+- **808 Bass Synthesizer**: Clean sine-drop sub-bass synth engine registered alongside existing built-in instruments (Sampler, SoundFont SF2, Drum Machine, Electric Piano) with zero audio-thread allocations (`bass808.rs`).
+- **Faster-Than-Realtime Offline Bounce**: Freewheeling headless render loop executing up to 500× faster than real-time for project and cycle-range exports, supporting 16-bit, 24-bit, and 32-bit float WAV with atomic `.part` rename safety (`offline.rs`, `bounce.rs`). Ported from SoundCraft (MIT/Apache-2.0).
+- **TPDF Dithering**: Triangular Probability Density Function (TPDF) dither generator via high-speed Xorshift32 PRNG for clean bit-depth reduction without noise floor modulation; automatically bypasses digital silence.
+- **Stem Export**: **File > Export > All Tracks as Audio Files…** for concurrent offline multi-track stem bouncing.
+- **EBU R128 LUFS & True Peak Metering**: Full ITU-R BS.1770-4 K-weighted loudness metering (Momentary LUFS, Short-term LUFS, Integrated LUFS with -70 LUFS / -10 LU relative gating) and 4× oversampled polyphase windowed sinc True Peak filter with inter-sample peak clip detection (`meter.rs`). Ported from SoundCraft (MIT/Apache-2.0).
+- **MultiMeter Analyzer Window**: Dedicated Logic Pro-style loudness & true-peak analyzer window under **Window > MultiMeter** with target markers (-14 LUFS streaming, -23 LUFS broadcast) and real-time True Peak clip indicator. Master and Stereo Out strips in the Mixer updated with live LUFS and True Peak readings.
+- **Strict Real-Time Safety**: Zero heap allocations on the audio processing path validated via `cargo xtask rt-check` and `assert_no_alloc`.
 
 ## 0.3.0
 

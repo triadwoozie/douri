@@ -1601,7 +1601,7 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
         ui.set_width(440.0);
         ui.vertical_centered(|ui| {
             ui.add_space(8.0);
-            ui.heading("Dōri (道理)");
+            ui.heading("Dōri");
             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.add_space(6.0);
             ui.label("A pure-Rust digital audio workstation inspired by Logic Pro.");

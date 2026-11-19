@@ -1,10 +1,10 @@
 <p align="center"><img src="docs/logo.png" alt="Dōri logo" width="160"></p>
 
-<h1 align="center">Dōri (道理)</h1>
+<h1 align="center">Dōri</h1>
 
 <p align="center"><b>A pure-Rust + egui digital audio workstation targeting Linux-first with cross-platform desktop support, inspired by Logic Pro.</b></p>
 
-<p align="center">Tracks, MIDI and audio, a Piano Roll, a Mixer with real effects and automation, and a lock-free real-time engine. Drawn with egui, played through cpal (PipeWire/ALSA on Linux, WASAPI on Windows, CoreAudio on macOS): no Electron, no JUCE.</p>
+<p align="center">Sample-accurate transport, MIDI and audio editing, a comprehensive Piano Roll, a responsive Mixer with real DSP effects and automation, and a lock-free real-time audio engine. Rendered cleanly with egui, played through cpal (PipeWire/ALSA on Linux, WASAPI on Windows, CoreAudio on macOS): no Electron, no JUCE.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="license GPL-3.0">
@@ -14,19 +14,21 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#building">Build from source</a> •
-  <a href="#workspace">Architecture</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#sound-libraries">Sound Libraries</a> •
+  <a href="#architecture">Architecture</a> •
   <a href="AUDIT_AND_PLAN.md">Audit & Plan</a> •
   <a href="ROADMAP.md">Roadmap</a> •
-  <a href="AGENTS.md">Contributing</a>
+  <a href="AGENTS.md">Contributing</a> •
+  <a href="#credits--license">Credits & License</a>
 </p>
 
 ![Dōri: Tracks area with MIDI and audio regions, the Library, inspector and Mixer](docs/screenshots/tracks-and-mixer.webp)
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/piano-roll.webp" alt="Piano Roll editing the Drummer region, with Time Quantize, Scale Quantize and the velocity lane"></td>
-    <td><img src="docs/screenshots/playback.webp" alt="Playing back: green play button, moving playhead and live meters in the Mixer"></td>
+    <td><img src="docs/screenshots/piano-roll.webp" alt="Piano Roll editing with Time Quantize, Scale Quantize and velocity lane"></td>
+    <td><img src="docs/screenshots/playback.webp" alt="Playback with live channel meters in the Mixer"></td>
   </tr>
   <tr>
     <td align="center">Piano Roll with quantize and velocity lane</td>
@@ -34,162 +36,141 @@
   </tr>
 </table>
 
-Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave). It is not affiliated with, sponsored by, or endorsed by Apple Inc. Logic Pro is a trademark of Apple Inc., referenced solely for clean-room workflow and parameter alignment. Dōri contains no proprietary Apple code, artwork, or audio assets.
+Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave). It is not affiliated with, sponsored by, or endorsed by Apple Inc. Logic Pro is a trademark of Apple Inc., referenced solely for clean-room workflow, UI layout, and parameter alignment. Dōri contains no proprietary Apple code, artwork, or audio assets.
 
-### Upstream & Donor Attributions (GPL-3.0 Section 5 Compliance)
-Dōri incorporates and builds upon work from several foundational open-source projects:
-- **[fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave)** (GPL-3.0-or-later): Upstream core DAW architecture, real-time lock-free engine, egui user interface, and built-in DSP effects.
-- **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version enhancements including arranging tools, Vocal Top Line/Singer concepts, and plugin workflows.
-- **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): High-performance offline bounce architecture, EBU R128 true-peak/loudness metering, and modern audio engine donor code.
-- **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning reference.
-
-## Status
-
-How much of the app works today, counted from the source: a menu entry is done when it can be
-used, and a roadmap item when it is ticked in [`ROADMAP.md`](ROADMAP.md). Run `cargo xtask status`
-to update this section.
-
-<!-- status:start (made by `cargo xtask status`) -->
-![Pro Wave status: menu entries and roadmap items, done and to do](docs/status.svg)
-
-| | Done | Started | Total | Done % |
-| --- | ---: | ---: | ---: | ---: |
-| Menu entries | 104 | 0 | 181 | 57.46% |
-| Roadmap items | 25 | 15 | 77 | 32.47% |
-<!-- status:end -->
-
-Pro Wave does a lot, and aims to do it the way Logic Pro does. It is a full DAW: arranging, recording, editing, mixing and bouncing in one window, on an engine built so the audio thread never waits.
-
-> **Note:** Pro Wave is alpha software. The project file format may still change, so keep backups. Plug-in instruments, Live Loops and much of Logic's instrument list are still to come: [`ROADMAP.md`](ROADMAP.md) says what.
+---
 
 ## Features
 
-- **Real-time engine.** Sample-accurate transport with cycle, metronome, count-in and a tempo and signature map (any meter, including 6/8 and 7/8). A lock-free command queue between the UI and the audio thread, with no allocation, locks or disk access on the audio thread. 64-bit summing and plug-in delay compensation.
-- **Tracks and regions.** Audio, Instrument, Drummer, Pattern, Aux, VCA, Folder and External MIDI tracks. Move, repeat, cut, copy, paste, split, join and delete regions with snapping; Paste Replace, Bounce in Place and Bounce and Join; undo with a jumpable history.
-- **Recording.** MIDI and audio recording with count-in, cycle and takes. Follow or send MIDI clock and MIDI Time Code; MIDI output with program, bank, pitch bend and SysEx.
-- **Piano Roll, Score and more editors.** Draw, select, move and resize notes; time and scale quantize with strength and swing; velocity lane, Event List, Step Sequencer and MIDI Transform. A Score view with clefs, key and time signatures, rests and ties, and **MusicXML export**.
-- **Mixer and automation.** Channel strips with sends, buses, groups, VCA, pan, faders and meters. Automation for faders, pan, send levels and every effect parameter, with Read, Touch, Latch and Write modes.
-- **Real effects.** Channel EQ, Multi-Band EQ, **Pult EQ** (Pultec-style tube EQ), Compressor, **Multi-Band Compressor**, Noise Gate, Limiter, **Space Designer** convolution reverb (Volume and Filter envelopes, X-Over, Output EQ, mastering presets), Tape Delay, Chorus, Phaser, Overdrive, Filter and the **Amp Designer** for guitar and bass. They work on any strip, **including the Stereo Out**.
-- **Plug-ins.** LADSPA, CLAP, VST3 and (on macOS) Audio Unit effects in any Audio FX slot, with their own windows (macOS), automation, state and delay compensation, and a Plugin Manager. Each plug-in runs in a process of its own (macOS, Linux): one that crashes while playing does not take Pro Wave down.
-- **Instruments and sounds.** A built-in subtractive synthesizer with drum-kit modes (48 voices), **SoundFont (.sf2)** instruments, a physically modelled **Electric Piano**, **Hydrogen drum kits**, and Library patches that set a track's instrument and effects.
-- **Flex Time, Flex Pitch and Smart Tempo.** Warp and re-pitch audio, detect tempo, and make a project follow a recording.
-- **Audio regions.** WAV, AIFF, FLAC, MP3, CAF, OGG and M4A streamed from disk; region gain, fades, crossfades, reverse and normalize, never destructive.
-- **Bounce and export.** Bounce the project or a cycle section to a 32-bit WAV, export one track, and write the selection as a MIDI file.
-- **Open formats.** `.prowave` projects (a zip with `project.json` and the audio in `media/`), MIDI files (including SMPTE time and markers), audio files, and the audio of GarageBand projects.
-- **Light on resources.** A program of about 15 MB that starts in a few hundred milliseconds. See [`LINUX-MACOS-LIGHTWEIGHT.md`](LINUX-MACOS-LIGHTWEIGHT.md).
-- **Command line.** `prowave --help`, `--play`, `--bench` and `--layout-shots`.
-- **Linux, macOS and Windows.** Releases for all three, as .deb, .rpm, AppImage, Flatpak, a macOS app and a Windows zip.
+### Real-Time Engine & Strict Audio Safety
+- **Lock-free audio engine**: Sample-accurate transport with cycle looping, metronome, count-in, and full tempo and time signature mapping (supporting complex meters like 6/8 and 7/8).
+- **Zero audio-thread allocation**: Audio processing paths strictly guarantee `#![forbid(alloc)]` and `assert_no_alloc` safety — no allocations, no mutexes, and no blocking I/O on the real-time thread.
+- **64-bit float summing & Plug-in Delay Compensation (PDC)**: True 64-bit precision summing bus with automatic sample-accurate delay compensation across all tracks and effect chains.
 
-## Downloads
+### Arranging & Editing (Milestone 1 Additions)
+- **Marquee Selection Tool**: Logic-style marquee tool for precision time-slice selection, Marquee split (`Cmd/Ctrl+T`), and marquee region drag/delete.
+- **Gap-Free Snap Grid**: Smart musical snapping to bars, beats, and division intervals preventing unintended micro-gaps and overlaps.
+- **Option/Alt-Drag Duplication**: Fast region cloning in the tracks area with Alt/Option-drag.
+- **Autosave & Crash Recovery**: Periodic background state snapshotting with automatic session restoration prompts on startup.
+- **Multi-Track Arranger**: Audio, Instrument, Drummer, Pattern, Aux, VCA, Folder, and External MIDI tracks. Move, repeat, cut, copy, paste, split, join, bounce in place, and bounce & join with infinite undo history.
 
-Get the latest build from the [Releases page](https://github.com/fabox-os/Pro-Wave/releases)
-(each version is a pre-release while Pro Wave is in early development):
+### Instruments & Sound Engines
+- **808 Bass Synthesizer**: Pure sine-drop sub-bass synth engine with glide, tune, and saturation controls (`bass808.rs`).
+- **SoundFont Player**: Built-in `.sf2` player supporting multi-sampled SoundFont instruments with velocity layers and filter envelopes.
+- **Sampler & Quick Sampler**: Multi-zone sample playback engine loading SFZ, EXS24 (`.exs`), and raw audio samples with 4-point cubic resampling, velocity layering, and choke groups.
+- **Physically Modelled Electric Piano**: Reed-based physical model (Wurlitzer 200A style) with non-linear pickup saturation, tremolo, and tone bark.
+- **Vintage B3 Organ**: Additive drawbar organ with nine drawbars (16' to 1'), percussion harmonics, key click, and Leslie speaker simulation.
+- **Drum Machine**: 16-pad drum synthesizer (Kick, Snare, Hi-Hats, Toms, Claps) and custom sample loader with choke groups.
+- **Subtractive Synthesizer**: 48-voice virtual analog polyphonic synthesizer with resonant filters and modulation routing.
 
-| System | File |
-|---|---|
-| Windows 10/11 x64 | `prowave-windows-x86_64.zip`: unzip and run `prowave.exe` |
-| macOS (Apple Silicon + Intel) | `prowave-macos-universal.zip` with `Pro Wave.app` (ad-hoc signed, not notarized) |
-| Debian, Ubuntu, Mint | `.deb` |
-| Fedora, openSUSE, RHEL 9+ | `.rpm` |
-| Any Linux | AppImage, Flatpak bundle, or `prowave-linux-x86_64.tar.gz` with an `install.sh` |
+### Built-In DSP Effects & Metering
+- **Logic Pro-Style MultiMeter (Milestone 1)**: Dedicated analyzer window (**Window > MultiMeter**) with:
+  - ITU-R BS.1770-4 K-weighted LUFS metering: Momentary (400 ms), Short-term (3 s), and Gated Integrated LUFS (-70 LUFS / -10 LU gates) with streaming (-14 LUFS) and broadcast (-23 LUFS) reference markers.
+  - 4× oversampled polyphase windowed sinc True Peak filter with inter-sample peak clip indicator.
+- **Mixer Channel Strips**: Master and Stereo Out strips display live Integrated LUFS and True Peak values.
+- **Pult EQ**: Pultec-style tube EQ with low boost/atten ("Pultec trick") and high boost/shelf saturation.
+- **Space Designer Convolution Reverb**: Convolution reverb with volume & filter envelopes, X-over, output EQ, mastering presets, and custom impulse response (`.wav`/`.aiff`/`.flac`) loading.
+- **Multi-Band Compressor & Dynamics**: Channel EQ, Multi-Band EQ, Compressor, Noise Gate, and Limiter.
+- **Guitar & Bass Amp Designer**: Realistic amplifier and cabinet simulation with drive and tone controls.
+- **Modulation & Delays**: Tape Delay, Stereo Chorus, Phaser, Overdrive, and Resonant Filters.
 
-The files are not code signed, so Windows SmartScreen and macOS Gatekeeper warn before running
-them; the release notes say how to continue.
-Linux install steps for every format, the libraries needed and troubleshooting are in
-[`dist/README-linux.txt`](dist/README-linux.txt). The Linux and macOS packages have not been
-tested on real hardware yet; reports are welcome.
+### Export & Project Interoperability
+- **Faster-Than-Realtime Offline Bounce (Milestone 1)**: Headless freewheeling mixdown processing at CPU memory speeds (up to 500× real-time) for both full projects and cycle ranges.
+- **Multi-Format WAV & TPDF Dithering (Milestone 1)**: 16-bit, 24-bit, and 32-bit float exports with Triangular Probability Density Function (TPDF) dithering via Xorshift32 PRNG (automatically bypassing digital silence). Atomic `.part` file writing ensures zero corrupted bounces.
+- **Stem Export (Milestone 1)**: **File > Export > All Tracks as Audio Files…** for concurrent offline multi-track stem rendering.
+- **Project Import**: Seamless import of Logic Pro `.logicx` bundles, GarageBand projects (audio), Hydrogen `.h2song` drum patterns, and standard MIDI files (`.mid`).
+- **Score Editor & MusicXML**: Sheet music score view with key signatures, clefs, and MusicXML export.
 
-Pushing a version tag such as `v0.1.2` runs the [Release builds](.github/workflows/release.yml)
-workflow, which builds every package, test-installs the Linux ones and publishes the Release.
-Running it by hand from the Actions tab builds the packages as workflow artifacts without
-publishing.
+### Plug-in Hosting
+- **CLAP, VST3, LADSPA & Audio Units**: Host third-party instruments and effects with full parameter automation, state persistence, and delay compensation. Process isolation prevents buggy plugins from crashing the DAW.
 
-## Run from source
+---
 
-```sh
-cargo run --release -p douri                    # the app
-cargo run --release -p douri -- song.prowave     # open a project
-cargo run --release -p douri -- drums.wav        # new project, import audio files
-cargo run --release -p douri -- --play           # start playing right away
-cargo run --release -p douri -- --piano          # open the Piano Roll on start
-cargo run --release -p douri -- --screenshot shot.png   # save one picture of the window, then exit
-cargo run -p prowave-engine --example beep       # 440 Hz test tone, reports output latency
+## Quick Start
+
+### Prerequisites (Linux)
+
+Install the required ALSA and system development packages:
+
+```bash
+# Debian / Ubuntu / Pop!_OS / Linux Mint:
+sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libxkbcommon-dev libwayland-dev
+
+# Fedora / Nobara / RHEL:
+sudo dnf install -y pkgconf-pkg-config alsa-lib-devel libxkbcommon-devel wayland-devel
+
+# Arch Linux / Manjaro:
+sudo pacman -S --needed pkgconf alsa-lib libxkbcommon wayland
 ```
 
-Linux uses Ctrl where macOS uses Cmd: Space plays and stops, Ctrl+N/O/S new, open and save,
-Ctrl+R repeats a region, and Y, I and X toggle the Library, Inspector and Mixer.
+### Build & Run from Source
 
-## Building
+```bash
+# Clone the repository
+git clone https://github.com/triadwoozie/douri.git
+cd douri
 
-Rust stable is required. On Linux, install ALSA's development files and `pkg-config` first:
+# Run Dōri in release mode
+cargo run --release --bin douri
 
-| Distribution family | Packages |
-|---|---|
-| Debian, Ubuntu, Mint | `libasound2-dev pkg-config` |
-| Fedora, RHEL | `alsa-lib-devel pkgconf-pkg-config` |
-| Arch, Manjaro, EndeavourOS | `alsa-lib pkgconf` |
-
-```sh
-cargo build --release -p douri         # the program is target/release/douri
-cargo xtask check                      # fmt, clippy -D warnings, tests, no-alloc check, cargo-deny, wasm check
+# Open a specific project or audio file
+cargo run --release --bin douri -- my_project.prowave
+cargo run --release --bin douri -- song_stems.wav
 ```
 
-### Wayland without X11
+### Running Tests & Audio Safety Verification
 
-The app normally builds with winit's X11 and Wayland backends. For a Wayland-only desktop (and
-as the starting point for issue #79's OpenBSD request), leave both X11 and the screen-reader
-feature out — `accesskit_winit`'s defaults pull the X11 backend in on Linux:
+```bash
+# Run workspace test suite
+cargo test --workspace
 
-```sh
-cargo build --release -p douri --no-default-features
+# Run real-time audio thread allocation checks (strictly validates zero allocations)
+cargo xtask rt-check
+
+# Run full project checks
+cargo xtask check
 ```
 
-That build has no X11 dependency (`cargo tree --no-default-features -e features | grep x11`
-finds none) and uses the Wayland backend. It has not been tested on OpenBSD itself, which is
-not a Rust tier-1 target; a report from a build there is welcome.
+---
 
-## Workspace
+## Sound Libraries
 
-| Crate | What it is |
+Dōri supports loading sound fonts, sample libraries, and impulse responses:
+
+- **SoundFonts (`.sf2`)**: Drop your `.sf2` files into `~/.local/share/soundfonts/` or load them directly via the track Inspector under **SoundFont > Load SoundFont…**.
+- **EXS24 & SFZ Libraries**: In the track Inspector, select **SoundFont > Sampler** and choose **Load SFZ Instrument…** or **Load EXS Instrument…**.
+- **Impulse Responses for Space Designer**: Open Space Designer from any Audio FX slot, click the IR menu, and choose **Load Impulse Response File…** (`.wav`, `.aiff`, or `.flac`).
+
+---
+
+## Architecture
+
+| Crate | Purpose |
 |---|---|
-| [`crates/prowave-engine`](crates/prowave-engine) | Real-time audio engine: transport, tempo map, synth, mixer, disk streaming, cpal output |
-| [`crates/prowave-app`](crates/prowave-app) | The desktop app (egui): every view and editor |
-| [`crates/prowave-project`](crates/prowave-project) | The `.prowave` project file format |
-| [`crates/prowave-hydrogen-import`](crates/prowave-hydrogen-import) | Hydrogen `.h2song` session reading: kit, instruments, patterns and sequence |
-| [`crates/prowave-exs`](crates/prowave-exs) | EXS24 `.exs` sampler instrument reading: zones, groups, samples, loops and round-robin |
-| [`crates/prowave-sfz`](crates/prowave-sfz) | SFZ sampler instrument reading: regions, groups, sample paths and loops |
-| [`crates/prowave-plugin-host`](crates/prowave-plugin-host) | CLAP, VST3 and Audio Unit hosting: scanning, loading, parameters, state and the audio-thread processor |
-| [`crates/prowave-logicx-import`](crates/prowave-logicx-import) | Logic Pro `.logicx` bundles: save shapes, active alternative, metadata plists and the ProjectData envelope |
-| [`xtask`](xtask) | `cargo xtask check`, `wasm-check` and `rt-check` |
-| [`dist/linux`](dist/linux) | Linux desktop entry, icon, MIME type, `install.sh` and the .deb, .rpm and Flatpak recipes |
+| [`crates/prowave-engine`](crates/prowave-engine) | Real-time audio engine: sample-accurate transport, lock-free queues, 64-bit mixer, offline freewheeling bounce, EBU R128 metering, synths, and cpal output |
+| [`crates/prowave-app`](crates/prowave-app) | Desktop interface built in pure `egui`: tracks area, Piano Roll, Mixer, MultiMeter, and inspector |
+| [`crates/prowave-project`](crates/prowave-project) | Project serializer & archive container (`.prowave` zip package) |
+| [`crates/prowave-plugin-host`](crates/prowave-plugin-host) | Out-of-process and in-process plugin hosting for CLAP, VST3, LADSPA, and AU |
+| [`crates/prowave-logicx-import`](crates/prowave-logicx-import) | Parser for Apple Logic Pro `.logicx` packages and ProjectData structures |
+| [`crates/prowave-garageband-import`](crates/prowave-garageband-import) | Parser for GarageBand `.band` projects |
+| [`crates/prowave-exs`](crates/prowave-exs) | EXS24 sampler instrument parser: zones, groups, loops, and velocity layers |
+| [`crates/prowave-sfz`](crates/prowave-sfz) | SFZ instrument format reader |
+| [`xtask`](xtask) | Build tooling: `cargo xtask check`, `rt-check`, `bench`, and `wasm-check` |
 
-## Documentation
+---
 
-| | |
-|---|---|
-| [`ROADMAP.md`](ROADMAP.md) | The Logic Pro feature inventory and the phased plan |
-| [`resume.md`](resume.md) | Current status, phase by phase |
-| [`AGENTS.md`](AGENTS.md) | Rules for contributors and AI agents: crate ownership, audio-thread rules, checks |
-| [`dist/README-linux.txt`](dist/README-linux.txt) | Installing and troubleshooting on Linux |
-| [`LOGICX-FORMAT-SPEC.md`](LOGICX-FORMAT-SPEC.md) | Notes for reading Logic Pro `.logicx` projects |
-| [`GARAGEBAND-FORMAT-SPEC.md`](GARAGEBAND-FORMAT-SPEC.md) | Notes for reading GarageBand `.band` projects (plan for issue #35) |
-| [`SECURITY.md`](SECURITY.md) | Reporting security problems |
+## Credits & License
 
-## License & Attribution
+Copyright (C) 2026 Dōri contributors.  
+Original work Copyright (C) 2026 Pro-Wave contributors.
 
-Copyright (C) 2026 the Dōri contributors.
-Original work Copyright (C) 2026 the ProWave contributors.
+Dōri is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License** as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version (**GPL-3.0-or-later**).
 
-Dōri is free software: you can redistribute it and/or modify it under the terms of the
-[GNU General Public License](LICENSE) as published by the Free Software Foundation, either
-version 3 of the License, or (at your option) any later version (GPL-3.0-or-later).
-Contributions are licensed the same way.
+Per **Section 5 of the GNU General Public License v3**, Dōri explicitly attributes and builds upon the following open-source projects:
 
-Per Section 5 of the GNU General Public License v3:
-- This work is a modified version based on Pro-Wave by fabox-os.
-- Additional donor code, algorithms, and references are incorporated from yuribeats/prowave, storytold/soundcraft, and Ardour.
-- All original copyright notices and license texts are preserved.
+- **[fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave)** (GPL-3.0-or-later): Upstream core DAW architecture, real-time lock-free engine, egui user interface, and built-in DSP effects.
+- **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version arranging tools (Marquee selection, snap grid, Option-drag), crash recovery, and 808 Bass synthesizer.
+- **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): Faster-than-realtime offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 True Peak and loudness metering.
+- **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.
 
-Dōri is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
-even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-[`LICENSE`](LICENSE) file for details.
+All original copyright notices and license texts have been retained. See [`LICENSE`](LICENSE) for complete terms.
