@@ -937,3 +937,6 @@ Pitch Editor: {} = Editor de afinação: {}
 {} notes = {} notas
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  deriva {} %  ·  modulação {} %  ·  formante {} st  ·  {} dB
 {} notes selected = {} notas selecionadas
+
+Settings = Definições
+Plug-In Manager… = Gestor de plug-ins…

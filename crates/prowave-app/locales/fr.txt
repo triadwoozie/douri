@@ -937,3 +937,6 @@ Pitch Editor: {} = Éditeur de hauteur : {}
 {} notes = {} notes
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  dérive {} %  ·  modulation {} %  ·  formant {} dt  ·  {} dB
 {} notes selected = {} notes sélectionnées
+
+Settings = Réglages
+Plug-In Manager… = Gestionnaire de plug-ins…

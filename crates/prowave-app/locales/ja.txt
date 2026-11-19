@@ -937,3 +937,6 @@ Pitch Editor: {} = ピッチエディタ: {}
 {} notes = {} ノート
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ドリフト {} %  ·  モジュレーション {} %  ·  フォルマント {} 半音  ·  {} dB
 {} notes selected = {} 個のノートを選択
+
+Settings = 設定
+Plug-In Manager… = プラグインマネージャ…

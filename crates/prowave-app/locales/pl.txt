@@ -937,3 +937,6 @@ Pitch Editor: {} = Edytor wysokości: {}
 {} notes = Nuty: {}
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  dryf {} %  ·  modulacja {} %  ·  formant {} pt  ·  {} dB
 {} notes selected = Zaznaczone nuty: {}
+
+Settings = Ustawienia
+Plug-In Manager… = Menedżer wtyczek…

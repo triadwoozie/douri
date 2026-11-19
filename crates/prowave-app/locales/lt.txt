@@ -937,3 +937,6 @@ Pitch Editor: {} = Aukščio rengyklė: {}
 {} notes = Natų: {}
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  dreifas {} %  ·  moduliacija {} %  ·  formantė {} pt  ·  {} dB
 {} notes selected = Pažymėta natų: {}
+
+Settings = Nuostatos
+Plug-In Manager… = Papildinių tvarkytuvė…

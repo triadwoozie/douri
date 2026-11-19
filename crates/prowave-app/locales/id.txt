@@ -937,3 +937,6 @@ Pitch Editor: {} = Editor Nada: {}
 {} notes = {} not
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasi {} %  ·  forman {} st  ·  {} dB
 {} notes selected = {} not dipilih
+
+Settings = Pengaturan
+Plug-In Manager… = Pengelola Plugin…

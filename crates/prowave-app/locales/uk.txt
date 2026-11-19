@@ -937,3 +937,6 @@ Pitch Editor: {} = Редактор висоти: {}
 {} notes = Нот: {}
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  дрейф {} %  ·  модуляція {} %  ·  формант {} пт  ·  {} dB
 {} notes selected = Вибрано нот: {}
+
+Settings = Параметри
+Plug-In Manager… = Менеджер плагінів…

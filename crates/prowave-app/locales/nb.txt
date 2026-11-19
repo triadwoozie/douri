@@ -937,3 +937,6 @@ Pitch Editor: {} = Tonehøyderedigering: {}
 {} notes = {} noter
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasjon {} %  ·  formant {} ht  ·  {} dB
 {} notes selected = {} noter valgt
+
+Settings = Innstillinger
+Plug-In Manager… = Plugin-behandler…

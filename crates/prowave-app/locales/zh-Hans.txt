@@ -937,3 +937,6 @@ Pitch Editor: {} = 音高编辑器：{}
 {} notes = {} 个音符
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  漂移 {} %  ·  调制 {} %  ·  共振峰 {} 半音  ·  {} dB
 {} notes selected = 已选择 {} 个音符
+
+Settings = 设置
+Plug-In Manager… = 插件管理器…

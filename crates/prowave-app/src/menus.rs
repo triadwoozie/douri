@@ -71,6 +71,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Tuning…",
             "Audio…",
             "MIDI…",
+            "Plug-In Manager…",
         ],
     ),
     ("Movie", &["Open Movie…", "Remove Movie"]),
@@ -282,6 +283,9 @@ const VIEW: &[&str] = &[
     "-",
     "Enter Full Screen",
 ];
+const SETTINGS: &[&str] = &[
+    "Plug-In Manager…",
+];
 const WINDOW: &[&str] = &[
     "Minimize",
     "Zoom",
@@ -333,7 +337,7 @@ const LANGUAGE: &[&str] = &[
 ];
 
 /// The menus in bar order, used by the in-window bar and the macOS menu bar.
-pub(crate) const MENUS: [(&str, &[&str]); 9] = [
+pub(crate) const MENUS: [(&str, &[&str]); 10] = [
     ("File", FILE),
     ("Edit", EDIT),
     ("Track", TRACK),
@@ -341,6 +345,7 @@ pub(crate) const MENUS: [(&str, &[&str]); 9] = [
     ("Record", RECORD),
     ("Mix", MIX),
     ("View", VIEW),
+    ("Settings", SETTINGS),
     ("Window", WINDOW),
     ("Help", HELP),
 ];
@@ -529,7 +534,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         // Mix > Edit Groups…: with no group yet it still opens, to make the first one.
         "Edit Groups…" => true,
         "Show Musical Typing" => true,
-        "Plugin Manager" => true,
+        "Plug-In Manager…" | "Plugin Manager" => true,
         "MultiMeter" => true,
         "Pitch Editor" => true,
         // Opens the Space Designer on the selected track (adding one when it has none). The
@@ -732,7 +737,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 s.typing.release_all();
             }
         }
-        "Plugin Manager" => s.show_plugin_manager = true,
+        "Plug-In Manager…" | "Plugin Manager" => s.show_plugin_manager = true,
         "MultiMeter" => s.show_multimeter = !s.show_multimeter,
         "Select All" => s.tracks.select_all(p),
         "Join" => crate::region_edit::join_selected(p, &mut s.tracks),

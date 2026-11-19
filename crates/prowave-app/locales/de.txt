@@ -937,3 +937,6 @@ Pitch Editor: {} = Tonhöhen-Editor: {}
 {} notes = {} Noten
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  Drift {} %  ·  Modulation {} %  ·  Formant {} HT  ·  {} dB
 {} notes selected = {} Noten ausgewählt
+
+Settings = Einstellungen
+Plug-In Manager… = Plug-in-Manager…

@@ -731,9 +731,8 @@ pub fn folders(format: Format) -> Vec<PathBuf> {
     out
 }
 
-/// The plug-in files and bundles of `format` under [`folders`] (two levels of sub-folders,
-/// since vendors make their own), sorted.
-pub fn installed(format: Format) -> Vec<PathBuf> {
+/// The plug-in files and bundles of `format` under `dir` (up to two levels of sub-folders), sorted.
+pub fn installed_in(dir: &Path, format: Format) -> Vec<PathBuf> {
     fn walk(dir: &Path, ext: &str, depth: usize, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -753,8 +752,18 @@ pub fn installed(format: Format) -> Vec<PathBuf> {
         Format::AudioUnit => return Vec::new(),
     };
     let mut out = Vec::new();
+    walk(dir, ext, 2, &mut out);
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The plug-in files and bundles of `format` under [`folders`] (two levels of sub-folders,
+/// since vendors make their own), sorted.
+pub fn installed(format: Format) -> Vec<PathBuf> {
+    let mut out = Vec::new();
     for dir in folders(format) {
-        walk(&dir, ext, 2, &mut out);
+        out.extend(installed_in(&dir, format));
     }
     out.sort();
     out.dedup();

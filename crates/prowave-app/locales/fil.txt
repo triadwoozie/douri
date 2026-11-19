@@ -937,3 +937,6 @@ Pitch Editor: {} = Pitch Editor: {}
 {} notes = {} nota
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasyon {} %  ·  formant {} st  ·  {} dB
 {} notes selected = {} nota ang napili
+
+Settings = Mga Setting
+Plug-In Manager… = Plugin Manager…

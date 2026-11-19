@@ -937,3 +937,6 @@ Pitch Editor: {} = पिच एडिटर: {}
 {} notes = {} नोट्स
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ड्रिफ्ट {} %  ·  मॉड्यूलेशन {} %  ·  फ़ॉर्मेंट {} st  ·  {} dB
 {} notes selected = {} नोट्स चुने गए
+
+Settings = सेटिंग्स
+Plug-In Manager… = प्लग-इन मैनेजर…

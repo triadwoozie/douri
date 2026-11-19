@@ -260,6 +260,9 @@ pub struct UiState {
     /// (`None`: Show All).
     pub plugin_manager_search: String,
     pub plugin_manager_vendor: Option<String>,
+    pub plugin_manager_category: Option<String>,
+    pub plugin_manager_format: Option<String>,
+    pub plugin_manager_selected_path: Option<usize>,
     /// Help > About Dōri window is open.
     pub show_about: bool,
 }
@@ -354,6 +357,9 @@ impl UiState {
             show_multimeter: false,
             plugin_manager_search: String::new(),
             plugin_manager_vendor: None,
+            plugin_manager_category: None,
+            plugin_manager_format: None,
+            plugin_manager_selected_path: None,
             show_about: false,
         }
     }

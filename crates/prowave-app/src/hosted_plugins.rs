@@ -613,6 +613,24 @@ pub fn scan_status() -> Scan {
     rack().scan
 }
 
+/// The status of a plug-in: "Working", "Incompatible", or "Crashed".
+pub fn status_for(info: &PluginInfo) -> &'static str {
+    let rack = rack();
+    for slot in &rack.slots {
+        if slot.info.format == info.format && slot.info.id == info.id {
+            if let Some(err) = &slot.error {
+                let err_lower = err.to_lowercase();
+                if err_lower.contains("crash") || err_lower.contains("killed") || err_lower.contains("signal") {
+                    return "Crashed";
+                } else {
+                    return "Incompatible";
+                }
+            }
+        }
+    }
+    "Working"
+}
+
 /// The catalog entry of a plug-in a project file names: the same format and id.
 pub fn find(format: Format, id: &str) -> Option<PluginInfo> {
     rack()
@@ -801,6 +819,40 @@ fn cache_file() -> Option<PathBuf> {
     Some(crate::recent_files::config_dir()?.join("plugins.txt"))
 }
 
+/// The file remembering custom scan directories.
+pub fn custom_paths_file() -> Option<PathBuf> {
+    Some(crate::recent_files::config_dir()?.join("plugin-paths.txt"))
+}
+
+/// The custom scan directories configured by the user.
+pub fn custom_paths() -> Vec<PathBuf> {
+    custom_paths_file()
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .map(|text| {
+            text.lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Saves the list of custom scan directories.
+pub fn save_custom_paths(paths: &[PathBuf]) {
+    if let Some(file) = custom_paths_file() {
+        if let Some(parent) = file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let content = paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = std::fs::write(file, content);
+    }
+}
+
 /// The cache of the last scan, as far as it reads. Tests never touch the configuration folder.
 #[cfg(not(test))]
 fn read_cache() -> Vec<Scanned> {
@@ -818,16 +870,36 @@ fn read_cache() -> Vec<Scanned> {
 /// The CLAP and VST3 files on disk now, with their stamps. Audio Units are not files.
 #[cfg(not(test))]
 fn on_disk_files() -> Vec<Found> {
-    [Format::Clap, Format::Vst3]
-        .into_iter()
-        .flat_map(|format| {
-            host::installed(format).into_iter().map(move |path| Found {
-                format,
-                stamp: stamp(&path),
-                path,
-            })
-        })
-        .collect()
+    let mut files = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for format in [Format::Clap, Format::Vst3] {
+        for path in host::installed(format) {
+            if seen.insert((format, path.clone())) {
+                files.push(Found {
+                    format,
+                    stamp: stamp(&path),
+                    path,
+                });
+            }
+        }
+    }
+
+    for custom_dir in custom_paths() {
+        for format in [Format::Clap, Format::Vst3] {
+            for path in host::installed_in(&custom_dir, format) {
+                if seen.insert((format, path.clone())) {
+                    files.push(Found {
+                        format,
+                        stamp: stamp(&path),
+                        path,
+                    });
+                }
+            }
+        }
+    }
+
+    files
 }
 
 /// Lists one file's plug-ins in a child process. A crash, a refusal or a file that takes

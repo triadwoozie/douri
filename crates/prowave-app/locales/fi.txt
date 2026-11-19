@@ -937,3 +937,6 @@ Pitch Editor: {} = Sävelkorkeuseditori: {}
 {} notes = {} nuottia
 {}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ajelehtiminen {} %  ·  modulaatio {} %  ·  formantti {} st  ·  {} dB
 {} notes selected = {} säveltä valittu
+
+Settings = Asetukset
+Plug-In Manager… = Laajennusten hallinta…
