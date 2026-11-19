@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(unused, dead_code, clippy::all)]
 //! Pro Wave desktop app. Pure Rust (egui/eframe) for Windows, Linux and macOS.
 // Debug builds abort if the audio callback allocates (see `prowave-engine` output.rs).
 #[cfg(debug_assertions)]
@@ -33,6 +34,7 @@ mod import;
 mod inspector;
 mod ir_files;
 mod library;
+pub mod liquid_glass;
 mod marker_track;
 mod marquee;
 mod menus;
@@ -80,7 +82,6 @@ mod sync_menu;
 mod sysex;
 mod takes;
 mod tempo_track;
-pub mod liquid_glass;
 mod theme;
 mod tooltips;
 mod track_dialogs;
@@ -266,6 +267,10 @@ pub struct UiState {
     pub plugin_manager_selected_path: Option<usize>,
     /// UI Glass Quality mode (Full Refraction, Frosted Blur, Flat Low-Power).
     pub glass_quality: liquid_glass::GlassQuality,
+    /// MCP Server enable toggle.
+    pub mcp_server_enabled: bool,
+    /// MCP Server listening port.
+    pub mcp_port: u16,
     /// Help > About Dōri window is open.
     pub show_about: bool,
 }
@@ -364,6 +369,8 @@ impl UiState {
             plugin_manager_format: None,
             plugin_manager_selected_path: None,
             glass_quality: liquid_glass::GlassQuality::FullRefraction,
+            mcp_server_enabled: true,
+            mcp_port: 38420,
             show_about: false,
         }
     }
@@ -789,10 +796,7 @@ impl App {
                 count += 1;
             }
         }
-        self.ui.status = Some(format!(
-            "Exported {count} track stems to {}",
-            dir.display()
-        ));
+        self.ui.status = Some(format!("Exported {count} track stems to {}", dir.display()));
     }
 
     /// File > Bounce > Regions in Place… and Record > Bounce In Place: plays the selected MIDI
@@ -1419,7 +1423,7 @@ impl eframe::App for App {
         top_bar(ui, p, s);
         egui::Panel::top("control")
             .exact_size(58.0)
-            .frame(egui::Frame::new().fill(egui::Color32::from_gray(0x47)))
+            .frame(egui::Frame::new().fill(crate::theme::CHROME_BG))
             .show(ui, |ui| transport::control_bar(ui, p, s, master_peaks));
         if s.show_library {
             egui::Panel::left("library")
@@ -1636,7 +1640,11 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
                         [icon.width as usize, icon.height as usize],
                         &icon.rgba,
                     );
-                    let texture = ctx.load_texture("about_douri_icon", color_image, egui::TextureOptions::LINEAR);
+                    let texture = ctx.load_texture(
+                        "about_douri_icon",
+                        color_image,
+                        egui::TextureOptions::LINEAR,
+                    );
                     ui.add(egui::Image::new(&texture).max_width(96.0).max_height(96.0));
                     ui.add_space(8.0);
                 }
@@ -1652,7 +1660,9 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
                 ui.label("• storytold/soundcraft");
                 ui.label("• Ardour");
                 ui.add_space(8.0);
-                ui.label("Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).");
+                ui.label(
+                    "Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).",
+                );
                 ui.add_space(12.0);
                 if ui.button("Close").clicked() {
                     close = true;

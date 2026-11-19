@@ -30,10 +30,11 @@ pub enum SettingsTab {
     Audio,
     Midi,
     Appearance,
+    McpServer,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 8] = [
+    pub const ALL: [SettingsTab; 9] = [
         Self::General,
         Self::Synchronization,
         Self::Metronome,
@@ -42,6 +43,7 @@ impl SettingsTab {
         Self::Audio,
         Self::Midi,
         Self::Appearance,
+        Self::McpServer,
     ];
 
     /// The tab a menu entry opens ("Metronome…" opens the Metronome tab).
@@ -55,6 +57,7 @@ impl SettingsTab {
             "Audio…" => Self::Audio,
             "MIDI…" => Self::Midi,
             "Appearance…" => Self::Appearance,
+            "MCP Server…" => Self::McpServer,
             _ => return None,
         })
     }
@@ -69,6 +72,7 @@ impl SettingsTab {
             Self::Audio => tr("Audio"),
             Self::Midi => tr("MIDI"),
             Self::Appearance => tr("Appearance"),
+            Self::McpServer => tr("MCP Server"),
         }
         .to_string()
     }
@@ -108,6 +112,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 SettingsTab::Audio => audio(ui, s),
                 SettingsTab::Midi => midi(ui, p, &mut s.midi_panic),
                 SettingsTab::Appearance => appearance(ui, s),
+                SettingsTab::McpServer => mcp_settings(ui, s),
             }
         });
     s.settings_tab = open.then_some(tab);
@@ -339,7 +344,9 @@ fn midi(ui: &mut egui::Ui, p: &mut Project, panic: &mut bool) {
 fn appearance(ui: &mut egui::Ui, s: &mut UiState) {
     ui.heading(tr("Appearance"));
     ui.add_space(8.0);
-    ui.label("Configure Dōri's obsidian interface styling and Vulkan Liquid Glass rendering quality:");
+    ui.label(
+        "Configure Dōri's obsidian interface styling and Vulkan Liquid Glass rendering quality:",
+    );
     ui.add_space(10.0);
 
     ui.horizontal(|ui| {
@@ -365,6 +372,52 @@ fn appearance(ui: &mut egui::Ui, s: &mut UiState) {
             ui.weak("Optimized flat obsidian palette without dynamic glass shaders for maximum battery life.");
         }
     }
+}
+
+fn mcp_settings(ui: &mut egui::Ui, s: &mut UiState) {
+    ui.heading("Model Context Protocol (MCP) Server");
+    ui.add_space(6.0);
+
+    ui.checkbox(&mut s.mcp_server_enabled, "Enable MCP Server (TCP & stdio)");
+
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.label("Port:");
+        ui.add(egui::DragValue::new(&mut s.mcp_port).range(1024..=65535));
+    });
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.label("Status:");
+        let (dot_col, status_text) = if s.mcp_server_enabled {
+            (
+                egui::Color32::from_rgb(0x10, 0xb9, 0x81),
+                format!("Listening on 127.0.0.1:{}", s.mcp_port),
+            )
+        } else {
+            (
+                egui::Color32::from_rgb(0x8a, 0x93, 0xa5),
+                "Disabled".to_string(),
+            )
+        };
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+        ui.painter().circle_filled(rect.center(), 4.0, dot_col);
+        ui.label(egui::RichText::new(status_text).color(dot_col));
+    });
+
+    ui.add_space(12.0);
+    if ui.button("Copy MCP Config JSON").clicked() {
+        let config_json = r#"{
+  "mcpServers": {
+    "douri": {
+      "command": "douri",
+      "args": ["--mcp-stdio"]
+    }
+  }
+}"#;
+        ui.ctx().copy_text(config_json.to_string());
+    }
+    ui.weak("Allows AI assistants and external tools to query state, automate tracks, and control transport.");
 }
 
 #[cfg(test)]

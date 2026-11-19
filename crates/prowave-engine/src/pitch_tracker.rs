@@ -546,16 +546,16 @@ mod tests {
         let glide = |t: f64| 220.0 * 2f64.powf(t);
         let t = track_pitch(&tone(1.0, glide), SR);
         let mut worst = 0.0f64;
-        for f in 10..t.len() - 10 {
-            worst = worst.max(cents(f64::from(t.hz[f]), glide(PitchTrack::time_of(f))).abs());
+        for (f, &hz) in t.hz.iter().enumerate().take(t.len() - 10).skip(10) {
+            worst = worst.max(cents(f64::from(hz), glide(PitchTrack::time_of(f))).abs());
         }
         assert!(worst < 15.0, "glide off by {worst} cents");
         // A 5.5 Hz vibrato of ±60 cents around A3.
         let vib = |t: f64| 220.0 * 2f64.powf(0.6 / 12.0 * (std::f64::consts::TAU * 5.5 * t).sin());
         let t = track_pitch(&tone(1.0, vib), SR);
         let mut worst = 0.0f64;
-        for f in 10..t.len() - 10 {
-            worst = worst.max(cents(f64::from(t.hz[f]), vib(PitchTrack::time_of(f))).abs());
+        for (f, &hz) in t.hz.iter().enumerate().take(t.len() - 10).skip(10) {
+            worst = worst.max(cents(f64::from(hz), vib(PitchTrack::time_of(f))).abs());
         }
         assert!(worst < 15.0, "vibrato off by {worst} cents");
     }

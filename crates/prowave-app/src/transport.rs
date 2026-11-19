@@ -15,20 +15,17 @@ use egui::{
     StrokeKind, Ui,
 };
 
-const BAR_BG: Color32 = Color32::from_rgb(0x47, 0x47, 0x47);
-const SEG_BG: Color32 = Color32::from_rgb(0x56, 0x56, 0x56);
-const SEG_BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
-const SEG_ON: Color32 = Color32::from_rgb(0x2e, 0x2e, 0x2e);
-const ICON: Color32 = Color32::from_rgb(0xb4, 0xb4, 0xb4);
-const ICON_ON: Color32 = Color32::from_rgb(0xec, 0xec, 0xec);
-const ICON_DIM: Color32 = Color32::from_rgb(0x7a, 0x7a, 0x7a);
-const LCD_BG: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x1e);
-const LCD_TEXT: Color32 = Color32::from_rgb(0xe8, 0xe8, 0xe8);
-const LCD_MID: Color32 = Color32::from_rgb(0x9c, 0x9c, 0x9c);
-const LCD_DIM: Color32 = Color32::from_rgb(0x4e, 0x4e, 0x50);
-const PLAY_GREEN: Color32 = Color32::from_rgb(0x30, 0xa8, 0x4b);
+const BAR_BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x14);
+const ICON: Color32 = Color32::from_rgb(0x8a, 0x93, 0xa5);
+const ICON_ON: Color32 = Color32::from_rgb(0xe6, 0xed, 0xf3);
+const ICON_DIM: Color32 = Color32::from_rgb(0x4b, 0x54, 0x66);
+const LCD_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
+const LCD_TEXT: Color32 = Color32::from_rgb(0xe6, 0xed, 0xf3);
+const LCD_MID: Color32 = Color32::from_rgb(0x8a, 0x93, 0xa5);
+const LCD_DIM: Color32 = Color32::from_rgb(0x38, 0x44, 0x5a);
+const PLAY_GREEN: Color32 = Color32::from_rgb(0x10, 0xb9, 0x81);
 /// The LCD while recording turns red, as in Logic.
-const LCD_REC_BG: Color32 = Color32::from_rgb(19, 10, 10);
+const LCD_REC_BG: Color32 = Color32::from_rgb(28, 12, 14);
 const LCD_REC_TEXT: Color32 = Color32::from_rgb(244, 98, 86);
 const LCD_REC_MID: Color32 = Color32::from_rgb(170, 62, 54);
 const LCD_REC_DIM: Color32 = Color32::from_rgb(84, 30, 28);
@@ -63,9 +60,9 @@ impl LcdColors {
     }
 }
 
-const REC_RED: Color32 = Color32::from_rgb(0xe6, 0x34, 0x2c);
-const CYCLE_YELLOW: Color32 = Color32::from_rgb(0xe8, 0xa6, 0x2a);
-const PURPLE: Color32 = Color32::from_rgb(0x9b, 0x3f, 0xd6);
+const REC_RED: Color32 = Color32::from_rgb(0xef, 0x44, 0x44);
+const CYCLE_YELLOW: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+const PURPLE: Color32 = Color32::from_rgb(0x9d, 0x4e, 0xdd);
 
 fn stroke(c: Color32) -> Stroke {
     Stroke::new(1.4, c)
@@ -396,24 +393,58 @@ fn segmented(
     cy: f32,
     key: &str,
     items: &[(IconFn, bool)],
+    quality: crate::liquid_glass::GlassQuality,
 ) -> Option<usize> {
-    let seg = vec2(30.0, 24.0);
+    let seg = vec2(30.0, 26.0);
     let full = Rect::from_min_size(
         pos2(left, cy - seg.y / 2.0),
         vec2(seg.x * items.len() as f32, seg.y),
     );
-    g.rect_filled(full, 5.0, SEG_BG);
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        full,
+        14.0,
+        quality,
+        false,
+        Some(Color32::from_rgba_premultiplied(26, 30, 41, 200)),
+        Some(Color32::from_rgba_premultiplied(45, 53, 70, 160)),
+    );
     let mut hit = None;
     for (i, (draw, on)) in items.iter().enumerate() {
         let r = Rect::from_min_size(pos2(left + i as f32 * seg.x, full.top()), seg);
         if *on {
             let cr = CornerRadius {
-                nw: if i == 0 { 5 } else { 0 },
-                sw: if i == 0 { 5 } else { 0 },
-                ne: if i + 1 == items.len() { 5 } else { 0 },
-                se: if i + 1 == items.len() { 5 } else { 0 },
+                nw: if i == 0 { 14 } else { 4 },
+                sw: if i == 0 { 14 } else { 4 },
+                ne: if i + 1 == items.len() { 14 } else { 4 },
+                se: if i + 1 == items.len() { 14 } else { 4 },
             };
-            g.rect_filled(r, cr, SEG_ON);
+            g.rect_filled(
+                r.shrink(1.0),
+                cr,
+                Color32::from_rgba_premultiplied(35, 48, 70, 220),
+            );
+            g.rect_stroke(
+                r.shrink(1.0),
+                cr,
+                Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 210, 255, 100)),
+                StrokeKind::Inside,
+            );
+        } else {
+            let resp = ui.interact(
+                r,
+                egui::Id::unique(("control_bar_hover", key, i)),
+                Sense::hover(),
+            );
+            if resp.hovered() {
+                let cr = CornerRadius {
+                    nw: if i == 0 { 14 } else { 0 },
+                    sw: if i == 0 { 14 } else { 0 },
+                    ne: if i + 1 == items.len() { 14 } else { 0 },
+                    se: if i + 1 == items.len() { 14 } else { 0 },
+                };
+                g.rect_filled(r.shrink(1.0), cr, Color32::from_white_alpha(15));
+            }
         }
         if i > 0 {
             g.line_segment(
@@ -421,7 +452,7 @@ fn segmented(
                     pos2(r.left(), r.top() + 4.0),
                     pos2(r.left(), r.bottom() - 4.0),
                 ],
-                Stroke::new(1.0, SEG_BORDER),
+                Stroke::new(1.0, Color32::from_rgba_premultiplied(37, 42, 55, 120)),
             );
         }
         draw(g, r, if *on { ICON_ON } else { ICON });
@@ -429,7 +460,6 @@ fn segmented(
             hit = Some(i);
         }
     }
-    g.rect_stroke(full, 5.0, Stroke::new(1.0, SEG_BORDER), StrokeKind::Inside);
     hit
 }
 
@@ -448,8 +478,14 @@ fn tbutton(
     tip(&resp, key);
     if let Some(bg) = active_bg {
         g.rect_filled(r, 6.0, bg);
+        g.rect_stroke(
+            r,
+            6.0,
+            Stroke::new(1.0, bg.lerp_to_gamma(Color32::WHITE, 0.35)),
+            StrokeKind::Inside,
+        );
     } else if resp.hovered() {
-        g.rect_filled(r, 6.0, Color32::from_white_alpha(14));
+        g.rect_filled(r, 6.0, Color32::from_white_alpha(16));
     }
     draw(g, r, icon);
     resp.clicked()
@@ -465,7 +501,7 @@ fn lcd_seg(
     dim_color: Color32,
 ) {
     let split = text.char_indices().nth(dim).map_or(text.len(), |(i, _)| i);
-    let font = FontId::proportional(size);
+    let font = FontId::monospace(size);
     if split > 0 {
         job.append(
             &text[..split],
@@ -526,14 +562,24 @@ fn take_steps(leftover: &mut f32, delta_px: f32, px_per_step: f32) -> i32 {
     steps as i32
 }
 
-fn lcd(ui: &Ui, g: &Painter, p: &mut Project, rect: Rect, cpu_load: f32, hd_load: f32) {
+fn lcd(
+    ui: &Ui,
+    g: &Painter,
+    p: &mut Project,
+    rect: Rect,
+    cpu_load: f32,
+    hd_load: f32,
+    quality: crate::liquid_glass::GlassQuality,
+) {
     let pal = LcdColors::new(p.recording);
-    g.rect_filled(rect, 6.0, pal.bg);
-    g.rect_stroke(
+    crate::liquid_glass::paint_glass_pill(
+        ui,
         rect,
-        6.0,
-        Stroke::new(1.0, Color32::from_gray(0x10)),
-        StrokeKind::Inside,
+        14.0,
+        quality,
+        true,
+        Some(pal.bg),
+        Some(Color32::from_rgba_premultiplied(40, 48, 65, 120)),
     );
     let top = rect.top() + 4.0;
     let bot = rect.center().y + 1.0;
@@ -589,7 +635,7 @@ fn lcd(ui: &Ui, g: &Painter, p: &mut Project, rect: Rect, cpu_load: f32, hd_load
         pos2(tempo_rect.center().x, top),
         Align2::CENTER_TOP,
         format!("{:.4}", p.tempo_at(p.position_beats)),
-        FontId::proportional(18.0),
+        FontId::monospace(17.0),
         pal.text,
     );
     g.text(
@@ -639,7 +685,7 @@ fn lcd(ui: &Ui, g: &Painter, p: &mut Project, rect: Rect, cpu_load: f32, hd_load
             let (num, den) = p.signature_of_bar(p.beats_to_bar(p.position_beats) as u32);
             format!("{num}/{den}")
         },
-        FontId::proportional(18.0),
+        FontId::monospace(17.0),
         pal.text,
     );
     g.text(
@@ -737,6 +783,7 @@ pub(crate) fn master_volume(
     rect: Rect,
     peaks: Option<(f32, f32)>,
     id: egui::Id,
+    quality: crate::liquid_glass::GlassQuality,
 ) {
     const RAD: f32 = 10.0;
     let travel = (rect.left() + RAD + 1.0, rect.right() - RAD - 1.0);
@@ -747,18 +794,14 @@ pub(crate) fn master_volume(
 
     // Pill with a soft inner edge.
     let r = rect.height() / 2.0;
-    g.rect_filled(rect, r, Color32::from_gray(0x2b));
-    g.rect_stroke(
+    crate::liquid_glass::paint_glass_pill(
+        ui,
         rect,
         r,
-        Stroke::new(1.0, Color32::from_gray(0x4c)),
-        egui::StrokeKind::Inside,
-    );
-    g.rect_stroke(
-        rect.shrink(1.5),
-        r - 1.5,
-        Stroke::new(1.0, Color32::from_gray(0x1c)),
-        egui::StrokeKind::Inside,
+        quality,
+        true,
+        Some(Color32::from_rgba_premultiplied(16, 18, 25, 230)),
+        Some(Color32::from_rgba_premultiplied(37, 42, 55, 180)),
     );
 
     // Two stereo meter bars.
@@ -767,14 +810,14 @@ pub(crate) fn master_volume(
         pos2(rect.right() - 9.0, rect.bottom() - 5.0),
     );
     let bar_h = ((inner.height() - 2.0) / 2.0).floor().max(3.0);
-    let green = Color32::from_rgb(0x2f, 0xa8, 0x3c);
-    let yellow = Color32::from_rgb(0xb4, 0xa0, 0x20);
-    let red = Color32::from_rgb(0xd8, 0x3a, 0x2c);
+    let green = Color32::from_rgb(0x10, 0xb9, 0x81);
+    let yellow = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+    let red = Color32::from_rgb(0xef, 0x44, 0x44);
     let (l, rr) = peaks.unwrap_or((0.0, 0.0));
     for (i, peak) in [l, rr].into_iter().enumerate() {
         let y = inner.top() + i as f32 * (bar_h + 2.0);
         let bar = Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), bar_h));
-        g.rect_filled(bar, 2.0, Color32::from_gray(0x1d));
+        g.rect_filled(bar, 2.0, Color32::from_gray(0x13));
         let f = meter_frac(peak);
         for (lo, hi, col) in [
             (0.0f32, 0.82f32, green),
@@ -786,18 +829,11 @@ pub(crate) fn master_volume(
             if x2 > x1 {
                 let seg = Rect::from_min_max(pos2(x1, bar.top()), pos2(x2, bar.bottom()));
                 g.rect_filled(seg, 1.5, col);
-                // Light centre line and a darker lower edge give the bar its soft round look.
+                // Light centre line gives the bar its soft round look.
                 let mid = seg.center().y;
                 g.line_segment(
                     [pos2(seg.left(), mid), pos2(seg.right(), mid)],
                     Stroke::new(1.0, col.lerp_to_gamma(Color32::WHITE, 0.35)),
-                );
-                g.line_segment(
-                    [
-                        pos2(seg.left(), seg.bottom() - 0.5),
-                        pos2(seg.right(), seg.bottom() - 0.5),
-                    ],
-                    Stroke::new(1.0, col.lerp_to_gamma(Color32::BLACK, 0.35)),
                 );
             }
         }
@@ -808,21 +844,17 @@ pub(crate) fn master_volume(
         travel.0 + (travel.1 - travel.0) * p.master_vol,
         rect.center().y,
     );
-    g.circle_filled(c + vec2(0.0, 1.0), RAD + 1.0, Color32::from_black_alpha(70));
-    g.circle_filled(
-        c,
-        RAD,
-        Color32::from_rgba_unmultiplied(0xd2, 0xd2, 0xd2, 0xc8),
-    );
+    g.circle_filled(c + vec2(0.0, 1.5), RAD + 1.0, Color32::from_black_alpha(90));
+    g.circle_filled(c, RAD, Color32::from_rgba_premultiplied(200, 210, 225, 220));
     g.circle_stroke(
         c,
         RAD,
-        Stroke::new(1.2, Color32::from_rgba_unmultiplied(0xf2, 0xf2, 0xf2, 0xe6)),
+        Stroke::new(1.2, Color32::from_rgba_premultiplied(240, 245, 255, 240)),
     );
     g.circle_stroke(
-        c,
+        c + vec2(-1.5, -1.5),
         RAD - 3.5,
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x8a, 0x8a, 0x8a, 0x90)),
+        Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 120)),
     );
 }
 
@@ -869,32 +901,40 @@ pub fn control_bar(
     g.rect_filled(bar, 0.0, BAR_BG);
     g.line_segment(
         [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x24)),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     let cy = bar.center().y;
 
-    // Left: Library / Inspector / Quick Help / Toolbar.
+    // Left: Library / Inspector / Quick Help / Toolbar (Pill 1)
     let left = [
         (icon_library as IconFn, s.show_library),
         (icon_inspector, s.show_inspector),
         (icon_help, s.show_quick_help),
         (icon_toolbar, s.show_toolbar),
     ];
-    match segmented(ui, &g, bar.left() + 8.0, cy, "view", &left) {
+    match segmented(ui, &g, bar.left() + 8.0, cy, "view", &left, s.glass_quality) {
         Some(0) => s.show_library = !s.show_library,
         Some(1) => s.show_inspector = !s.show_inspector,
         Some(2) => s.show_quick_help = !s.show_quick_help,
         Some(3) => s.show_toolbar = !s.show_toolbar,
         _ => {}
     }
-    // Smart Controls / Mixer / Editors.
+    // Smart Controls / Mixer / Editors (Pill 2)
     let editors_on = s.bottom == Bottom::PianoRoll;
     let mid = [
         (icon_smart_controls as IconFn, s.light_menus),
         (icon_mixer, s.show_mixer && s.bottom == Bottom::Mixer),
         (icon_editors, editors_on),
     ];
-    match segmented(ui, &g, bar.left() + PANES_LEFT, cy, "panes", &mid) {
+    match segmented(
+        ui,
+        &g,
+        bar.left() + PANES_LEFT,
+        cy,
+        "panes",
+        &mid,
+        s.glass_quality,
+    ) {
         // Switches the menu bar and its menus between dark and light (white).
         Some(0) => s.light_menus = !s.light_menus,
         Some(1) => {
@@ -914,7 +954,22 @@ pub fn control_bar(
     // Centre: LCD, transport to its left, count-in & co. to its right.
     let lcd_w = LCD_WIDTH;
     let lcd_rect = Rect::from_center_size(pos2(lcd_center_x(bar), cy), vec2(lcd_w, 44.0));
-    lcd(ui, &g, p, lcd_rect, s.cpu_load, s.hd_load);
+    lcd(ui, &g, p, lcd_rect, s.cpu_load, s.hd_load, s.glass_quality);
+
+    // Center Transport Pill capsule
+    let transport_capsule = Rect::from_min_max(
+        pos2(lcd_rect.left() - 216.0, cy - 16.0),
+        pos2(lcd_rect.left() - 4.0, cy + 16.0),
+    );
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        transport_capsule,
+        16.0,
+        s.glass_quality,
+        false,
+        Some(Color32::from_rgba_premultiplied(22, 26, 36, 220)),
+        Some(Color32::from_rgba_premultiplied(45, 53, 70, 160)),
+    );
 
     let tx = |dx: f32| pos2(lcd_rect.left() + dx, cy);
     if tbutton(ui, &g, tx(-198.0), "rew", icon_rewind, None, ICON) {
@@ -951,6 +1006,7 @@ pub fn control_bar(
     let rec_r = Rect::from_center_size(tx(-76.0), vec2(30.0, 26.0));
     if p.recording {
         g.rect_filled(rec_r, 6.0, REC_BUTTON_ON);
+        g.rect_stroke(rec_r, 6.0, Stroke::new(1.0, REC_RED), StrokeKind::Inside);
     }
     g.circle_filled(
         rec_r.center(),
@@ -984,12 +1040,38 @@ pub fn control_bar(
         p.cycle = !p.cycle;
     }
 
+    // Right of LCD: Circular utility pills (lowlat, tuner, count-in, metronome)
     let rx = |dx: f32| pos2(lcd_rect.right() + dx, cy);
+    for center in [rx(24.0), rx(54.0)] {
+        let r = Rect::from_center_size(center, vec2(28.0, 28.0));
+        crate::liquid_glass::paint_glass_pill(
+            ui,
+            r,
+            14.0,
+            s.glass_quality,
+            false,
+            Some(Color32::from_rgba_premultiplied(22, 26, 36, 200)),
+            Some(Color32::from_rgba_premultiplied(45, 53, 70, 140)),
+        );
+    }
     let _low_latency = tbutton(ui, &g, rx(24.0), "lowlat", icon_low_latency, None, ICON);
     let _tuner = tbutton(ui, &g, rx(54.0), "tuner", icon_tuner, None, ICON_DIM);
-    // Count-in "1234": purple when on.
-    let ci = Rect::from_center_size(rx(110.0), vec2(28.0, 24.0));
-    g.rect_filled(ci, 5.0, if p.count_in { PURPLE } else { SEG_BG });
+
+    // Count-in "1234" pill
+    let ci = Rect::from_center_size(rx(110.0), vec2(28.0, 26.0));
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        ci,
+        13.0,
+        s.glass_quality,
+        false,
+        if p.count_in {
+            Some(PURPLE)
+        } else {
+            Some(Color32::from_rgba_premultiplied(22, 26, 36, 200))
+        },
+        Some(Color32::from_rgba_premultiplied(50, 60, 80, 140)),
+    );
     g.text(
         ci.center(),
         Align2::CENTER_CENTER,
@@ -1000,6 +1082,22 @@ pub fn control_bar(
     if clicked(ui, ci, "countin") {
         p.count_in = !p.count_in;
     }
+
+    // Metronome pill
+    let met_r = Rect::from_center_size(rx(140.0), vec2(28.0, 26.0));
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        met_r,
+        13.0,
+        s.glass_quality,
+        false,
+        if p.metronome {
+            Some(PURPLE)
+        } else {
+            Some(Color32::from_rgba_premultiplied(22, 26, 36, 200))
+        },
+        Some(Color32::from_rgba_premultiplied(50, 60, 80, 140)),
+    );
     let met_bg = p.metronome.then_some(PURPLE);
     if tbutton(
         ui,
@@ -1017,8 +1115,7 @@ pub fn control_bar(
         p.metronome = !p.metronome;
     }
 
-    // Right: master volume, then List Editors / Note Pads / Loop Browser / Browsers.
-    // The volume sits after the metronome and before the icons, narrower if it must be.
+    // Right: master volume, MCP status dot, then List Editors / Note Pads / Loop Browser / Browsers.
     let (vol_left, vol_w) = volume_span(rx(156.0).x, bar.right());
     if vol_w > 0.0 {
         let vol = Rect::from_min_size(pos2(vol_left, cy - 11.0), vec2(vol_w, 22.0));
@@ -1029,8 +1126,61 @@ pub fn control_bar(
             vol,
             master_peaks,
             egui::Id::unique(("control_bar", "master")),
+            s.glass_quality,
         );
     }
+
+    // Subtle clickable MCP status dot pill
+    let mcp_pill = Rect::from_center_size(pos2(bar.right() - 138.0, cy), vec2(36.0, 22.0));
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        mcp_pill,
+        11.0,
+        s.glass_quality,
+        false,
+        Some(Color32::from_rgba_premultiplied(22, 26, 36, 200)),
+        Some(Color32::from_rgba_premultiplied(45, 53, 70, 140)),
+    );
+    let dot_col = if s.mcp_server_enabled {
+        Color32::from_rgb(0x10, 0xb9, 0x81)
+    } else {
+        Color32::from_rgb(0x8a, 0x93, 0xa5)
+    };
+    g.circle_filled(pos2(mcp_pill.left() + 8.0, cy), 3.0, dot_col);
+    g.text(
+        pos2(mcp_pill.left() + 15.0, cy),
+        Align2::LEFT_CENTER,
+        "MCP",
+        FontId::proportional(9.5),
+        Color32::from_rgb(0xc0, 0xc8, 0xd8),
+    );
+    let mcp_resp = ui.interact(
+        mcp_pill,
+        egui::Id::unique("mcp_status_pill"),
+        Sense::click(),
+    );
+    mcp_resp
+        .clone()
+        .on_hover_text("MCP Server: Listening on 127.0.0.1:38420 (Click to configure)");
+    if mcp_resp.clicked() {
+        s.settings_tab = Some(crate::project_settings::SettingsTab::McpServer);
+    }
+
+    // Right panel toggles floating glass pill
+    let right_rect = Rect::from_min_max(
+        pos2(bar.right() - 116.0, cy - 15.0),
+        pos2(bar.right() - 106.0 + 3.0 * 27.5 + 16.0, cy + 15.0),
+    );
+    crate::liquid_glass::paint_glass_pill(
+        ui,
+        right_rect,
+        15.0,
+        s.glass_quality,
+        false,
+        Some(Color32::from_rgba_premultiplied(22, 26, 36, 220)),
+        Some(Color32::from_rgba_premultiplied(45, 53, 70, 160)),
+    );
+
     let right: [IconFn; 4] = [icon_list_editors, icon_note_pad, icon_loops, icon_browsers];
     for (i, draw) in right.iter().enumerate() {
         let c = pos2(bar.right() - 106.0 + i as f32 * 27.5, cy);

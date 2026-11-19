@@ -27,9 +27,15 @@ pub fn sound_library_path() -> Option<PathBuf> {
     // Default system candidates (Linux and cross-platform)
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let candidates = [
-        home.as_ref().map(|h| h.join(".local").join("share").join("douri").join("sound_library")),
+        home.as_ref().map(|h| {
+            h.join(".local")
+                .join("share")
+                .join("douri")
+                .join("sound_library")
+        }),
         home.as_ref().map(|h| h.join("Music").join("Sound Library")),
-        home.as_ref().map(|h| h.join("Documents").join("Sound Library")),
+        home.as_ref()
+            .map(|h| h.join("Documents").join("Sound Library")),
         #[cfg(target_os = "macos")]
         Some(PathBuf::from("/Library/Application Support/Logic")),
         #[cfg(target_os = "macos")]
@@ -74,7 +80,10 @@ pub fn discover_exs_instruments(root: &Path) -> Vec<PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("exs")) {
+            } else if path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exs"))
+            {
                 out.push(path);
             }
         }
@@ -153,15 +162,9 @@ mod tests {
         std::fs::write(&wav, b"RIFF dummy").unwrap();
 
         // Exact match
-        assert_eq!(
-            resolve_exs_sample("kick.wav", &exs_dir),
-            Some(wav.clone())
-        );
+        assert_eq!(resolve_exs_sample("kick.wav", &exs_dir), Some(wav.clone()));
 
         // Extension fallback from .aif to .wav
-        assert_eq!(
-            resolve_exs_sample("kick.aif", &exs_dir),
-            Some(wav)
-        );
+        assert_eq!(resolve_exs_sample("kick.aif", &exs_dir), Some(wav));
     }
 }

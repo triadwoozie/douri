@@ -853,10 +853,7 @@ impl EngineSync {
                 .get_mut(i)
                 .is_some_and(|d| d.take().is_some());
             self.drum_jobs.remove(&i);
-            let bass808_was = self
-                .bass808s
-                .get_mut(i)
-                .is_some_and(|b| b.take().is_some());
+            let bass808_was = self.bass808s.get_mut(i).is_some_and(|b| b.take().is_some());
             let force = self.samplers.get_mut(i).is_some_and(|s| s.take().is_some())
                 || drums_were
                 || bass808_was;
@@ -874,7 +871,7 @@ impl EngineSync {
                 Some(sent) => sent.as_ref() == want,
                 None => want.is_none(),
             } && sent_piano.is_some() == want_piano.is_some()
-              && sent_hosted == want_hosted;
+                && sent_hosted == want_hosted;
             if same_sound && !force {
                 // Only the Electric Piano's dials moved: they change while the notes ring.
                 if let (Some(dials), true) = (want_piano, sent_piano != want_piano) {
@@ -1217,7 +1214,12 @@ impl EngineSync {
     }
 
     /// Keeps track `i`'s Bass 808 in step with `want`. Returns false when the engine's queue was full.
-    fn sync_bass808(&mut self, i: usize, want: &prowave_engine::Bass808Spec, sample_rate: f32) -> bool {
+    fn sync_bass808(
+        &mut self,
+        i: usize,
+        want: &prowave_engine::Bass808Spec,
+        sample_rate: f32,
+    ) -> bool {
         if self.bass808s.len() <= i {
             self.bass808s.resize(i + 1, None);
         }

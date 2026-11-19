@@ -1298,7 +1298,9 @@ struct LemonDistState {
 impl LemonDistState {
     fn new(sr: f32, params: &[f32]) -> Self {
         Self {
-            node: crate::native_fx::lemon_fast_distortion::LemonFastDistortion::new(sr as u32, params),
+            node: crate::native_fx::lemon_fast_distortion::LemonFastDistortion::new(
+                sr as u32, params,
+            ),
         }
     }
 
@@ -1316,7 +1318,9 @@ struct LemonTransientState {
 impl LemonTransientState {
     fn new(sr: f32, params: &[f32]) -> Self {
         Self {
-            node: crate::native_fx::lemon_transient_processor::LemonTransientProcessor::new(sr as u32, params),
+            node: crate::native_fx::lemon_transient_processor::LemonTransientProcessor::new(
+                sr as u32, params,
+            ),
         }
     }
 
@@ -1562,9 +1566,7 @@ impl Fx {
             FxKind::FreqShifter => {
                 State::FreqShifter(Box::new(crate::freq_shifter::FreqShifterNode::new(sr)))
             }
-            FxKind::AutoPan => {
-                State::AutoPan(Box::new(crate::auto_pan::AutoPanNode::new(sr)))
-            }
+            FxKind::AutoPan => State::AutoPan(Box::new(crate::auto_pan::AutoPanNode::new(sr))),
         };
         let mut fx = Self {
             kind,
@@ -2118,9 +2120,7 @@ impl Fx {
             State::FreqShifter(s) => {
                 s.process_frame(l, r, pr[0], pr[1].round() as usize, pr[2], pr[3])
             }
-            State::AutoPan(s) => {
-                s.process_frame(l, r, pr[0], pr[1], pr[2].round() as usize, pr[3])
-            }
+            State::AutoPan(s) => s.process_frame(l, r, pr[0], pr[1], pr[2].round() as usize, pr[3]),
         };
         // A bad sample (NaN, infinity) never travels on: it becomes silence and the
         // effect's memory is dropped by the caller's next reset.

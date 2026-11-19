@@ -69,8 +69,12 @@ fn render_controls(ui: &mut Ui, spec: &mut Bass808Spec) {
                         .add_filter("Audio file", &["wav", "WAV", "aif", "aiff", "flac"])
                         .pick_file()
                     {
-                        if let Ok(mono) = prowave_engine::bass808_prepare_sample(&path, ANALYSIS_RATE) {
-                            let root = prowave_engine::bass808_measure_root_hz(&mono, ANALYSIS_RATE).unwrap_or(55.0);
+                        if let Ok(mono) =
+                            prowave_engine::bass808_prepare_sample(&path, ANALYSIS_RATE)
+                        {
+                            let root =
+                                prowave_engine::bass808_measure_root_hz(&mono, ANALYSIS_RATE)
+                                    .unwrap_or(55.0);
                             spec.sample = path.to_string_lossy().into_owned();
                             spec.root_hz = root;
                         }
@@ -98,7 +102,10 @@ fn render_controls(ui: &mut Ui, spec: &mut Bass808Spec) {
                     .logarithmic(true),
             );
 
-            ui.checkbox(&mut spec.params.legato, "Legato (Overlap slides without retrigger)");
+            ui.checkbox(
+                &mut spec.params.legato,
+                "Legato (Overlap slides without retrigger)",
+            );
         });
 
         ui.add_space(4.0);
@@ -145,7 +152,10 @@ fn render_controls(ui: &mut Ui, spec: &mut Bass808Spec) {
             } else {
                 prowave_engine::bass808_can_sustain(spec, ANALYSIS_RATE)
             };
-            ui.add_enabled(can_sustain, egui::Checkbox::new(&mut spec.params.sustain, "Sustain Loop"));
+            ui.add_enabled(
+                can_sustain,
+                egui::Checkbox::new(&mut spec.params.sustain, "Sustain Loop"),
+            );
         });
 
         ui.add_space(4.0);
@@ -167,16 +177,10 @@ fn render_controls(ui: &mut Ui, spec: &mut Bass808Spec) {
             );
 
             let p_sine = &BASS808_PARAMS[BASS808_SINE];
-            ui.add(
-                Slider::new(&mut spec.params.sine, p_sine.lo..=p_sine.hi)
-                    .text("Sub Sine Mix"),
-            );
+            ui.add(Slider::new(&mut spec.params.sine, p_sine.lo..=p_sine.hi).text("Sub Sine Mix"));
 
             let p_sq = &BASS808_PARAMS[BASS808_SQUARE];
-            ui.add(
-                Slider::new(&mut spec.params.square, p_sq.lo..=p_sq.hi)
-                    .text("Sub Square Mix"),
-            );
+            ui.add(Slider::new(&mut spec.params.square, p_sq.lo..=p_sq.hi).text("Sub Square Mix"));
 
             let p_lvl = &BASS808_PARAMS[BASS808_LEVEL];
             ui.add(

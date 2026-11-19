@@ -262,8 +262,12 @@ fn hosted_from_doc(d: &prowave_project::PluginDoc, bypass: bool) -> Option<crate
 }
 
 fn hosted_instrument_of(t: &TrackDoc) -> u32 {
-    let Some(d) = t.hosted_instrument.as_ref() else { return 0; };
-    let Some(format) = crate::hosted_plugins::Format::from_name(&d.format) else { return 0; };
+    let Some(d) = t.hosted_instrument.as_ref() else {
+        return 0;
+    };
+    let Some(format) = crate::hosted_plugins::Format::from_name(&d.format) else {
+        return 0;
+    };
     let info = crate::hosted_plugins::find(format, &d.id).unwrap_or_else(|| {
         crate::hosted_plugins::PluginInfo {
             format,
@@ -527,16 +531,18 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
             epiano: t.epiano.map(|e| e.params.to_vec()),
             drums: t.drums.as_ref().map(drums_doc),
             hosted_instrument: if t.hosted_instrument != 0 {
-                crate::hosted_plugins::info(t.hosted_instrument).map(|info| prowave_project::PluginDoc {
-                    format: info.format.name().into(),
-                    id: info.id,
-                    name: info.name,
-                    vendor: info.vendor,
-                    path: info.path.to_string_lossy().into_owned(),
-                    state: crate::hosted_plugins::state(t.hosted_instrument)
-                        .map(|state| hex(&state))
-                        .unwrap_or_default(),
-                    ..Default::default()
+                crate::hosted_plugins::info(t.hosted_instrument).map(|info| {
+                    prowave_project::PluginDoc {
+                        format: info.format.name().into(),
+                        id: info.id,
+                        name: info.name,
+                        vendor: info.vendor,
+                        path: info.path.to_string_lossy().into_owned(),
+                        state: crate::hosted_plugins::state(t.hosted_instrument)
+                            .map(|state| hex(&state))
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    }
                 })
             } else {
                 None

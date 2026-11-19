@@ -298,7 +298,6 @@ fn midi_mode_follows_the_notes() {
             playing: true,
             beat: start as f64 / f64::from(RATE) * 2.0,
             tempo: 120.0,
-            ..BlockTransport::default()
         });
         assert_no_alloc::assert_no_alloc(|| fx.process((&chunk[..], &chunk[..]), (&mut l, &mut r)));
         out[start..start + 64].copy_from_slice(&l);

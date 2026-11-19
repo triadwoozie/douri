@@ -28,15 +28,16 @@ fn native() -> wgpu::Backends {
     }
 }
 
-/// The graphics API used on this machine: Metal on macOS; elsewhere native Vulkan when supported,
-/// with OpenGL and GLES kept as robust fallbacks.
-pub fn backends(vulkan_works: bool) -> wgpu::Backends {
+/// The graphics API used on this machine: Metal on macOS; elsewhere OpenGL by default,
+/// since it is supported on every Linux, Windows and FreeBSD machine Pro Wave runs on.
+/// With a driver that cannot draw OpenGL, the native Vulkan or Direct3D 12 API is started instead.
+pub fn backends(gl_works: bool) -> wgpu::Backends {
     if cfg!(target_os = "macos") {
         native()
-    } else if vulkan_works {
-        native() | wgpu::Backends::GL
-    } else {
+    } else if gl_works {
         wgpu::Backends::GL
+    } else {
+        native() | wgpu::Backends::GL
     }
 }
 
@@ -50,17 +51,13 @@ fn instance_descriptor(backends: wgpu::Backends) -> wgpu::InstanceDescriptor {
     }
 }
 
-/// Whether a Vulkan adapter that is a real GPU can be created on this machine.
-fn vulkan_works() -> bool {
-    let instance = wgpu::Instance::new(instance_descriptor(wgpu::Backends::VULKAN));
-    let adapters = block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
-    let found = adapters
+/// Whether an OpenGL adapter that is a real GPU can be created on this machine.
+fn gl_works() -> bool {
+    let instance = wgpu::Instance::new(instance_descriptor(wgpu::Backends::GL));
+    let adapters = block_on(instance.enumerate_adapters(wgpu::Backends::GL));
+    adapters
         .iter()
-        .any(|a| a.get_info().device_type != wgpu::DeviceType::Cpu);
-    if !found {
-        tracing::info!("no hardware Vulkan driver found; falling back to OpenGL / GL adapter");
-    }
-    found
+        .any(|a| a.get_info().device_type != wgpu::DeviceType::Cpu)
 }
 
 /// Runs a future that completes without waiting, as wgpu's adapter listing does on desktops.
@@ -76,18 +73,16 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 }
 
 /// Sort key for an adapter: lower is better. A real GPU before a software renderer, then
-/// native Vulkan / Metal before DX12 before OpenGL.
+/// OpenGL before the system's API (which on Windows is DX12; Intel/Nvidia often have
+/// better OpenGL than DX12 on older chips).
 fn rank(backend: wgpu::Backend, device: wgpu::DeviceType) -> (bool, u8) {
     let api_order = match backend {
-        wgpu::Backend::Vulkan | wgpu::Backend::Metal => 0,
+        wgpu::Backend::Gl => 0,
         wgpu::Backend::Dx12 => 1,
-        wgpu::Backend::Gl => 2,
+        wgpu::Backend::Vulkan | wgpu::Backend::Metal => 2,
         _ => 3,
     };
-    (
-        device == wgpu::DeviceType::Cpu,
-        api_order,
-    )
+    (device == wgpu::DeviceType::Cpu, api_order)
 }
 
 fn pick(
@@ -109,8 +104,8 @@ fn pick(
 pub fn config() -> WgpuConfiguration {
     let mut setup = WgpuSetupCreateNew::without_display_handle();
     if wgpu::Backends::from_env().is_none() {
-        let vk_works = !cfg!(target_os = "macos") && vulkan_works();
-        setup.instance_descriptor.backends = backends(vk_works);
+        let works = gl_works();
+        setup.instance_descriptor.backends = backends(works);
         setup.native_adapter_selector = Some(Arc::new(pick));
     }
     WgpuConfiguration {

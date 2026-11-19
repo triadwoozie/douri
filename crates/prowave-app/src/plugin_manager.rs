@@ -114,7 +114,11 @@ fn entries(hosted: &[hosted_plugins::PluginInfo], ladspa: &plugins::Catalog) -> 
     }));
     for (path, why) in &ladspa.failed {
         all.push(Entry {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
             format: "LADSPA".to_string(),
             category: "Effect".to_string(),
             vendor: "—".to_string(),
@@ -125,7 +129,11 @@ fn entries(hosted: &[hosted_plugins::PluginInfo], ladspa: &plugins::Catalog) -> 
     }
     for path in &ladspa.skipped {
         all.push(Entry {
-            name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("Unknown").to_string(),
+            name: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
             format: "LADSPA".to_string(),
             category: "Effect".to_string(),
             vendor: "—".to_string(),

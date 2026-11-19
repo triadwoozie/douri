@@ -293,16 +293,33 @@ impl CallbackTrait for GlassCallback {
         let width = screen_descriptor.size_in_pixels[0] as f32;
         let height = screen_descriptor.size_in_pixels[1] as f32;
 
-        let res = callback_resources.entry::<Arc<GlassGpuPipeline>>().or_insert_with(|| {
-            Arc::new(GlassGpuPipeline::new(device, wgpu::TextureFormat::Bgra8UnormSrgb))
-        });
+        let res = callback_resources
+            .entry::<Arc<GlassGpuPipeline>>()
+            .or_insert_with(|| {
+                Arc::new(GlassGpuPipeline::new(
+                    device,
+                    wgpu::TextureFormat::Bgra8UnormSrgb,
+                ))
+            });
 
         // Update globals
         let globals_data = [
-            width, height, 1.0 / width.max(1.0), 1.0 / height.max(1.0),
-            -0.35, -0.65, 0.67, 0.0, // light direction
-            1.0, 1.5, 0.02, 3.2,     // quality, eta, dispersion, fresnel exp
-            0.0, 0.0, 0.0, 0.0,
+            width,
+            height,
+            1.0 / width.max(1.0),
+            1.0 / height.max(1.0),
+            -0.35,
+            -0.65,
+            0.67,
+            0.0, // light direction
+            1.0,
+            1.5,
+            0.02,
+            3.2, // quality, eta, dispersion, fresnel exp
+            0.0,
+            0.0,
+            0.0,
+            0.0,
         ];
         queue.write_buffer(&res.globals_buffer, 0, bytemuck::cast_slice(&globals_data));
 
@@ -387,7 +404,11 @@ pub fn paint_glass_pill(
         painter.rect_filled(rect, corners, tint);
         // Top shadow
         let top_shadow = Rect::from_min_max(rect.min, Pos2::new(rect.max.x, rect.min.y + 2.0));
-        painter.rect_filled(top_shadow, corners, Color32::from_rgba_premultiplied(0, 0, 0, 80));
+        painter.rect_filled(
+            top_shadow,
+            corners,
+            Color32::from_rgba_premultiplied(0, 0, 0, 80),
+        );
         // Subtle border
         painter.rect_stroke(
             rect,
@@ -402,7 +423,16 @@ pub fn paint_glass_pill(
         painter.rect_filled(
             shadow_rect,
             corners,
-            Color32::from_rgba_premultiplied(0, 0, 0, if quality == GlassQuality::FlatLowPower { 30 } else { 75 }),
+            Color32::from_rgba_premultiplied(
+                0,
+                0,
+                0,
+                if quality == GlassQuality::FlatLowPower {
+                    30
+                } else {
+                    75
+                },
+            ),
         );
         // 2. Base glass fill
         painter.rect_filled(rect, corners, tint);
@@ -410,7 +440,10 @@ pub fn paint_glass_pill(
         if quality != GlassQuality::FlatLowPower {
             let sheen_rect = Rect::from_min_max(
                 Pos2::new(rect.min.x + r * 0.5, rect.min.y + 0.5),
-                Pos2::new(rect.max.x - r * 0.5, rect.min.y + (rect.height() * 0.45).min(10.0)),
+                Pos2::new(
+                    rect.max.x - r * 0.5,
+                    rect.min.y + (rect.height() * 0.45).min(10.0),
+                ),
             );
             painter.rect_filled(
                 sheen_rect,
@@ -424,7 +457,12 @@ pub fn paint_glass_pill(
         } else {
             Color32::from_rgba_premultiplied(0x38, 0x44, 0x5a, 160)
         };
-        painter.rect_stroke(rect, corners, Stroke::new(1.0, stroke_color), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            corners,
+            Stroke::new(1.0, stroke_color),
+            StrokeKind::Inside,
+        );
     }
 }
 
@@ -441,9 +479,7 @@ pub fn glass_pill<R>(
     let margin = egui::Margin::symmetric(8, 4);
     let frame = egui::Frame::new().inner_margin(margin);
 
-    let inner = frame.show(ui, |ui| {
-        add_contents(ui)
-    });
+    let inner = frame.show(ui, |ui| add_contents(ui));
 
     let rect = inner.response.rect;
     paint_glass_pill(ui, rect, radius, quality, is_recessed, tint, rim);
@@ -453,12 +489,11 @@ pub fn glass_pill<R>(
 
 /// Creates a stylized floating obsidian glass window.
 pub fn glass_window(name: impl Into<egui::WidgetText>) -> egui::Window<'static> {
-    egui::Window::new(name)
-        .frame(
-            egui::Frame::window(&egui::Style::default())
-                .fill(Color32::from_rgba_premultiplied(20, 24, 34, 225))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)))
-                .corner_radius(CornerRadius::same(12))
-                .inner_margin(egui::Margin::same(12)),
-        )
+    egui::Window::new(name).frame(
+        egui::Frame::window(&egui::Style::default())
+            .fill(Color32::from_rgba_premultiplied(20, 24, 34, 225))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)))
+            .corner_radius(CornerRadius::same(12))
+            .inner_margin(egui::Margin::same(12)),
+    )
 }

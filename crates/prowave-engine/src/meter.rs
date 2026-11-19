@@ -211,7 +211,12 @@ impl RmsMeter {
     }
 
     pub fn set_window_ms(&mut self, ms: f32) {
-        let s = (if ms.is_finite() { ms.clamp(1.0, 10_000.0) } else { 300.0 }) * 0.001 * self.sr;
+        let s = (if ms.is_finite() {
+            ms.clamp(1.0, 10_000.0)
+        } else {
+            300.0
+        }) * 0.001
+            * self.sr;
         self.coef = if s < 1.0e-3 { 0.0 } else { (-1.0 / s).exp() };
     }
 
@@ -278,7 +283,11 @@ fn k_weighting(sr: f32) -> [Coeffs; 2] {
     let sr = f64::from(sr);
     let prewarp = |f0: f64| (std::f64::consts::PI * f0.min(sr * 0.49) / sr).tan();
     // Stage 1: shelving.
-    let (f0, g, q) = (1_681.974_450_955_533, 3.999_843_853_973_347, 0.707_175_236_955_419_6);
+    let (f0, g, q) = (
+        1_681.974_450_955_533,
+        3.999_843_853_973_347,
+        0.707_175_236_955_419_6,
+    );
     let k = prewarp(f0);
     let vh = 10f64.powf(g / 20.0);
     let vb = vh.powf(0.499_666_774_154_541_6);
@@ -382,7 +391,9 @@ impl LoudnessMeter {
         self.sub_filled = 0;
         self.hist_count.iter_mut().for_each(|v| *v = 0);
         self.hist_energy.iter_mut().for_each(|v| *v = 0.0);
-        self.tp_hist.iter_mut().for_each(|h| *h = [0.0; 2 * TP_TAPS]);
+        self.tp_hist
+            .iter_mut()
+            .for_each(|h| *h = [0.0; 2 * TP_TAPS]);
         self.tp_pos.iter_mut().for_each(|p| *p = 0);
         self.true_peak = 0.0;
         self.max_momentary = MIN_DB;
@@ -392,7 +403,10 @@ impl LoudnessMeter {
     #[inline]
     pub fn process_sample(&mut self, l: f32, r: f32) {
         let ch = self.filters.len().min(2);
-        let samples = [if l.is_finite() { l } else { 0.0 }, if r.is_finite() { r } else { 0.0 }];
+        let samples = [
+            if l.is_finite() { l } else { 0.0 },
+            if r.is_finite() { r } else { 0.0 },
+        ];
         for (c, &x) in samples.iter().take(ch).enumerate() {
             if let Some([f1, f2]) = self.filters.get_mut(c) {
                 let y = f2.process_sample(f1.process_sample(x));
@@ -421,13 +435,22 @@ impl LoudnessMeter {
     /// Feeds planar channel slices. Never allocates.
     pub fn process_planar(&mut self, channels: &[&[f32]]) {
         let ch = self.filters.len().min(channels.len());
-        let frames = channels.iter().take(ch).map(|c| c.len()).fold(usize::MAX, usize::min);
+        let frames = channels
+            .iter()
+            .take(ch)
+            .map(|c| c.len())
+            .fold(usize::MAX, usize::min);
         if frames == usize::MAX || frames == 0 {
             return;
         }
         for n in 0..frames {
             for c in 0..ch {
-                let x = channels.get(c).and_then(|b| b.get(n)).copied().filter(|v| v.is_finite()).unwrap_or(0.0);
+                let x = channels
+                    .get(c)
+                    .and_then(|b| b.get(n))
+                    .copied()
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(0.0);
                 if let Some([f1, f2]) = self.filters.get_mut(c) {
                     let y = f2.process_sample(f1.process_sample(x));
                     if let Some(acc) = self.block_acc.get_mut(c) {
@@ -454,7 +477,10 @@ impl LoudnessMeter {
                 *v = x;
             }
         }
-        let Some(w) = h.get(p..p + TP_TAPS).and_then(|w| <&[f32; TP_TAPS]>::try_from(w).ok()) else {
+        let Some(w) = h
+            .get(p..p + TP_TAPS)
+            .and_then(|w| <&[f32; TP_TAPS]>::try_from(w).ok())
+        else {
             return;
         };
         let mut y = [0.0f32; TP_PHASES];
@@ -491,7 +517,9 @@ impl LoudnessMeter {
             self.max_momentary = self.max_momentary.max(l);
             if l > HIST_MIN {
                 let bin = (((l - HIST_MIN) / HIST_STEP) as usize).min(HIST_BINS - 1);
-                if let (Some(c), Some(e)) = (self.hist_count.get_mut(bin), self.hist_energy.get_mut(bin)) {
+                if let (Some(c), Some(e)) =
+                    (self.hist_count.get_mut(bin), self.hist_energy.get_mut(bin))
+                {
                     *c += 1;
                     *e += z;
                 }

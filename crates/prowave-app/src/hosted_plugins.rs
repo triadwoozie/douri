@@ -620,7 +620,10 @@ pub fn status_for(info: &PluginInfo) -> &'static str {
         if slot.info.format == info.format && slot.info.id == info.id {
             if let Some(err) = &slot.error {
                 let err_lower = err.to_lowercase();
-                if err_lower.contains("crash") || err_lower.contains("killed") || err_lower.contains("signal") {
+                if err_lower.contains("crash")
+                    || err_lower.contains("killed")
+                    || err_lower.contains("signal")
+                {
                     return "Crashed";
                 } else {
                     return "Incompatible";

@@ -33,15 +33,15 @@ use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
 mod au;
 mod clap;
-#[cfg(target_os = "macos")]
-mod mac;
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(target_os = "windows")]
-mod windows;
+#[cfg(target_os = "macos")]
+mod mac;
 #[cfg(unix)]
 mod sandbox;
 mod vst3;
+#[cfg(target_os = "windows")]
+mod windows;
 
 /// The most parameter moves handed to a plug-in in one block; later ones wait for the next.
 const MAX_CHANGES: usize = 128;
@@ -79,11 +79,34 @@ impl PluginCategory {
 /// A MIDI event delivered to a plug-in on the audio thread.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MidiEvent {
-    NoteOn { time: u32, channel: u8, note: u8, velocity: u8 },
-    NoteOff { time: u32, channel: u8, note: u8, velocity: u8 },
-    PitchBend { time: u32, channel: u8, value: u16 },
-    ControlChange { time: u32, channel: u8, controller: u8, value: u8 },
-    Aftertouch { time: u32, channel: u8, pressure: u8 },
+    NoteOn {
+        time: u32,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        time: u32,
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    PitchBend {
+        time: u32,
+        channel: u8,
+        value: u16,
+    },
+    ControlChange {
+        time: u32,
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
+    Aftertouch {
+        time: u32,
+        channel: u8,
+        pressure: u8,
+    },
 }
 
 /// A plug-in format.
@@ -414,12 +437,7 @@ impl LocalProcessor {
     }
 
     /// One block in place with extra MIDI events provided directly. No allocation, no lock.
-    pub fn process_events(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        events: &[MidiEvent],
-    ) {
+    pub fn process_events(&mut self, left: &mut [f32], right: &mut [f32], events: &[MidiEvent]) {
         let shared = Arc::as_ptr(&self.0);
         let audio = self.audio();
         let mut n = audio.pending;

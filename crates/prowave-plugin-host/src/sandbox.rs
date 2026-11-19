@@ -861,7 +861,11 @@ fn serve_audio(map: &Map, wake: &Wake, mut processor: crate::LocalProcessor, blo
                 midi_len += 1;
             }
         }
-        processor.process_events(&mut left[..frames], &mut right[..frames], &midi_buf[..midi_len]);
+        processor.process_events(
+            &mut left[..frames],
+            &mut right[..frames],
+            &midi_buf[..midi_len],
+        );
         for i in 0..frames {
             shared.audio[0][i].store(left[i].to_bits(), Ordering::Relaxed);
             shared.audio[1][i].store(right[i].to_bits(), Ordering::Relaxed);
@@ -1107,8 +1111,9 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
     let Some(local) = instance.local().cloned() else {
         fail("the plug-in is not in this process")
     };
-    let has_editor = (cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows"))
-        && local.backend().main_has_editor();
+    let has_editor =
+        (cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows"))
+            && local.backend().main_has_editor();
     let latency = instance.latency_samples();
     out.line(&format!("r\tready\t{latency}\t{}", u8::from(has_editor)));
     for (i, param) in instance.params().iter().enumerate() {

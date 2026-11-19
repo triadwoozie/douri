@@ -1151,11 +1151,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         }
                         if hosted_inst != 0 {
                             ui.separator();
-                            if ui.button(format!(
-                                "Remove {}",
-                                crate::hosted_plugins::name(hosted_inst),
-                            ))
-                            .clicked()
+                            if ui
+                                .button(format!(
+                                    "Remove {}",
+                                    crate::hosted_plugins::name(hosted_inst),
+                                ))
+                                .clicked()
                             {
                                 p.tracks[ti].hosted_instrument = 0;
                                 ui.close();

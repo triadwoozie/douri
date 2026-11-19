@@ -391,11 +391,7 @@ mod tests {
             kind("Enter Full Screen"),
             Kind::System(SystemItem::FullScreen)
         );
-        assert_eq!(
-            kind("About Dōri"),
-            Kind::Skip,
-            "it lives in the app menu"
-        );
+        assert_eq!(kind("About Dōri"), Kind::Skip, "it lives in the app menu");
     }
 
     #[test]

@@ -22,8 +22,8 @@ mod disk;
 pub mod drum_machine;
 pub mod epiano;
 mod flac;
-pub mod freq_shifter;
 mod flex;
+pub mod freq_shifter;
 mod fx;
 mod gain_smoothing;
 pub mod hydrogen;
@@ -56,7 +56,6 @@ mod wasapi;
 
 pub use crate::analysis::{tempo_curve, Analysis, Analyzer, TempoEstimate, STRENGTH_RATE};
 pub use crate::auto_pan::AutoPanNode;
-pub use crate::freq_shifter::FreqShifterNode;
 pub use crate::bass808::{
     can_sustain as bass808_can_sustain, measure_root_hz as bass808_measure_root_hz,
     prepare_sample as bass808_prepare_sample, Bass808, Bass808Param, Bass808Params, Bass808Spec,
@@ -86,33 +85,32 @@ pub use crate::flex::{
     detect_notes, hz_to_midi, pitch_track, shift_pitch, warp, write_wav, DetectedNote, FlexMode,
     PitchShift, WarpPoint, MAX_POINTS as MAX_FLEX_POINTS,
 };
+pub use crate::freq_shifter::FreqShifterNode;
 pub use crate::fx::{
     eq_response_db, response_db, Chain, Fx, FxKind, ParamInfo, Pdc, AMP_CABS, AMP_MODELS,
     MAX_FX_PARAMS, MAX_INSERTS,
 };
+pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
 pub use crate::meter::{
     db_to_gain, gain_to_db, LoudnessMeter, PeakMeter, RmsMeter, MIN_DB as METER_MIN_DB,
 };
-pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
-pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
-pub use crate::native_fx::{
-    lemon_fast_distortion, lemon_limiter, lemon_soft_clipper, lemon_transient_processor,
-    native_effects, native_info, open_native, open_native_block, open_tune_block, press, tune,
-    BlockProcessor, BlockTransport, NativeFx, NativeFxInfo, NativeParam,
-};
-pub use crate::offline::{
-    write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult,
-};
-pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
 pub use crate::monitor::{InputFeed, MonitorTrack, MAX_MONITORS};
 pub use crate::mtc::{
     full_frame, quarter_frame_data, rate_code, rate_of_code, MtcDecoder, MtcEvent, MtcGenerator,
     MtcMessage,
 };
+pub use crate::native_fx::{
+    lemon_fast_distortion, lemon_limiter, lemon_soft_clipper, lemon_transient_processor,
+    native_effects, native_info, open_native, open_native_block, open_tune_block, press, tune,
+    BlockProcessor, BlockTransport, NativeFx, NativeFxInfo, NativeParam,
+};
+pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
+pub use crate::offline::{write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult};
 pub use crate::output::{
     buffer_choices, buffer_range, output_devices, peak_of, Engine, EngineError, OutputDevice,
     BUFFER_CHOICES,
 };
+pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
 pub use crate::plugin::{BlockEffect, PluginInstrument, PLUGIN_BLOCK};
 pub use crate::routing::{
     curve_shape, lane_value, send_gain, AutoLane, AutoPoint, AutoTarget, Route, SendSpec,

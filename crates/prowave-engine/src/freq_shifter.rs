@@ -65,7 +65,10 @@ fn design_quadrature(sr: f64) -> Option<[f64; 2 * SECTIONS]> {
         let x = ((1.0 - w2 * k) * (1.0 - w2 / k)).max(0.0).sqrt() / (1.0 + w2);
         *coef = (1.0 - x) / (1.0 + x);
     }
-    coefs.iter().all(|a| a.is_finite() && (0.0..1.0).contains(a)).then_some(coefs)
+    coefs
+        .iter()
+        .all(|a| a.is_finite() && (0.0..1.0).contains(a))
+        .then_some(coefs)
 }
 
 fn quadrature_coefs(sr: f64) -> [f64; 2 * SECTIONS] {
@@ -106,7 +109,10 @@ impl Section {
 
 #[inline]
 fn chain(sections: &mut [Section; SECTIONS], coefs: &[f64; SECTIONS], x: f64) -> f64 {
-    sections.iter_mut().zip(coefs.iter()).fold(x, |v, (s, &a)| s.tick(a, v))
+    sections
+        .iter_mut()
+        .zip(coefs.iter())
+        .fold(x, |v, (s, &a)| s.tick(a, v))
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -183,7 +189,11 @@ impl FreqShifterNode {
         // Left channel
         let dry_l = if l.is_finite() { l } else { 0.0 };
         let input_l = f64::from(dry_l) + fb * self.channels[0].last;
-        let i_l = chain(&mut self.channels[0].in_phase, &self.in_phase_coefs, input_l);
+        let i_l = chain(
+            &mut self.channels[0].in_phase,
+            &self.in_phase_coefs,
+            input_l,
+        );
         let q_l = chain(
             &mut self.channels[0].quadrature,
             &self.quadrature_coefs,
@@ -197,7 +207,11 @@ impl FreqShifterNode {
         // Right channel
         let dry_r = if r.is_finite() { r } else { 0.0 };
         let input_r = f64::from(dry_r) + fb * self.channels[1].last;
-        let i_r = chain(&mut self.channels[1].in_phase, &self.in_phase_coefs, input_r);
+        let i_r = chain(
+            &mut self.channels[1].in_phase,
+            &self.in_phase_coefs,
+            input_r,
+        );
         let q_r = chain(
             &mut self.channels[1].quadrature,
             &self.quadrature_coefs,

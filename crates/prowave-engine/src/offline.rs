@@ -204,6 +204,7 @@ pub fn write_wav_with_options(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -212,7 +213,7 @@ mod tests {
         let mut rng = DitherRng::new(42);
         for _ in 0..10_000 {
             let d = rng.tpdf();
-            assert!(d >= -2.0 && d <= 2.0, "TPDF out of bounds: {d}");
+            assert!((-2.0..=2.0).contains(&d), "TPDF out of bounds: {d}");
         }
     }
 

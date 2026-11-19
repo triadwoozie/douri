@@ -6,9 +6,7 @@
 //! Provides real-time momentary (400 ms), short-term (3 s), and gated integrated LUFS
 //! measurements alongside 4× polyphase oversampled True Peak (dBTP) detection.
 
-use egui::{
-    pos2, vec2, Color32, CornerRadius, Rect, RichText, Sense, Stroke, Ui,
-};
+use egui::{pos2, vec2, Color32, CornerRadius, Rect, RichText, Sense, Stroke, Ui};
 
 use crate::engine_sync::EngineSync;
 use crate::i18n::tr;
@@ -25,12 +23,7 @@ const LUFS_GREEN: Color32 = Color32::from_rgb(0x30, 0xd1, 0x58);
 const LUFS_YELLOW: Color32 = Color32::from_rgb(0xff, 0xd6, 0x0a);
 
 /// Renders the MultiMeter analyzer window.
-pub fn show(
-    ctx: &egui::Context,
-    open: &mut bool,
-    meters: &Meters,
-    sync: &mut Option<EngineSync>,
-) {
+pub fn show(ctx: &egui::Context, open: &mut bool, meters: &Meters, sync: &mut Option<EngineSync>) {
     if !*open {
         return;
     }
@@ -71,7 +64,11 @@ fn render_content(ui: &mut Ui, meters: &Meters, sync: &mut Option<EngineSync>) {
             if is_clipped {
                 ui.label(RichText::new("CLIP DETECTED").size(9.0).color(CLIP_RED));
             } else {
-                ui.label(RichText::new("Inter-sample 4× Peak").size(9.0).color(TEXT_DIM));
+                ui.label(
+                    RichText::new("Inter-sample 4× Peak")
+                        .size(9.0)
+                        .color(TEXT_DIM),
+                );
             }
         });
 
@@ -86,18 +83,37 @@ fn render_content(ui: &mut Ui, meters: &Meters, sync: &mut Option<EngineSync>) {
             } else {
                 format!("{lufs_i:.1} LUFS")
             };
-            ui.label(RichText::new(lufs_text).size(20.0).strong().color(TARGET_BLUE));
-            ui.label(RichText::new("Target: -14 (Stream) · -23 (EBU)").size(9.0).color(TEXT_DIM));
+            ui.label(
+                RichText::new(lufs_text)
+                    .size(20.0)
+                    .strong()
+                    .color(TARGET_BLUE),
+            );
+            ui.label(
+                RichText::new("Target: -14 (Stream) · -23 (EBU)")
+                    .size(9.0)
+                    .color(TEXT_DIM),
+            );
         });
     });
 
     ui.add_space(12.0);
 
     // Momentary and Short-term visual meter bars
-    ui.label(RichText::new("LOUDNESS METERS (ITU-R BS.1770-4)").size(11.0).strong().color(TEXT_DIM));
+    ui.label(
+        RichText::new("LOUDNESS METERS (ITU-R BS.1770-4)")
+            .size(11.0)
+            .strong()
+            .color(TEXT_DIM),
+    );
     ui.add_space(4.0);
 
-    meter_bar(ui, "Momentary (400 ms)", meters.master_lufs_momentary, -14.0);
+    meter_bar(
+        ui,
+        "Momentary (400 ms)",
+        meters.master_lufs_momentary,
+        -14.0,
+    );
     ui.add_space(6.0);
     meter_bar(ui, "Short-Term (3 s)", meters.master_lufs_short, -14.0);
 
@@ -150,8 +166,17 @@ fn meter_bar(ui: &mut Ui, label: &str, lufs: f32, target: f32) {
     let g = ui.painter();
 
     // Background track
-    g.rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(0x16, 0x18, 0x1b));
-    g.rect_stroke(rect, CornerRadius::same(3), Stroke::new(1.0, BORDER_COLOR), egui::StrokeKind::Inside);
+    g.rect_filled(
+        rect,
+        CornerRadius::same(3),
+        Color32::from_rgb(0x16, 0x18, 0x1b),
+    );
+    g.rect_stroke(
+        rect,
+        CornerRadius::same(3),
+        Stroke::new(1.0, BORDER_COLOR),
+        egui::StrokeKind::Inside,
+    );
 
     // Scale mapping: -60 LUFS .. 0 LUFS -> 0.0 .. 1.0
     let norm = ((lufs + 60.0) / 60.0).clamp(0.0, 1.0);

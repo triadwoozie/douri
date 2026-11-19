@@ -10,7 +10,11 @@ use std::f32::consts::{FRAC_PI_4, PI, SQRT_2, TAU};
 /// The LFO shape at `t` in 0..=1 of a cycle, from -1 to 1.
 pub fn wave_at(waveform: usize, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
-    let tri = if t < 0.5 { 4.0 * t - 1.0 } else { 3.0 - 4.0 * t };
+    let tri = if t < 0.5 {
+        4.0 * t - 1.0
+    } else {
+        3.0 - 4.0 * t
+    };
     match waveform {
         1 => tri,
         2 => {

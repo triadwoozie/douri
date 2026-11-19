@@ -72,6 +72,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Audio…",
             "MIDI…",
             "Appearance…",
+            "MCP Server…",
             "Plug-In Manager…",
         ],
     ),
@@ -284,10 +285,7 @@ const VIEW: &[&str] = &[
     "-",
     "Enter Full Screen",
 ];
-const SETTINGS: &[&str] = &[
-    "Appearance…",
-    "Plug-In Manager…",
-];
+const SETTINGS: &[&str] = &["Appearance…", "MCP Server…", "Plug-In Manager…"];
 const WINDOW: &[&str] = &[
     "Minimize",
     "Zoom",
@@ -553,7 +551,9 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Select All" => p.tracks.iter().any(|t| !t.regions.is_empty()),
         "Join" => crate::region_edit::can_join(p, &s.tracks),
         "Split at Playhead" => crate::marquee::can_split_any(p, &s.tracks),
-        "Snap to Grid" | "Snap Regions to Relative Value" | "Snap Regions to Absolute Value" => true,
+        "Snap to Grid" | "Snap Regions to Relative Value" | "Snap Regions to Absolute Value" => {
+            true
+        }
         "Delete" => !s.tracks.selection().is_empty() || s.tracks.range.active().is_some(),
         "Copy" | "Cut" => !s.tracks.selection().is_empty() || s.tracks.range.active().is_some(),
         // Mix > Show Automation: the Automation editor on the selected track.
@@ -586,7 +586,9 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
                     .get(p.selected_track)
                     .is_some_and(|t| !t.regions.is_empty())
         }
-        "All Tracks as Audio Files…" => !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty()),
+        "All Tracks as Audio Files…" => {
+            !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty())
+        }
         // Bounce in place: the selected region must be MIDI (audio is already audio).
         "Regions in Place…" | "Bounce In Place" | "Bounce and Join" => {
             !s.bouncing

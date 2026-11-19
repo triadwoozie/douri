@@ -388,5 +388,4 @@ mod tests {
         v.range.end();
         assert!(v.range.active().is_none());
     }
-
 }

@@ -294,9 +294,10 @@ pub fn clear_copy(dir: &Path) {
 /// in no saved project file: closing without saving would delete the only copy.
 pub fn has_unsaved_recordings(p: &Project, dir: &Path) -> bool {
     let recordings = recordings_in(dir);
-    crate::project_io::to_doc(p).1.iter().any(|m| {
-        m.source.starts_with(&recordings) && m.source.is_file()
-    })
+    crate::project_io::to_doc(p)
+        .1
+        .iter()
+        .any(|m| m.source.starts_with(&recordings) && m.source.is_file())
 }
 
 /// A recovery copy found at start, to be offered.

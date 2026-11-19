@@ -26,7 +26,7 @@ const NUM_W: f32 = 24.0;
 /// How far each folder nesting level moves a track header's contents to the right.
 const INDENT_W: f32 = 14.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
 const HEADER_BG: Color32 = Color32::from_rgb(0x41, 0x41, 0x41);
 const HEADER_SEL: Color32 = Color32::from_rgb(0x58, 0x58, 0x58);
 const LANE_BG: Color32 = Color32::from_rgb(0x2a, 0x2a, 0x2a);
@@ -161,7 +161,11 @@ fn draw_marquee(
         let band = Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 1.0), y + h));
         let paint = band.intersect(lanes);
         if paint.width() > 0.0 && paint.height() > 0.0 {
-            g.rect_filled(paint, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 38));
+            g.rect_filled(
+                paint,
+                0.0,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 38),
+            );
             g.line_segment(
                 [pos2(x0, paint.top()), pos2(x0, paint.bottom())],
                 Stroke::new(1.5, Color32::from_rgb(0xff, 0x9f, 0x40)),
@@ -658,9 +662,24 @@ fn icon_button(
 ) -> egui::Response {
     let resp = ui.interact(rect, id(("icon", key)), Sense::click());
     if on {
-        g.rect_filled(rect, 4.0, BLUE);
-    } else if resp.hovered() {
-        g.rect_filled(rect, 4.0, Color32::from_white_alpha(14));
+        g.rect_filled(rect, 5.0, BLUE);
+        g.rect_stroke(
+            rect,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x00, 0xd2, 0xff)),
+            StrokeKind::Inside,
+        );
+    } else {
+        g.rect_filled(rect, 5.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+        g.rect_stroke(
+            rect,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
+        if resp.hovered() {
+            g.rect_filled(rect, 5.0, Color32::from_white_alpha(15));
+        }
     }
     draw(g, rect, if on { Color32::WHITE } else { TEXT });
     resp
@@ -678,14 +697,27 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
         v = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
     }
     let cy = rect.center().y;
-    g.line_segment(
-        [pos2(rect.left(), cy), pos2(rect.right(), cy)],
-        Stroke::new(2.0, Color32::from_gray(0x22)),
+    let trough = Rect::from_center_size(pos2(rect.center().x, cy), vec2(rect.width(), 4.0));
+    g.rect_filled(trough, 2.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_stroke(
+        trough,
+        2.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        StrokeKind::Inside,
     );
-    g.circle_filled(
-        pos2(rect.left() + rect.width() * v, cy),
+    if v > 0.0 {
+        let fill = Rect::from_min_max(
+            trough.min,
+            pos2(trough.left() + trough.width() * v, trough.bottom()),
+        );
+        g.rect_filled(fill, 2.0, Color32::from_rgb(0x00, 0xd2, 0xff));
+    }
+    let thumb_c = pos2(rect.left() + rect.width() * v, cy);
+    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xe6, 0xed, 0xf3));
+    g.circle_stroke(
+        thumb_c,
         5.5,
-        Color32::from_gray(0xc8),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     v
 }
@@ -869,7 +901,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
     g.rect_filled(bar, 0.0, TOOLBAR_BG);
     g.line_segment(
         [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x24)),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     let cy = bar.center().y;
     let (can_undo, can_redo) = (s.can_undo, s.can_redo);
@@ -1183,7 +1215,10 @@ fn snap_menu(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) -> f32 
         }
         ui.separator();
         for m in Snap::ALL {
-            if ui.selectable_label(v.grid.on && v.snap == m, m.label()).clicked() {
+            if ui
+                .selectable_label(v.grid.on && v.snap == m, m.label())
+                .clicked()
+            {
                 v.snap = m;
                 v.grid.on = true;
                 ui.close();
@@ -1198,11 +1233,17 @@ fn snap_menu(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) -> f32 
             }
         }
         ui.separator();
-        if ui.selectable_label(v.grid.relative, tr("Snap Regions to Relative Value")).clicked() {
+        if ui
+            .selectable_label(v.grid.relative, tr("Snap Regions to Relative Value"))
+            .clicked()
+        {
             v.grid.relative = true;
             ui.close();
         }
-        if ui.selectable_label(!v.grid.relative, tr("Snap Regions to Absolute Value")).clicked() {
+        if ui
+            .selectable_label(!v.grid.relative, tr("Snap Regions to Absolute Value"))
+            .clicked()
+        {
             v.grid.relative = false;
             ui.close();
         }
@@ -1225,8 +1266,15 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
             vec2(40.0, 20.0),
         );
         let resp = ui.interact(r, id(*key), Sense::click());
+        g.rect_filled(r, 5.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+        g.rect_stroke(
+            r,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
         if resp.hovered() {
-            g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
+            g.rect_filled(r, 5.0, Color32::from_white_alpha(15));
         }
         let icon_at = pos2(r.left() + 13.0, cy);
         let active_tool = if i == 0 { v.tool } else { v.cmd_tool };
@@ -1255,7 +1303,11 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
                 };
                 match tool {
                     Some(tool) => {
-                        let selected = if i == 0 { v.tool == tool } else { v.cmd_tool == tool };
+                        let selected = if i == 0 {
+                            v.tool == tool
+                        } else {
+                            v.cmd_tool == tool
+                        };
                         if ui.selectable_label(selected, tr(t)).clicked() {
                             if i == 0 {
                                 v.tool = tool;
@@ -2900,7 +2952,13 @@ fn header(
 const MASTER_STRIP_H: f32 = 36.0;
 
 /// The Master strip: its name and the master fader, the same control as the transport's.
-fn master_strip(ui: &mut Ui, p: &mut Project, rect: Rect, meters: &crate::mixer::Meters) {
+fn master_strip(
+    ui: &mut Ui,
+    p: &mut Project,
+    rect: Rect,
+    meters: &crate::mixer::Meters,
+    quality: crate::liquid_glass::GlassQuality,
+) {
     let g = ui.painter_at(rect);
     g.rect_filled(rect, 0.0, HEADER_BG);
     g.line_segment(
@@ -2925,6 +2983,7 @@ fn master_strip(ui: &mut Ui, p: &mut Project, rect: Rect, meters: &crate::mixer:
         slider,
         Some(meters.master),
         id(("tracks", "master")),
+        quality,
     );
 }
 
@@ -2948,7 +3007,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     let area = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - master_h));
     if p.show_master_track {
         let strip = Rect::from_min_max(pos2(full.left(), area.bottom()), full.max);
-        master_strip(ui, p, strip, meters);
+        master_strip(ui, p, strip, meters, s.glass_quality);
     }
     let tb = Rect::from_min_size(area.min, vec2(area.width(), TOOLBAR_H));
     let ruler_y = tb.bottom();

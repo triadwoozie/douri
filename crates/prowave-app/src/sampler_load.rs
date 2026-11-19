@@ -609,9 +609,9 @@ mod tests {
 
         let mut sampler = Sampler::new(zones, 48_000.0, defaults());
         sampler.note_on(81, 100); // 880 Hz
-        let x: Vec<f32> = (0..24_000).map(|_| {
-            assert_no_alloc::assert_no_alloc(|| sampler.render().0)
-        }).collect();
+        let x: Vec<f32> = (0..24_000)
+            .map(|_| assert_no_alloc::assert_no_alloc(|| sampler.render().0))
+            .collect();
 
         let cycles = x[2_000..]
             .windows(2)

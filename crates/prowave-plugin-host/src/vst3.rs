@@ -1801,8 +1801,6 @@ impl Vst3Backend {
     }
 }
 
-
-
 #[allow(dead_code)]
 const PLATFORM_TYPE: Option<&CStr> = if cfg!(target_os = "macos") {
     Some(c"NSView")
@@ -2055,8 +2053,6 @@ impl Backend for Vst3Backend {
         left[..frames].copy_from_slice(&audio.output[0][..frames]);
         right[..frames].copy_from_slice(&audio.output[usize::from(!audio.mono_out)][..frames]);
     }
-
-
 
     fn main_has_editor(&self) -> bool {
         // The view is made when it is first shown (making it needs the main thread's run

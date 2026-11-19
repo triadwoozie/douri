@@ -939,8 +939,12 @@ impl Backend for ClapBackend {
 
     fn main_has_editor(&self) -> bool {
         // SAFETY: a non-null extension is static data of the plug-in.
-        let Some(gui) = (unsafe { self.gui_ext.as_ref() }) else { return false; };
-        let Some(supported) = gui.is_api_supported else { return false; };
+        let Some(gui) = (unsafe { self.gui_ext.as_ref() }) else {
+            return false;
+        };
+        let Some(supported) = gui.is_api_supported else {
+            return false;
+        };
         let is_sup = |api: &CStr| unsafe { supported(self.plugin, api.as_ptr(), false) };
         if cfg!(target_os = "macos") {
             is_sup(c"cocoa")
@@ -956,7 +960,10 @@ impl Backend for ClapBackend {
     fn main_editor_open(&self, parent: *mut c_void) -> Option<(u32, u32)> {
         // SAFETY: a non-null extension is static data of the plug-in.
         let gui = unsafe { self.gui_ext.as_ref() }?;
-        let is_sup = |api: &CStr| gui.is_api_supported.map_or(false, |f| unsafe { f(self.plugin, api.as_ptr(), false) });
+        let is_sup = |api: &CStr| {
+            gui.is_api_supported
+                .is_some_and(|f| unsafe { f(self.plugin, api.as_ptr(), false) })
+        };
         let api = if cfg!(target_os = "macos") {
             c"cocoa"
         } else if cfg!(target_os = "windows") {

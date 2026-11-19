@@ -69,10 +69,13 @@ fn get_x11() -> Option<&'static X11Lib> {
         let lib = unsafe {
             libloading::Library::new("libX11.so.6")
                 .or_else(|_| libloading::Library::new("libX11.so"))
-        }.ok()?;
+        }
+        .ok()?;
         unsafe {
-            let init_threads: Option<unsafe extern "C" fn() -> c_int> =
-                lib.get::<unsafe extern "C" fn() -> c_int>(b"XInitThreads\0").ok().map(|s| *s);
+            let init_threads: Option<unsafe extern "C" fn() -> c_int> = lib
+                .get::<unsafe extern "C" fn() -> c_int>(b"XInitThreads\0")
+                .ok()
+                .map(|s| *s);
             let open_display = *lib.get(b"XOpenDisplay\0").ok()?;
             let close_display = *lib.get(b"XCloseDisplay\0").ok()?;
             let default_root_window = *lib.get(b"XDefaultRootWindow\0").ok()?;
@@ -115,7 +118,8 @@ fn get_x11() -> Option<&'static X11Lib> {
                 next_event,
             })
         }
-    }).as_ref()
+    })
+    .as_ref()
 }
 
 pub struct Window {
@@ -188,7 +192,12 @@ impl Window {
         self.height = height.max(100);
         if let Some(x) = get_x11() {
             unsafe {
-                (x.resize_window)(self.display, self.window, self.width as c_uint, self.height as c_uint);
+                (x.resize_window)(
+                    self.display,
+                    self.window,
+                    self.width as c_uint,
+                    self.height as c_uint,
+                );
                 (x.flush)(self.display);
             }
         }
@@ -227,7 +236,9 @@ impl Window {
     }
 
     pub fn tick(&mut self, mut on_close: impl FnMut()) {
-        let Some(x) = get_x11() else { return; };
+        let Some(x) = get_x11() else {
+            return;
+        };
         unsafe {
             while (x.pending)(self.display) > 0 {
                 let mut ev = std::mem::zeroed::<XEvent>();

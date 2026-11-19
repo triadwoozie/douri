@@ -5,9 +5,9 @@ use egui::{
     Ui,
 };
 
-pub const TEXT: Color32 = Color32::from_rgb(0xdc, 0xdc, 0xdc);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(0x96, 0x96, 0x96);
-pub const BTN_BG: Color32 = Color32::from_rgb(0x58, 0x58, 0x58);
+pub const TEXT: Color32 = Color32::from_rgb(0xe6, 0xed, 0xf3);
+pub const TEXT_DIM: Color32 = Color32::from_rgb(0x8a, 0x93, 0xa5);
+pub const BTN_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
 pub const BLUE: Color32 = Color32::from_rgb(0x2f, 0x6f, 0xd8);
 
 pub fn stroke(c: Color32) -> Stroke {
@@ -65,7 +65,13 @@ pub fn menu_title(
     let r = Rect::from_min_size(pos2(left, cy - 10.0), vec2(w, 20.0));
     let resp = ui.interact(r, id, Sense::click());
     if resp.hovered() {
-        g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
+        g.rect_filled(r, 5.0, Color32::from_rgba_premultiplied(36, 42, 58, 180));
+        g.rect_stroke(
+            r,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            egui::StrokeKind::Inside,
+        );
     }
     g.text(
         pos2(r.left() + 6.0, cy),
@@ -91,12 +97,18 @@ pub fn popup_button(ui: &Ui, g: &Painter, rect: Rect, id: Id, text: &str) -> Res
     let resp = ui.interact(rect, id, Sense::click());
     g.rect_filled(
         rect,
-        4.0,
+        6.0,
         if resp.hovered() {
-            Color32::from_gray(0x60)
+            Color32::from_rgb(0x26, 0x2c, 0x3c)
         } else {
             BTN_BG
         },
+    );
+    g.rect_stroke(
+        rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
     );
     // Long values (some languages) end in "…" instead of running under the arrows.
     let font = FontId::proportional(12.5);
