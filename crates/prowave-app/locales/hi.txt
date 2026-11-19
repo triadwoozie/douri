@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = मुख्य
+Drift = ड्रिफ्ट
+Formant = फ़ॉर्मेंट
+Amplitude = एम्प्लिट्यूड
+Timing = टाइमिंग
+Separation = विभाजन
+Melodic = मेलोडिक
+Percussive = परकसिव
+Universal = यूनिवर्सल
+Double-click an audio region to edit its notes = नोट्स संपादित करने के लिए किसी ऑडियो रीजन पर डबल-क्लिक करें
+Polyphonic (not available) = पॉलीफ़ोनिक (उपलब्ध नहीं)
+Pitch Grid = पिच ग्रिड
+Correct Pitch = पिच सुधारें
+Centre = केंद्र
+Quantize Time = समय क्वांटाइज़ करें
+rendering… = रेंडर हो रहा है…
+Pitch Editor: {} = पिच एडिटर: {}
+{} notes = {} नोट्स
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ड्रिफ्ट {} %  ·  मॉड्यूलेशन {} %  ·  फ़ॉर्मेंट {} st  ·  {} dB
+{} notes selected = {} नोट्स चुने गए

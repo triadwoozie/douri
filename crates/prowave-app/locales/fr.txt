@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Principal
+Drift = Dérive
+Formant = Formant
+Amplitude = Amplitude
+Timing = Timing
+Separation = Séparation
+Melodic = Mélodique
+Percussive = Percussif
+Universal = Universel
+Double-click an audio region to edit its notes = Double-cliquez sur une région audio pour en modifier les notes
+Polyphonic (not available) = Polyphonique (non disponible)
+Pitch Grid = Grille de hauteur
+Correct Pitch = Corriger la hauteur
+Centre = Centre
+Quantize Time = Quantifier le temps
+rendering… = rendu en cours…
+Pitch Editor: {} = Éditeur de hauteur : {}
+{} notes = {} notes
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  dérive {} %  ·  modulation {} %  ·  formant {} dt  ·  {} dB
+{} notes selected = {} notes sélectionnées

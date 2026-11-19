@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = メイン
+Drift = ドリフト
+Formant = フォルマント
+Amplitude = 音量
+Timing = タイミング
+Separation = 分割
+Melodic = メロディック
+Percussive = パーカッシブ
+Universal = ユニバーサル
+Double-click an audio region to edit its notes = オーディオリージョンをダブルクリックしてノートを編集
+Polyphonic (not available) = ポリフォニック（使用不可）
+Pitch Grid = ピッチグリッド
+Correct Pitch = ピッチ補正
+Centre = センター
+Quantize Time = タイミングをクオンタイズ
+rendering… = レンダリング中…
+Pitch Editor: {} = ピッチエディタ: {}
+{} notes = {} ノート
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ドリフト {} %  ·  モジュレーション {} %  ·  フォルマント {} 半音  ·  {} dB
+{} notes selected = {} 個のノートを選択

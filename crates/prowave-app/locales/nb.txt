@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Hoved
+Drift = Drift
+Formant = Formant
+Amplitude = Amplitude
+Timing = Timing
+Separation = Separasjon
+Melodic = Melodisk
+Percussive = Perkussiv
+Universal = Universell
+Double-click an audio region to edit its notes = Dobbeltklikk på en lydregion for å redigere notene
+Polyphonic (not available) = Polyfon (ikke tilgjengelig)
+Pitch Grid = Tonehøyderutenett
+Correct Pitch = Korriger tonehøyde
+Centre = Senter
+Quantize Time = Kvantiser tid
+rendering… = rendrer…
+Pitch Editor: {} = Tonehøyderedigering: {}
+{} notes = {} noter
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasjon {} %  ·  formant {} ht  ·  {} dB
+{} notes selected = {} noter valgt

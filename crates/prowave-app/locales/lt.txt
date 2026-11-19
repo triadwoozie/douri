@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Pagrindinis
+Drift = Dreifas
+Formant = Formantė
+Amplitude = Amplitudė
+Timing = Laikas
+Separation = Atskyrimas
+Melodic = Melodinis
+Percussive = Mušamasis
+Universal = Universalus
+Double-click an audio region to edit its notes = Dukart spustelėkite garso regioną, kad redaguotumėte jo natas
+Polyphonic (not available) = Polifoninis (neprieinamas)
+Pitch Grid = Aukščio tinklelis
+Correct Pitch = Taisyti aukštį
+Centre = Centras
+Quantize Time = Kvantuoti laiką
+rendering… = atvaizduojama…
+Pitch Editor: {} = Aukščio rengyklė: {}
+{} notes = Natų: {}
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  dreifas {} %  ·  moduliacija {} %  ·  formantė {} pt  ·  {} dB
+{} notes selected = Pažymėta natų: {}

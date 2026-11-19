@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Pangunahin
+Drift = Drift
+Formant = Formant
+Amplitude = Amplitude
+Timing = Timing
+Separation = Paghihiwalay
+Melodic = Melodiko
+Percussive = Perkusibo
+Universal = Unibersal
+Double-click an audio region to edit its notes = I-double-click ang isang audio region para i-edit ang mga nota nito
+Polyphonic (not available) = Polyphonic (hindi available)
+Pitch Grid = Grid ng tono
+Correct Pitch = Itama ang tono
+Centre = Gitna
+Quantize Time = I-quantize ang oras
+rendering… = nire-render…
+Pitch Editor: {} = Pitch Editor: {}
+{} notes = {} nota
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasyon {} %  ·  formant {} st  ·  {} dB
+{} notes selected = {} nota ang napili

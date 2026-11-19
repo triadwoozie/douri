@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = 主工具
+Drift = 漂移
+Formant = 共振峰
+Amplitude = 振幅
+Timing = 时间
+Separation = 分割
+Melodic = 旋律
+Percussive = 打击乐
+Universal = 通用
+Double-click an audio region to edit its notes = 双击音频片段以编辑其音符
+Polyphonic (not available) = 复音（不可用）
+Pitch Grid = 音高网格
+Correct Pitch = 校正音高
+Centre = 中心
+Quantize Time = 量化时间
+rendering… = 正在渲染…
+Pitch Editor: {} = 音高编辑器：{}
+{} notes = {} 个音符
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  漂移 {} %  ·  调制 {} %  ·  共振峰 {} 半音  ·  {} dB
+{} notes selected = 已选择 {} 个音符

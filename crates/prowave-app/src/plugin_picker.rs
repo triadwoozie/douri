@@ -46,13 +46,19 @@ const FORMATS: [Format; 3] = [Format::AudioUnit, Format::Clap, Format::Vst3];
 pub fn category(kind: FxKind) -> &'static str {
     match kind {
         FxKind::Amp => "Amps and Pedals",
-        FxKind::Delay => "Delay",
-        FxKind::Overdrive => "Distortion",
-        FxKind::Compressor | FxKind::MultiComp | FxKind::Gate | FxKind::Limiter => "Dynamics",
+        FxKind::Delay | FxKind::LemonDelay => "Delay",
+        FxKind::Overdrive | FxKind::LemonDist => "Distortion",
+        FxKind::Compressor
+        | FxKind::MultiComp
+        | FxKind::Gate
+        | FxKind::Limiter
+        | FxKind::LemonLimiter
+        | FxKind::LemonClip
+        | FxKind::LemonTransient => "Dynamics",
         FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => "EQ",
         FxKind::Filter => "Filter",
-        FxKind::Chorus | FxKind::Phaser => "Modulation",
-        FxKind::Reverb => "Reverb",
+        FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter | FxKind::AutoPan => "Modulation",
+        FxKind::Reverb | FxKind::LemonReverb => "Reverb",
         FxKind::Plugin => "Specialized",
     }
 }

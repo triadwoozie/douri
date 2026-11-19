@@ -61,13 +61,21 @@ fn family(kind: FxKind) -> (Family, &'static str, Color32) {
         // A plug-in has its own window (a LADSPA one `plugin_rack`, a hosted one `plugin_window`).
         FxKind::Plugin => (Family::Filter, "Plug-in", FILTER_TEAL),
         FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => (Family::Eq, "EQ", EQ_BLUE),
-        FxKind::Compressor | FxKind::MultiComp | FxKind::Gate | FxKind::Limiter => {
-            (Family::Dynamics, "Dynamics", DYN_AMBER)
+        FxKind::Compressor
+        | FxKind::MultiComp
+        | FxKind::Gate
+        | FxKind::Limiter
+        | FxKind::LemonLimiter
+        | FxKind::LemonClip
+        | FxKind::LemonTransient => (Family::Dynamics, "Dynamics", DYN_AMBER),
+        FxKind::Reverb | FxKind::LemonReverb => (Family::Space, "Space", SPACE_VIOLET),
+        FxKind::Delay | FxKind::Chorus | FxKind::Phaser | FxKind::LemonDelay => {
+            (Family::Time, "Time", TIME_BLUE)
         }
-        FxKind::Reverb => (Family::Space, "Space", SPACE_VIOLET),
-        FxKind::Delay | FxKind::Chorus | FxKind::Phaser => (Family::Time, "Time", TIME_BLUE),
-        FxKind::Overdrive | FxKind::Amp => (Family::Drive, "Drive", DRIVE_RUST),
-        FxKind::Filter => (Family::Filter, "Filter", FILTER_TEAL),
+        FxKind::Overdrive | FxKind::Amp | FxKind::LemonDist => (Family::Drive, "Drive", DRIVE_RUST),
+        FxKind::Filter | FxKind::FreqShifter | FxKind::AutoPan => {
+            (Family::Filter, "Modulation", FILTER_TEAL)
+        }
     }
 }
 
@@ -599,7 +607,17 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         FxKind::Phaser => phaser_panel(ui, &params, beat, accent),
         FxKind::Overdrive => drive_panel(ui, &params, accent),
         FxKind::Filter => filter_panel(ui, &params, accent),
-        FxKind::Amp | FxKind::Reverb | FxKind::Plugin => {}
+        FxKind::LemonLimiter => transfer_curve(ui, FxKind::Limiter, &params, reduction, accent),
+        FxKind::LemonDelay => delay_panel(ui, &params, accent),
+        FxKind::LemonDist => drive_panel(ui, &params, accent),
+        FxKind::AutoPan => phaser_panel(ui, &params, beat, accent),
+        FxKind::LemonClip
+        | FxKind::LemonTransient
+        | FxKind::LemonReverb
+        | FxKind::FreqShifter
+        | FxKind::Amp
+        | FxKind::Reverb
+        | FxKind::Plugin => {}
     }
 }
 

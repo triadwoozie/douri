@@ -7,6 +7,7 @@
 //! [`FxKind::params`] lists their names, ranges and defaults, and anything out of range or
 //! not finite is clamped, so a damaged project cannot make the output blow up.
 use crate::convolver::Convolver;
+use crate::native_fx::NativeFx;
 use crate::plugin::{BlockEffect, PluginSlot, PLUGIN_BLOCK};
 use crate::pult_eq::PultState;
 use std::f32::consts::{PI, TAU};
@@ -37,6 +38,22 @@ pub enum FxKind {
     Plugin,
     /// Pult EQ: a Pultec-style tube equaliser (see [`crate::pult_eq`]).
     PultEq,
+    /// Lemon Limiter: FL Fruity Limiter recreation from Lemon Studio.
+    LemonLimiter,
+    /// Lemon Soft Clipper: FL Soft Clipper recreation from Lemon Studio.
+    LemonClip,
+    /// Lemon Fast Distortion: FL Fast Dist recreation from Lemon Studio.
+    LemonDist,
+    /// Lemon Transient Processor: FL Transient Processor recreation from Lemon Studio.
+    LemonTransient,
+    /// Lemon Delay: stereo ping-pong delay.
+    LemonDelay,
+    /// Lemon Reverb: algorithmic Schroeder reverb.
+    LemonReverb,
+    /// Bode Frequency Shifter from SoundCraft (MIT/Apache-2.0).
+    FreqShifter,
+    /// Auto-Pan from SoundCraft (MIT/Apache-2.0).
+    AutoPan,
 }
 
 /// One parameter of an effect.
@@ -274,6 +291,58 @@ const AMP_PARAMS: [ParamInfo; 9] = [
     p("Cabinet", 0.0, 3.0, 0.0, ""),
     p("Mic", 0.0, 1.0, 0.5, ""),
 ];
+const LEMON_LIMITER_PARAMS: [ParamInfo; 6] = [
+    p("Gain", -24.0, 24.0, 0.0, "dB"),
+    p("Ceiling", -24.0, 0.0, -0.2, "dB"),
+    p("Threshold", -60.0, 0.0, -12.0, "dB"),
+    p("Ratio", 1.0, 30.0, 4.0, ":1"),
+    pl("Attack", 0.1, 100.0, 5.0, "ms"),
+    pl("Release", 1.0, 1000.0, 100.0, "ms"),
+];
+const LEMON_CLIP_PARAMS: [ParamInfo; 2] = [
+    p("Threshold", 1.0, 127.0, 100.0, ""),
+    p("Post Gain", 0.0, 160.0, 128.0, ""),
+];
+const LEMON_DIST_PARAMS: [ParamInfo; 5] = [
+    p("Pre Amp", 64.0, 192.0, 128.0, "dB"),
+    p("Threshold", 1.0, 10.0, 10.0, ""),
+    p("Type", 0.0, 1.0, 0.0, ""),
+    p("Mix", 0.0, 128.0, 128.0, "%"),
+    p("Post Gain", 0.0, 128.0, 128.0, "dB"),
+];
+const LEMON_TRANSIENT_PARAMS: [ParamInfo; 5] = [
+    p("Attack", 0.0, 160.0, 80.0, ""),
+    p("Drive", 0.0, 160.0, 0.0, ""),
+    p("Release", 0.0, 160.0, 80.0, ""),
+    p("Gain", 0.0, 160.0, 80.0, ""),
+    p("Split", 0.0, 160.0, 80.0, ""),
+];
+const LEMON_DELAY_PARAMS: [ParamInfo; 5] = [
+    pl("Time", 1.0, 2000.0, 250.0, "ms"),
+    p("Feedback", 0.0, 0.95, 0.4, ""),
+    pl("Cutoff", 500.0, 16000.0, 5000.0, "Hz"),
+    p("Ping-Pong", 0.0, 1.0, 1.0, ""),
+    p("Mix", 0.0, 1.0, 0.4, ""),
+];
+const LEMON_REVERB_PARAMS: [ParamInfo; 5] = [
+    pl("Decay", 0.1, 10.0, 2.5, "s"),
+    pl("Damp", 500.0, 16000.0, 6000.0, "Hz"),
+    p("Width", 0.0, 1.0, 0.8, ""),
+    p("Predelay", 0.0, 200.0, 20.0, "ms"),
+    p("Mix", 0.0, 1.0, 0.35, ""),
+];
+const FREQ_SHIFTER_PARAMS: [ParamInfo; 4] = [
+    p("Frequency", -5000.0, 5000.0, 100.0, "Hz"),
+    p("Mode", 0.0, 3.0, 0.0, ""),
+    p("Feedback", 0.0, 70.0, 0.0, "%"),
+    p("Mix", 0.0, 1.0, 1.0, ""),
+];
+const AUTOPAN_PARAMS: [ParamInfo; 4] = [
+    pl("Rate", 0.1, 20.0, 2.0, "Hz"),
+    p("Width", 0.0, 1.0, 1.0, ""),
+    p("Waveform", 0.0, 4.0, 0.0, ""),
+    p("Output", -24.0, 12.0, 0.0, "dB"),
+];
 
 /// The amp models, in the order of the "Amp" parameter (Logic's Amp Designer has a list of
 /// amplifier models; these are Pro Wave's own).
@@ -473,7 +542,7 @@ fn limiter_len(sr: f32) -> usize {
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 14] = [
+    pub const ALL: [FxKind; 22] = [
         FxKind::ChannelEq,
         FxKind::Compressor,
         FxKind::MultiComp,
@@ -488,6 +557,14 @@ impl FxKind {
         FxKind::MultiEq,
         FxKind::Amp,
         FxKind::PultEq,
+        FxKind::LemonLimiter,
+        FxKind::LemonClip,
+        FxKind::LemonDist,
+        FxKind::LemonTransient,
+        FxKind::LemonDelay,
+        FxKind::LemonReverb,
+        FxKind::FreqShifter,
+        FxKind::AutoPan,
     ];
 
     /// The name the mixer shows in the slot.
@@ -508,6 +585,14 @@ impl FxKind {
             FxKind::Amp => "Amp Designer",
             FxKind::Plugin => "Plug-in",
             FxKind::PultEq => "Pult EQ",
+            FxKind::LemonLimiter => "Lemon Limiter",
+            FxKind::LemonClip => "Lemon Soft Clipper",
+            FxKind::LemonDist => "Lemon Fast Dist",
+            FxKind::LemonTransient => "Lemon Transient",
+            FxKind::LemonDelay => "Lemon Delay",
+            FxKind::LemonReverb => "Lemon Reverb",
+            FxKind::FreqShifter => "Frequency Shifter",
+            FxKind::AutoPan => "Auto-Pan",
         }
     }
 
@@ -516,6 +601,9 @@ impl FxKind {
     pub fn latency_samples(self, sample_rate: f32) -> usize {
         match self {
             FxKind::Limiter => limiter_len(sample_rate.clamp(8_000.0, 384_000.0)) - 1,
+            FxKind::LemonLimiter => {
+                ((0.005 * sample_rate.clamp(8_000.0, 384_000.0)).round() as usize).max(1)
+            }
             FxKind::Amp => AMP_LATENCY,
             FxKind::Plugin => PLUGIN_BLOCK,
             FxKind::Reverb => crate::convolver::BLOCK,
@@ -545,6 +633,20 @@ impl FxKind {
             "amp designer" | "amp" | "guitar amp" => FxKind::Amp,
             "plug-in" | "plugin" | "ladspa" => FxKind::Plugin,
             "pult eq" | "pulteq" | "pultec eq" | "tube eq" => FxKind::PultEq,
+            "lemon limiter" => FxKind::LemonLimiter,
+            "lemon soft clipper" | "lemon clip" | "soft clipper" => FxKind::LemonClip,
+            "lemon fast dist" | "lemon fast distortion" | "fast dist" | "fast distortion" => {
+                FxKind::LemonDist
+            }
+            "lemon transient" | "lemon transient processor" | "transient processor" => {
+                FxKind::LemonTransient
+            }
+            "lemon delay" => FxKind::LemonDelay,
+            "lemon reverb" => FxKind::LemonReverb,
+            "frequency shifter" | "bode frequency shifter" | "bode shifter" | "freq shifter" => {
+                FxKind::FreqShifter
+            }
+            "auto-pan" | "autopan" | "auto pan" => FxKind::AutoPan,
             _ => return None,
         })
     }
@@ -567,6 +669,14 @@ impl FxKind {
             FxKind::Amp => &AMP_PARAMS,
             FxKind::Plugin => &PLUGIN_PARAMS,
             FxKind::PultEq => &PULT_PARAMS,
+            FxKind::LemonLimiter => &LEMON_LIMITER_PARAMS,
+            FxKind::LemonClip => &LEMON_CLIP_PARAMS,
+            FxKind::LemonDist => &LEMON_DIST_PARAMS,
+            FxKind::LemonTransient => &LEMON_TRANSIENT_PARAMS,
+            FxKind::LemonDelay => &LEMON_DELAY_PARAMS,
+            FxKind::LemonReverb => &LEMON_REVERB_PARAMS,
+            FxKind::FreqShifter => &FREQ_SHIFTER_PARAMS,
+            FxKind::AutoPan => &AUTOPAN_PARAMS,
         }
     }
 
@@ -1099,6 +1209,258 @@ impl AmpState {
 }
 
 #[derive(Clone, Debug)]
+struct LemonLimiterState {
+    line: Line,
+    envelope: f32,
+    reduction: f32,
+}
+
+impl LemonLimiterState {
+    fn new(sr: f32) -> Self {
+        let look = (0.005 * sr).round() as usize;
+        Self {
+            line: Line::new(look.max(2)),
+            envelope: 0.0,
+            reduction: 0.0,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, pr: &[f32], l: f32, r: f32, sr: f32) -> (f32, f32) {
+        let gain_db = pr[0];
+        let ceil_db = pr[1];
+        let thres_db = pr[2];
+        let ratio = pr[3];
+        let att_ms = pr[4];
+        let rel_ms = pr[5];
+
+        let pre_gain = 10.0f32.powf(gain_db / 20.0);
+        let ceiling = 10.0f32.powf(ceil_db / 20.0);
+        let inl = l * pre_gain;
+        let inr = r * pre_gain;
+
+        let peak = inl.abs().max(inr.abs());
+        let att_k = 1.0 - (-1.0 / (att_ms.max(0.1) * 0.001 * sr)).exp();
+        let rel_k = 1.0 - (-1.0 / (rel_ms.max(1.0) * 0.001 * sr)).exp();
+        let k = if peak > self.envelope { att_k } else { rel_k };
+        self.envelope += (peak - self.envelope) * k;
+
+        let env_db = 20.0 * self.envelope.max(1e-6).log10();
+        let mut target_red = 0.0f32;
+        if env_db > thres_db {
+            target_red += (env_db - thres_db) * (1.0 - 1.0 / ratio.max(1.0));
+        }
+        let post_db = env_db - target_red;
+        if post_db > ceil_db {
+            target_red += post_db - ceil_db;
+        }
+        self.reduction = target_red;
+        let g = 10.0f32.powf(-self.reduction / 20.0);
+
+        let delay_s = self.line.buf.len().saturating_sub(1) as f32;
+        self.line.push(inl);
+        let dl = self.line.read(delay_s);
+        let out_l = (dl * g).clamp(-ceiling, ceiling);
+        let out_r = (inr * g).clamp(-ceiling, ceiling);
+        (out_l, out_r)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct LemonClipState {
+    threshold: i32,
+    post: i32,
+}
+
+impl LemonClipState {
+    fn new(params: &[f32]) -> Self {
+        Self {
+            threshold: params.first().map(|v| v.round() as i32).unwrap_or(100),
+            post: params.get(1).map(|v| v.round() as i32).unwrap_or(128),
+        }
+    }
+
+    #[inline]
+    fn process(&self, l: f32, r: f32) -> (f32, f32) {
+        let (t, k, r_const) = crate::native_fx::lemon_soft_clipper::constants(self.threshold);
+        let gain = crate::native_fx::lemon_soft_clipper::post_gain(self.post);
+        let out_l = crate::native_fx::lemon_soft_clipper::clip(l, t, k, r_const) * gain;
+        let out_r = crate::native_fx::lemon_soft_clipper::clip(r, t, k, r_const) * gain;
+        (out_l, out_r)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LemonDistState {
+    node: crate::native_fx::lemon_fast_distortion::LemonFastDistortion,
+}
+
+impl LemonDistState {
+    fn new(sr: f32, params: &[f32]) -> Self {
+        Self {
+            node: crate::native_fx::lemon_fast_distortion::LemonFastDistortion::new(sr as u32, params),
+        }
+    }
+
+    #[inline]
+    fn process(&self, l: f32, r: f32) -> (f32, f32) {
+        (self.node.sample(l), self.node.sample(r))
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LemonTransientState {
+    node: crate::native_fx::lemon_transient_processor::LemonTransientProcessor,
+}
+
+impl LemonTransientState {
+    fn new(sr: f32, params: &[f32]) -> Self {
+        Self {
+            node: crate::native_fx::lemon_transient_processor::LemonTransientProcessor::new(sr as u32, params),
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.node.frame(l, r)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LemonDelayState {
+    lines: [Line; 2],
+    tone: [f32; 2],
+}
+
+impl LemonDelayState {
+    fn new(sr: f32) -> Self {
+        Self {
+            lines: [
+                Line::new((2.05 * sr) as usize),
+                Line::new((2.05 * sr) as usize),
+            ],
+            tone: [0.0; 2],
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, pr: &[f32], l: f32, r: f32, sr: f32) -> (f32, f32) {
+        let time_ms = pr[0];
+        let fb = pr[1].clamp(0.0, 0.98);
+        let cutoff = pr[2];
+        let ping_pong = pr[3] >= 0.5;
+        let mix = pr[4].clamp(0.0, 1.0);
+
+        let d = (time_ms * 0.001 * sr).max(1.0);
+        let alpha = 1.0 - (-TAU * cutoff / sr).exp();
+
+        let (dl, dr) = (self.lines[0].read(d), self.lines[1].read(d));
+        let (fl, fr) = if ping_pong { (dr, dl) } else { (dl, dr) };
+
+        self.tone[0] += (fl - self.tone[0]) * alpha;
+        self.tone[1] += (fr - self.tone[1]) * alpha;
+
+        self.lines[0].push(l + self.tone[0] * fb);
+        self.lines[1].push(r + self.tone[1] * fb);
+
+        (l * (1.0 - mix) + dl * mix, r * (1.0 - mix) + dr * mix)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LemonReverbState {
+    combs: [[Line; 4]; 2],
+    comb_damp: [[f32; 4]; 2],
+    allpass: [[Line; 2]; 2],
+    predelay: [Line; 2],
+}
+
+impl LemonReverbState {
+    fn new(sr: f32) -> Self {
+        let comb_lens = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
+        let allpass_lens = [225, 341, 441, 556];
+        let scale = sr / 44100.0;
+        let c0 = [
+            Line::new((comb_lens[0] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[1] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[2] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[3] as f32 * scale) as usize + 2),
+        ];
+        let c1 = [
+            Line::new((comb_lens[4] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[5] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[6] as f32 * scale) as usize + 2),
+            Line::new((comb_lens[7] as f32 * scale) as usize + 2),
+        ];
+        let ap0 = [
+            Line::new((allpass_lens[0] as f32 * scale) as usize + 2),
+            Line::new((allpass_lens[1] as f32 * scale) as usize + 2),
+        ];
+        let ap1 = [
+            Line::new((allpass_lens[2] as f32 * scale) as usize + 2),
+            Line::new((allpass_lens[3] as f32 * scale) as usize + 2),
+        ];
+        Self {
+            combs: [c0, c1],
+            comb_damp: [[0.0; 4]; 2],
+            allpass: [ap0, ap1],
+            predelay: [
+                Line::new((0.25 * sr) as usize + 2),
+                Line::new((0.25 * sr) as usize + 2),
+            ],
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, pr: &[f32], l: f32, r: f32, sr: f32) -> (f32, f32) {
+        let decay = pr[0];
+        let damp_hz = pr[1];
+        let width = pr[2];
+        let pre_ms = pr[3];
+        let mix = pr[4].clamp(0.0, 1.0);
+
+        let pre_s = (pre_ms * 0.001 * sr).max(1.0);
+        self.predelay[0].push(l);
+        self.predelay[1].push(r);
+        let inl = self.predelay[0].read(pre_s);
+        let inr = self.predelay[1].read(pre_s);
+
+        let fb = (1.0 - 1.0 / (decay.max(0.1) * 15.0)).clamp(0.5, 0.98);
+        let damp = 1.0 - (-TAU * damp_hz / sr).exp();
+
+        let mut out = [0.0f32; 2];
+        for ch in 0..2 {
+            let input = if ch == 0 { inl } else { inr };
+            let mut comb_sum = 0.0f32;
+            for i in 0..4 {
+                let d = self.combs[ch][i].buf.len() as f32 - 1.0;
+                let c_out = self.combs[ch][i].read(d);
+                self.comb_damp[ch][i] += (c_out - self.comb_damp[ch][i]) * damp;
+                self.combs[ch][i].push(input + self.comb_damp[ch][i] * fb);
+                comb_sum += c_out;
+            }
+            comb_sum *= 0.25;
+            let mut ap_sig = comb_sum;
+            for i in 0..2 {
+                let d = self.allpass[ch][i].buf.len() as f32 - 1.0;
+                let buf = self.allpass[ch][i].read(d);
+                let ap_out = -ap_sig + buf;
+                self.allpass[ch][i].push(ap_sig + buf * 0.5);
+                ap_sig = ap_out;
+            }
+            out[ch] = ap_sig;
+        }
+
+        let mid = (out[0] + out[1]) * 0.5;
+        let side = (out[1] - out[0]) * 0.5 * width;
+        let wl = mid - side;
+        let wr = mid + side;
+
+        (l * (1.0 - mix) + wl * mix, r * (1.0 - mix) + wr * mix)
+    }
+}
+
+#[derive(Clone, Debug)]
 enum State {
     MultiEq([[Biquad; 6]; 2]),
     Gate(GateState),
@@ -1115,6 +1477,14 @@ enum State {
     Amp(Box<AmpState>),
     Plugin(Box<PluginSlot>),
     PultEq(Box<PultState>),
+    LemonLimiter(Box<LemonLimiterState>),
+    LemonClip(LemonClipState),
+    LemonDist(Box<LemonDistState>),
+    LemonTransient(Box<LemonTransientState>),
+    LemonDelay(Box<LemonDelayState>),
+    LemonReverb(Box<LemonReverbState>),
+    FreqShifter(Box<crate::freq_shifter::FreqShifterNode>),
+    AutoPan(Box<crate::auto_pan::AutoPanNode>),
 }
 
 /// One effect with its state. Make it with [`Fx::new`] off the audio thread.
@@ -1181,6 +1551,20 @@ impl Fx {
             FxKind::Amp => State::Amp(Box::new(AmpState::new())),
             FxKind::Plugin => State::Plugin(Box::new(PluginSlot::empty())),
             FxKind::PultEq => State::PultEq(Box::new(PultState::new())),
+            FxKind::LemonLimiter => State::LemonLimiter(Box::new(LemonLimiterState::new(sr))),
+            FxKind::LemonClip => State::LemonClip(LemonClipState::new(&params)),
+            FxKind::LemonDist => State::LemonDist(Box::new(LemonDistState::new(sr, &params))),
+            FxKind::LemonTransient => {
+                State::LemonTransient(Box::new(LemonTransientState::new(sr, &params)))
+            }
+            FxKind::LemonDelay => State::LemonDelay(Box::new(LemonDelayState::new(sr))),
+            FxKind::LemonReverb => State::LemonReverb(Box::new(LemonReverbState::new(sr))),
+            FxKind::FreqShifter => {
+                State::FreqShifter(Box::new(crate::freq_shifter::FreqShifterNode::new(sr)))
+            }
+            FxKind::AutoPan => {
+                State::AutoPan(Box::new(crate::auto_pan::AutoPanNode::new(sr)))
+            }
         };
         let mut fx = Self {
             kind,
@@ -1420,6 +1804,20 @@ impl Fx {
                     s.mic[ch] = s.mic[ch].retuned(mic_shelf);
                 }
             }
+            State::LemonClip(s) => {
+                s.threshold = pr[0].round() as i32;
+                s.post = pr[1].round() as i32;
+            }
+            State::LemonDist(s) => {
+                for (k, val) in pr[..5].iter().enumerate() {
+                    s.node.set_param(k, *val);
+                }
+            }
+            State::LemonTransient(s) => {
+                for (k, val) in pr[..5].iter().enumerate() {
+                    s.node.set_param(k, *val);
+                }
+            }
             _ => {}
         }
     }
@@ -1436,6 +1834,7 @@ impl Fx {
             State::MultiComp(c) if !self.bypass => c.reduction.iter().fold(0.0, |m, r| m.max(*r)),
             State::Gate(g) if !self.bypass => db(g.gain),
             State::Limiter(l) if !self.bypass => db(l.gain),
+            State::LemonLimiter(l) if !self.bypass => l.reduction,
             _ => 0.0,
         }
     }
@@ -1710,6 +2109,18 @@ impl Fx {
                     (dr * s.gain).clamp(-ceiling, ceiling),
                 )
             }
+            State::LemonLimiter(s) => s.process(&pr, l, r, sr),
+            State::LemonClip(s) => s.process(l, r),
+            State::LemonDist(s) => s.process(l, r),
+            State::LemonTransient(s) => s.process(l, r),
+            State::LemonDelay(s) => s.process(&pr, l, r, sr),
+            State::LemonReverb(s) => s.process(&pr, l, r, sr),
+            State::FreqShifter(s) => {
+                s.process_frame(l, r, pr[0], pr[1].round() as usize, pr[2], pr[3])
+            }
+            State::AutoPan(s) => {
+                s.process_frame(l, r, pr[0], pr[1], pr[2].round() as usize, pr[3])
+            }
         };
         // A bad sample (NaN, infinity) never travels on: it becomes silence and the
         // effect's memory is dropped by the caller's next reset.
@@ -1789,6 +2200,7 @@ impl Fx {
                 s.dc_in = [0.0; 2];
                 s.dc_out = [0.0; 2];
             }
+            _ => {}
         }
     }
 }

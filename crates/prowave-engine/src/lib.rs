@@ -11,6 +11,7 @@
 static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 mod analysis;
+pub mod auto_pan;
 pub mod bass808;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
@@ -21,6 +22,7 @@ mod disk;
 pub mod drum_machine;
 pub mod epiano;
 mod flac;
+pub mod freq_shifter;
 mod flex;
 mod fx;
 mod gain_smoothing;
@@ -32,6 +34,7 @@ pub mod melody;
 pub mod meter;
 mod monitor;
 mod mtc;
+pub mod native_fx;
 pub mod note_render;
 pub mod offline;
 mod output;
@@ -52,6 +55,8 @@ mod triple;
 mod wasapi;
 
 pub use crate::analysis::{tempo_curve, Analysis, Analyzer, TempoEstimate, STRENGTH_RATE};
+pub use crate::auto_pan::AutoPanNode;
+pub use crate::freq_shifter::FreqShifterNode;
 pub use crate::bass808::{
     can_sustain as bass808_can_sustain, measure_root_hz as bass808_measure_root_hz,
     prepare_sample as bass808_prepare_sample, Bass808, Bass808Param, Bass808Params, Bass808Spec,
@@ -90,6 +95,11 @@ pub use crate::meter::{
 };
 pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
 pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
+pub use crate::native_fx::{
+    lemon_fast_distortion, lemon_limiter, lemon_soft_clipper, lemon_transient_processor,
+    native_effects, native_info, open_native, open_native_block, open_tune_block, press, tune,
+    BlockProcessor, BlockTransport, NativeFx, NativeFxInfo, NativeParam,
+};
 pub use crate::offline::{
     write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult,
 };

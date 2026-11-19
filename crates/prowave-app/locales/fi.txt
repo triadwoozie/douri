@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Pää
+Drift = Ajelehtiminen
+Formant = Formantti
+Amplitude = Amplitudi
+Timing = Ajoitus
+Separation = Erottelu
+Melodic = Melodinen
+Percussive = Perkussiivinen
+Universal = Yleinen
+Double-click an audio region to edit its notes = Kaksoisnapsauta äänialuetta muokataksesi sen säveliä
+Polyphonic (not available) = Polyfoninen (ei saatavilla)
+Pitch Grid = Sävelkorkeusruudukko
+Correct Pitch = Korjaa sävelkorkeus
+Centre = Keskikohta
+Quantize Time = Kvantisoi aika
+rendering… = renderöidään…
+Pitch Editor: {} = Sävelkorkeuseditori: {}
+{} notes = {} nuottia
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  ajelehtiminen {} %  ·  modulaatio {} %  ·  formantti {} st  ·  {} dB
+{} notes selected = {} säveltä valittu

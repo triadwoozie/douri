@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Utama
+Drift = Drift
+Formant = Forman
+Amplitude = Amplitudo
+Timing = Timing
+Separation = Pemisahan
+Melodic = Melodis
+Percussive = Perkusif
+Universal = Universal
+Double-click an audio region to edit its notes = Klik dua kali region audio untuk mengedit notnya
+Polyphonic (not available) = Polifonik (tidak tersedia)
+Pitch Grid = Kisi nada
+Correct Pitch = Koreksi nada
+Centre = Pusat
+Quantize Time = Kuantisasi waktu
+rendering… = merender…
+Pitch Editor: {} = Editor Nada: {}
+{} notes = {} not
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  drift {} %  ·  modulasi {} %  ·  forman {} st  ·  {} dB
+{} notes selected = {} not dipilih

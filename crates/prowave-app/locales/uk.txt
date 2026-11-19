@@ -915,3 +915,25 @@ MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
 
 Pitch Editor = Pitch Editor
 Open in Pitch Editor = Open in Pitch Editor
+
+# Pitch Editor
+Main = Основний
+Drift = Дрейф
+Formant = Формант
+Amplitude = Амплітуда
+Timing = Таймінг
+Separation = Розділення
+Melodic = Мелодичний
+Percussive = Перкусійний
+Universal = Універсальний
+Double-click an audio region to edit its notes = Двічі клацніть аудіорегіон, щоб редагувати його ноти
+Polyphonic (not available) = Поліфонічний (недоступно)
+Pitch Grid = Сітка висоти
+Correct Pitch = Виправити висоту
+Centre = Центр
+Quantize Time = Квантувати час
+rendering… = рендеринг…
+Pitch Editor: {} = Редактор висоти: {}
+{} notes = Нот: {}
+{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB = {}  ·  дрейф {} %  ·  модуляція {} %  ·  формант {} пт  ·  {} dB
+{} notes selected = Вибрано нот: {}
