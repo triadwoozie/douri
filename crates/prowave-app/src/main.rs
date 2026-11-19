@@ -1605,30 +1605,46 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
     if !*open {
         return;
     }
-    let modal = egui::Modal::new(egui::Id::unique(("help", "about_dōri"))).show(ctx, |ui| {
-        ui.set_width(440.0);
-        ui.vertical_centered(|ui| {
-            ui.add_space(8.0);
-            ui.heading("Dōri");
-            ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-            ui.add_space(6.0);
-            ui.label("A pure-Rust digital audio workstation inspired by Logic Pro.");
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(8.0);
-            ui.label("Based on fabox-os/Pro-Wave, with contributions and donor code from:");
-            ui.label("• yuribeats/prowave");
-            ui.label("• storytold/soundcraft");
-            ui.label("• Ardour");
-            ui.add_space(8.0);
-            ui.label("Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).");
-            ui.add_space(12.0);
-            if ui.button("Close").clicked() {
-                *open = false;
-            }
+    let mut close = false;
+    egui::Window::new("About Dōri")
+        .open(open)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .default_width(440.0)
+        .show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(8.0);
+                if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
+                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                        [icon.width as usize, icon.height as usize],
+                        &icon.rgba,
+                    );
+                    let texture = ctx.load_texture("about_douri_icon", color_image, egui::TextureOptions::LINEAR);
+                    ui.add(egui::Image::new(&texture).max_width(96.0).max_height(96.0));
+                    ui.add_space(8.0);
+                }
+                ui.heading("Dōri");
+                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.add_space(6.0);
+                ui.label("A pure-Rust digital audio workstation inspired by Logic Pro.");
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label("Based on fabox-os/Pro-Wave, with contributions and donor code from:");
+                ui.label("• yuribeats/prowave");
+                ui.label("• storytold/soundcraft");
+                ui.label("• Ardour");
+                ui.add_space(8.0);
+                ui.label("Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).");
+                ui.add_space(12.0);
+                if ui.button("Close").clicked() {
+                    close = true;
+                }
+                ui.add_space(4.0);
+            });
         });
-    });
-    if modal.should_close() {
+    if close {
         *open = false;
     }
 }

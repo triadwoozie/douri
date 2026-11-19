@@ -641,6 +641,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show List Editors"
         | "Check for Updates…"
         | "Check for Updates Automatically"
+        | "About Dōri"
         | "Show Tempo Track"
         | "Show Marker Track"
         | "Show Signature Track"
@@ -1336,6 +1337,7 @@ mod tests {
                         s.show_plugin_manager,
                         s.show_multimeter,
                         s.export_all_tracks_cmd,
+                        s.show_about,
                     )
                 ),
                 (

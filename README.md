@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" alt="Dōri logo" width="160"></p>
+<p align="center"><img src="docs/logo.png" alt="Dōri logo" width="220"></p>
 
 <h1 align="center">Dōri</h1>
 
@@ -128,6 +128,23 @@ cargo run --release --bin douri
 # Open a specific project or audio file
 cargo run --release --bin douri -- my_project.prowave
 cargo run --release --bin douri -- song_stems.wav
+```
+
+### Desktop Integration & Installation (Linux)
+
+To install Dōri, its desktop launcher, MIME file types, and application icons to your user environment (`~/.local`):
+
+```bash
+# Build the release binary
+cargo build --release --bin douri
+
+# Run the install script (no root required)
+./dist/linux/install.sh
+```
+
+To uninstall:
+```bash
+./dist/linux/install.sh --uninstall
 ```
 
 ### Running Tests & Audio Safety Verification
