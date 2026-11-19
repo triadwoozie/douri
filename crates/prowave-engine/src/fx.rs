@@ -1441,11 +1441,11 @@ impl LemonReverbState {
             }
             comb_sum *= 0.25;
             let mut ap_sig = comb_sum;
-            for i in 0..2 {
-                let d = self.allpass[ch][i].buf.len() as f32 - 1.0;
-                let buf = self.allpass[ch][i].read(d);
+            for ap in &mut self.allpass[ch] {
+                let d = ap.buf.len() as f32 - 1.0;
+                let buf = ap.read(d);
                 let ap_out = -ap_sig + buf;
-                self.allpass[ch][i].push(ap_sig + buf * 0.5);
+                ap.push(ap_sig + buf * 0.5);
                 ap_sig = ap_out;
             }
             out[ch] = ap_sig;

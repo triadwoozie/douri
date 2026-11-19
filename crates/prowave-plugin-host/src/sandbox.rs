@@ -16,7 +16,7 @@
 //! a request gets one answer (`r` lines), and the process reports what changes on its own (`e`
 //! lines: a parameter its window moved, its latency, its window closing). The process ends when
 //! its input closes, so it never outlives Pro Wave.
-use crate::{Error, ParamInfo, PluginInfo, MAX_CHANGES};
+use crate::{Error, ParamInfo, PluginCategory, PluginInfo, MAX_CHANGES, MAX_MIDI_EVENTS};
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ffi::{CString, OsString};
@@ -51,8 +51,95 @@ struct Shared {
     change_count: AtomicU32,
     /// Parameter index, position as `f32` bits.
     changes: [[AtomicU32; 2]; MAX_CHANGES],
+    midi_count: AtomicU32,
+    midi_events: [[AtomicU32; 2]; MAX_MIDI_EVENTS],
     /// The block: sound in, the plug-in's sound out, as `f32` bits.
     audio: [[AtomicU32; MAX_BLOCK]; 2],
+}
+
+fn pack_midi(ev: &crate::MidiEvent) -> [u32; 2] {
+    match *ev {
+        crate::MidiEvent::NoteOn {
+            time,
+            channel,
+            note,
+            velocity,
+        } => [
+            ((channel as u32 & 0xFF) << 16) | (time & 0xFFFF),
+            (note as u32) | ((velocity as u32) << 8),
+        ],
+        crate::MidiEvent::NoteOff {
+            time,
+            channel,
+            note,
+            velocity,
+        } => [
+            (1u32 << 24) | ((channel as u32 & 0xFF) << 16) | (time & 0xFFFF),
+            (note as u32) | ((velocity as u32) << 8),
+        ],
+        crate::MidiEvent::PitchBend {
+            time,
+            channel,
+            value,
+        } => [
+            (2u32 << 24) | ((channel as u32 & 0xFF) << 16) | (time & 0xFFFF),
+            value as u32,
+        ],
+        crate::MidiEvent::ControlChange {
+            time,
+            channel,
+            controller,
+            value,
+        } => [
+            (3u32 << 24) | ((channel as u32 & 0xFF) << 16) | (time & 0xFFFF),
+            (controller as u32) | ((value as u32) << 8),
+        ],
+        crate::MidiEvent::Aftertouch {
+            time,
+            channel,
+            pressure,
+        } => [
+            (4u32 << 24) | ((channel as u32 & 0xFF) << 16) | (time & 0xFFFF),
+            pressure as u32,
+        ],
+    }
+}
+
+fn unpack_midi(packed: [u32; 2]) -> Option<crate::MidiEvent> {
+    let kind = (packed[0] >> 24) as u8;
+    let channel = ((packed[0] >> 16) & 0xFF) as u8;
+    let time = packed[0] & 0xFFFF;
+    match kind {
+        0 => Some(crate::MidiEvent::NoteOn {
+            time,
+            channel,
+            note: (packed[1] & 0xFF) as u8,
+            velocity: ((packed[1] >> 8) & 0xFF) as u8,
+        }),
+        1 => Some(crate::MidiEvent::NoteOff {
+            time,
+            channel,
+            note: (packed[1] & 0xFF) as u8,
+            velocity: ((packed[1] >> 8) & 0xFF) as u8,
+        }),
+        2 => Some(crate::MidiEvent::PitchBend {
+            time,
+            channel,
+            value: (packed[1] & 0x3FFF) as u16,
+        }),
+        3 => Some(crate::MidiEvent::ControlChange {
+            time,
+            channel,
+            controller: (packed[1] & 0xFF) as u8,
+            value: ((packed[1] >> 8) & 0xFF) as u8,
+        }),
+        4 => Some(crate::MidiEvent::Aftertouch {
+            time,
+            channel,
+            pressure: (packed[1] & 0xFF) as u8,
+        }),
+        _ => None,
+    }
 }
 
 /// The shared memory, mapped. `owner` made it and takes its name away at the end.
@@ -239,6 +326,8 @@ struct AudioSide {
     behind: bool,
     pending: usize,
     changes: [(u32, f32); MAX_CHANGES],
+    pending_midi: usize,
+    midi_events: [crate::MidiEvent; MAX_MIDI_EVENTS],
 }
 
 /// A plug-in running in its own process, seen from Pro Wave.
@@ -291,6 +380,7 @@ impl Remote {
             .arg(&wake_name)
             .arg(&info.name)
             .arg(&info.path)
+            .arg(info.category.name())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -379,6 +469,13 @@ impl Remote {
                 behind: false,
                 pending: 0,
                 changes: [(0, 0.0); MAX_CHANGES],
+                pending_midi: 0,
+                midi_events: [crate::MidiEvent::NoteOff {
+                    time: 0,
+                    channel: 0,
+                    note: 0,
+                    velocity: 0,
+                }; MAX_MIDI_EVENTS],
             }),
         }))
     }
@@ -572,7 +669,24 @@ impl RemoteProcessor {
         unsafe { &mut *self.0.audio.get() }
     }
 
+    pub(crate) fn push_midi(&mut self, event: crate::MidiEvent) {
+        let audio = self.audio();
+        if audio.pending_midi < MAX_MIDI_EVENTS {
+            audio.midi_events[audio.pending_midi] = event;
+            audio.pending_midi += 1;
+        }
+    }
+
     pub(crate) fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_events(left, right, &[]);
+    }
+
+    pub(crate) fn process_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        events: &[crate::MidiEvent],
+    ) {
         let remote = Arc::as_ptr(&self.0);
         let audio = self.audio();
         // SAFETY: `remote` points into the `Arc` this handle holds.
@@ -597,6 +711,20 @@ impl RemoteProcessor {
             .change_count
             .store(audio.pending as u32, Ordering::Relaxed);
         audio.pending = 0;
+        let mut m = audio.pending_midi;
+        for &ev in events {
+            if m < MAX_MIDI_EVENTS {
+                audio.midi_events[m] = ev;
+                m += 1;
+            }
+        }
+        audio.pending_midi = 0;
+        for (slot, ev) in shared.midi_events.iter().zip(&audio.midi_events[..m]) {
+            let packed = pack_midi(ev);
+            slot[0].store(packed[0], Ordering::Relaxed);
+            slot[1].store(packed[1], Ordering::Relaxed);
+        }
+        shared.midi_count.store(m as u32, Ordering::Relaxed);
         for (i, (l, r)) in left.iter().zip(right.iter()).enumerate().take(frames) {
             shared.audio[0][i].store(l.to_bits(), Ordering::Relaxed);
             shared.audio[1][i].store(r.to_bits(), Ordering::Relaxed);
@@ -716,7 +844,24 @@ fn serve_audio(map: &Map, wake: &Wake, mut processor: crate::LocalProcessor, blo
             left[i] = f32::from_bits(shared.audio[0][i].load(Ordering::Relaxed));
             right[i] = f32::from_bits(shared.audio[1][i].load(Ordering::Relaxed));
         }
-        processor.process(&mut left[..frames], &mut right[..frames]);
+        let midi_n = (shared.midi_count.load(Ordering::Relaxed) as usize).min(MAX_MIDI_EVENTS);
+        let mut midi_buf = [crate::MidiEvent::NoteOff {
+            time: 0,
+            channel: 0,
+            note: 0,
+            velocity: 0,
+        }; MAX_MIDI_EVENTS];
+        let mut midi_len = 0;
+        for slot in &shared.midi_events[..midi_n] {
+            if let Some(ev) = unpack_midi([
+                slot[0].load(Ordering::Relaxed),
+                slot[1].load(Ordering::Relaxed),
+            ]) {
+                midi_buf[midi_len] = ev;
+                midi_len += 1;
+            }
+        }
+        processor.process_events(&mut left[..frames], &mut right[..frames], &midi_buf[..midi_len]);
         for i in 0..frames {
             shared.audio[0][i].store(left[i].to_bits(), Ordering::Relaxed);
             shared.audio[1][i].store(right[i].to_bits(), Ordering::Relaxed);
@@ -889,6 +1034,10 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
     };
     let rate = text(2).parse::<f64>().unwrap_or(48_000.0);
     let block = text(3).parse::<usize>().unwrap_or(64).clamp(1, MAX_BLOCK);
+    let category = args
+        .get(8)
+        .and_then(|c| PluginCategory::from_name(&c.to_string_lossy()))
+        .unwrap_or(PluginCategory::Effect);
     let info = PluginInfo {
         format,
         id: text(1),
@@ -898,6 +1047,7 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
             .get(7)
             .map(std::path::PathBuf::from)
             .unwrap_or_default(),
+        category,
     };
     let (Some(map), Some(wake)) = (Map::open(&text(4), false), Wake::open(&text(5), false)) else {
         fail("the shared memory is not there")

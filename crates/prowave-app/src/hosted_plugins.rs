@@ -17,9 +17,9 @@
 //!   plug-in behind it. A plug-in is loaded the first time the engine needs it (the engine
 //!   knows the sample rate) and stays loaded while the app runs, so Undo can bring a removed
 //!   plug-in back with its settings.
-use prowave_engine::{BlockEffect, Fx, PLUGIN_BLOCK};
+use prowave_engine::{BlockEffect, Fx, PluginInstrument, PLUGIN_BLOCK};
 use prowave_plugin_host as host;
-pub use prowave_plugin_host::{Format, Instance, PluginInfo};
+pub use prowave_plugin_host::{Format, Instance, PluginCategory, PluginInfo};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -282,6 +282,164 @@ pub fn fx(plugin: u32, bypass: bool, sample_rate: f32) -> Fx {
     fx
 }
 
+/// A hosted instrument plug-in as the engine's track player.
+struct HostedInstrument {
+    processor: host::Processor,
+    out_l: [f32; PLUGIN_BLOCK],
+    out_r: [f32; PLUGIN_BLOCK],
+    pos: usize,
+    midi_queue: [prowave_plugin_host::MidiEvent; 128],
+    midi_count: usize,
+}
+
+impl PluginInstrument for HostedInstrument {
+    fn note_on(&mut self, pitch: u8, vel: u8) {
+        if self.midi_count < 128 {
+            self.midi_queue[self.midi_count] = prowave_plugin_host::MidiEvent::NoteOn {
+                time: 0,
+                channel: 0,
+                note: pitch,
+                velocity: vel,
+            };
+            self.midi_count += 1;
+        }
+    }
+
+    fn note_off(&mut self, pitch: u8) {
+        if self.midi_count < 128 {
+            self.midi_queue[self.midi_count] = prowave_plugin_host::MidiEvent::NoteOff {
+                time: 0,
+                channel: 0,
+                note: pitch,
+                velocity: 0,
+            };
+            self.midi_count += 1;
+        }
+    }
+
+    fn control(&mut self, number: u8, value: u16) {
+        if self.midi_count < 128 {
+            let ev = if number == prowave_engine::PITCH_BEND_CONTROL {
+                prowave_plugin_host::MidiEvent::PitchBend {
+                    time: 0,
+                    channel: 0,
+                    value,
+                }
+            } else {
+                prowave_plugin_host::MidiEvent::ControlChange {
+                    time: 0,
+                    channel: 0,
+                    controller: number,
+                    value: (value.min(127)) as u8,
+                }
+            };
+            self.midi_queue[self.midi_count] = ev;
+            self.midi_count += 1;
+        }
+    }
+
+    fn all_notes_off(&mut self) {
+        if self.midi_count < 128 {
+            self.midi_queue[self.midi_count] = prowave_plugin_host::MidiEvent::ControlChange {
+                time: 0,
+                channel: 0,
+                controller: 123,
+                value: 0,
+            };
+            self.midi_count += 1;
+        }
+    }
+
+    fn render(&mut self) -> (f32, f32) {
+        if self.pos >= PLUGIN_BLOCK {
+            self.out_l.fill(0.0);
+            self.out_r.fill(0.0);
+            self.processor.process_events(
+                &mut self.out_l,
+                &mut self.out_r,
+                &self.midi_queue[..self.midi_count],
+            );
+            self.midi_count = 0;
+            self.pos = 0;
+        }
+        let frame = (self.out_l[self.pos], self.out_r[self.pos]);
+        self.pos += 1;
+        frame
+    }
+
+    fn set_param(&mut self, index: usize, norm: f32) {
+        self.processor.set_param_norm(index, norm);
+    }
+
+    fn reset(&mut self) {
+        self.processor.reset();
+        self.out_l.fill(0.0);
+        self.out_r.fill(0.0);
+        self.pos = PLUGIN_BLOCK;
+        self.midi_count = 0;
+    }
+
+    fn boxed_clone(&self) -> Option<Box<dyn PluginInstrument>> {
+        Some(Box::new(HostedInstrument {
+            processor: self.processor.clone(),
+            out_l: [0.0; PLUGIN_BLOCK],
+            out_r: [0.0; PLUGIN_BLOCK],
+            pos: PLUGIN_BLOCK,
+            midi_queue: [prowave_plugin_host::MidiEvent::NoteOff {
+                time: 0,
+                channel: 0,
+                note: 0,
+                velocity: 0,
+            }; 128],
+            midi_count: 0,
+        }))
+    }
+}
+
+/// Plug-in `plugin` as an instrument player the engine can run at `sample_rate`.
+pub fn instrument_player(plugin: u32, sample_rate: f32) -> Option<Box<dyn PluginInstrument>> {
+    let processor = with_slot(plugin, |slot| {
+        if slot.instance.is_none() || slot.rate != sample_rate {
+            let state = match &slot.instance {
+                Some(old) => old.save_state(),
+                None => slot.saved.clone(),
+            };
+            match load(&slot.info, sample_rate) {
+                Ok(instance) => {
+                    if let Some(state) = &state {
+                        instance.load_state(state);
+                    }
+                    slot.instance = Some(instance);
+                    slot.error = None;
+                }
+                Err(error) => {
+                    tracing::warn!(plugin = %slot.info.name, %error, "plug-in instrument not loaded");
+                    slot.instance = None;
+                    slot.saved = state;
+                    slot.error = Some(error.to_string());
+                }
+            }
+            slot.rate = sample_rate;
+        }
+        slot.instance.as_ref().map(Instance::processor)
+    })
+    .flatten()?;
+
+    Some(Box::new(HostedInstrument {
+        processor,
+        out_l: [0.0; PLUGIN_BLOCK],
+        out_r: [0.0; PLUGIN_BLOCK],
+        pos: PLUGIN_BLOCK,
+        midi_queue: [prowave_plugin_host::MidiEvent::NoteOff {
+            time: 0,
+            channel: 0,
+            note: 0,
+            velocity: 0,
+        }; 128],
+        midi_count: 0,
+    }))
+}
+
 /// Loads a plug-in in a process of its own, started from this program (`main` hands such a
 /// start to the host first thing), so that a plug-in that crashes while playing takes its
 /// process with it and not Pro Wave. Tests have no app program to start: they load in-process.
@@ -431,6 +589,26 @@ pub fn catalog() -> Vec<PluginInfo> {
     rack().catalog.clone()
 }
 
+/// The installed instrument plug-ins found so far.
+pub fn catalog_instruments() -> Vec<PluginInfo> {
+    rack()
+        .catalog
+        .iter()
+        .filter(|info| info.is_instrument())
+        .cloned()
+        .collect()
+}
+
+/// The installed audio effect plug-ins found so far.
+pub fn catalog_effects() -> Vec<PluginInfo> {
+    rack()
+        .catalog
+        .iter()
+        .filter(|info| !info.is_instrument())
+        .cloned()
+        .collect()
+}
+
 pub fn scan_status() -> Scan {
     rack().scan
 }
@@ -461,10 +639,11 @@ fn field(text: &str) -> String {
 
 fn plugin_line(info: &PluginInfo) -> String {
     format!(
-        "plugin\t{}\t{}\t{}",
+        "plugin\t{}\t{}\t{}\t{}",
         field(&info.id),
         field(&info.name),
-        field(&info.vendor)
+        field(&info.vendor),
+        info.category.name(),
     )
 }
 
@@ -473,12 +652,20 @@ fn parse_plugin_line(line: &str, format: Format, path: &Path) -> Option<PluginIn
     if parts.next() != Some("plugin") {
         return None;
     }
+    let id = parts.next()?.to_string();
+    let name = parts.next()?.to_string();
+    let vendor = parts.next().unwrap_or_default().to_string();
+    let category = parts
+        .next()
+        .and_then(PluginCategory::from_name)
+        .unwrap_or(PluginCategory::Effect);
     Some(PluginInfo {
         format,
-        id: parts.next()?.to_string(),
-        name: parts.next()?.to_string(),
-        vendor: parts.next().unwrap_or_default().to_string(),
+        id,
+        name,
+        vendor,
         path: path.to_path_buf(),
+        category,
     })
 }
 
@@ -793,6 +980,7 @@ mod tests {
             name: name.to_string(),
             vendor: "Test\tVendor".to_string(),
             path: PathBuf::from("/plug-ins/test.clap"),
+            category: PluginCategory::Effect,
         }
     }
 

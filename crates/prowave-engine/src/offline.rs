@@ -102,6 +102,7 @@ pub struct OfflineBounceResult {
 ///
 /// Digital silence (0.0) remains pure digital silence without added dither noise.
 /// The file is written to `<path>.part` first and atomically renamed on completion.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn write_wav_with_options(
     path: &Path,
     stereo: &[f32],

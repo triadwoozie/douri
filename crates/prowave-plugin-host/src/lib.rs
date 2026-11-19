@@ -41,10 +41,46 @@ mod vst3;
 
 /// The most parameter moves handed to a plug-in in one block; later ones wait for the next.
 const MAX_CHANGES: usize = 128;
+/// The most MIDI events handed to a plug-in in one block.
+pub const MAX_MIDI_EVENTS: usize = 128;
 /// The parameter moves that can wait between the main thread and the audio thread.
 const QUEUE: usize = 1024;
 /// The most parameters read from one plug-in.
 pub const MAX_PARAMS: usize = 4096;
+
+/// A plug-in category: Effect or Instrument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PluginCategory {
+    Effect,
+    Instrument,
+}
+
+impl PluginCategory {
+    pub fn name(self) -> &'static str {
+        match self {
+            PluginCategory::Effect => "Effect",
+            PluginCategory::Instrument => "Instrument",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<PluginCategory> {
+        match name {
+            "Instrument" | "instrument" => Some(PluginCategory::Instrument),
+            "Effect" | "effect" => Some(PluginCategory::Effect),
+            _ => None,
+        }
+    }
+}
+
+/// A MIDI event delivered to a plug-in on the audio thread.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MidiEvent {
+    NoteOn { time: u32, channel: u8, note: u8, velocity: u8 },
+    NoteOff { time: u32, channel: u8, note: u8, velocity: u8 },
+    PitchBend { time: u32, channel: u8, value: u16 },
+    ControlChange { time: u32, channel: u8, controller: u8, value: u8 },
+    Aftertouch { time: u32, channel: u8, pressure: u8 },
+}
 
 /// A plug-in format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -83,6 +119,13 @@ pub struct PluginInfo {
     pub vendor: String,
     /// The plug-in's file or bundle (empty for an Audio Unit, which the system finds).
     pub path: PathBuf,
+    pub category: PluginCategory,
+}
+
+impl PluginInfo {
+    pub fn is_instrument(&self) -> bool {
+        self.category == PluginCategory::Instrument
+    }
 }
 
 /// One parameter of a loaded plug-in.
@@ -142,6 +185,16 @@ pub(crate) trait Backend {
     fn main_idle(&self) {}
     /// One block in place, after applying `changes` (parameter index, position).
     fn process(&self, left: &mut [f32], right: &mut [f32], changes: &[(u32, f32)]);
+    /// One block in place, applying `changes` and feeding `midi` events.
+    fn process_midi(
+        &self,
+        left: &mut [f32],
+        right: &mut [f32],
+        changes: &[(u32, f32)],
+        _midi: &[MidiEvent],
+    ) {
+        self.process(left, right, changes);
+    }
     fn reset(&self);
     /// Whether the plug-in has a window of its own.
     fn main_has_editor(&self) -> bool {
@@ -165,6 +218,8 @@ struct AudioSide {
     changes: [(u32, f32); MAX_CHANGES],
     /// Moves made on the audio thread itself (automation), waiting for the next block.
     pending: usize,
+    midi_events: [MidiEvent; MAX_MIDI_EVENTS],
+    pending_midi: usize,
 }
 
 struct Shared {
@@ -210,6 +265,13 @@ impl LocalInstance {
                 moves: rx,
                 changes: [(0, 0.0); MAX_CHANGES],
                 pending: 0,
+                midi_events: [MidiEvent::NoteOff {
+                    time: 0,
+                    channel: 0,
+                    note: 0,
+                    velocity: 0,
+                }; MAX_MIDI_EVENTS],
+                pending_midi: 0,
             }),
             latency: AtomicUsize::new(latency),
         }))
@@ -330,9 +392,28 @@ impl LocalProcessor {
         unsafe { &mut *self.0.audio.get() }
     }
 
+    /// Queues a MIDI event for the next block on the audio thread. Lock-free, zero allocation.
+    pub fn push_midi(&mut self, event: MidiEvent) {
+        let audio = self.audio();
+        if audio.pending_midi < MAX_MIDI_EVENTS {
+            audio.midi_events[audio.pending_midi] = event;
+            audio.pending_midi += 1;
+        }
+    }
+
     /// One block in place. `left` and `right` must have the same length, at most the block
     /// size given to [`load`]. No allocation, no lock.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_events(left, right, &[]);
+    }
+
+    /// One block in place with extra MIDI events provided directly. No allocation, no lock.
+    pub fn process_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        events: &[MidiEvent],
+    ) {
         let shared = Arc::as_ptr(&self.0);
         let audio = self.audio();
         let mut n = audio.pending;
@@ -346,13 +427,22 @@ impl LocalProcessor {
             }
         }
         audio.pending = 0;
+        let mut m = audio.pending_midi;
+        for &ev in events {
+            if m < MAX_MIDI_EVENTS {
+                audio.midi_events[m] = ev;
+                m += 1;
+            }
+        }
+        audio.pending_midi = 0;
         let frames = left.len().min(right.len());
         // SAFETY: `shared` points into the `Arc` this handle holds.
         let backend = unsafe { &(*shared).backend };
-        backend.process(
+        backend.process_midi(
             &mut left[..frames],
             &mut right[..frames],
             &audio.changes[..n],
+            &audio.midi_events[..m],
         );
     }
 
@@ -544,6 +634,15 @@ impl Instance {
 }
 
 impl Processor {
+    /// Queues a MIDI event for the next block on the audio thread. Lock-free, zero allocation.
+    pub fn push_midi(&mut self, event: MidiEvent) {
+        match &mut self.0 {
+            ProcessorKind::Local(p) => p.push_midi(event),
+            #[cfg(unix)]
+            ProcessorKind::Remote(p) => p.push_midi(event),
+        }
+    }
+
     /// One block in place. `left` and `right` must have the same length, at most the block
     /// size given at load. No allocation, no lock.
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -551,6 +650,15 @@ impl Processor {
             ProcessorKind::Local(p) => p.process(left, right),
             #[cfg(unix)]
             ProcessorKind::Remote(p) => p.process(left, right),
+        }
+    }
+
+    /// One block in place with extra MIDI events provided directly. No allocation, no lock.
+    pub fn process_events(&mut self, left: &mut [f32], right: &mut [f32], events: &[MidiEvent]) {
+        match &mut self.0 {
+            ProcessorKind::Local(p) => p.process_events(left, right, events),
+            #[cfg(unix)]
+            ProcessorKind::Remote(p) => p.process_events(left, right, events),
         }
     }
 

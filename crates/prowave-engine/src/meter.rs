@@ -393,8 +393,7 @@ impl LoudnessMeter {
     pub fn process_sample(&mut self, l: f32, r: f32) {
         let ch = self.filters.len().min(2);
         let samples = [if l.is_finite() { l } else { 0.0 }, if r.is_finite() { r } else { 0.0 }];
-        for c in 0..ch {
-            let x = samples[c];
+        for (c, &x) in samples.iter().take(ch).enumerate() {
             if let Some([f1, f2]) = self.filters.get_mut(c) {
                 let y = f2.process_sample(f1.process_sample(x));
                 if let Some(acc) = self.block_acc.get_mut(c) {

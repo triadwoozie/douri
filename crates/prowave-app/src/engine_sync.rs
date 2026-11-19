@@ -65,6 +65,8 @@ pub struct EngineSync {
     pianos: Vec<Option<[f32; prowave_engine::epiano::PARAMS]>>,
     /// The Bass 808 each track was last given (`None`: no Bass 808), by track.
     bass808s: Vec<Option<prowave_engine::Bass808Spec>>,
+    /// The hosted instrument plugin each track was last given, by track (`0`: none).
+    hosted_instruments: Vec<u32>,
     /// Which tracks the engine was told are external, by track.
     externals: Vec<bool>,
     /// The controller changes the engine has.
@@ -639,6 +641,7 @@ impl EngineSync {
             sampler_jobs: std::collections::HashMap::new(),
             pianos: Vec::new(),
             bass808s: Vec::new(),
+            hosted_instruments: Vec::new(),
             externals: Vec::new(),
             controls: Vec::new(),
             mtc: None,
@@ -811,6 +814,9 @@ impl EngineSync {
                 if let Some(slot) = self.pianos.get_mut(i) {
                     *slot = None;
                 }
+                if let Some(slot) = self.hosted_instruments.get_mut(i) {
+                    *slot = 0;
+                }
                 continue;
             }
             if let Some(b808) = t.bass808.as_ref().filter(|_| !external) {
@@ -819,6 +825,9 @@ impl EngineSync {
                 }
                 if let Some(slot) = self.pianos.get_mut(i) {
                     *slot = None;
+                }
+                if let Some(slot) = self.hosted_instruments.get_mut(i) {
+                    *slot = 0;
                 }
                 continue;
             }
@@ -830,6 +839,9 @@ impl EngineSync {
                 }
                 if let Some(slot) = self.pianos.get_mut(i) {
                     *slot = None;
+                }
+                if let Some(slot) = self.hosted_instruments.get_mut(i) {
+                    *slot = 0;
                 }
                 continue;
             }
@@ -855,11 +867,14 @@ impl EngineSync {
             } else {
                 t.epiano.map(|e| prowave_engine::epiano::clamp(e.params))
             };
+            let want_hosted = if external { 0 } else { t.hosted_instrument };
             let sent_piano = self.pianos.get(i).copied().flatten();
+            let sent_hosted = self.hosted_instruments.get(i).copied().unwrap_or(0);
             let same_sound = match self.soundfonts.get(i) {
                 Some(sent) => sent.as_ref() == want,
                 None => want.is_none(),
-            } && sent_piano.is_some() == want_piano.is_some();
+            } && sent_piano.is_some() == want_piano.is_some()
+              && sent_hosted == want_hosted;
             if same_sound && !force {
                 // Only the Electric Piano's dials moved: they change while the notes ring.
                 if let (Some(dials), true) = (want_piano, sent_piano != want_piano) {
@@ -873,9 +888,12 @@ impl EngineSync {
                 }
                 continue;
             }
-            // An Electric Piano wins over a SoundFont; a SoundFont that cannot be played is
-            // logged and the track plays its synth patch.
-            let player = if let Some(dials) = want_piano {
+            // A hosted instrument or Electric Piano wins over a SoundFont; a SoundFont that
+            // cannot be played is logged and the track plays its synth patch.
+            let player = if want_hosted != 0 {
+                crate::hosted_plugins::instrument_player(want_hosted, sample_rate)
+                    .map(|p| Box::new(SfPlayer::plugin(p, sample_rate)))
+            } else if let Some(dials) = want_piano {
                 Some(Box::new(SfPlayer::electric_piano(dials, sample_rate)))
             } else {
                 match want {
@@ -903,6 +921,10 @@ impl EngineSync {
                 self.pianos.resize(i + 1, None);
             }
             self.pianos[i] = want_piano;
+            if self.hosted_instruments.len() <= i {
+                self.hosted_instruments.resize(i + 1, 0);
+            }
+            self.hosted_instruments[i] = want_hosted;
         }
         // External MIDI tracks: their notes go out as MIDI instead of sounding here.
         for (i, t) in p.tracks.iter().enumerate().take(MAX_TRACKS) {
@@ -1566,6 +1588,7 @@ mod tests {
             epiano: None,
             drums: None,
             bass808: None,
+            hosted_instrument: 0,
             summing_stack: false,
             midi_channel: 1,
             midi_program: None,

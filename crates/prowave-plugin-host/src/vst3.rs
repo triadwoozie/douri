@@ -7,7 +7,10 @@
 //! `Contents/x86_64-linux`, `Contents/x86_64-win`); the library exports `GetPluginFactory`. As
 //! with CLAP, a library is loaded once and never unloaded.
 
-use crate::{Backend, Error, Format, ParamInfo, PluginInfo, MAX_CHANGES};
+use crate::{
+    Backend, Error, Format, MidiEvent, ParamInfo, PluginCategory, PluginInfo, MAX_CHANGES,
+    MAX_MIDI_EVENTS,
+};
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -31,6 +34,7 @@ const NOT_IMPLEMENTED: TResult = 3;
 const FALSE: TResult = 1;
 
 const AUDIO: i32 = 0;
+const EVENT: i32 = 1;
 const INPUT: i32 = 0;
 const OUTPUT: i32 = 1;
 const PARAM_READ_ONLY: i32 = 1 << 1;
@@ -80,6 +84,9 @@ const IID_HANDLER: Tuid = iid(0x93A0_BEA3, 0x0BD0_45DB, 0x8E89_0B0C, 0xC1E4_6AC6
 const IID_FRAME: Tuid = iid(0x367F_AF01, 0xAFA9_4693, 0x8D4D_A2A0, 0xED08_82A3);
 const IID_MESSAGE: Tuid = iid(0x936F_033B, 0xC6C0_47DB, 0xBB08_82F8, 0x13C1_E613);
 const IID_ATTRIBUTES: Tuid = iid(0x1E5F_0AEB, 0xCC7F_4533, 0xA254_4011, 0x38AD_5EE4);
+const IID_EVENT_LIST: Tuid = iid(0x3A2C_4214, 0x3463_49FE, 0xB2C4_F397, 0xB969_5A44);
+#[allow(dead_code)]
+const IID_MIDI_MAPPING: Tuid = iid(0xDF0F_F9F7, 0x49B7_4669, 0xB63A_B732, 0x7ADB_F5E5);
 
 /// Any VST3 object: a pointer to its table of functions.
 type Object = *mut *const c_void;
@@ -586,6 +593,118 @@ unsafe extern "system" fn changes_data(this: Object, index: i32) -> Object {
 
 unsafe extern "system" fn changes_add(_: Object, _: *const u32, _: *mut i32) -> Object {
     std::ptr::null_mut()
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NoteOnEvent {
+    channel: i16,
+    pitch: i16,
+    tuning: f32,
+    velocity: f32,
+    length: i32,
+    note_id: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NoteOffEvent {
+    channel: i16,
+    pitch: i16,
+    velocity: f32,
+    note_id: i32,
+    tuning: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RawVst3Event {
+    bus_index: i32,
+    sample_offset: i32,
+    ppq_position: f64,
+    flags: u16,
+    type_: u16,
+    payload: [u8; 32],
+}
+
+#[repr(C)]
+struct EventListTable {
+    unknown: Unknown,
+    count: unsafe extern "system" fn(Object) -> i32,
+    get: unsafe extern "system" fn(Object, i32, *mut RawVst3Event) -> TResult,
+    add: unsafe extern "system" fn(Object, *mut RawVst3Event) -> TResult,
+}
+
+#[repr(C)]
+struct EventList {
+    table: *const EventListTable,
+    count: i32,
+    events: [RawVst3Event; MAX_MIDI_EVENTS],
+}
+
+impl EventList {
+    fn new() -> Self {
+        Self {
+            table: &EVENT_LIST_TABLE,
+            count: 0,
+            events: [RawVst3Event {
+                bus_index: 0,
+                sample_offset: 0,
+                ppq_position: 0.0,
+                flags: 0,
+                type_: 0,
+                payload: [0; 32],
+            }; MAX_MIDI_EVENTS],
+        }
+    }
+
+    fn object(&mut self) -> Object {
+        std::ptr::from_mut(self).cast()
+    }
+}
+
+static EVENT_LIST_TABLE: EventListTable = EventListTable {
+    unknown: Unknown {
+        query: event_list_query,
+        add_ref: host_count,
+        release: host_count,
+    },
+    count: event_list_count,
+    get: event_list_get,
+    add: event_list_add,
+};
+
+unsafe extern "system" fn event_list_query(
+    this: Object,
+    id: *const Tuid,
+    out: *mut Object,
+) -> TResult {
+    unsafe { host_query(this, id, out, &IID_EVENT_LIST) }
+}
+
+unsafe extern "system" fn event_list_count(this: Object) -> i32 {
+    unsafe { (*this.cast::<EventList>()).count }
+}
+
+unsafe extern "system" fn event_list_get(
+    this: Object,
+    index: i32,
+    out: *mut RawVst3Event,
+) -> TResult {
+    if index < 0 || out.is_null() {
+        return FALSE;
+    }
+    let list = unsafe { &*this.cast::<EventList>() };
+    if index < list.count {
+        unsafe { *out = list.events[index as usize] };
+        OK
+    } else {
+        FALSE
+    }
+}
+
+unsafe extern "system" fn event_list_add(_: Object, _: *mut RawVst3Event) -> TResult {
+    FALSE
 }
 
 #[repr(C)]
@@ -1216,13 +1335,14 @@ pub(crate) fn scan(path: &Path) -> Result<Vec<PluginInfo>, Error> {
                     continue;
                 }
                 let mut vendor = crate::buffer_text(&factory_info.vendor);
+                let mut is_inst = false;
                 if !factory2.is_null() {
                     let mut info2: ClassInfo2 = std::mem::zeroed();
                     if (table::<FactoryTable>(factory2).class2)(factory2, i, &mut info2) == OK {
                         let kinds = crate::buffer_text(&info2.sub_categories);
-                        if !kinds.split('|').any(|k| k == "Fx")
-                            || kinds.split('|').any(|k| k == "Instrument")
-                        {
+                        is_inst = kinds.split('|').any(|k| k == "Instrument" || k == "Synth");
+                        let is_fx = kinds.split('|').any(|k| k == "Fx");
+                        if !is_inst && !is_fx {
                             continue;
                         }
                         let own = crate::buffer_text(&info2.vendor);
@@ -1237,6 +1357,11 @@ pub(crate) fn scan(path: &Path) -> Result<Vec<PluginInfo>, Error> {
                     name: crate::buffer_text(&info.name),
                     vendor,
                     path: path.to_path_buf(),
+                    category: if is_inst {
+                        PluginCategory::Instrument
+                    } else {
+                        PluginCategory::Effect
+                    },
                 });
             }
             release(factory2);
@@ -1268,6 +1393,7 @@ struct Audio {
     out_buses: Vec<BusBuffers>,
     in_changes: Box<Changes>,
     out_changes: Box<Changes>,
+    in_events: Box<EventList>,
     context: Context,
     mono_out: bool,
 }
@@ -1485,8 +1611,8 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Vst
         let proc_ = table::<ProcessorTable>(processor);
         let ins = buses(component, INPUT);
         let outs = buses(component, OUTPUT);
-        let main = |list: &[i32]| list.first().is_some_and(|c| (1..=2).contains(c));
-        if !main(&ins) || !main(&outs) {
+        let main_out = outs.first().is_some_and(|c| (1..=2).contains(c));
+        if !main_out {
             return Err(stop(processor, Error::NotAnEffect));
         }
 
@@ -1534,8 +1660,11 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Vst
             max_block: block as i32,
             rate,
         };
-        (comp.activate_bus)(component, AUDIO, INPUT, 0, 1);
+        if !ins.is_empty() {
+            (comp.activate_bus)(component, AUDIO, INPUT, 0, 1);
+        }
         (comp.activate_bus)(component, AUDIO, OUTPUT, 0, 1);
+        (comp.activate_bus)(component, EVENT, INPUT, 0, 1);
         let started =
             (proc_.setup)(processor, &mut setup) == OK && (comp.set_active)(component, 1) == OK;
         if !started {
@@ -1599,6 +1728,7 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Vst
             out_buses: Vec::new(),
             in_changes: Box::new(Changes::new()),
             out_changes: Box::new(Changes::new()),
+            in_events: Box::new(EventList::new()),
             context: std::mem::zeroed(),
             mono_out: outs.first() == Some(&1),
             edits: edits_rx,
@@ -1777,6 +1907,16 @@ impl Backend for Vst3Backend {
     }
 
     fn process(&self, left: &mut [f32], right: &mut [f32], changes: &[(u32, f32)]) {
+        self.process_midi(left, right, changes, &[]);
+    }
+
+    fn process_midi(
+        &self,
+        left: &mut [f32],
+        right: &mut [f32],
+        changes: &[(u32, f32)],
+        midi: &[MidiEvent],
+    ) {
         // SAFETY: only the audio thread calls `process`, one call at a time (see `Shared`).
         let audio = unsafe { &mut *self.audio.get() };
         let frames = left.len().min(right.len()).min(audio.block);
@@ -1800,8 +1940,83 @@ impl Backend for Vst3Backend {
             count += 1;
         }
         audio.in_changes.count = count as i32;
-        audio.input[0][..frames].copy_from_slice(&left[..frames]);
-        audio.input[1][..frames].copy_from_slice(&right[..frames]);
+        audio.in_events.count = 0;
+        for &ev in midi {
+            if audio.in_events.count as usize >= MAX_MIDI_EVENTS {
+                break;
+            }
+            match ev {
+                MidiEvent::NoteOn {
+                    time,
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    let mut raw = RawVst3Event {
+                        bus_index: 0,
+                        sample_offset: time as i32,
+                        ppq_position: 0.0,
+                        flags: 1, // kIsLive
+                        type_: 0, // kNoteOnEvent
+                        payload: [0; 32],
+                    };
+                    let note_on = NoteOnEvent {
+                        channel: channel as i16,
+                        pitch: note as i16,
+                        tuning: 0.0,
+                        velocity: f32::from(velocity) / 127.0,
+                        length: 0,
+                        note_id: -1,
+                    };
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            &note_on as *const NoteOnEvent as *const u8,
+                            raw.payload.as_mut_ptr(),
+                            std::mem::size_of::<NoteOnEvent>(),
+                        );
+                    }
+                    audio.in_events.events[audio.in_events.count as usize] = raw;
+                    audio.in_events.count += 1;
+                }
+                MidiEvent::NoteOff {
+                    time,
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    let mut raw = RawVst3Event {
+                        bus_index: 0,
+                        sample_offset: time as i32,
+                        ppq_position: 0.0,
+                        flags: 1, // kIsLive
+                        type_: 1, // kNoteOffEvent
+                        payload: [0; 32],
+                    };
+                    let note_off = NoteOffEvent {
+                        channel: channel as i16,
+                        pitch: note as i16,
+                        velocity: f32::from(velocity) / 127.0,
+                        note_id: -1,
+                        tuning: 0.0,
+                    };
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            &note_off as *const NoteOffEvent as *const u8,
+                            raw.payload.as_mut_ptr(),
+                            std::mem::size_of::<NoteOffEvent>(),
+                        );
+                    }
+                    audio.in_events.events[audio.in_events.count as usize] = raw;
+                    audio.in_events.count += 1;
+                }
+                _ => {}
+            }
+        }
+        if !audio.in_buses.is_empty() {
+            audio.input[0][..frames].copy_from_slice(&left[..frames]);
+            audio.input[1][..frames].copy_from_slice(&right[..frames]);
+        }
+        let in_events_ptr = audio.in_events.object();
         let mut data = ProcessData {
             mode: 0,
             sample_size: 0,
@@ -1812,7 +2027,7 @@ impl Backend for Vst3Backend {
             outputs: audio.out_buses.as_mut_ptr(),
             in_changes: std::ptr::from_mut::<Changes>(&mut audio.in_changes).cast(),
             out_changes: std::ptr::from_mut::<Changes>(&mut audio.out_changes).cast(),
-            in_events: std::ptr::null_mut(),
+            in_events: in_events_ptr,
             out_events: std::ptr::null_mut(),
             context: &mut audio.context,
         };

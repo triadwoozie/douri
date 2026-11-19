@@ -88,6 +88,8 @@ impl SoundFontBank {
     }
 }
 
+pub use crate::plugin::PluginInstrument;
+
 /// One track's SoundFont instrument: a synthesizer set to one preset. Make it with
 /// [`SfPlayer::new`] off the audio thread.
 pub struct SfPlayer {
@@ -100,6 +102,8 @@ pub struct SfPlayer {
     drums: Option<Box<DrumMachine>>,
     /// The 808 Bass, when this player is one (`SfPlayer::bass808`).
     bass808: Option<Box<Bass808>>,
+    /// A hosted instrument plug-in (CLAP, VST3, AU).
+    plugin: Option<Box<dyn PluginInstrument>>,
     channel: i32,
     sample_rate: i32,
 }
@@ -128,6 +132,7 @@ impl SfPlayer {
             piano: None,
             drums: None,
             bass808: None,
+            plugin: None,
             channel,
             sample_rate: rate,
         })
@@ -142,6 +147,7 @@ impl SfPlayer {
             piano: None,
             drums: Some(Box::new(drums)),
             bass808: None,
+            plugin: None,
             channel: 0,
             sample_rate: 0,
         }
@@ -164,6 +170,7 @@ impl SfPlayer {
             piano: None,
             drums: None,
             bass808: None,
+            plugin: None,
             channel: 0,
             sample_rate: 0,
         }
@@ -187,6 +194,7 @@ impl SfPlayer {
             piano: Some(Box::new(EPiano::new(rate as f32, params))),
             drums: None,
             bass808: None,
+            plugin: None,
             channel: 0,
             sample_rate: rate,
         }
@@ -209,6 +217,7 @@ impl SfPlayer {
             piano: None,
             drums: None,
             bass808: Some(Box::new(bass)),
+            plugin: None,
             channel: 0,
             sample_rate: rate,
         }
@@ -218,6 +227,21 @@ impl SfPlayer {
     pub fn set_bass808_params(&mut self, params: crate::bass808::Bass808Params) {
         if let Some(b) = self.bass808.as_mut() {
             b.set_params(params);
+        }
+    }
+
+    /// A player that wraps a hosted instrument plug-in (CLAP, VST3, AU).
+    pub fn plugin(inst: Box<dyn PluginInstrument>, sample_rate: f32) -> Self {
+        let rate = sample_rate.round().clamp(16_000.0, 192_000.0) as i32;
+        Self {
+            synth: None,
+            sampler: None,
+            piano: None,
+            drums: None,
+            bass808: None,
+            plugin: Some(inst),
+            channel: 0,
+            sample_rate: rate,
         }
     }
 
@@ -241,6 +265,9 @@ impl SfPlayer {
         if let Some(b) = self.bass808.as_mut() {
             b.midi(0x90, pitch, vel, 0);
         }
+        if let Some(p) = self.plugin.as_mut() {
+            p.note_on(pitch, vel);
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_on(self.channel, i32::from(pitch.min(127)), velocity);
         }
@@ -260,6 +287,9 @@ impl SfPlayer {
         if let Some(b) = self.bass808.as_mut() {
             b.midi(0x80, pitch, 0, 0);
         }
+        if let Some(p) = self.plugin.as_mut() {
+            p.note_off(pitch);
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_off(self.channel, i32::from(pitch.min(127)));
         }
@@ -276,6 +306,9 @@ impl SfPlayer {
             } else if number < 128 {
                 b.midi(0xB0, number, (value.min(127)) as u8, 0);
             }
+        }
+        if let Some(p) = self.plugin.as_mut() {
+            p.control(number, value);
         }
         // Only a SoundFont player takes controllers; the Sampler, Electric Piano and Drum
         // Machine ignore them.
@@ -309,6 +342,9 @@ impl SfPlayer {
         if let Some(b) = self.bass808.as_mut() {
             b.midi(0xB0, 123, 0, 0);
         }
+        if let Some(p) = self.plugin.as_mut() {
+            p.all_notes_off();
+        }
         if let Some(s) = self.synth.as_mut() {
             s.note_off_all(false);
         }
@@ -330,6 +366,9 @@ impl SfPlayer {
             let mut right = [0f32; 1];
             b.process((&[], &[]), (&mut left, &mut right));
             return (left[0], right[0]);
+        }
+        if let Some(p) = self.plugin.as_mut() {
+            return p.render();
         }
         let mut left = [0f32; 1];
         let mut right = [0f32; 1];

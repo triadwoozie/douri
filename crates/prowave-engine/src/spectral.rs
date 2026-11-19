@@ -65,6 +65,7 @@ impl Fft {
 
     /// Transforms `re` + i·`im` in place (both exactly [`Fft::len`] long). The inverse
     /// (`inverse = true`) is not divided by the length.
+    #[allow(clippy::needless_range_loop)]
     pub fn process(&self, re: &mut [f32], im: &mut [f32], inverse: bool) {
         let n = self.n;
         if re.len() != n || im.len() != n {

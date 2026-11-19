@@ -7,8 +7,26 @@ use std::path::Path;
 fn fixture() -> Option<PluginInfo> {
     let path = option_env!("CLAP_FIXTURE")?;
     let found = scan_file(Format::Clap, Path::new(path)).expect("the test plug-in scans");
-    assert_eq!(found.len(), 1, "the instrument in the file is left out");
-    found.into_iter().next()
+    found.into_iter().find(|p| p.id == "org.prowave.test-gain")
+}
+
+#[test]
+fn scans_instruments_and_effects() {
+    let Some(path) = option_env!("CLAP_FIXTURE") else {
+        return;
+    };
+    let found = scan_file(Format::Clap, Path::new(path)).expect("the test plug-in scans");
+    assert_eq!(found.len(), 2, "both effect and instrument are found");
+    let synth = found
+        .iter()
+        .find(|p| p.id == "org.prowave.test-synth")
+        .expect("synth found");
+    assert!(synth.is_instrument());
+    let gain = found
+        .iter()
+        .find(|p| p.id == "org.prowave.test-gain")
+        .expect("gain found");
+    assert!(!gain.is_instrument());
 }
 
 #[test]

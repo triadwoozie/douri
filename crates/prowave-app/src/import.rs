@@ -99,6 +99,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         epiano: None,
         drums: None,
         bass808: None,
+        hosted_instrument: 0,
         icon: None,
         midi_channel: 1,
         midi_program: None,

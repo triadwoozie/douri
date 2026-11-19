@@ -325,6 +325,9 @@ pub struct TrackDoc {
     pub epiano: Option<Vec<f32>>,
     /// The Drum Machine the track plays (none: not a Drum Machine).
     pub drums: Option<DrumsDoc>,
+    /// A hosted instrument plug-in (CLAP, VST3, Audio Unit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hosted_instrument: Option<PluginDoc>,
     /// The icon the user picked (`IconKind::name`); absent or unknown names give the automatic one.
     pub icon: Option<String>,
     /// Audio tracks: the first input channel they record (0 is Input 1), and whether they
@@ -538,6 +541,7 @@ impl Default for TrackDoc {
             sampler: None,
             epiano: None,
             drums: None,
+            hosted_instrument: None,
             icon: None,
             input: 0,
             input_stereo: false,

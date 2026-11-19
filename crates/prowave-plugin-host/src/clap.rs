@@ -6,7 +6,10 @@
 //! bundle). A library is loaded once and never unloaded: unloading code that may still have
 //! threads or static data is where hosts crash.
 
-use crate::{buffer_text, c_text, Backend, Error, Format, ParamInfo, PluginInfo, MAX_CHANGES};
+use crate::{
+    buffer_text, c_text, Backend, Error, Format, MidiEvent, ParamInfo, PluginCategory, PluginInfo,
+    MAX_CHANGES, MAX_MIDI_EVENTS,
+};
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -23,7 +26,11 @@ const MAX_CHANNELS: u32 = 64;
 const MAX_STATE: usize = 64 * 1024 * 1024;
 
 const CORE_EVENT_SPACE: u16 = 0;
+const EVENT_NOTE_ON: u16 = 0;
+const EVENT_NOTE_OFF: u16 = 1;
 const EVENT_PARAM_VALUE: u16 = 5;
+const EVENT_MIDI: u16 = 10;
+const MAX_CLAP_EVENTS: usize = MAX_CHANGES + MAX_MIDI_EVENTS;
 const PARAM_IS_STEPPED: u32 = 1 << 0;
 const PARAM_IS_HIDDEN: u32 = 1 << 2;
 const PARAM_IS_READONLY: u32 = 1 << 3;
@@ -159,6 +166,42 @@ struct ParamValueEvent {
     channel: i16,
     key: i16,
     value: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ClapNoteEvent {
+    header: EventHeader,
+    note_id: i32,
+    port_index: i16,
+    channel: i16,
+    key: i16,
+    velocity: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ClapMidiEvent {
+    header: EventHeader,
+    port_index: u16,
+    data: [u8; 3],
+}
+
+#[derive(Clone, Copy)]
+enum RawClapEvent {
+    Param(ParamValueEvent),
+    Note(ClapNoteEvent),
+    Midi(ClapMidiEvent),
+}
+
+impl RawClapEvent {
+    fn header_ptr(&self) -> *const EventHeader {
+        match self {
+            RawClapEvent::Param(e) => &e.header,
+            RawClapEvent::Note(e) => &e.header,
+            RawClapEvent::Midi(e) => &e.header,
+        }
+    }
 }
 
 #[repr(C)]
@@ -331,21 +374,31 @@ pub(crate) fn scan(path: &Path) -> Result<Vec<PluginInfo>, Error> {
             let desc = unsafe { &*desc };
             // SAFETY: descriptor strings are null or NUL-terminated; `features` is a
             // NULL-terminated list.
-            let (id, name, vendor, effect) = unsafe {
+            let (id, name, vendor, effect, instrument) = unsafe {
                 (
                     c_text(desc.id),
                     c_text(desc.name),
                     c_text(desc.vendor),
                     has_feature(desc.features, c"audio-effect"),
+                    has_feature(desc.features, c"instrument")
+                        || has_feature(desc.features, c"synthesizer")
+                        || has_feature(desc.features, c"sampler")
+                        || has_feature(desc.features, c"drum")
+                        || has_feature(desc.features, c"drum-machine"),
                 )
             };
-            if effect && !id.is_empty() {
+            if (effect || instrument) && !id.is_empty() {
                 out.push(PluginInfo {
                     format: Format::Clap,
                     name: if name.is_empty() { id.clone() } else { name },
                     id,
                     vendor,
                     path: path.to_path_buf(),
+                    category: if instrument {
+                        PluginCategory::Instrument
+                    } else {
+                        PluginCategory::Effect
+                    },
                 });
             }
         }
@@ -402,7 +455,7 @@ struct Audio {
     out_ports: Vec<Port>,
     in_buffers: Vec<AudioBuffer>,
     out_buffers: Vec<AudioBuffer>,
-    events: [ParamValueEvent; MAX_CHANGES],
+    events: [RawClapEvent; MAX_CLAP_EVENTS],
     event_count: u32,
 }
 
@@ -538,7 +591,7 @@ unsafe extern "C" fn events_get(list: *const InputEvents, index: u32) -> *const 
     // SAFETY: as in `events_size`.
     let audio = unsafe { &*(*list).ctx.cast::<Audio>() };
     if index < audio.event_count {
-        &audio.events[index as usize].header
+        audio.events[index as usize].header_ptr()
     } else {
         std::ptr::null()
     }
@@ -654,8 +707,8 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Cla
 
     let ins = ports(plugin, ports_ext, true);
     let outs = ports(plugin, ports_ext, false);
-    let main = |list: &[u32]| list.first().is_some_and(|c| (1..=2).contains(c));
-    if !main(&ins) || !main(&outs) {
+    let main_out = outs.first().is_some_and(|c| (1..=2).contains(c));
+    if !main_out {
         destroy("");
         return Err(Error::NotAnEffect);
     }
@@ -715,7 +768,7 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Cla
         out_ports: Vec::new(),
         in_buffers: Vec::new(),
         out_buffers: Vec::new(),
-        events: [ParamValueEvent {
+        events: [RawClapEvent::Param(ParamValueEvent {
             header: EventHeader {
                 size: std::mem::size_of::<ParamValueEvent>() as u32,
                 time: 0,
@@ -730,7 +783,7 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Cla
             channel: -1,
             key: -1,
             value: 0.0,
-        }; MAX_CHANGES],
+        }); MAX_CLAP_EVENTS],
         event_count: 0,
     };
     // The first port of each direction carries the strip's sound; a mono port gets the left
@@ -946,6 +999,16 @@ impl Backend for ClapBackend {
     }
 
     fn process(&self, left: &mut [f32], right: &mut [f32], changes: &[(u32, f32)]) {
+        self.process_midi(left, right, changes, &[]);
+    }
+
+    fn process_midi(
+        &self,
+        left: &mut [f32],
+        right: &mut [f32],
+        changes: &[(u32, f32)],
+        midi: &[MidiEvent],
+    ) {
         // SAFETY: only the audio thread calls `process`, one call at a time (see `Shared`).
         let audio = unsafe { &mut *self.audio.get() };
         let frames = left.len().min(right.len()).min(audio.block);
@@ -966,16 +1029,144 @@ impl Backend for ClapBackend {
         }
         audio.event_count = 0;
         for (index, norm) in changes {
+            if audio.event_count as usize >= MAX_CLAP_EVENTS {
+                break;
+            }
             if let Some(param) = self.params.get(*index as usize) {
-                let event = &mut audio.events[audio.event_count as usize];
-                event.param_id = param.id;
-                event.cookie = param.cookie;
-                event.value = param.plain(*norm);
+                audio.events[audio.event_count as usize] = RawClapEvent::Param(ParamValueEvent {
+                    header: EventHeader {
+                        size: std::mem::size_of::<ParamValueEvent>() as u32,
+                        time: 0,
+                        space: CORE_EVENT_SPACE,
+                        kind: EVENT_PARAM_VALUE,
+                        flags: 0,
+                    },
+                    param_id: param.id,
+                    cookie: param.cookie,
+                    note_id: -1,
+                    port: -1,
+                    channel: -1,
+                    key: -1,
+                    value: param.plain(*norm),
+                });
                 audio.event_count += 1;
             }
         }
-        audio.input[0][..frames].copy_from_slice(&left[..frames]);
-        audio.input[1][..frames].copy_from_slice(&right[..frames]);
+        for &ev in midi {
+            if audio.event_count as usize >= MAX_CLAP_EVENTS {
+                break;
+            }
+            match ev {
+                MidiEvent::NoteOn {
+                    time,
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    audio.events[audio.event_count as usize] = RawClapEvent::Note(ClapNoteEvent {
+                        header: EventHeader {
+                            size: std::mem::size_of::<ClapNoteEvent>() as u32,
+                            time,
+                            space: CORE_EVENT_SPACE,
+                            kind: EVENT_NOTE_ON,
+                            flags: 0,
+                        },
+                        note_id: -1,
+                        port_index: 0,
+                        channel: channel as i16,
+                        key: note as i16,
+                        velocity: f64::from(velocity) / 127.0,
+                    });
+                    audio.event_count += 1;
+                }
+                MidiEvent::NoteOff {
+                    time,
+                    channel,
+                    note,
+                    velocity,
+                } => {
+                    audio.events[audio.event_count as usize] = RawClapEvent::Note(ClapNoteEvent {
+                        header: EventHeader {
+                            size: std::mem::size_of::<ClapNoteEvent>() as u32,
+                            time,
+                            space: CORE_EVENT_SPACE,
+                            kind: EVENT_NOTE_OFF,
+                            flags: 0,
+                        },
+                        note_id: -1,
+                        port_index: 0,
+                        channel: channel as i16,
+                        key: note as i16,
+                        velocity: f64::from(velocity) / 127.0,
+                    });
+                    audio.event_count += 1;
+                }
+                MidiEvent::PitchBend {
+                    time,
+                    channel,
+                    value,
+                } => {
+                    let v = value.min(16383);
+                    audio.events[audio.event_count as usize] = RawClapEvent::Midi(ClapMidiEvent {
+                        header: EventHeader {
+                            size: std::mem::size_of::<ClapMidiEvent>() as u32,
+                            time,
+                            space: CORE_EVENT_SPACE,
+                            kind: EVENT_MIDI,
+                            flags: 0,
+                        },
+                        port_index: 0,
+                        data: [
+                            0xE0 | (channel & 0x0F),
+                            (v & 0x7F) as u8,
+                            ((v >> 7) & 0x7F) as u8,
+                        ],
+                    });
+                    audio.event_count += 1;
+                }
+                MidiEvent::ControlChange {
+                    time,
+                    channel,
+                    controller,
+                    value,
+                } => {
+                    audio.events[audio.event_count as usize] = RawClapEvent::Midi(ClapMidiEvent {
+                        header: EventHeader {
+                            size: std::mem::size_of::<ClapMidiEvent>() as u32,
+                            time,
+                            space: CORE_EVENT_SPACE,
+                            kind: EVENT_MIDI,
+                            flags: 0,
+                        },
+                        port_index: 0,
+                        data: [0xB0 | (channel & 0x0F), controller & 0x7F, value & 0x7F],
+                    });
+                    audio.event_count += 1;
+                }
+                MidiEvent::Aftertouch {
+                    time,
+                    channel,
+                    pressure,
+                } => {
+                    audio.events[audio.event_count as usize] = RawClapEvent::Midi(ClapMidiEvent {
+                        header: EventHeader {
+                            size: std::mem::size_of::<ClapMidiEvent>() as u32,
+                            time,
+                            space: CORE_EVENT_SPACE,
+                            kind: EVENT_MIDI,
+                            flags: 0,
+                        },
+                        port_index: 0,
+                        data: [0xD0 | (channel & 0x0F), pressure & 0x7F, 0],
+                    });
+                    audio.event_count += 1;
+                }
+            }
+        }
+        if !audio.in_buffers.is_empty() {
+            audio.input[0][..frames].copy_from_slice(&left[..frames]);
+            audio.input[1][..frames].copy_from_slice(&right[..frames]);
+        }
         let in_events = InputEvents {
             ctx: std::ptr::from_mut(audio).cast(),
             size: events_size,

@@ -252,12 +252,30 @@ fn hosted_from_doc(d: &prowave_project::PluginDoc, bypass: bool) -> Option<crate
             name: d.name.clone(),
             vendor: d.vendor.clone(),
             path: std::path::PathBuf::from(&d.path),
+            category: crate::hosted_plugins::PluginCategory::Effect,
         }
     });
     let state = unhex(&d.state).filter(|state| !state.is_empty());
     let mut insert = crate::model::Insert::new_hosted(crate::hosted_plugins::add(&info, state));
     insert.bypass = bypass;
     Some(insert)
+}
+
+fn hosted_instrument_of(t: &TrackDoc) -> u32 {
+    let Some(d) = t.hosted_instrument.as_ref() else { return 0; };
+    let Some(format) = crate::hosted_plugins::Format::from_name(&d.format) else { return 0; };
+    let info = crate::hosted_plugins::find(format, &d.id).unwrap_or_else(|| {
+        crate::hosted_plugins::PluginInfo {
+            format,
+            id: d.id.clone(),
+            name: d.name.clone(),
+            vendor: d.vendor.clone(),
+            path: std::path::PathBuf::from(&d.path),
+            category: crate::hosted_plugins::PluginCategory::Instrument,
+        }
+    });
+    let state = unhex(&d.state).filter(|state| !state.is_empty());
+    crate::hosted_plugins::add(&info, state)
 }
 
 /// The effects of a detailed list in a file (a track's or the master bus's).
@@ -508,6 +526,21 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
             sampler: t.sampler.as_ref().map(sampler_doc),
             epiano: t.epiano.map(|e| e.params.to_vec()),
             drums: t.drums.as_ref().map(drums_doc),
+            hosted_instrument: if t.hosted_instrument != 0 {
+                crate::hosted_plugins::info(t.hosted_instrument).map(|info| prowave_project::PluginDoc {
+                    format: info.format.name().into(),
+                    id: info.id,
+                    name: info.name,
+                    vendor: info.vendor,
+                    path: info.path.to_string_lossy().into_owned(),
+                    state: crate::hosted_plugins::state(t.hosted_instrument)
+                        .map(|state| hex(&state))
+                        .unwrap_or_default(),
+                    ..Default::default()
+                })
+            } else {
+                None
+            },
             icon: t.icon.map(|k| k.name().to_string()),
             input: match t.input {
                 InputSource::Mono(c) | InputSource::Stereo(c) => c,
@@ -914,6 +947,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
             epiano: epiano_of(t),
             drums: drums_of(t),
             bass808: None,
+            hosted_instrument: hosted_instrument_of(t),
             icon: t
                 .icon
                 .as_deref()
@@ -2752,6 +2786,7 @@ pub(crate) mod tests {
             name: "Far Away EQ".into(),
             vendor: "Somebody".into(),
             path: std::path::PathBuf::from("/nonexistent/Far Away EQ.vst3"),
+            category: crate::hosted_plugins::PluginCategory::Effect,
         };
         use prowave_engine::FxKind;
         let here = (Path::new("."), egui::Context::default());

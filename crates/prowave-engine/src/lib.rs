@@ -113,7 +113,7 @@ pub use crate::output::{
     buffer_choices, buffer_range, output_devices, peak_of, Engine, EngineError, OutputDevice,
     BUFFER_CHOICES,
 };
-pub use crate::plugin::{BlockEffect, PLUGIN_BLOCK};
+pub use crate::plugin::{BlockEffect, PluginInstrument, PLUGIN_BLOCK};
 pub use crate::routing::{
     curve_shape, lane_value, send_gain, AutoLane, AutoPoint, AutoTarget, Route, SendSpec,
     MAX_AUTO_POINTS, MAX_BUSES, MAX_SENDS,

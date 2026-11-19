@@ -79,6 +79,8 @@ fn use_soundfont_file(p: &mut Project, ti: usize, path: String) {
     p.tracks[ti].epiano = None;
     p.tracks[ti].sampler = None;
     p.tracks[ti].drums = None;
+    p.tracks[ti].bass808 = None;
+    p.tracks[ti].hosted_instrument = 0;
 }
 
 /// The Sampler's dials as inspector rows: dial, name, drag steps per unit and range in steps.
@@ -131,6 +133,8 @@ fn use_sampler(p: &mut Project, ti: usize, source: crate::sampler_load::SamplerS
     p.tracks[ti].soundfont = None;
     p.tracks[ti].epiano = None;
     p.tracks[ti].drums = None;
+    p.tracks[ti].bass808 = None;
+    p.tracks[ti].hosted_instrument = 0;
 }
 
 /// The Sampler's rows under the instrument row: its three dials, and for a single audio file its
@@ -988,14 +992,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 y += ROW_H;
             }
             if !external {
-                // The SoundFont instrument this track plays instead of its synth patch.
+                // The instrument this track plays instead of its synth patch.
                 label(&g, left, y, tr("SoundFont:"), true);
                 let current = p.tracks[ti].soundfont.clone();
                 let piano = p.tracks[ti].epiano;
                 let sampler = p.tracks[ti].sampler.clone();
                 let has_drums = p.tracks[ti].drums.is_some();
                 let has_bass808 = p.tracks[ti].bass808.is_some();
+                let hosted_inst = p.tracks[ti].hosted_instrument;
                 let shown = match (&current, piano) {
+                    _ if hosted_inst != 0 => crate::hosted_plugins::name(hosted_inst).to_string(),
                     _ if has_drums => tr("Drum Machine").to_string(),
                     _ if has_bass808 => "808 Bass".to_string(),
                     _ if sampler.is_some() => {
@@ -1036,6 +1042,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             p.tracks[ti].sampler = None;
                             p.tracks[ti].drums = None;
                             p.tracks[ti].bass808 = None;
+                            p.tracks[ti].hosted_instrument = 0;
                             ui.close();
                         }
                         ui.separator();
@@ -1045,6 +1052,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             p.tracks[ti].sampler = None;
                             p.tracks[ti].epiano = None;
                             p.tracks[ti].drums = None;
+                            p.tracks[ti].hosted_instrument = 0;
                             s.show_bass808 = Some(ti);
                             ui.close();
                         }
@@ -1065,6 +1073,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             p.tracks[ti].epiano = None;
                             p.tracks[ti].soundfont = None;
                             p.tracks[ti].bass808 = None;
+                            p.tracks[ti].hosted_instrument = 0;
                             s.show_drum_machine = Some(ti);
                             ui.close();
                         }
@@ -1075,6 +1084,69 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             }
                             if ui.button(tr("Remove Drum Machine")).clicked() {
                                 p.tracks[ti].drums = None;
+                                ui.close();
+                            }
+                        }
+                        let clap_insts: Vec<_> = crate::hosted_plugins::catalog_instruments()
+                            .into_iter()
+                            .filter(|i| i.format == crate::hosted_plugins::Format::Clap)
+                            .collect();
+                        if !clap_insts.is_empty() {
+                            ui.separator();
+                            ui.menu_button("CLAP Instruments", |ui| {
+                                for inst in &clap_insts {
+                                    let picked = hosted_inst != 0
+                                        && crate::hosted_plugins::info(hosted_inst)
+                                            .as_ref()
+                                            .map(|i| &i.id)
+                                            == Some(&inst.id);
+                                    if ui.selectable_label(picked, &inst.name).clicked() {
+                                        let slot = crate::hosted_plugins::add(inst, None);
+                                        p.tracks[ti].hosted_instrument = slot;
+                                        p.tracks[ti].soundfont = None;
+                                        p.tracks[ti].sampler = None;
+                                        p.tracks[ti].epiano = None;
+                                        p.tracks[ti].drums = None;
+                                        p.tracks[ti].bass808 = None;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        let vst3_insts: Vec<_> = crate::hosted_plugins::catalog_instruments()
+                            .into_iter()
+                            .filter(|i| i.format == crate::hosted_plugins::Format::Vst3)
+                            .collect();
+                        if !vst3_insts.is_empty() {
+                            ui.menu_button("VST3 Instruments", |ui| {
+                                for inst in &vst3_insts {
+                                    let picked = hosted_inst != 0
+                                        && crate::hosted_plugins::info(hosted_inst)
+                                            .as_ref()
+                                            .map(|i| &i.id)
+                                            == Some(&inst.id);
+                                    if ui.selectable_label(picked, &inst.name).clicked() {
+                                        let slot = crate::hosted_plugins::add(inst, None);
+                                        p.tracks[ti].hosted_instrument = slot;
+                                        p.tracks[ti].soundfont = None;
+                                        p.tracks[ti].sampler = None;
+                                        p.tracks[ti].epiano = None;
+                                        p.tracks[ti].drums = None;
+                                        p.tracks[ti].bass808 = None;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        if hosted_inst != 0 {
+                            ui.separator();
+                            if ui.button(format!(
+                                "Remove {}",
+                                crate::hosted_plugins::name(hosted_inst),
+                            ))
+                            .clicked()
+                            {
+                                p.tracks[ti].hosted_instrument = 0;
                                 ui.close();
                             }
                         }

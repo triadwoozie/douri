@@ -50,6 +50,28 @@ pub trait BlockEffect: Send {
     }
 }
 
+/// An instrument plug-in (CLAP, VST3, AU), as the engine's track player sees it.
+pub trait PluginInstrument: Send {
+    /// Note-on event: `pitch` (0..127), `vel` (1..127). Must not allocate.
+    fn note_on(&mut self, pitch: u8, vel: u8);
+    /// Note-off event: `pitch` (0..127). Must not allocate.
+    fn note_off(&mut self, pitch: u8);
+    /// Live controller event: 0..127 standard CC, 128 pitch bend (14-bit 0..16383). Must not allocate.
+    fn control(&mut self, number: u8, value: u16);
+    /// Releases every sounding note at once. Must not allocate.
+    fn all_notes_off(&mut self);
+    /// One stereo frame rendered: `(left, right)`. Must not allocate.
+    fn render(&mut self) -> (f32, f32);
+    /// Sets parameter `index` to `norm` (0..=1).
+    fn set_param(&mut self, index: usize, norm: f32);
+    /// Clears internal delay/synth buffers.
+    fn reset(&mut self);
+    /// Another handle on the same plug-in, if supported.
+    fn boxed_clone(&self) -> Option<Box<dyn PluginInstrument>> {
+        None
+    }
+}
+
 /// The audio thread's side of a hosted effect: the plug-in, and the block it is fed with.
 pub(crate) struct PluginSlot {
     plugin: Option<Box<dyn BlockEffect>>,

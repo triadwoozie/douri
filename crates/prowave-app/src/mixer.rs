@@ -1168,6 +1168,11 @@ pub fn channel_strip(
     let (name, color, inserts, kind, instrument) = match key {
         StripKey::Track(i) => {
             let t = &p.tracks[i];
+            let inst = if t.hosted_instrument != 0 {
+                Some(crate::hosted_plugins::name(t.hosted_instrument))
+            } else {
+                t.instrument
+            };
             (
                 t.name.clone(),
                 t.color,
@@ -1176,7 +1181,7 @@ pub fn channel_strip(
                     .map(|x| (x.name(), x.bypass))
                     .collect::<Vec<_>>(),
                 Some(t.kind),
-                t.instrument,
+                inst,
             )
         }
         StripKey::StereoOut => (

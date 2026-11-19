@@ -3,7 +3,7 @@
 //! The system keeps the list of Audio Units, so scanning runs no plug-in code. An effect unit
 //! pulls its input through a callback and is asked for its output with `AudioUnitRender`.
 
-use crate::{Backend, Error, Format, ParamInfo, PluginInfo};
+use crate::{Backend, Error, Format, ParamInfo, PluginCategory, PluginInfo};
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
 use std::path::PathBuf;
@@ -16,6 +16,7 @@ type CfRef = *const c_void;
 
 const TYPE_EFFECT: u32 = fourcc(b"aufx");
 const TYPE_MUSIC_EFFECT: u32 = fourcc(b"aumf");
+const TYPE_MUSIC_DEVICE: u32 = fourcc(b"aumu");
 const FORMAT_LPCM: u32 = fourcc(b"lpcm");
 /// Float, packed, one buffer for each channel.
 const FORMAT_FLAGS: u32 = 1 | 8 | 32;
@@ -250,7 +251,7 @@ fn parse_id(id: &str) -> Option<Description> {
 
 pub(crate) fn scan() -> Vec<PluginInfo> {
     let mut out = Vec::new();
-    for kind in [TYPE_EFFECT, TYPE_MUSIC_EFFECT] {
+    for kind in [TYPE_EFFECT, TYPE_MUSIC_EFFECT, TYPE_MUSIC_DEVICE] {
         let wanted = Description {
             kind,
             ..Description::default()
@@ -297,6 +298,11 @@ pub(crate) fn scan() -> Vec<PluginInfo> {
                 name,
                 vendor,
                 path: PathBuf::new(),
+                category: if desc.kind == TYPE_MUSIC_DEVICE {
+                    PluginCategory::Instrument
+                } else {
+                    PluginCategory::Effect
+                },
             });
         }
     }

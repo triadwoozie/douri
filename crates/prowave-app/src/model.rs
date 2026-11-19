@@ -774,6 +774,8 @@ pub struct Track {
     pub drums: Option<crate::drum_kit::DrumsUse>,
     /// The tuned 808 Bass synthesizer or sample player.
     pub bass808: Option<prowave_engine::Bass808Spec>,
+    /// A hosted CLAP, VST3 or Audio Unit instrument plug-in: its slot in `hosted_plugins`, or 0.
+    pub hosted_instrument: u32,
     /// The icon the user picked (Track > Assign Track Icon); `None` is the automatic one.
     pub icon: Option<crate::track_icons::IconKind>,
     /// The parent of a Summing Stack (Track > Create Track Stack > Summing Stack): an Aux strip
@@ -875,6 +877,7 @@ impl Track {
             epiano: None,
             drums: None,
             bass808: None,
+            hosted_instrument: 0,
             icon: None,
             midi_channel: 1,
             midi_program: None,
@@ -1103,6 +1106,7 @@ impl Project {
             epiano: None,
             drums: None,
             bass808: None,
+            hosted_instrument: 0,
             icon: None,
             summing_stack: false,
             midi_channel: 1,
@@ -1172,6 +1176,7 @@ impl Project {
             epiano: None,
             drums: None,
             bass808: None,
+            hosted_instrument: 0,
             icon: None,
             summing_stack: false,
             midi_channel: 1,

@@ -202,6 +202,7 @@ impl Tracker {
     /// [`Tracker::estimate`], keeping to `hint` (the period found last, full-rate samples)
     /// when a dip there is nearly as good as the one picked an octave or a harmonic away:
     /// a sung line does not jump by octaves from one moment to the next, a tracker does.
+    #[allow(clippy::needless_range_loop)]
     pub fn estimate_near(&mut self, hint: Option<f32>) -> Estimate {
         let (lo, hi) = self.lags();
         let w = hi;
