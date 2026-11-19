@@ -940,3 +940,6 @@ Pitch Editor: {} = Editor de afinação: {}
 
 Settings = Definições
 Plug-In Manager… = Gestor de plug-ins…
+
+Appearance = Aspeto
+Appearance… = Aspeto…

@@ -940,3 +940,6 @@ Pitch Editor: {} = Éditeur de hauteur : {}
 
 Settings = Réglages
 Plug-In Manager… = Gestionnaire de plug-ins…
+
+Appearance = Présentation
+Appearance… = Présentation…

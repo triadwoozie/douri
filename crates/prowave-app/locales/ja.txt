@@ -940,3 +940,6 @@ Pitch Editor: {} = ピッチエディタ: {}
 
 Settings = 設定
 Plug-In Manager… = プラグインマネージャ…
+
+Appearance = 外観
+Appearance… = 外観…

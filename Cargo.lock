@@ -1159,6 +1159,7 @@ name = "douri"
 version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
+ "bytemuck",
  "eframe",
  "egui",
  "flate2",
@@ -1185,6 +1186,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "wgpu",
  "winit",
  "winresource",
  "zip",
@@ -1226,6 +1228,7 @@ dependencies = [
  "egui-winit",
  "egui_glow",
  "egui_system_font_provider",
+ "glow",
  "glutin",
  "glutin-winit",
  "image",

@@ -940,3 +940,6 @@ Pitch Editor: {} = Sävelkorkeuseditori: {}
 
 Settings = Asetukset
 Plug-In Manager… = Laajennusten hallinta…
+
+Appearance = Ulkoasu
+Appearance… = Ulkoasu…

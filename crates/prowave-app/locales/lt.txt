@@ -940,3 +940,6 @@ Pitch Editor: {} = Aukščio rengyklė: {}
 
 Settings = Nuostatos
 Plug-In Manager… = Papildinių tvarkytuvė…
+
+Appearance = Išvaizda
+Appearance… = Išvaizda…

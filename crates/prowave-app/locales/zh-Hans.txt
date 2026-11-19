@@ -940,3 +940,6 @@ Pitch Editor: {} = 音高编辑器：{}
 
 Settings = 设置
 Plug-In Manager… = 插件管理器…
+
+Appearance = 外观
+Appearance… = 外观…

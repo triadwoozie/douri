@@ -940,3 +940,6 @@ Pitch Editor: {} = Pitch Editor: {}
 
 Settings = Mga Setting
 Plug-In Manager… = Plugin Manager…
+
+Appearance = Hitsura
+Appearance… = Hitsura…

@@ -940,3 +940,6 @@ Pitch Editor: {} = Tonhöjdsredigerare: {}
 
 Settings = Inställningar
 Plug-In Manager… = Pluginhanterare…
+
+Appearance = Utseende
+Appearance… = Utseende…

@@ -80,6 +80,7 @@ mod sync_menu;
 mod sysex;
 mod takes;
 mod tempo_track;
+pub mod liquid_glass;
 mod theme;
 mod tooltips;
 mod track_dialogs;
@@ -263,6 +264,8 @@ pub struct UiState {
     pub plugin_manager_category: Option<String>,
     pub plugin_manager_format: Option<String>,
     pub plugin_manager_selected_path: Option<usize>,
+    /// UI Glass Quality mode (Full Refraction, Frosted Blur, Flat Low-Power).
+    pub glass_quality: liquid_glass::GlassQuality,
     /// Help > About Dōri window is open.
     pub show_about: bool,
 }
@@ -360,6 +363,7 @@ impl UiState {
             plugin_manager_category: None,
             plugin_manager_format: None,
             plugin_manager_selected_path: None,
+            glass_quality: liquid_glass::GlassQuality::FullRefraction,
             show_about: false,
         }
     }
@@ -2065,8 +2069,14 @@ fn main() -> eframe::Result {
     }
     let wgpu_options = graphics::config();
     let started_backends = graphics::started_backends(&wgpu_options);
+    let renderer = if std::env::var("CI").is_ok() || std::env::var("HEADLESS").is_ok() {
+        eframe::Renderer::Glow
+    } else {
+        eframe::Renderer::Wgpu
+    };
     let opts = eframe::NativeOptions {
         viewport,
+        renderer,
         wgpu_options,
         // macOS activates a newly launched app and puts it in front; the picture must not
         // pull the user away from what they are doing.

@@ -940,3 +940,6 @@ Pitch Editor: {} = Editor Nada: {}
 
 Settings = Pengaturan
 Plug-In Manager… = Pengelola Plugin…
+
+Appearance = Tampilan
+Appearance… = Tampilan…

@@ -940,3 +940,6 @@ Pitch Editor: {} = पिच एडिटर: {}
 
 Settings = सेटिंग्स
 Plug-In Manager… = प्लग-इन मैनेजर…
+
+Appearance = दिखावट
+Appearance… = दिखावट…

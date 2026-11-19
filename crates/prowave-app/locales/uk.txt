@@ -940,3 +940,6 @@ Pitch Editor: {} = Редактор висоти: {}
 
 Settings = Параметри
 Plug-In Manager… = Менеджер плагінів…
+
+Appearance = Вигляд
+Appearance… = Вигляд…

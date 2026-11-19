@@ -18,6 +18,7 @@ use crate::i18n::{tr, trf};
 use crate::model::{
     Project, DEFAULT_CLICK_DB, MAX_COUNT_IN_BARS, MAX_TUNING_HZ, MIN_CLICK_DB, MIN_TUNING_HZ,
 };
+use crate::UiState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -28,10 +29,11 @@ pub enum SettingsTab {
     Tuning,
     Audio,
     Midi,
+    Appearance,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 7] = [
+    pub const ALL: [SettingsTab; 8] = [
         Self::General,
         Self::Synchronization,
         Self::Metronome,
@@ -39,6 +41,7 @@ impl SettingsTab {
         Self::Tuning,
         Self::Audio,
         Self::Midi,
+        Self::Appearance,
     ];
 
     /// The tab a menu entry opens ("Metronome…" opens the Metronome tab).
@@ -51,6 +54,7 @@ impl SettingsTab {
             "Tuning…" => Self::Tuning,
             "Audio…" => Self::Audio,
             "MIDI…" => Self::Midi,
+            "Appearance…" => Self::Appearance,
             _ => return None,
         })
     }
@@ -64,6 +68,7 @@ impl SettingsTab {
             Self::Tuning => tr("Tuning"),
             Self::Audio => tr("Audio"),
             Self::Midi => tr("MIDI"),
+            Self::Appearance => tr("Appearance"),
         }
         .to_string()
     }
@@ -102,6 +107,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 SettingsTab::Tuning => tuning(ui, p),
                 SettingsTab::Audio => audio(ui, s),
                 SettingsTab::Midi => midi(ui, p, &mut s.midi_panic),
+                SettingsTab::Appearance => appearance(ui, s),
             }
         });
     s.settings_tab = open.then_some(tab);
@@ -328,6 +334,37 @@ fn midi(ui: &mut egui::Ui, p: &mut Project, panic: &mut bool) {
         *panic = true;
     }
     ui.label(tr("Silences notes stuck on an external instrument."));
+}
+
+fn appearance(ui: &mut egui::Ui, s: &mut UiState) {
+    ui.heading(tr("Appearance"));
+    ui.add_space(8.0);
+    ui.label("Configure Dōri's obsidian interface styling and Vulkan Liquid Glass rendering quality:");
+    ui.add_space(10.0);
+
+    ui.horizontal(|ui| {
+        ui.label("UI Glass Quality:");
+        egui::ComboBox::from_id_salt("glass_quality_selector")
+            .selected_text(s.glass_quality.name())
+            .show_ui(ui, |ui| {
+                for q in crate::liquid_glass::GlassQuality::ALL {
+                    ui.selectable_value(&mut s.glass_quality, q, q.name());
+                }
+            });
+    });
+
+    ui.add_space(8.0);
+    match s.glass_quality {
+        crate::liquid_glass::GlassQuality::FullRefraction => {
+            ui.weak("Native Vulkan WGSL pipeline with Snell's law edge refraction, dispersion, and Fresnel rim lighting.");
+        }
+        crate::liquid_glass::GlassQuality::FrostedBlur => {
+            ui.weak("Frosted translucent obsidian squircle pills with specular edge lighting.");
+        }
+        crate::liquid_glass::GlassQuality::FlatLowPower => {
+            ui.weak("Optimized flat obsidian palette without dynamic glass shaders for maximum battery life.");
+        }
+    }
 }
 
 #[cfg(test)]

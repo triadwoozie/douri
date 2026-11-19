@@ -71,6 +71,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Tuning…",
             "Audio…",
             "MIDI…",
+            "Appearance…",
             "Plug-In Manager…",
         ],
     ),
@@ -284,6 +285,7 @@ const VIEW: &[&str] = &[
     "Enter Full Screen",
 ];
 const SETTINGS: &[&str] = &[
+    "Appearance…",
     "Plug-In Manager…",
 ];
 const WINDOW: &[&str] = &[

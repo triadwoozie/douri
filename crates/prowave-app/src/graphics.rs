@@ -17,27 +17,26 @@ use eframe::egui_wgpu::{WgpuConfiguration, WgpuError, WgpuSetup, WgpuSetupCreate
 use eframe::wgpu;
 use std::sync::Arc;
 
-/// The system's own graphics API: the fallback when OpenGL does not work.
+/// The system's own graphics API: Vulkan on Linux and Windows, Metal on macOS.
 fn native() -> wgpu::Backends {
     if cfg!(target_os = "macos") {
         wgpu::Backends::METAL
     } else if cfg!(windows) {
-        wgpu::Backends::DX12
+        wgpu::Backends::VULKAN | wgpu::Backends::DX12
     } else {
         wgpu::Backends::VULKAN
     }
 }
 
-/// The graphics API used on this machine: Metal on macOS; elsewhere OpenGL when `gl_works`,
-/// else the system's own API, with software OpenGL kept as the last resort (a virtual machine
-/// without a GPU), which [`pick`] only takes when nothing else can draw.
-pub fn backends(gl_works: bool) -> wgpu::Backends {
+/// The graphics API used on this machine: Metal on macOS; elsewhere native Vulkan when supported,
+/// with OpenGL and GLES kept as robust fallbacks.
+pub fn backends(vulkan_works: bool) -> wgpu::Backends {
     if cfg!(target_os = "macos") {
         native()
-    } else if gl_works {
-        wgpu::Backends::GL
-    } else {
+    } else if vulkan_works {
         native() | wgpu::Backends::GL
+    } else {
+        wgpu::Backends::GL
     }
 }
 
@@ -51,15 +50,15 @@ fn instance_descriptor(backends: wgpu::Backends) -> wgpu::InstanceDescriptor {
     }
 }
 
-/// Whether an OpenGL adapter that is a real GPU can be created on this machine.
-fn opengl_works() -> bool {
-    let instance = wgpu::Instance::new(instance_descriptor(wgpu::Backends::GL));
-    let adapters = block_on(instance.enumerate_adapters(wgpu::Backends::GL));
+/// Whether a Vulkan adapter that is a real GPU can be created on this machine.
+fn vulkan_works() -> bool {
+    let instance = wgpu::Instance::new(instance_descriptor(wgpu::Backends::VULKAN));
+    let adapters = block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
     let found = adapters
         .iter()
         .any(|a| a.get_info().device_type != wgpu::DeviceType::Cpu);
     if !found {
-        tracing::info!("no hardware OpenGL driver; using the system's own graphics API");
+        tracing::info!("no hardware Vulkan driver found; falling back to OpenGL / GL adapter");
     }
     found
 }
@@ -77,11 +76,17 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 }
 
 /// Sort key for an adapter: lower is better. A real GPU before a software renderer, then
-/// OpenGL before the other API.
-fn rank(backend: wgpu::Backend, device: wgpu::DeviceType) -> (bool, bool) {
+/// native Vulkan / Metal before DX12 before OpenGL.
+fn rank(backend: wgpu::Backend, device: wgpu::DeviceType) -> (bool, u8) {
+    let api_order = match backend {
+        wgpu::Backend::Vulkan | wgpu::Backend::Metal => 0,
+        wgpu::Backend::Dx12 => 1,
+        wgpu::Backend::Gl => 2,
+        _ => 3,
+    };
     (
         device == wgpu::DeviceType::Cpu,
-        backend != wgpu::Backend::Gl,
+        api_order,
     )
 }
 
@@ -104,8 +109,8 @@ fn pick(
 pub fn config() -> WgpuConfiguration {
     let mut setup = WgpuSetupCreateNew::without_display_handle();
     if wgpu::Backends::from_env().is_none() {
-        let gl_works = !cfg!(target_os = "macos") && opengl_works();
-        setup.instance_descriptor.backends = backends(gl_works);
+        let vk_works = !cfg!(target_os = "macos") && vulkan_works();
+        setup.instance_descriptor.backends = backends(vk_works);
         setup.native_adapter_selector = Some(Arc::new(pick));
     }
     WgpuConfiguration {

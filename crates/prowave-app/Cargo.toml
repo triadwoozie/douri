@@ -30,7 +30,10 @@ eframe = { version = "0.37.0", default-features = false, features = [
     "wayland",
     "web_screen_reader",
     "wgpu",
+    "glow",
 ] }
+wgpu = { version = "30", default-features = false, features = ["vulkan", "gles", "wgsl"] }
+bytemuck = "1"
 # eframe re-exports winit's types but not its features. `rwh_06` and the Wayland features are
 # what winit's own defaults give on Linux; `x11` is added by this crate's default feature.
 winit = { version = "0.30.13", default-features = false, features = [
