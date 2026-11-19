@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = Прив’язувати регіони абс
 Snap = Прив’язка
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

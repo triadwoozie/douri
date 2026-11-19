@@ -140,6 +140,39 @@ pub struct FlexDoc {
     pub markers: Vec<[f64; 2]>,
     /// Flex Pitch: [start, end] (seconds from the region's start) and semitones.
     pub pitch: Vec<FlexPitchDoc>,
+    /// The Pitch Editor's note edits, when the region has any.
+    pub melody: Option<MelodyDoc>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct MelodyDoc {
+    /// "Melodic", "Percussive" or "Universal".
+    pub algorithm: String,
+    pub notes: Vec<NoteEditDoc>,
+}
+
+/// One note: where it is in the recording (seconds), as found, and what was changed.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct NoteEditDoc {
+    pub start: f64,
+    pub end: f64,
+    /// The pitch centre found (MIDI note with fraction; 0 for an unpitched note).
+    pub pitch: f32,
+    /// Where its pitch begins (its musical start).
+    pub onset: f64,
+    /// Where it now plays (seconds into the recording's timeline).
+    pub new_start: f64,
+    pub new_end: f64,
+    /// Semitones added to the pitch centre.
+    pub shift: f32,
+    /// Drift and modulation kept, 0 to 2 (1 = as recorded).
+    pub drift: f32,
+    pub modulation: f32,
+    /// Formant shift in semitones.
+    pub formant: f32,
+    pub gain_db: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]

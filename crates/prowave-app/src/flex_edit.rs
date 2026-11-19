@@ -31,6 +31,8 @@ pub struct FlexEdit {
     pub original: AudioFile,
     /// The [`FlexEdit::fingerprint`] the region's `file` was made for (0: not made yet).
     pub rendered: u64,
+    /// The Pitch Editor's note edits, made before the Flex markers and pitch moves.
+    pub melody: Option<crate::pitch_editor::MelodyEdit>,
 }
 
 impl FlexEdit {
@@ -41,6 +43,7 @@ impl FlexEdit {
             pitch: Vec::new(),
             original,
             rendered: 0,
+            melody: None,
         }
     }
 
@@ -73,6 +76,10 @@ impl FlexEdit {
             mix(p.end.to_bits());
             mix(u64::from(p.semitones.to_bits()));
         }
+        if let Some(m) = &self.melody {
+            mix(0x6d65_6c6f);
+            m.fingerprint(&mut mix);
+        }
         h.max(1)
     }
 
@@ -88,7 +95,9 @@ impl FlexEdit {
 
     /// Nothing is moved: the region plays the recording itself.
     pub fn is_neutral(&self) -> bool {
-        self.markers.is_empty() && self.pitch.is_empty()
+        self.markers.is_empty()
+            && self.pitch.is_empty()
+            && self.melody.as_ref().is_none_or(|m| m.is_neutral())
     }
 
     /// Where moment `src` of the recording plays, in seconds from the region's start.
@@ -177,7 +186,7 @@ fn audio_of(p: &Project, t: usize, r: usize) -> Option<&AudioRegion> {
 }
 
 /// The recording under region `r`: the original of its Flex edit, or its file.
-fn recording_of(a: &AudioRegion) -> AudioFile {
+pub(crate) fn recording_of(a: &AudioRegion) -> AudioFile {
     a.flex
         .as_ref()
         .map_or_else(|| a.file.clone(), |f| f.original.clone())
@@ -671,7 +680,7 @@ fn midi_track_from(
 /// The folder the sounds of Flex edits are written to: the user's own config folder (a shared
 /// temporary folder could be prepared by another user), the temporary one only when there is
 /// none.
-fn cache_dir() -> PathBuf {
+pub(crate) fn cache_dir() -> PathBuf {
     crate::recent_files::config_dir()
         .map(|d| d.join("flex-cache"))
         .unwrap_or_else(|| {
@@ -768,6 +777,10 @@ fn render(edit: &FlexEdit, fingerprint: u64) -> Result<AudioFile, String> {
     }
     let sr = edit.original.sample_rate;
     let input = edit.original.read_stereo().map_err(|e| e.to_string())?;
+    let input = match &edit.melody {
+        Some(m) if !m.is_neutral() => crate::pitch_editor::render(&edit.original, input, m)?,
+        _ => input,
+    };
     let timed = if edit.markers.is_empty() {
         input
     } else {
@@ -824,7 +837,7 @@ fn poll_renders(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A stereo 16-bit WAV with a click at each of `times` (seconds).

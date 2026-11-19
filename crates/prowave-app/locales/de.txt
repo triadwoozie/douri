@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = Regionen absolut einrasten
 Snap = Einrasten
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

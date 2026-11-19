@@ -105,6 +105,7 @@ fn flex_from_doc(d: &prowave_project::FlexDoc, original: AudioFile) -> crate::fl
     crate::flex_edit::FlexEdit {
         markers,
         pitch,
+        melody: d.melody.as_ref().and_then(crate::pitch_editor::from_doc),
         ..crate::flex_edit::FlexEdit::new(original, mode)
     }
 }
@@ -621,6 +622,7 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                                     semitones: p.semitones,
                                 })
                                 .collect(),
+                            melody: f.melody.as_ref().map(crate::pitch_editor::to_doc),
                         }
                     }),
                     audio_start: r.audio.as_ref().map_or(0, |a| a.start_frame),
@@ -2328,6 +2330,7 @@ pub(crate) mod tests {
                     semitones: 1.0,
                 },
             ],
+            melody: None,
         };
         let f = flex_from_doc(&doc, original);
         assert_eq!(f.mode, prowave_engine::FlexMode::default());

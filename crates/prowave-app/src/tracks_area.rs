@@ -1307,6 +1307,7 @@ enum CtxAction {
     /// Smart Tempo of every audio region together (multitrack).
     AdaptTempoToAll,
     SmartTempoEditor(usize, usize),
+    PitchEditor(usize, usize),
     FlexMode(usize, usize, prowave_engine::FlexMode),
     Flex(usize, usize, crate::flex_edit::Command),
     FlexRemove(usize, usize),
@@ -1493,6 +1494,13 @@ fn region_items(
         ui.menu_button(tr("Flex Pitch"), |ui| {
             pick(
                 ui,
+                tr("Open in Pitch Editor"),
+                "",
+                CtxAction::PitchEditor(ti, ri),
+                picked,
+            );
+            pick(
+                ui,
                 tr("Correct Pitch to Key"),
                 "",
                 CtxAction::Flex(ti, ri, crate::flex_edit::Command::CorrectPitch),
@@ -1668,6 +1676,7 @@ fn apply_ctx(action: CtxAction, p: &mut Project, s: &mut UiState, lanes_w: f32) 
             }
         }
         CtxAction::SmartTempoEditor(t, r) => crate::smart_tempo::open_editor(p, s, t, r),
+        CtxAction::PitchEditor(t, r) => crate::pitch_editor::open(s, t, r),
         CtxAction::FlexMode(t, r, mode) => {
             crate::flex_edit::set_mode(p, t, r, mode);
             p.song_rev += 1;
@@ -3222,7 +3231,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                         if let Some(message) = flex_double_click(p, ti, ri, full, pt.x) {
                             s.status = Some(tr(message).into());
                             moved = true;
+                        } else {
+                            crate::pitch_editor::open_in(&mut s.pitch_ed, &mut s.bottom, ti, ri);
                         }
+                    } else {
+                        crate::pitch_editor::open_in(&mut s.pitch_ed, &mut s.bottom, ti, ri);
                     }
                 }
             }

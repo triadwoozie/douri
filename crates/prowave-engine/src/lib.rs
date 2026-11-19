@@ -28,11 +28,14 @@ pub mod hydrogen;
 pub mod ir_file;
 #[cfg(not(target_arch = "wasm32"))]
 mod mapped;
+pub mod melody;
 pub mod meter;
 mod monitor;
 mod mtc;
+pub mod note_render;
 pub mod offline;
 mod output;
+pub mod pitch_tracker;
 pub mod plugin;
 pub mod pult_eq;
 mod routing;
@@ -41,6 +44,7 @@ pub mod sample_file;
 pub mod sampler;
 mod sf2;
 mod soundfont;
+pub mod spectral;
 mod synth;
 mod tempo_map;
 mod triple;
@@ -84,9 +88,12 @@ pub use crate::fx::{
 pub use crate::meter::{
     db_to_gain, gain_to_db, LoudnessMeter, PeakMeter, RmsMeter, MIN_DB as METER_MIN_DB,
 };
+pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
+pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
 pub use crate::offline::{
     write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult,
 };
+pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
 pub use crate::monitor::{InputFeed, MonitorTrack, MAX_MONITORS};
 pub use crate::mtc::{
     full_frame, quarter_frame_data, rate_code, rate_of_code, MtcDecoder, MtcEvent, MtcGenerator,

@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = 将片段吸附到绝对值
 Snap = 吸附
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

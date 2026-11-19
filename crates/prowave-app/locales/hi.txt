@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = रीजन को निरपेक्ष �
 Snap = स्नैप
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

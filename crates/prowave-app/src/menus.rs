@@ -290,6 +290,7 @@ const WINDOW: &[&str] = &[
     "Step Sequencer",
     "Smart Tempo",
     "Piano Roll",
+    "Pitch Editor",
     "Mixer",
     "Show Musical Typing",
     "Plugin Manager",
@@ -530,6 +531,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Musical Typing" => true,
         "Plugin Manager" => true,
         "MultiMeter" => true,
+        "Pitch Editor" => true,
         // Opens the Space Designer on the selected track (adding one when it has none). The
         // mastering presets go on the Stereo Out strip (the master bus).
         "Show" => p
@@ -671,6 +673,7 @@ fn region_starts(p: &Project) -> Vec<f64> {
 pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
     match label {
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
+        "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,
         "Show Library" => s.show_library,
         "Show Inspector" => s.show_inspector,
@@ -779,6 +782,13 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 Bottom::Mixer
             } else {
                 Bottom::PianoRoll
+            }
+        }
+        "Pitch Editor" | "Show Pitch Editor" => {
+            s.bottom = if s.bottom == Bottom::PitchEditor {
+                Bottom::Mixer
+            } else {
+                Bottom::PitchEditor
             }
         }
         "New from Template…" => s.chooser = Some(crate::start_screen::Chooser::templates()),

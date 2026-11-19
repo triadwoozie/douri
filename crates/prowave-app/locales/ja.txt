@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = リージョンを絶対値にスナップ
 Snap = スナップ
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = Kohdista alueet absoluuttisesti
 Snap = Kohdistus
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor

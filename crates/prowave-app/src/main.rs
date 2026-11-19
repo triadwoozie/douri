@@ -52,6 +52,7 @@ mod note_edit;
 mod patches;
 mod pattern;
 mod piano_roll;
+mod pitch_editor;
 mod plugin_manager;
 mod plugin_picker;
 mod plugins;
@@ -101,6 +102,8 @@ use model::Project;
 pub enum Bottom {
     Mixer,
     PianoRoll,
+    /// The Pitch Editor (Melodyne/Logic Flex Pitch note editor for audio regions).
+    PitchEditor,
 }
 
 pub struct UiState {
@@ -205,6 +208,8 @@ pub struct UiState {
     pub has_path: bool,
     /// The Pattern and Drummer editors, which take the Piano Roll's place for those regions.
     pub steps: step_editor::StepView,
+    /// The Pitch Editor's view of an audio region.
+    pub pitch_ed: pitch_editor::PitchView,
     /// True while the pointer is over the Piano Roll (it owns Delete/Cmd+R then).
     pub piano_focus: bool,
     /// Live notes from the Piano Roll, forwarded to the engine every frame.
@@ -307,6 +312,7 @@ impl UiState {
             score: score::ScoreView::default(),
             score_heard: None,
             flex: flex_edit::FlexState::default(),
+            pitch_ed: pitch_editor::PitchView::default(),
             groove: groove::GrooveState::default(),
             midi_cmd: None,
             export_xml_cmd: false,
@@ -1437,7 +1443,7 @@ impl eframe::App for App {
                 .frame(egui::Frame::new())
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
-        if s.show_mixer || s.bottom == Bottom::PianoRoll {
+        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
             // a shorter panel cut every strip's fader off at the bottom (issue #36). The Piano
@@ -1456,6 +1462,7 @@ impl eframe::App for App {
             panel.show(ui, |ui| match s.bottom {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
+                Bottom::PitchEditor => pitch_editor::show(ui, p, s),
             });
         }
         egui::CentralPanel::default()

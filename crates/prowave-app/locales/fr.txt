@@ -912,3 +912,6 @@ Snap Regions to Absolute Value = Aligner les régions en valeur absolue
 Snap = Magnétisme
 MultiMeter = MultiMeter
 MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
+
+Pitch Editor = Pitch Editor
+Open in Pitch Editor = Open in Pitch Editor
