@@ -374,31 +374,7 @@ pub fn paint_glass_pill(
     };
     let rim = rim_opt.unwrap_or(default_rim);
 
-    // If FullRefraction is active and paint callback is available on wgpu
-    if quality == GlassQuality::FullRefraction {
-        let ppi = ui.ctx().pixels_per_point();
-        let screen_size = ui.ctx().viewport_rect().size();
-        let pill = GlassPill {
-            rect,
-            radius: r,
-            tint,
-            rim_color: rim,
-            is_recessed,
-            quality,
-        };
-
-        let cb = Callback::new_paint_callback(
-            rect,
-            GlassCallback {
-                pill,
-                screen_size,
-                ppi,
-            },
-        );
-        painter.add(cb);
-    }
-
-    // High-fidelity fallback / overlay styling (active in all modes for crisp UI clarity)
+    // High-fidelity Liquid Glass obsidian rendering (active across all backends)
     if is_recessed {
         // Recessed cavity styling
         painter.rect_filled(rect, corners, tint);
