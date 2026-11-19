@@ -93,8 +93,10 @@ Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https:/
 - **Project Import**: Seamless import of Logic Pro `.logicx` bundles, GarageBand projects (audio), Hydrogen `.h2song` drum patterns, and standard MIDI files (`.mid`).
 - **Score Editor & MusicXML**: Sheet music score view with key signatures, clefs, and MusicXML export.
 
-### Plug-in Hosting
-- **CLAP, VST3, LADSPA & Audio Units**: Host third-party instruments and effects with full parameter automation, state persistence, and delay compensation. Process isolation prevents buggy plugins from crashing the DAW.
+### Plug-in Hosting & Management (Milestone 3)
+- **Third-Party CLAP & VST3 Instrument Hosting**: Host software instrument synths and samplers alongside built-in instruments with zero audio-thread allocation MIDI event routing (Note On/Off, Pitch Bend, CC, Aftertouch, Sustain).
+- **Native Linux Plugin Windows (X11 / XWayland)**: Dynamically embedded native GUI windows via `libloading` with zero compile-time X11 linker dependencies, full event loop handling, and double-click access from mixer channel strips and the track inspector.
+- **Plug-In Manager & Custom Scan Paths**: Dedicated manager (**Settings > Plug-In Manager…** or **Window > Plugin Manager**) featuring real-time search, category filters (All / Instruments / Effects), format filters (CLAP, VST3, AU, LADSPA), status reporting (Working, Incompatible, Crashed), and custom scan directory configuration.
 
 ---
 

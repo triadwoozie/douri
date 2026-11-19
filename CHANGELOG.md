@@ -2,6 +2,26 @@
 
 What changed in each Dōri release.
 
+## 0.2.0 (Milestone 3)
+
+### Third-Party CLAP & VST3 Instrument Hosting
+- **Instrument Plugin Hosting**: Full support for hosting third-party CLAP and VST3 instruments on software instrument tracks alongside built-in instruments (EXS24/SoundFont Sampler, Vintage B3, Electric Piano, 808 Bass, Drum Machine).
+- **Categorized Pickers**: Automatically categorizes scanned plugins into **Instruments** vs. **Audio FX** so instruments appear in the Track Instrument selector and effects in Audio FX insert slots.
+- **Lock-Free Audio-Thread MIDI**: Real-time MIDI event forwarding (Note On/Off, Pitch Bend, Mod Wheel/CC, Sustain, Aftertouch) into hosted CLAP and VST3 buffers with zero heap allocations on the audio thread (`assert_no_alloc`).
+- **State Persistence & Automation**: Full state save and restore (`get_state` / `set_state`) within `.prowave` project files and parameter automation support for hosted instruments.
+
+### Native Linux Plugin GUIs (X11 / XWayland & Wayland)
+- **Native Plugin Window Embedding**: Implemented Linux X11/XWayland child window embedding using `libloading` for dynamic `libX11.so.6` symbol loading, avoiding compile-time linker dependencies.
+- **Container Window Management**: Robust X11 container window lifecycle, event loop dispatching, `WM_DELETE_WINDOW` handling, and resize synchronization.
+- **Double-Click Access**: Double-clicking instrument or insert slots in the channel strip or track inspector opens the native plugin editor (with graceful fallback to parameter sliders).
+- **Windows Cross-Platform Stubs**: Win32 container stubs maintaining seamless Windows cross-compilation.
+
+### Plug-In Manager UI & Custom Scan Paths
+- **Comprehensive Plugin Table**: Enhanced Plug-In Manager displaying Name, Format, Category (Instrument vs. Effect), Vendor, Path, and Status (Working, Incompatible, Crashed).
+- **Multi-Level Filtering**: Left sidebar with quick filters for Category ("All", "Instruments", "Effects"), Format ("All Formats", "CLAP", "VST3", "Audio Unit", "LADSPA"), and Manufacturer.
+- **Custom Scan Paths**: Configurable custom scan paths directory manager (`plugin-paths.txt`) with folder picker dialog, removal, and rescan controls.
+- **Settings Menu**: Added **Settings > Plug-In Manager…** menu item with full multi-language localization.
+
 ## 0.1.0 (Milestones 1 & 2)
 
 ### Flex Pitch Per-Note Editor & Tracker

@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "douri"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
  "eframe",
@@ -3460,7 +3460,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "prowave-dssi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "libloading 0.8.9",
@@ -3468,7 +3468,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_no_alloc",
  "cpal",
@@ -3483,14 +3483,14 @@ dependencies = [
 
 [[package]]
 name = "prowave-exs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-garageband-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "plist",
  "tempfile",
@@ -3499,7 +3499,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-guitarpro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "quick-xml 0.42.0",
  "zip",
@@ -3507,21 +3507,21 @@ dependencies = [
 
 [[package]]
 name = "prowave-hydrogen-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "quick-xml 0.42.0",
 ]
 
 [[package]]
 name = "prowave-ladspa"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libloading 0.8.9",
 ]
 
 [[package]]
 name = "prowave-logicx-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "plist",
  "tempfile",
@@ -3529,14 +3529,14 @@ dependencies = [
 
 [[package]]
 name = "prowave-musicxml"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "quick-xml 0.42.0",
 ]
 
 [[package]]
 name = "prowave-mxl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "quick-xml 0.42.0",
  "zip",
@@ -3544,7 +3544,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-plugin-host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "libloading 0.8.9",
@@ -3553,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-project"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3563,25 +3563,25 @@ dependencies = [
 
 [[package]]
 name = "prowave-rex"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-sfz"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-stretch"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "prowave-vamp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libloading 0.8.9",
 ]
@@ -5982,7 +5982,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"
