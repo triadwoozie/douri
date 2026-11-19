@@ -190,13 +190,8 @@ fn zones_from_exs(path: &Path) -> Result<Vec<Zone>, String> {
             continue;
         }
         // EXS stores an absolute path of the machine it was made on: the file is looked for by
-        // its name next to the instrument, then in a `Samples` folder there.
-        let found = [
-            dir.join(&sample.file_name),
-            dir.join("Samples").join(&sample.file_name),
-        ]
-        .into_iter()
-        .find(|p| p.is_file());
+        // its name next to the instrument, in a `Samples` folder there, or in the configured Sound Library.
+        let found = crate::sound_library::resolve_exs_sample(&sample.file_name, &dir);
         let Some(data) = found.and_then(|p| loader.get(&p)) else {
             loader.missing += 1;
             continue;
@@ -539,6 +534,85 @@ mod tests {
         sampler.note_on(81, 100); // an octave above the root
         let x: Vec<f32> = (0..24_000).map(|_| sampler.render().0).collect();
         // Count rising zero crossings: 880 Hz over 0.5 s is about 440 cycles.
+        let cycles = x[2_000..]
+            .windows(2)
+            .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
+            .count() as f32
+            / (22_000.0 / 48_000.0);
+        assert!((cycles - 880.0).abs() < 12.0, "{cycles} Hz");
+    }
+
+    #[test]
+    fn an_exs_instrument_plays_end_to_end_through_the_sampler_with_sound_library_resolution() {
+        use prowave_engine::sampler::{defaults, Sampler};
+        let dir = tempfile::tempdir().expect("temp dir");
+        let samples_dir = dir.path().join("Samples");
+        std::fs::create_dir_all(&samples_dir).expect("create dir");
+
+        // Generate 440 Hz sine wave
+        let mut data = Vec::new();
+        for i in 0..48_000 {
+            let v = (std::f32::consts::TAU * 440.0 * i as f32 / 48_000.0).sin() * 0.8;
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut w = wav(0, 0.0);
+        w.truncate(44);
+        w[4..8].copy_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        w[40..44].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        w.extend_from_slice(&data);
+        std::fs::write(samples_dir.join("tone.wav"), w).expect("write");
+
+        // Build a synthetic EXS file
+        let mut exs = Vec::new();
+        let make_block = |sig: u32, name: &str, data: &[u8]| -> Vec<u8> {
+            let mut h = vec![0u8; 84];
+            h[0..4].copy_from_slice(&sig.to_le_bytes());
+            h[4..8].copy_from_slice(&(data.len() as u32).to_le_bytes());
+            h[8..12].copy_from_slice(&1u32.to_le_bytes());
+            let n = name.as_bytes();
+            h[20..20 + n.len().min(63)].copy_from_slice(&n[..n.len().min(63)]);
+            h.extend_from_slice(data);
+            h
+        };
+
+        // Header block
+        exs.extend(make_block(0x0000_0101, "TestEXS", &[]));
+
+        // Zone block (96 bytes)
+        let mut z = vec![0u8; 96];
+        z[1] = 69; // root key A4
+        z[6] = 0; // key low
+        z[7] = 127; // key high
+        z[9] = 0; // vel low
+        z[10] = 127; // vel high
+        z[16..20].copy_from_slice(&48000u32.to_le_bytes()); // sample end
+        z[92..96].copy_from_slice(&0u32.to_le_bytes()); // sample index 0
+        exs.extend(make_block(0x0100_0101, "zone", &z));
+
+        // Sample block (592 bytes)
+        let mut s = vec![0u8; 592];
+        s[4..8].copy_from_slice(&48000u32.to_le_bytes()); // length
+        s[8..12].copy_from_slice(&48000u32.to_le_bytes()); // sample rate
+        s[12..16].copy_from_slice(&24u32.to_le_bytes()); // bit depth
+        s[16..20].copy_from_slice(&1u32.to_le_bytes()); // channels
+        s[28..32].copy_from_slice(b"WAVE");
+        let name = b"tone.wav";
+        s[336..336 + name.len()].copy_from_slice(name);
+        exs.extend(make_block(0x0300_0101, "sample", &s));
+
+        let exs_path = dir.path().join("test.exs");
+        std::fs::write(&exs_path, exs).expect("write exs");
+
+        let zones = build_zones(&SamplerSource::Exs(exs_path)).expect("load exs");
+        assert_eq!(zones.len(), 1);
+        assert_eq!(zones[0].root_key, 69);
+
+        let mut sampler = Sampler::new(zones, 48_000.0, defaults());
+        sampler.note_on(81, 100); // 880 Hz
+        let x: Vec<f32> = (0..24_000).map(|_| {
+            assert_no_alloc::assert_no_alloc(|| sampler.render().0)
+        }).collect();
+
         let cycles = x[2_000..]
             .windows(2)
             .filter(|w| w[0] <= 0.0 && w[1] > 0.0)

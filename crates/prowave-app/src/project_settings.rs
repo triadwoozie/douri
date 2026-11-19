@@ -126,6 +126,27 @@ fn general(ui: &mut egui::Ui, p: &mut Project) {
             p.name = name;
         }
     });
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.label(tr("Sound Library"));
+        let current_path = crate::sound_library::sound_library_path()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut path_str = current_path.clone();
+        let edit = ui.add(
+            egui::TextEdit::singleline(&mut path_str)
+                .hint_text(tr("Directory containing Sampler Instruments / Samples")),
+        );
+        if edit.lost_focus() && path_str != current_path {
+            let p = std::path::PathBuf::from(path_str.trim());
+            if p.is_dir() {
+                crate::sound_library::set_sound_library_path(Some(&p));
+            } else if path_str.trim().is_empty() {
+                crate::sound_library::set_sound_library_path(None);
+            }
+        }
+    });
 }
 
 fn metronome(ui: &mut egui::Ui, p: &mut Project) {

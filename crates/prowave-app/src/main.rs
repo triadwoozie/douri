@@ -70,6 +70,7 @@ mod side_panes;
 mod signature_track;
 mod smart_tempo;
 mod snap_grid;
+pub mod sound_library;
 mod soundfonts;
 mod space_designer_ui;
 mod stack_dialog;
