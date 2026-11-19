@@ -283,6 +283,8 @@ pub struct UiState {
     pub simplified_mode: bool,
     /// Project Chooser details (Tempo, Key, Time Sig, Audio Devices, etc.).
     pub chooser_details: start_screen::ChooserDetails,
+    /// Force a top-level menu open for verification screenshots.
+    pub shot_top_menu: Option<String>,
 }
 
 impl UiState {
@@ -386,6 +388,7 @@ impl UiState {
             show_onboarding: false,
             simplified_mode: false,
             chooser_details: start_screen::ChooserDetails::default(),
+            shot_top_menu: None,
         }
     }
 
@@ -2412,6 +2415,13 @@ fn main() -> eframe::Result {
                 let mut c = start_screen::Chooser::default();
                 c.details.show_details = true;
                 app.ui.chooser = Some(c);
+            }
+            if scene == "updater" {
+                app.updater.show_up_to_date();
+            }
+            if scene == "glass-menu" {
+                app.ui.show_multimeter = true;
+                app.ui.shot_top_menu = Some("Track".to_string());
             }
             // `prowave song.prowave` opens a project; `prowave song.wav drums.aiff` imports each
             // file as an audio track (into the opened project, if any).

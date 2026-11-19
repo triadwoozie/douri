@@ -1223,6 +1223,11 @@ impl Updater {
         }
     }
 
+    /// For verification screenshots: show the Up to Date modal.
+    pub fn show_up_to_date(&mut self) {
+        self.state = State::UpToDate;
+    }
+
     /// Draws the update window when there is something to say. `unsaved` says whether the
     /// project has changes that were not saved (the program is not closed over them).
     pub fn show(&mut self, ctx: &egui::Context, unsaved: &dyn Fn() -> bool) -> Action {
@@ -1337,7 +1342,10 @@ impl Updater {
                         });
                     }
                     State::UpToDate => {
-                        ui.label(trf("Pro Wave is up to date ({}).", &[&current]));
+                        ui.label(
+                            trf("Pro Wave is up to date ({}).", &[&current])
+                                .replace("Pro Wave", "Dōri"),
+                        );
                         if ui.button(tr("Close")).clicked() {
                             next = Some(State::Idle);
                         }

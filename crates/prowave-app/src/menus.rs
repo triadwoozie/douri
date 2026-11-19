@@ -1160,8 +1160,12 @@ fn entries(ui: &mut egui::Ui, items: &[&str], p: &mut Project, s: &mut crate::Ui
 }
 
 fn menu(ui: &mut egui::Ui, title: &str, items: &[&str], p: &mut Project, s: &mut crate::UiState) {
-    let title = egui::RichText::new(tr(title)).color(look(s.light_menus).bar_text);
-    ui.menu_button(title, |ui| entries(ui, items, p, s));
+    let title_text = egui::RichText::new(tr(title)).color(look(s.light_menus).bar_text);
+    let (response, _inner) =
+        egui::containers::menu::MenuButton::new(title_text).ui(ui, |ui| entries(ui, items, p, s));
+    if s.shot_top_menu.as_deref() == Some(title) {
+        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&response));
+    }
 }
 
 /// Style of the bar buttons and of the drop-down menus for the current look.
