@@ -33,23 +33,23 @@ const STRIP_FOOTER_H: f32 = 50.0;
 /// what a too-short Mixer panel left on screen (see [`min_panel_height`]).
 const MIN_FADER_H: f32 = 72.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x14);
-const MIXER_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
-const STRIP_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
-const STRIP_SEL: Color32 = Color32::from_rgb(0x22, 0x2a, 0x3d);
-const SLOT_EMPTY: Color32 = Color32::from_rgb(0x11, 0x14, 0x1d);
-const SLOT_GRAY: Color32 = Color32::from_rgb(0x1e, 0x24, 0x33);
-const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x38, 0x8b, 0xfd);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const MIXER_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
+const STRIP_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
+const STRIP_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
+const SLOT_EMPTY: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const SLOT_GRAY: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
+const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
 /// A plug-in in a project that is not installed here: its slot keeps its name and passes the
 /// sound through, and the orange says so.
 pub const PLUGIN_NOT_FOUND: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x1c);
 /// A strip that makes no sound (muted, or another track is soloed): instruments, plug-ins
 /// and sends turn grey, and so do the meters.
-const PLUGIN_OFF: Color32 = Color32::from_rgb(0x30, 0x36, 0x46);
-const METER_OFF: Color32 = Color32::from_rgb(0x40, 0x48, 0x5a);
-const READ_GREEN: Color32 = Color32::from_rgb(0x10, 0xb9, 0x81);
-const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
-const SOLO_ON: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+const PLUGIN_OFF: Color32 = Color32::from_rgb(0x38, 0x38, 0x3c);
+const METER_OFF: Color32 = Color32::from_rgb(0x40, 0x40, 0x44);
+const READ_GREEN: Color32 = Color32::from_rgb(0x2e, 0xbd, 0x6b);
+const MUTE_ON: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
+const SOLO_ON: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b);
 const OUT_PURPLE: Color32 = Color32::from_rgb(0x8a, 0x3f, 0xc8);
 const MASTER_PINK: Color32 = Color32::from_rgb(0xb0, 0x3c, 0x9a);
 
@@ -80,6 +80,9 @@ pub struct MixerView {
     /// Visibility per strip type, in `FILTERS` order.
     pub filters: [bool; 8],
     pub wide: bool,
+    /// When false (default), strips hide upper routing racks (EQ, Input, Audio FX, Sends, Output)
+    /// and focus on rotary Pan, numeric dB readout, and tall fader + segmented meter.
+    pub show_slots: bool,
     pub scroll_x: f32,
     /// Peak hold per strip (linear), shared with the Inspector strips.
     pub peak_hold: HashMap<StripKey, f32>,
@@ -125,6 +128,7 @@ impl Default for MixerView {
             mode: MixerMode::Tracks,
             filters: [true; 8],
             wide: false,
+            show_slots: false,
             scroll_x: 0.0,
             peak_hold: HashMap::new(),
             fx_window: None,
@@ -648,24 +652,52 @@ fn fader_and_meter(
 }
 
 /// Vertical positions of the strip rows (shared by every strip so rows line up).
+#[derive(Clone, Copy, Debug)]
 pub struct Rows {
-    setting: f32,
-    gain_red: f32,
-    eq: f32,
-    input: f32,
-    fx: f32,
-    fx_rows: usize,
-    sends: f32,
-    send_rows: usize,
-    output: f32,
-    group: f32,
-    automation: f32,
-    pan: f32,
-    db: f32,
-    fader_top: f32,
+    pub setting: f32,
+    pub gain_red: f32,
+    pub eq: f32,
+    pub input: f32,
+    pub fx: f32,
+    pub fx_rows: usize,
+    pub sends: f32,
+    pub send_rows: usize,
+    pub output: f32,
+    pub group: f32,
+    pub automation: f32,
+    pub pan: f32,
+    pub db: f32,
+    pub fader_top: f32,
+    pub show_slots: bool,
 }
 
 pub fn rows(top: f32, fx_rows: usize, send_rows: usize) -> Rows {
+    rows_with_slots(top, fx_rows, send_rows, true)
+}
+
+pub fn rows_with_slots(top: f32, fx_rows: usize, send_rows: usize, show_slots: bool) -> Rows {
+    if !show_slots {
+        let pan = top + 8.0;
+        let db = pan + 36.0;
+        let fader_top = db + 22.0;
+        return Rows {
+            setting: top,
+            gain_red: top,
+            eq: top,
+            input: top,
+            fx: top,
+            fx_rows: 0,
+            sends: top,
+            send_rows: 0,
+            output: top,
+            group: top,
+            automation: top,
+            pan,
+            db,
+            fader_top,
+            show_slots: false,
+        };
+    }
     let fx_rows = fx_rows.max(2);
     let send_rows = send_rows.clamp(1, MAX_SENDS);
     let setting = top + 6.0;
@@ -694,6 +726,7 @@ pub fn rows(top: f32, fx_rows: usize, send_rows: usize) -> Rows {
         pan,
         db,
         fader_top: db + 18.0,
+        show_slots: true,
     }
 }
 
@@ -1264,7 +1297,7 @@ pub fn channel_strip(
 
     // A VCA strip is a fader with Mute and Solo: none of the channel strip's slots.
     let vca_strip = kind == Some(TrackKind::Vca);
-    if vca_strip {
+    if vca_strip && r.show_slots {
         g.text(
             pos2(strip.center().x, r.setting + 8.0),
             Align2::CENTER_CENTER,
@@ -1273,7 +1306,7 @@ pub fn channel_strip(
             TEXT_DIM,
         );
     }
-    if !vca_strip {
+    if !vca_strip && r.show_slots {
         slot(g, row(r.setting, 16.0), tr("Setting"), SLOT_GRAY, TEXT);
         if let StripKey::Track(i) = key {
             setting_menu(ui, row(r.setting, 16.0), p, v, i, id(ns, (key, "setting")));
@@ -1534,15 +1567,15 @@ pub fn channel_strip(
         format!("{vol_db:.1}")
     };
     let font_mono = FontId::monospace(10.0);
-    g.rect_filled(vol_r, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_filled(vol_r, 3.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     g.rect_stroke(
         vol_r,
         3.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         StrokeKind::Inside,
     );
     let vol_col = if is_master && meters.master_lufs_integrated > -100.0 {
-        Color32::from_rgb(0x58, 0xa6, 0xff)
+        Color32::from_rgb(0x3a, 0x7b, 0xd5)
     } else {
         Color32::from_rgb(0xea, 0xee, 0xf4)
     };
@@ -1567,15 +1600,15 @@ pub fn channel_strip(
         format!("{hold_db:.1}")
     };
     let pk_col = if hold_db > 0.0 {
-        Color32::from_rgb(0xef, 0x44, 0x44)
+        Color32::from_rgb(0xe0, 0x48, 0x48)
     } else {
         READ_GREEN
     };
-    g.rect_filled(pk_r, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_filled(pk_r, 3.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     g.rect_stroke(
         pk_r,
         3.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         StrokeKind::Inside,
     );
     g.text(
@@ -2075,6 +2108,13 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
             v.wide = !v.wide;
             ui.close();
         }
+        if ui
+            .selectable_label(v.show_slots, tr("Show Routing Slots"))
+            .clicked()
+        {
+            v.show_slots = !v.show_slots;
+            ui.close();
+        }
         todo_item(ui, tr("Show Signal Flow Channel Strips"));
     });
 
@@ -2086,14 +2126,22 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
         let r = Rect::from_min_size(pos2(rx - 26.0, cy - 10.0), vec2(26.0, 20.0));
         let resp = ui.interact(r, id(NS, key), Sense::click());
         if v.wide == wide {
-            g.rect_filled(r, 4.0, Color32::from_rgb(0x25, 0x2a, 0x37));
+            g.rect_filled(r, 4.0, Color32::from_rgb(0x30, 0x30, 0x35));
         } else {
-            g.rect_filled(r, 4.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+            g.rect_filled(
+                r,
+                4.0,
+                if resp.hovered() {
+                    Color32::from_rgb(0x30, 0x30, 0x35)
+                } else {
+                    Color32::from_rgb(0x26, 0x26, 0x2a)
+                },
+            );
         }
         g.rect_stroke(
             r,
             4.0,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             StrokeKind::Inside,
         );
         let c = r.center();
@@ -2110,6 +2158,42 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
         }
         rx = r.left() - 4.0;
     }
+
+    // Slots toggle button
+    let slots_w = 48.0;
+    let r_slots = Rect::from_min_size(pos2(rx - slots_w, cy - 10.0), vec2(slots_w, 20.0));
+    let resp_slots = ui.interact(r_slots, id(NS, "toggle_slots"), Sense::click());
+    if v.show_slots {
+        g.rect_filled(r_slots, 4.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
+    } else {
+        g.rect_filled(
+            r_slots,
+            4.0,
+            if resp_slots.hovered() {
+                Color32::from_rgb(0x30, 0x30, 0x35)
+            } else {
+                Color32::from_rgb(0x26, 0x26, 0x2a)
+            },
+        );
+    }
+    g.rect_stroke(
+        r_slots,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        StrokeKind::Inside,
+    );
+    g.text(
+        r_slots.center(),
+        Align2::CENTER_CENTER,
+        tr("Slots"),
+        FontId::proportional(11.5),
+        if v.show_slots { Color32::WHITE } else { TEXT },
+    );
+    if resp_slots.clicked() {
+        v.show_slots = !v.show_slots;
+    }
+    rx = r_slots.left() - 6.0;
+
     rx -= 10.0;
     let filter_widths: Vec<f32> = FILTERS
         .iter()
@@ -2133,11 +2217,11 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
                 r,
                 4.0,
                 if on {
-                    Color32::from_rgb(0x1a, 0x24, 0x38)
+                    Color32::from_rgb(0x3a, 0x7b, 0xd5)
                 } else if resp.hovered() {
-                    Color32::from_rgb(0x22, 0x27, 0x35)
+                    Color32::from_rgb(0x30, 0x30, 0x35)
                 } else {
-                    Color32::from_rgb(0x1a, 0x1e, 0x29)
+                    Color32::from_rgb(0x26, 0x26, 0x2a)
                 },
             );
             g.rect_stroke(
@@ -2146,9 +2230,9 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
                 Stroke::new(
                     1.0,
                     if on {
-                        Color32::from_rgb(0x38, 0x8b, 0xfd)
+                        Color32::from_rgb(0x3a, 0x7b, 0xd5)
                     } else {
-                        Color32::from_rgb(0x25, 0x2a, 0x37)
+                        Color32::from_rgb(0x34, 0x34, 0x39)
                     },
                 ),
                 StrokeKind::Inside,
@@ -2158,11 +2242,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
                 Align2::CENTER_CENTER,
                 tr(label),
                 FontId::proportional(12.0),
-                if on {
-                    Color32::from_rgb(0x58, 0xa6, 0xff)
-                } else {
-                    TEXT_DIM
-                },
+                if on { Color32::WHITE } else { TEXT_DIM },
             );
             if resp.clicked() {
                 v.filters[i] = !v.filters[i];
@@ -2209,11 +2289,11 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
             r,
             4.0,
             if on {
-                Color32::from_rgb(0x1a, 0x24, 0x38)
+                Color32::from_rgb(0x3a, 0x7b, 0xd5)
             } else if resp.hovered() {
-                Color32::from_rgb(0x22, 0x27, 0x35)
+                Color32::from_rgb(0x30, 0x30, 0x35)
             } else {
-                Color32::from_rgb(0x1a, 0x1e, 0x29)
+                Color32::from_rgb(0x26, 0x26, 0x2a)
             },
         );
         g.rect_stroke(
@@ -2222,9 +2302,9 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
             Stroke::new(
                 1.0,
                 if on {
-                    Color32::from_rgb(0x38, 0x8b, 0xfd)
+                    Color32::from_rgb(0x3a, 0x7b, 0xd5)
                 } else {
-                    Color32::from_rgb(0x25, 0x2a, 0x37)
+                    Color32::from_rgb(0x34, 0x34, 0x39)
                 },
             ),
             StrokeKind::Inside,
@@ -2234,11 +2314,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
             Align2::CENTER_CENTER,
             *label,
             FontId::proportional(12.0),
-            if on {
-                Color32::from_rgb(0x58, 0xa6, 0xff)
-            } else {
-                TEXT
-            },
+            if on { Color32::WHITE } else { TEXT },
         );
         if resp.clicked() {
             v.mode = *m;
@@ -2372,7 +2448,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     v.scroll_x = v
         .scroll_x
         .clamp(0.0, (total_w - strips_area.width() + 8.0).max(0.0));
-    let r = rows(body.top(), fx_rows_for(p, &keys), send_rows_for(p, &keys));
+    let r = rows_with_slots(
+        body.top(),
+        fx_rows_for(p, &keys),
+        send_rows_for(p, &keys),
+        v.show_slots,
+    );
 
     // Row labels.
     let gl = ui.painter_at(labels);
@@ -2386,15 +2467,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             TEXT_DIM,
         );
     };
-    label_at(r.setting, 16.0, tr("Setting"));
-    label_at(r.gain_red, 8.0, tr("Gain Reduction"));
-    label_at(r.eq, 24.0, "EQ");
-    label_at(r.input, 16.0, tr("Input"));
-    label_at(r.fx, 15.0, tr("Audio FX"));
-    label_at(r.sends, 16.0, tr("Sends"));
-    label_at(r.output, 16.0, tr("Output"));
-    label_at(r.group, 16.0, tr("Group"));
-    label_at(r.automation, 16.0, tr("Automation"));
+    if r.show_slots {
+        label_at(r.setting, 16.0, tr("Setting"));
+        label_at(r.gain_red, 8.0, tr("Gain Reduction"));
+        label_at(r.eq, 24.0, "EQ");
+        label_at(r.input, 16.0, tr("Input"));
+        label_at(r.fx, 15.0, tr("Audio FX"));
+        label_at(r.sends, 16.0, tr("Sends"));
+        label_at(r.output, 16.0, tr("Output"));
+        label_at(r.group, 16.0, tr("Group"));
+        label_at(r.automation, 16.0, tr("Automation"));
+    }
     label_at(r.pan, 24.0, tr("Pan"));
     label_at(r.db, 14.0, "dB");
 

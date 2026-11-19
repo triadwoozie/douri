@@ -73,6 +73,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "MIDI…",
             "Appearance…",
             "MCP Server…",
+            "Advanced…",
             "Plug-In Manager…",
         ],
     ),
@@ -285,7 +286,12 @@ const VIEW: &[&str] = &[
     "-",
     "Enter Full Screen",
 ];
-const SETTINGS: &[&str] = &["Appearance…", "MCP Server…", "Plug-In Manager…"];
+const SETTINGS: &[&str] = &[
+    "Appearance…",
+    "MCP Server…",
+    "Advanced…",
+    "Plug-In Manager…",
+];
 const WINDOW: &[&str] = &[
     "Minimize",
     "Zoom",
@@ -306,6 +312,7 @@ const WINDOW: &[&str] = &[
 const HELP: &[&str] = &[
     "Quick Help",
     "Logic-style Key Commands…",
+    "Show Welcome Screen",
     "-",
     "Language",
     "-",
@@ -650,6 +657,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show List Editors"
         | "Check for Updates…"
         | "Check for Updates Automatically"
+        | "Show Welcome Screen"
         | "About Dōri"
         | "Show Tempo Track"
         | "Show Marker Track"
@@ -762,6 +770,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             s.update_auto = !s.update_auto;
             crate::updater::set_auto_enabled(s.update_auto);
         }
+        "Show Welcome Screen" => s.show_onboarding = true,
         "About Dōri" => s.show_about = true,
         "Show Tempo Track" => s.tracks.show_tempo = !s.tracks.show_tempo,
         "Show Marker Track" => s.tracks.show_markers = !s.tracks.show_markers,
@@ -1347,6 +1356,7 @@ mod tests {
                         s.show_multimeter,
                         s.export_all_tracks_cmd,
                         s.show_about,
+                        s.show_onboarding,
                     )
                 ),
                 (

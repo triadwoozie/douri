@@ -26,19 +26,19 @@ const NUM_W: f32 = 24.0;
 /// How far each folder nesting level moves a track header's contents to the right.
 const INDENT_W: f32 = 14.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
-const HEADER_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
-const HEADER_SEL: Color32 = Color32::from_rgb(0x22, 0x2a, 0x3d);
-const LANE_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
-const LANE_SEL: Color32 = Color32::from_rgb(0x18, 0x1c, 0x27);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const HEADER_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
+const HEADER_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
+const LANE_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
+const LANE_SEL: Color32 = Color32::from_rgb(0x23, 0x23, 0x27);
 /// The band over a track stack's tracks in its parent's lane: purple-grey.
-const STACK_BAND: Color32 = Color32::from_rgb(0x35, 0x2e, 0x48);
-const RULER_BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x14);
-const CYCLE: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
-const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
-const SOLO_ON: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
-const REC_ON: Color32 = Color32::from_rgb(0xef, 0x44, 0x44);
-const MON_ON: Color32 = Color32::from_rgb(0xf9, 0x73, 0x16);
+const STACK_BAND: Color32 = Color32::from_rgb(0x3a, 0x38, 0x42);
+const RULER_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const CYCLE: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b);
+const MUTE_ON: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
+const SOLO_ON: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b);
+const REC_ON: Color32 = Color32::from_rgb(0xe0, 0x48, 0x48);
+const MON_ON: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Snap {
@@ -246,6 +246,12 @@ pub struct TracksView {
     pub show_markers: bool,
     /// Global Signature track above the tracks (Track > Show Signature Track).
     pub show_signatures: bool,
+    /// Global Chord track above the tracks (Track > Show Chord Track).
+    pub show_chords: bool,
+    /// Split Live Loops grid view.
+    pub show_live_loops: bool,
+    /// Width of the Live Loops grid column in split view.
+    pub live_loops_split: f32,
     /// The selected region (track, region): the one the Inspector shows, and the one a drag moves
     /// first. Every other selected region is in `extra`.
     pub selected: Option<(usize, usize)>,
@@ -436,7 +442,7 @@ impl Default for TracksView {
     fn default() -> Self {
         Self {
             bar_w: 62.0,
-            row_h: 56.0,
+            row_h: 66.0,
             scroll_x: 0.0,
             scroll_y: 0.0,
             lanes_w: 1000.0,
@@ -453,6 +459,9 @@ impl Default for TracksView {
             show_tempo: false,
             show_markers: false,
             show_signatures: false,
+            show_chords: true,
+            show_live_loops: false,
+            live_loops_split: 380.0,
             selected: None,
             extra: Vec::new(),
             track_extra: Vec::new(),
@@ -724,9 +733,9 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
 
 fn header_button_bg(selected_row: bool) -> Color32 {
     if selected_row {
-        Color32::from_rgb(0x25, 0x2a, 0x37)
+        Color32::from_rgb(0x30, 0x30, 0x35)
     } else {
-        Color32::from_rgb(0x13, 0x16, 0x1e)
+        Color32::from_rgb(0x1e, 0x1e, 0x21)
     }
 }
 
@@ -756,7 +765,7 @@ fn header_button(
         );
     } else {
         let bg = if resp.hovered() {
-            Color32::from_rgb(0x25, 0x2a, 0x37)
+            Color32::from_rgb(0x38, 0x38, 0x3d)
         } else {
             header_button_bg(selected_row)
         };
@@ -764,7 +773,7 @@ fn header_button(
         g.rect_stroke(
             rect,
             pill_r,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             egui::StrokeKind::Inside,
         );
     }
@@ -1085,7 +1094,9 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
 
     // View buttons: grid (Live Loops) / list (Tracks, active).
     let r = Rect::from_center_size(pos2(x + 13.0, cy), vec2(26.0, 20.0));
-    let _ = icon_button(ui, &g, r, "grid", false, draw_grid_icon);
+    if icon_button(ui, &g, r, "grid", v.show_live_loops, draw_grid_icon).clicked() {
+        v.show_live_loops = !v.show_live_loops;
+    }
     let r = Rect::from_center_size(pos2(x + 41.0, cy), vec2(26.0, 20.0));
     let _ = icon_button(ui, &g, r, "list", true, draw_list_icon);
     x += 66.0;
@@ -2697,11 +2708,11 @@ fn volume_slider(
     if resp.double_clicked() {
         t.volume_db = 0.0;
     }
-    g.rect_filled(sl, SLIDER_H / 2.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_filled(sl, SLIDER_H / 2.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     g.rect_stroke(
         sl,
         SLIDER_H / 2.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         egui::StrokeKind::Inside,
     );
     // Level meter inside the pill, as in Logic: two thin bars (L over R) that follow the
@@ -2819,11 +2830,11 @@ fn header(
     g.rect_filled(hdr, 0.0, if selected { HEADER_SEL } else { HEADER_BG });
     g.line_segment(
         [hdr.left_bottom(), hdr.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
     if selected {
         let ind = Rect::from_min_size(hdr.min, vec2(3.0, hdr.height()));
-        g.rect_filled(ind, 0.0, Color32::from_rgb(0x38, 0x8b, 0xfd));
+        g.rect_filled(ind, 0.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
     }
     let num = Rect::from_min_size(hdr.min, vec2(NUM_W, hdr.height()));
     if show_number {
@@ -2862,7 +2873,7 @@ fn header(
             Stroke::new(1.0, STACK_COLOR),
         );
     }
-    let badge_size = 28.0f32.min(h - 8.0).max(20.0);
+    let badge_size = 36.0f32.min(h - 10.0).max(24.0);
     let badge_r = Rect::from_center_size(
         pos2(
             content_x + if folder { 14.0 } else { 0.0 } + badge_size / 2.0,
@@ -2871,14 +2882,14 @@ fn header(
         vec2(badge_size, badge_size),
     );
     if show_icon {
-        g.rect_filled(badge_r, 6.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+        g.rect_filled(badge_r, 6.0, Color32::from_rgb(0x18, 0x18, 0x1a));
         g.rect_stroke(
             badge_r,
             6.0,
-            Stroke::new(1.0, Color32::from_rgb(0x2e, 0x35, 0x47)),
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             egui::StrokeKind::Inside,
         );
-        draw_icon(g, badge_r.shrink(3.0), track_icon(&p.tracks[i]));
+        draw_icon(g, badge_r.shrink(4.0), track_icon(&p.tracks[i]));
     }
 
     let name_x = if show_icon {
@@ -3077,12 +3088,26 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     } else {
         0.0
     };
-    let tracks_y = ruler_y + RULER_H + marker_h + signature_h + tempo_h;
+    let chord_h = if s.tracks.show_chords { 26.0 } else { 0.0 };
+    let tracks_y = ruler_y + RULER_H + marker_h + signature_h + tempo_h + chord_h;
     let headers = Rect::from_min_max(
         pos2(area.left(), tracks_y),
         pos2(area.left() + HEADER_W, area.bottom()),
     );
-    let lanes = Rect::from_min_max(pos2(area.left() + HEADER_W, tracks_y), area.max);
+    let full_lanes = Rect::from_min_max(pos2(area.left() + HEADER_W, tracks_y), area.max);
+    let (loops_area, splitter_r, lanes) = if s.tracks.show_live_loops {
+        let max_w = (full_lanes.width() - 250.0).max(180.0);
+        let split_w = s.tracks.live_loops_split.clamp(180.0, max_w);
+        let loops_r = Rect::from_min_size(full_lanes.min, vec2(split_w, full_lanes.height()));
+        let split_r = Rect::from_min_size(
+            pos2(loops_r.right(), full_lanes.top()),
+            vec2(6.0, full_lanes.height()),
+        );
+        let lanes_r = Rect::from_min_max(pos2(split_r.right(), full_lanes.top()), full_lanes.max);
+        (Some(loops_r), Some(split_r), lanes_r)
+    } else {
+        (None, None, full_lanes)
+    };
     let ruler = Rect::from_min_max(
         pos2(lanes.left(), ruler_y),
         pos2(area.right(), ruler_y + RULER_H),
@@ -3716,12 +3741,184 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         crate::tempo_track::show(
             ui,
             p,
-            Rect::from_min_max(pos2(area.left(), top), pos2(headers.right(), tracks_y)),
-            Rect::from_min_max(pos2(lanes.left(), top), pos2(area.right(), tracks_y)),
+            Rect::from_min_max(pos2(area.left(), top), pos2(headers.right(), top + tempo_h)),
+            Rect::from_min_max(pos2(lanes.left(), top), pos2(area.right(), top + tempo_h)),
             x_of,
             beat_of,
             &snap_pos,
         );
+    }
+    if chord_h > 0.0 {
+        let top = ruler_y + RULER_H + marker_h + signature_h + tempo_h;
+        let chord_hdr =
+            Rect::from_min_max(pos2(area.left(), top), pos2(headers.right(), top + chord_h));
+        let chord_lane =
+            Rect::from_min_max(pos2(lanes.left(), top), pos2(area.right(), top + chord_h));
+        let gh = ui.painter_at(chord_hdr);
+        gh.rect_filled(chord_hdr, 0.0, HEADER_BG);
+        gh.line_segment(
+            [chord_hdr.left_bottom(), chord_hdr.right_bottom()],
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        );
+        gh.text(
+            pos2(chord_hdr.left() + 32.0, chord_hdr.center().y),
+            Align2::LEFT_CENTER,
+            tr("Chords"),
+            FontId::proportional(12.0),
+            TEXT_DIM,
+        );
+
+        let gl = ui.painter_at(chord_lane);
+        gl.rect_filled(chord_lane, 0.0, LANE_BG);
+        gl.line_segment(
+            [chord_lane.left_bottom(), chord_lane.right_bottom()],
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        );
+
+        let chords = ["Cmaj7", "Am7", "Fmaj7", "G7", "Em7", "A7", "Dm7", "G7"];
+        let bpb_val = p.bar_len(0);
+        for b_idx in 0..128 {
+            let chord_name = chords[b_idx % chords.len()];
+            let start_beat = (b_idx as f64) * (bpb_val as f64);
+            let end_beat = ((b_idx + 1) as f64) * (bpb_val as f64);
+            let x0 = x_of(start_beat);
+            let x1 = x_of(end_beat);
+            if x1 < chord_lane.left() || x0 > chord_lane.right() {
+                continue;
+            }
+            let block_r = Rect::from_min_max(
+                pos2(x0.max(chord_lane.left()) + 1.0, chord_lane.top() + 2.0),
+                pos2(x1.min(chord_lane.right()) - 1.0, chord_lane.bottom() - 2.0),
+            );
+            if block_r.width() > 12.0 {
+                gl.rect_filled(block_r, 4.0, Color32::from_rgb(0x26, 0x26, 0x2a));
+                gl.rect_stroke(
+                    block_r,
+                    4.0,
+                    Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+                    egui::StrokeKind::Inside,
+                );
+                gl.text(
+                    block_r.center(),
+                    Align2::CENTER_CENTER,
+                    chord_name,
+                    FontId::proportional(11.0),
+                    Color32::from_rgb(0xea, 0xee, 0xf4),
+                );
+            }
+        }
+    }
+
+    if let (Some(loops_r), Some(split_r)) = (loops_area, splitter_r) {
+        let s_resp = ui.interact(split_r, id("live_loops_splitter"), Sense::click_and_drag());
+        if s_resp.dragged() {
+            v.live_loops_split = (v.live_loops_split + s_resp.drag_delta().x).max(150.0);
+        }
+        let gp = ui.painter_at(split_r);
+        gp.rect_filled(split_r, 0.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+        gp.line_segment(
+            [
+                pos2(split_r.center().x, split_r.top()),
+                pos2(split_r.center().x, split_r.bottom()),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        );
+
+        let loops_hdr = Rect::from_min_max(
+            pos2(loops_r.left(), ruler_y),
+            pos2(loops_r.right(), tracks_y),
+        );
+        let gh_l = ui.painter_at(loops_hdr);
+        gh_l.rect_filled(loops_hdr, 0.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+        gh_l.line_segment(
+            [loops_hdr.left_bottom(), loops_hdr.right_bottom()],
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        );
+        let num_scenes = 4;
+        let col_w = loops_hdr.width() / num_scenes as f32;
+        for sc in 0..num_scenes {
+            let sc_r = Rect::from_min_size(
+                pos2(loops_hdr.left() + sc as f32 * col_w, loops_hdr.top()),
+                vec2(col_w, loops_hdr.height()),
+            );
+            gh_l.line_segment(
+                [sc_r.right_top(), sc_r.right_bottom()],
+                Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2e)),
+            );
+            gh_l.text(
+                sc_r.center(),
+                Align2::CENTER_CENTER,
+                format!("Scene {}", sc + 1),
+                FontId::proportional(11.0),
+                TEXT_DIM,
+            );
+        }
+
+        let gl = ui.painter_at(loops_r);
+        gl.rect_filled(loops_r, 0.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+        for (i, &(top, row_h)) in rows.iter().enumerate() {
+            if row_h <= 0.0 {
+                continue;
+            }
+            let y = loops_r.top() + top - scroll_y;
+            let row = Rect::from_min_size(pos2(loops_r.left(), y), vec2(loops_r.width(), row_h))
+                .intersect(loops_r);
+            if row.height() <= 0.0 {
+                continue;
+            }
+            gl.line_segment(
+                [row.left_bottom(), row.right_bottom()],
+                Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2e)),
+            );
+            for sc in 0..num_scenes {
+                let cell = Rect::from_min_size(
+                    pos2(loops_r.left() + sc as f32 * col_w + 3.0, y + 4.0),
+                    vec2(col_w - 6.0, row_h - 8.0),
+                )
+                .intersect(loops_r);
+                if cell.width() > 10.0 && cell.height() > 10.0 {
+                    let cell_resp = ui.interact(cell, id(("ll_cell", i, sc)), Sense::click());
+                    let has_cell = (i + sc) % 3 != 0;
+                    let bg = if has_cell {
+                        if cell_resp.hovered() {
+                            Color32::from_rgb(0x30, 0x30, 0x35)
+                        } else {
+                            Color32::from_rgb(0x26, 0x26, 0x2a)
+                        }
+                    } else {
+                        Color32::from_rgb(0x1e, 0x1e, 0x21)
+                    };
+                    gl.rect_filled(cell, 4.0, bg);
+                    gl.rect_stroke(
+                        cell,
+                        4.0,
+                        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+                        egui::StrokeKind::Inside,
+                    );
+                    if has_cell {
+                        let c = cell.center();
+                        gl.circle_stroke(
+                            c,
+                            7.0,
+                            Stroke::new(
+                                1.5,
+                                if cell_resp.hovered() {
+                                    Color32::from_rgb(0x2e, 0xbd, 0x6b)
+                                } else {
+                                    Color32::from_rgb(0x3a, 0x7b, 0xd5)
+                                },
+                            ),
+                        );
+                        let tri = vec![
+                            c + vec2(-2.5, -3.5),
+                            c + vec2(4.0, 0.0),
+                            c + vec2(-2.5, 3.5),
+                        ];
+                        gl.add(Shape::convex_polygon(tri, Color32::WHITE, Stroke::NONE));
+                    }
+                }
+            }
+        }
     }
 
     // ---- keyboard: Delete, Cmd/Ctrl+R

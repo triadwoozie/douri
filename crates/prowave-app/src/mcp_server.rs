@@ -970,6 +970,7 @@ impl McpEngine {
                         "synth" => Some(crate::library::SoundChip::Synth),
                         "bass" => Some(crate::library::SoundChip::Bass),
                         "drums" => Some(crate::library::SoundChip::Drums),
+                        "keys" => Some(crate::library::SoundChip::Keys),
                         _ => None,
                     };
                 }

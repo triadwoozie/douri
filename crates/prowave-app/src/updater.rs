@@ -29,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 /// The GitHub repository releases come from.
-pub const REPO: &str = "fabox-os/Pro-Wave";
+pub const REPO: &str = "triadwoozie/douri";
 /// How long to wait between two automatic checks.
 const CHECK_EVERY_SECS: u64 = 6 * 60 * 60;
 /// The most a release file may weigh (a safety limit; the packages are about 6 to 12 MB).
@@ -95,14 +95,33 @@ impl Kind {
     /// Whether `name` is the release file of this kind.
     pub fn matches(self, name: &str) -> bool {
         match self {
-            Kind::Windows => name == "prowave-windows-x86_64.zip",
-            Kind::Mac => name == "prowave-macos-universal.zip",
-            Kind::AppImage => name.starts_with("Pro_Wave-") && name.ends_with("-x86_64.AppImage"),
-            Kind::Tarball => name == "prowave-linux-x86_64.tar.gz",
-            Kind::Deb => name.starts_with("prowave-studio_") && name.ends_with("_amd64.deb"),
-            Kind::Rpm => name.starts_with("prowave-studio-") && name.ends_with(".x86_64.rpm"),
+            Kind::Windows => {
+                (name.starts_with("douri-") || name.starts_with("prowave-"))
+                    && name.ends_with("-windows-x86_64.zip")
+            }
+            Kind::Mac => {
+                (name.starts_with("douri-") || name.starts_with("prowave-"))
+                    && name.ends_with("-macos-universal.zip")
+            }
+            Kind::AppImage => {
+                (name.starts_with("Douri-") || name.starts_with("Pro_Wave-"))
+                    && name.ends_with("-x86_64.AppImage")
+            }
+            Kind::Tarball => {
+                (name.starts_with("douri-") || name.starts_with("prowave-"))
+                    && name.ends_with("-linux-x86_64.tar.gz")
+            }
+            Kind::Deb => {
+                (name.starts_with("douri") || name.starts_with("prowave"))
+                    && name.ends_with("_amd64.deb")
+            }
+            Kind::Rpm => {
+                (name.starts_with("douri") || name.starts_with("prowave"))
+                    && name.ends_with(".x86_64.rpm")
+            }
             Kind::Flatpak => {
-                name.starts_with("prowave-studio-") && name.ends_with("-x86_64.flatpak")
+                (name.starts_with("douri") || name.starts_with("prowave"))
+                    && name.ends_with("-x86_64.flatpak")
             }
         }
     }
@@ -1219,15 +1238,17 @@ impl Updater {
             State::Idle | State::Checking(_) => return Action::None,
             _ => tr("Update"),
         };
-        egui::Window::new(title)
+        crate::liquid_glass::glass_window(title)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -40.0))
             .show(ctx, |ui| {
-                ui.set_width(380.0);
+                ui.set_width(460.0);
                 match &self.state {
                     State::Available(release) => {
-                        ui.heading(trf("Pro Wave {} is available", &[&release.version]));
+                        let title_text = trf("Pro Wave {} is available", &[&release.version])
+                            .replace("Pro Wave", "Dōri");
+                        ui.heading(title_text);
                         ui.label(trf("You have {}.", &[&current]));
                         ui.add_space(6.0);
                         egui::ScrollArea::vertical()

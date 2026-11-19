@@ -31,10 +31,11 @@ pub enum SettingsTab {
     Midi,
     Appearance,
     McpServer,
+    Advanced,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 9] = [
+    pub const ALL: [SettingsTab; 10] = [
         Self::General,
         Self::Synchronization,
         Self::Metronome,
@@ -44,6 +45,7 @@ impl SettingsTab {
         Self::Midi,
         Self::Appearance,
         Self::McpServer,
+        Self::Advanced,
     ];
 
     /// The tab a menu entry opens ("Metronome…" opens the Metronome tab).
@@ -58,6 +60,7 @@ impl SettingsTab {
             "MIDI…" => Self::Midi,
             "Appearance…" => Self::Appearance,
             "MCP Server…" => Self::McpServer,
+            "Advanced…" => Self::Advanced,
             _ => return None,
         })
     }
@@ -73,6 +76,7 @@ impl SettingsTab {
             Self::Midi => tr("MIDI"),
             Self::Appearance => tr("Appearance"),
             Self::McpServer => tr("MCP Server"),
+            Self::Advanced => tr("Advanced"),
         }
         .to_string()
     }
@@ -113,6 +117,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 SettingsTab::Midi => midi(ui, p, &mut s.midi_panic),
                 SettingsTab::Appearance => appearance(ui, s),
                 SettingsTab::McpServer => mcp_settings(ui, s),
+                SettingsTab::Advanced => advanced(ui, s),
             }
         });
     s.settings_tab = open.then_some(tab);
@@ -418,6 +423,67 @@ fn mcp_settings(ui: &mut egui::Ui, s: &mut UiState) {
         ui.ctx().copy_text(config_json.to_string());
     }
     ui.weak("Allows AI assistants and external tools to query state, automate tracks, and control transport.");
+}
+
+fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
+    ui.vertical(|ui| {
+        ui.heading(tr("Interface Mode"));
+        ui.add_space(8.0);
+
+        let mut changed = false;
+        if ui
+            .radio_value(
+                &mut s.simplified_mode,
+                false,
+                egui::RichText::new(tr("Complete Mode")).strong(),
+            )
+            .clicked()
+        {
+            changed = true;
+        }
+        ui.label(
+            egui::RichText::new(
+                "Enables the full set of professional tools, advanced routing racks, full Mixer slots, and MCP server options.",
+            )
+            .color(egui::Color32::from_rgb(0xaa, 0xaa, 0xb0)),
+        );
+        ui.add_space(8.0);
+
+        if ui
+            .radio_value(
+                &mut s.simplified_mode,
+                true,
+                egui::RichText::new(tr("Simplified Mode")).strong(),
+            )
+            .clicked()
+        {
+            changed = true;
+        }
+        ui.label(
+            egui::RichText::new(
+                "Streamlines tools, inspector panels, and menus across the app for focused core music production.",
+            )
+            .color(egui::Color32::from_rgb(0xaa, 0xaa, 0xb0)),
+        );
+        ui.add_space(14.0);
+
+        if changed {
+            crate::onboarding::save_simplified_mode(s.simplified_mode);
+        }
+
+        ui.separator();
+        ui.add_space(10.0);
+
+        ui.label(
+            egui::RichText::new("First-Launch Setup")
+                .font(egui::FontId::proportional(14.0))
+                .strong(),
+        );
+        ui.add_space(6.0);
+        if ui.button(tr("Show Welcome Screen…")).clicked() {
+            s.show_onboarding = true;
+        }
+    });
 }
 
 #[cfg(test)]

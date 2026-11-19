@@ -342,7 +342,8 @@ impl CallbackTrait for GlassCallback {
     }
 }
 
-/// Paints a Liquid Glass capsule pill or frame with Vulkan WGSL or frosted obsidian fallback.
+/// Paints a Liquid Glass capsule pill or frame with soft dark-charcoal shading,
+/// specular hairline highlights, and authentic studio neutral tones.
 pub fn paint_glass_pill(
     ui: &Ui,
     rect: Rect,
@@ -361,77 +362,58 @@ pub fn paint_glass_pill(
     let corners = CornerRadius::same(r.round() as u8);
 
     let default_tint = if is_recessed {
-        Color32::from_rgba_premultiplied(10, 12, 18, 220) // Deep dark obsidian cavity
+        Color32::from_rgb(0x11, 0x11, 0x13) // #111113 deep pill LCD cavity
     } else {
-        Color32::from_rgba_premultiplied(22, 26, 36, 175) // Translucent obsidian glass
+        Color32::from_rgba_unmultiplied(42, 42, 46, 199) // rgba(42, 42, 46, 0.78)
     };
     let tint = tint_opt.unwrap_or(default_tint);
 
     let default_rim = if is_recessed {
-        Color32::from_rgba_premultiplied(0, 0, 0, 90)
+        Color32::from_rgb(0x26, 0x26, 0x2a)
     } else {
-        Color32::from_rgba_premultiplied(0, 210, 255, 60) // Subtle cyan fresnel rim
+        Color32::from_rgba_unmultiplied(255, 255, 255, 20) // subtle 1px top-lit specular hairline
     };
     let rim = rim_opt.unwrap_or(default_rim);
 
-    // High-fidelity Liquid Glass obsidian rendering (active across all backends)
     if is_recessed {
-        // Recessed cavity styling
+        // Recessed cavity styling (LCD display & recessed wells)
         painter.rect_filled(rect, corners, tint);
-        // Top shadow
+        // Subtle top inset shadow
         let top_shadow = Rect::from_min_max(rect.min, Pos2::new(rect.max.x, rect.min.y + 2.0));
-        painter.rect_filled(
-            top_shadow,
-            corners,
-            Color32::from_rgba_premultiplied(0, 0, 0, 80),
-        );
-        // Subtle border
+        painter.rect_filled(top_shadow, corners, Color32::from_black_alpha(65));
+        // Subtle 1px neutral border
         painter.rect_stroke(
             rect,
             corners,
-            Stroke::new(1.0, Color32::from_rgba_premultiplied(37, 42, 55, 120)),
+            Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
             StrokeKind::Inside,
         );
     } else {
-        // Floating pill capsule styling
+        // Floating pill capsule styling (soft translucent dark-charcoal)
         // 1. Subtle drop shadow
         let shadow_rect = rect.translate(Vec2::new(0.0, 1.5));
         painter.rect_filled(
             shadow_rect,
             corners,
-            Color32::from_rgba_premultiplied(
-                0,
-                0,
-                0,
-                if quality == GlassQuality::FlatLowPower {
-                    30
-                } else {
-                    75
-                },
-            ),
+            Color32::from_black_alpha(if quality == GlassQuality::FlatLowPower {
+                25
+            } else {
+                55
+            }),
         );
         // 2. Base glass fill
         painter.rect_filled(rect, corners, tint);
-        // 3. Top light sheen highlight
-        if quality != GlassQuality::FlatLowPower {
-            let sheen_rect = Rect::from_min_max(
-                Pos2::new(rect.min.x + r * 0.5, rect.min.y + 0.5),
-                Pos2::new(
-                    rect.max.x - r * 0.5,
-                    rect.min.y + (rect.height() * 0.45).min(10.0),
-                ),
-            );
-            painter.rect_filled(
-                sheen_rect,
-                CornerRadius::same((r * 0.5) as u8),
-                Color32::from_rgba_premultiplied(255, 255, 255, 18),
-            );
+        // 3. Subtle top-lit specular hairline (rgba(255, 255, 255, 0.08))
+        if quality != GlassQuality::FlatLowPower && rect.width() > 16.0 {
+            let sheen_start = egui::pos2(rect.left() + r * 0.4, rect.top() + 0.5);
+            let sheen_end = egui::pos2(rect.right() - r * 0.4, rect.top() + 0.5);
+            painter.line_segment([sheen_start, sheen_end], Stroke::new(1.0, rim));
         }
-        // 4. Hairline Fresnel rim stroke
+        // 4. Hairline border: 1px #343439 neutral divider (zero cyan or bright white)
         let stroke_color = if quality == GlassQuality::FlatLowPower {
-            Color32::from_rgb(0x25, 0x2a, 0x37)
+            Color32::from_rgb(0x2e, 0x2e, 0x33)
         } else {
-            Color32::from_rgba_premultiplied(0x38, 0x44, 0x5a, 160)
+            Color32::from_rgb(0x34, 0x34, 0x39)
         };
         painter.rect_stroke(
             rect,
@@ -463,13 +445,19 @@ pub fn glass_pill<R>(
     inner
 }
 
-/// Creates a stylized floating obsidian glass window.
+/// Creates a stylized floating dark-charcoal glass window with soft ambient blur and shadow.
 pub fn glass_window(name: impl Into<egui::WidgetText>) -> egui::Window<'static> {
     egui::Window::new(name).frame(
         egui::Frame::window(&egui::Style::default())
-            .fill(Color32::from_rgba_premultiplied(20, 24, 34, 225))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)))
+            .fill(Color32::from_rgba_premultiplied(24, 24, 27, 230))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)))
             .corner_radius(CornerRadius::same(12))
-            .inner_margin(egui::Margin::same(12)),
+            .inner_margin(egui::Margin::same(12))
+            .shadow(egui::Shadow {
+                offset: [0, 8],
+                blur: 24,
+                spread: 1,
+                color: Color32::from_black_alpha(150),
+            }),
     )
 }

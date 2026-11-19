@@ -149,7 +149,11 @@ impl App {
     fn do_file_cmd(&mut self, cmd: FileCmd, ctx: &egui::Context) {
         match cmd {
             FileCmd::New | FileCmd::Close => self.replace(Project::empty(), None),
-            FileCmd::NewFrom(t) => self.replace(t.project(), None),
+            FileCmd::NewFrom(t) => {
+                let mut p = t.project();
+                self.ui.chooser_details.apply(&mut p);
+                self.replace(p, None)
+            }
             FileCmd::Open => {
                 if let Some(path) = dialog().set_title(tr("Open Project")).pick_file() {
                     self.open(&path, ctx);

@@ -331,13 +331,45 @@ pub(crate) mod tests {
     }
 
     /// Texts that are the same in every language and need no translation line.
-    const UNTRANSLATED: [&str; 6] = [
+    const UNTRANSLATED: &[&str] = &[
         "MIDI",
         "EQ",
         "Dōri",
         "Pro Wave",
         "Sound Library",
         "Directory containing Sampler Instruments / Samples",
+        "Clear All Filters",
+        "Show Routing Slots",
+        "Slots",
+        "Chords",
+        "Simplified Mode",
+        "Complete Mode",
+        "Welcome to Dōri",
+        "Choose a Project",
+        "Factory Templates",
+        "Use musical grid",
+        "Tap Tempo",
+        "Key Signature:",
+        "Time Signature:",
+        "Input Device:",
+        "Output Device:",
+        "Sample Rate:",
+        "Frame Rate:",
+        "Surround Format:",
+        "Automatically check for updates on startup",
+        "Install & Restart",
+        "Demo Projects",
+        "My Templates",
+        "Show Welcome Screen",
+        "Show Welcome Screen…",
+        "Advanced",
+        "Advanced…",
+        "Interface Mode",
+        "No recent projects.",
+        "Tempo:",
+        "Learn More…",
+        "808 bass, drum machine and synth lead.",
+        "Strings, brass, woodwinds and percussion.",
     ];
 
     /// The Rust string literal starting at `s` (just after its opening quote), unescaped.
@@ -448,6 +480,14 @@ pub(crate) mod tests {
         for t in crate::start_screen::Template::ALL {
             add(t.name());
             add(t.about());
+        }
+        for s in [
+            "Podcast",
+            "Project Templates",
+            "Two voice tracks and a music bed.",
+            "No recent projects. Start one from New Project or Project Templates.",
+        ] {
+            add(s);
         }
         keys
     }

@@ -52,6 +52,7 @@ mod musical_typing;
 mod native_menu;
 mod new_track_dialog;
 mod note_edit;
+mod onboarding;
 mod patches;
 mod pattern;
 mod piano_roll;
@@ -114,6 +115,8 @@ pub struct UiState {
     pub show_mixer: bool,
     pub show_library: bool,
     pub show_inspector: bool,
+    /// Whether the top bar LCD displays SMPTE timecode (true) or Bars/Beats (false).
+    pub lcd_smpte: bool,
     /// List Editors (the Event list on the right).
     pub show_lists: bool,
     pub lists: event_list::ListView,
@@ -274,6 +277,12 @@ pub struct UiState {
     pub mcp_port: u16,
     /// Help > About Dōri window is open.
     pub show_about: bool,
+    /// First-run Onboarding dialog ("Welcome to Dōri").
+    pub show_onboarding: bool,
+    /// Interface mode: Simplified Mode (true) vs Complete Mode (false).
+    pub simplified_mode: bool,
+    /// Project Chooser details (Tempo, Key, Time Sig, Audio Devices, etc.).
+    pub chooser_details: start_screen::ChooserDetails,
 }
 
 impl UiState {
@@ -281,7 +290,8 @@ impl UiState {
         Self {
             show_mixer: true,
             show_library: true,
-            show_inspector: true,
+            show_inspector: false,
+            lcd_smpte: false,
             show_lists: false,
             lists: event_list::ListView::default(),
             rec: recorder::Recorder::default(),
@@ -373,6 +383,9 @@ impl UiState {
             mcp_server_enabled: true,
             mcp_port: 38420,
             show_about: false,
+            show_onboarding: false,
+            simplified_mode: false,
+            chooser_details: start_screen::ChooserDetails::default(),
         }
     }
 
@@ -1289,6 +1302,13 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new())
             .show(ui, |ui| start_screen::show(ui, &mut self.ui));
+        if self.ui.show_onboarding {
+            onboarding::show(
+                ctx,
+                &mut self.ui.show_onboarding,
+                &mut self.ui.simplified_mode,
+            );
+        }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
         }
@@ -1635,6 +1655,13 @@ impl eframe::App for App {
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
+        if self.ui.show_onboarding {
+            onboarding::show(
+                &ctx,
+                &mut self.ui.show_onboarding,
+                &mut self.ui.simplified_mode,
+            );
+        }
         show_about_dialog(&ctx, &mut self.ui.show_about);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
@@ -1749,7 +1776,7 @@ fn init_logging() {
 }
 
 /// The Pro Wave logo, 256×256 with transparency (generated from dist/icons/prowave-1024.png).
-const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
+pub const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
 
 /// The Flex and Smart Tempo layout pictures (`PROWAVE_SHOT_SCENE=flex…`): a drum loop on an
 /// audio track, made in the temporary folder, with Flex markers, a Flex Pitch MIDI track and
@@ -2069,6 +2096,11 @@ fn main() -> eframe::Result {
     }
     // Measuring runs leave the user's settings (recent projects, size) alone.
     let measuring = bench_out.is_some() || shots_dir.is_some() || shot_out.is_some();
+    let first_run_flag = flag("--first-run");
+    let no_chooser_flag = flag("--no-chooser")
+        || measuring
+        || std::env::var("CI").is_ok()
+        || std::env::var("HEADLESS").is_ok();
     // Release builds: on a crash, write a report to the temp folder instead of a raw panic.
     human_panic::setup_panic!(human_panic::Metadata::new(
         "Dōri",
@@ -2214,6 +2246,10 @@ fn main() -> eframe::Result {
             if !measuring {
                 app.ui.update_auto = updater::auto_enabled();
                 app.updater.check_at_startup();
+                app.ui.simplified_mode = onboarding::load_simplified_mode();
+                if first_run_flag || !onboarding::has_completed_onboarding() {
+                    app.ui.show_onboarding = true;
+                }
             }
             #[cfg(target_os = "macos")]
             {
@@ -2365,6 +2401,18 @@ fn main() -> eframe::Result {
                 app.ui.recent = recent_files::Recent::load();
                 app.ui.ui_scale = ui_scale::load();
             }
+            let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
+            if scene == "welcome" || first_run_flag {
+                app.ui.show_onboarding = true;
+            }
+            if scene == "chooser" {
+                app.ui.chooser = Some(start_screen::Chooser::default());
+            }
+            if scene == "chooser-details" {
+                let mut c = start_screen::Chooser::default();
+                c.details.show_details = true;
+                app.ui.chooser = Some(c);
+            }
             // `prowave song.prowave` opens a project; `prowave song.wav drums.aiff` imports each
             // file as an audio track (into the opened project, if any).
             // `--play` starts the transport on launch; `--piano` opens the Piano Roll.
@@ -2395,15 +2443,19 @@ fn main() -> eframe::Result {
                     );
                 }
             }
+            let has_project_arg = args.iter().any(|a| is_project(a));
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
+            }
+            if !no_chooser_flag && !has_project_arg {
+                app.ui.chooser = Some(start_screen::Chooser::default());
             }
             for arg in args.iter().filter(|a| !is_project(a)) {
                 if arg == "--play" {
                     app.project.playing = true;
                 } else if arg == "--piano" {
                     app.ui.bottom = Bottom::PianoRoll;
-                } else {
+                } else if !arg.to_string_lossy().starts_with("--") {
                     app.import(std::path::Path::new(arg), &cc.egui_ctx);
                 }
             }

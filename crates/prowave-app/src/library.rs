@@ -13,9 +13,9 @@ use crate::widgets::{stroke, BTN_BG, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{pos2, vec2, Align2, Color32, FontId, Painter, Rect, Sense, Shape, Stroke, Ui};
 
-const PANEL_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
-const ROW_H: f32 = 25.0;
-const SEL_BG: Color32 = Color32::from_rgb(0x1f, 0x26, 0x36);
+const PANEL_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const ROW_H: f32 = 24.0;
+const SEL_BG: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
 
 pub struct Category {
     pub name: &'static str,
@@ -280,9 +280,13 @@ struct Saved {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LibraryTab {
-    Sounds,
+    All,
     Loops,
+    Instruments,
+    Effects,
+    SoundLibrary,
     Files,
+    Sounds,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -290,6 +294,7 @@ pub enum SoundChip {
     Synth,
     Bass,
     Drums,
+    Keys,
 }
 
 pub struct LibraryView {
@@ -303,6 +308,8 @@ pub struct LibraryView {
     pub tab: LibraryTab,
     pub rail_collapsed: bool,
     pub active_chip: Option<SoundChip>,
+    pub show_filters_popover: bool,
+    pub sort_mode: usize,
     pub audition_playing: bool,
     pub audition_volume: f32,
     pub audition_auto: bool,
@@ -317,9 +324,11 @@ impl Default for LibraryView {
             saved: None,
             scroll_left: 0.0,
             scroll_right: 0.0,
-            tab: LibraryTab::Sounds,
+            tab: LibraryTab::All,
             rail_collapsed: false,
             active_chip: None,
+            show_filters_popover: false,
+            sort_mode: 0,
             audition_playing: false,
             audition_volume: 0.8,
             audition_auto: true,
@@ -559,20 +568,20 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     g.rect_filled(panel, 0.0, PANEL_BG);
     g.line_segment(
         [panel.right_top(), panel.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
     let v = &mut s.library;
 
-    // Far-left collapsible icon rail: Sound Library, Loops, Project Files.
+    // Far-left icon rail: All, Loops, Instruments, Effects, Sound Library, Files.
     let rail_w = if v.rail_collapsed { 16.0 } else { 38.0 };
     let rail_r = Rect::from_min_max(
         panel.left_top(),
         pos2(panel.left() + rail_w, panel.bottom()),
     );
-    g.rect_filled(rail_r, 0.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_filled(rail_r, 0.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     g.line_segment(
         [rail_r.right_top(), rail_r.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
 
     if v.rail_collapsed {
@@ -596,8 +605,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     } else {
         let mut ry = rail_r.top() + 10.0;
         let tabs = [
-            (LibraryTab::Sounds, "♬", "Sound Library"),
-            (LibraryTab::Loops, "⟳", "Loops"),
+            (LibraryTab::All, "★", "All Sounds"),
+            (LibraryTab::Loops, "⟳", "Loops & One-Shots"),
+            (LibraryTab::Instruments, "🎹", "Instruments"),
+            (LibraryTab::Effects, "⚡", "Audio Effects"),
+            (LibraryTab::SoundLibrary, "♬", "Sound Library"),
             (LibraryTab::Files, "🗀", "Project Files"),
         ];
         for (tab, icon_lbl, tip) in tabs {
@@ -609,26 +621,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 v.tab = tab;
             }
             if active {
-                g.rect_filled(br, 7.0, Color32::from_rgb(0x1a, 0x24, 0x38));
-                g.rect_stroke(
-                    br,
-                    7.0,
-                    Stroke::new(1.0, Color32::from_rgb(0x38, 0x8b, 0xfd)),
-                    egui::StrokeKind::Inside,
-                );
+                g.rect_filled(br, 6.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
             } else if resp.hovered() {
-                g.rect_filled(br, 7.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+                g.rect_filled(br, 6.0, Color32::from_rgb(0x26, 0x26, 0x2a));
             }
             g.text(
                 br.center(),
                 Align2::CENTER_CENTER,
                 icon_lbl,
                 FontId::proportional(14.0),
-                if active {
-                    Color32::from_rgb(0x58, 0xa6, 0xff)
-                } else {
-                    TEXT_DIM
-                },
+                if active { Color32::WHITE } else { TEXT_DIM },
             );
             ry += 36.0;
         }
@@ -658,7 +660,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     // Header: "Library  All Sounds ⇕"
     let hy = panel.top() + 14.0;
     let cx = left + w * 0.5;
-    let lib = g.text(
+    g.text(
         pos2(cx - 6.0, hy),
         Align2::RIGHT_CENTER,
         tr("Library"),
@@ -685,40 +687,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         vec![c + vec2(-2.5, 1.5), c + vec2(0.0, 4.0), c + vec2(2.5, 1.5)],
         stroke(TEXT_DIM),
     ));
-    let _ = lib;
 
-    // Big icon card of the selected track's sound, and its name.
-    let icon_card = Rect::from_center_size(pos2(cx, panel.top() + 72.0), vec2(72.0, 72.0));
-    g.rect_filled(icon_card, 8.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
-    g.rect_stroke(
-        icon_card,
-        8.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
-        egui::StrokeKind::Inside,
-    );
-    if let Some(t) = p.tracks.get(p.selected_track) {
-        draw_icon(&g, icon_card.shrink(6.0), track_icon(t));
-        let font = FontId::proportional(12.5);
-        let name = crate::mixer::elide(&g, &t.name, &font, w - 24.0);
-        g.text(
-            pos2(cx, icon_card.bottom() + 12.0),
-            Align2::CENTER_CENTER,
-            name,
-            font,
-            TEXT,
-        );
-    }
-
-    // Search field as rounded pill.
-    let search_r = Rect::from_min_size(
-        pos2(left + 8.0, icon_card.bottom() + 24.0),
-        vec2(w - 16.0, 24.0),
-    );
-    g.rect_filled(search_r, 12.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+    // Modern Tag-Driven Search Field (directly below header, no giant icon)
+    let search_r = Rect::from_min_size(pos2(left + 8.0, panel.top() + 32.0), vec2(w - 16.0, 26.0));
+    g.rect_filled(search_r, 6.0, Color32::from_rgb(0x26, 0x26, 0x2a));
     g.rect_stroke(
         search_r,
-        12.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         egui::StrokeKind::Inside,
     );
     let mc = pos2(search_r.left() + 14.0, search_r.center().y);
@@ -737,8 +713,43 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             .font(FontId::proportional(12.0)),
     );
 
-    // Color-coded filter chips (violet Synth, cyan Bass, amber Drums)
+    // Color-coded filter chips (All Filters button + Synth, Bass, Drums, Keys)
     let chips_y = search_r.bottom() + 6.0;
+    let filters_btn_w = 64.0;
+    let filters_r = Rect::from_min_size(pos2(left + 8.0, chips_y), vec2(filters_btn_w, 20.0));
+    let filters_resp = ui.interact(filters_r, id("all_filters_btn"), Sense::click());
+    if filters_resp.clicked() {
+        v.show_filters_popover = !v.show_filters_popover;
+    }
+    g.rect_filled(
+        filters_r,
+        4.0,
+        if v.show_filters_popover {
+            Color32::from_rgb(0x3a, 0x7b, 0xd5)
+        } else if filters_resp.hovered() {
+            Color32::from_rgb(0x30, 0x30, 0x35)
+        } else {
+            Color32::from_rgb(0x26, 0x26, 0x2a)
+        },
+    );
+    g.rect_stroke(
+        filters_r,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        egui::StrokeKind::Inside,
+    );
+    g.text(
+        filters_r.center(),
+        Align2::CENTER_CENTER,
+        "Filters ▾",
+        FontId::proportional(10.5),
+        if v.show_filters_popover {
+            Color32::WHITE
+        } else {
+            TEXT
+        },
+    );
+
     let chips = [
         (
             SoundChip::Synth,
@@ -751,12 +762,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             "Drums",
             Color32::from_rgb(0xf5, 0x9e, 0x0b),
         ),
+        (SoundChip::Keys, "Keys", Color32::from_rgb(0x10, 0xb9, 0x81)),
     ];
-    let chip_gap = 5.0;
-    let chip_w = (w - 16.0 - 2.0 * chip_gap) / 3.0;
+    let chip_gap = 4.0;
+    let rem_w = w - 16.0 - filters_btn_w - 6.0;
+    let chip_w = (rem_w - 3.0 * chip_gap) / 4.0;
     for (idx, (chip, lbl, col)) in chips.into_iter().enumerate() {
         let cr = Rect::from_min_size(
-            pos2(left + 8.0 + idx as f32 * (chip_w + chip_gap), chips_y),
+            pos2(
+                left + 8.0 + filters_btn_w + 6.0 + idx as f32 * (chip_w + chip_gap),
+                chips_y,
+            ),
             vec2(chip_w, 20.0),
         );
         let active = v.active_chip == Some(chip);
@@ -766,24 +782,24 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
         g.rect_filled(
             cr,
-            10.0,
+            4.0,
             if active {
-                col.gamma_multiply(0.25)
+                col.gamma_multiply(0.35)
             } else if resp.hovered() {
-                Color32::from_rgb(0x22, 0x27, 0x35)
+                Color32::from_rgb(0x30, 0x30, 0x35)
             } else {
-                Color32::from_rgb(0x1a, 0x1e, 0x29)
+                Color32::from_rgb(0x26, 0x26, 0x2a)
             },
         );
         g.rect_stroke(
             cr,
-            10.0,
+            4.0,
             Stroke::new(
-                if active { 1.2 } else { 1.0 },
+                1.0,
                 if active {
                     col
                 } else {
-                    Color32::from_rgb(0x25, 0x2a, 0x37)
+                    Color32::from_rgb(0x34, 0x34, 0x39)
                 },
             ),
             egui::StrokeKind::Inside,
@@ -792,13 +808,61 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             cr.center(),
             Align2::CENTER_CENTER,
             lbl,
-            FontId::proportional(11.0),
-            if active {
-                col.lerp_to_gamma(Color32::WHITE, 0.4)
-            } else {
-                TEXT_DIM
-            },
+            FontId::proportional(10.5),
+            if active { Color32::WHITE } else { TEXT_DIM },
         );
+    }
+
+    // Floating blurred-glass tag popover when Filters button is clicked
+    if v.show_filters_popover {
+        crate::liquid_glass::glass_window("Sound Filter Tags")
+            .resizable(false)
+            .collapsible(false)
+            .default_pos(pos2(left + 16.0, chips_y + 28.0))
+            .show(ui.ctx(), |ui| {
+                ui.set_width(220.0);
+                ui.label(
+                    egui::RichText::new("Filter by Character")
+                        .strong()
+                        .color(Color32::WHITE),
+                );
+                ui.add_space(4.0);
+                let tags = [
+                    "Lead",
+                    "Pad",
+                    "Pluck",
+                    "Sub Bass",
+                    "Acoustic",
+                    "Electric",
+                    "808",
+                    "Vintage",
+                    "Clean",
+                    "Distorted",
+                    "Lo-Fi",
+                    "Cinematic",
+                ];
+                ui.horizontal_wrapped(|ui| {
+                    for tag in tags {
+                        let active = v.search.contains(tag);
+                        if ui.selectable_label(active, tag).clicked() {
+                            if active {
+                                v.search = v.search.replace(tag, "").trim().to_string();
+                            } else {
+                                if !v.search.is_empty() {
+                                    v.search.push(' ');
+                                }
+                                v.search.push_str(tag);
+                            }
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+                if ui.button(tr("Clear All Filters")).clicked() {
+                    v.search.clear();
+                    v.active_chip = None;
+                    v.show_filters_popover = false;
+                }
+            });
     }
 
     // Audition preview controls height + footer height
@@ -870,6 +934,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 Some(SoundChip::Drums) => {
                     let n = c.name.to_lowercase();
                     n.contains("drum") || n.contains("percussion")
+                }
+                Some(SoundChip::Keys) => {
+                    let n = c.name.to_lowercase();
+                    n.contains("piano")
+                        || n.contains("organ")
+                        || n.contains("keyboard")
+                        || n.contains("key")
                 }
             })
             .map(|(i, _)| i)
@@ -994,7 +1065,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     // Auto-audition toggle
     let auto_btn_r = Rect::from_min_size(
         pos2(play_btn_r.right() + 4.0, aud_r.top() + 2.0),
-        vec2(42.0, 20.0),
+        vec2(40.0, 20.0),
     );
     let auto_resp = ui.interact(auto_btn_r, id("audition_auto"), Sense::click());
     if auto_resp.clicked() {
@@ -1002,47 +1073,39 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     }
     g.rect_filled(
         auto_btn_r,
-        5.0,
+        4.0,
         if v.audition_auto {
-            Color32::from_rgb(0x1f, 0x2a, 0x40)
+            Color32::from_rgb(0x3a, 0x7b, 0xd5)
         } else if auto_resp.hovered() {
-            Color32::from_rgb(0x25, 0x2a, 0x37)
+            Color32::from_rgb(0x30, 0x30, 0x35)
         } else {
-            Color32::from_rgb(0x13, 0x16, 0x1e)
+            Color32::from_rgb(0x1e, 0x1e, 0x21)
         },
     );
-    if v.audition_auto {
-        g.rect_stroke(
-            auto_btn_r,
-            5.0,
-            Stroke::new(1.0, Color32::from_rgb(0x38, 0x8b, 0xfd)),
-            egui::StrokeKind::Inside,
-        );
-    }
     g.text(
         auto_btn_r.center(),
         Align2::CENTER_CENTER,
         "Auto",
-        FontId::proportional(11.0),
+        FontId::proportional(10.5),
         if v.audition_auto {
-            Color32::from_rgb(0x58, 0xa6, 0xff)
+            Color32::WHITE
         } else {
             TEXT_DIM
         },
     );
 
     // Mini volume slider
-    let vol_w = (aud_r.right() - auto_btn_r.right() - 14.0).clamp(20.0, 80.0);
+    let vol_w = (aud_r.right() - auto_btn_r.right() - 14.0).clamp(20.0, 75.0);
     let vol_r = Rect::from_min_size(
-        pos2(aud_r.right() - vol_w - 6.0, aud_r.center().y - 4.0),
-        vec2(vol_w, 8.0),
+        pos2(aud_r.right() - vol_w - 6.0, aud_r.center().y - 3.5),
+        vec2(vol_w, 7.0),
     );
-    g.rect_filled(vol_r, 4.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_filled(vol_r, 3.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     let vol_fill_w = vol_w * v.audition_volume.clamp(0.0, 1.0);
     g.rect_filled(
-        Rect::from_min_size(vol_r.min, vec2(vol_fill_w, 8.0)),
-        4.0,
-        Color32::from_rgb(0x38, 0x8b, 0xfd),
+        Rect::from_min_size(vol_r.min, vec2(vol_fill_w, 7.0)),
+        3.0,
+        Color32::from_rgb(0x3a, 0x7b, 0xd5),
     );
     let vol_resp = ui.interact(
         vol_r.expand2(vec2(2.0, 6.0)),
@@ -1053,18 +1116,38 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         v.audition_volume = ((pos.x - vol_r.left()) / vol_w).clamp(0.0, 1.0);
     }
 
-    // Footer: Revert / Delete / Save…
+    // Footer: Sorted by: Relevance + Revert / Delete / Save…
     let fy = panel.bottom() - footer_h + 6.0;
     g.line_segment(
         [pos2(left, fy - 6.0), pos2(right, fy - 6.0)],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
-    let bw = (w - 32.0) / 3.0;
+
+    let sort_w = 90.0;
+    let sort_r = Rect::from_min_size(pos2(left + 8.0, fy), vec2(sort_w, 22.0));
+    let sort_labels = ["Relevance", "Name", "Category"];
+    let sort_resp = crate::widgets::popup_button(
+        ui,
+        &g,
+        sort_r,
+        id("sort_mode"),
+        sort_labels[v.sort_mode.min(2)],
+    );
+    egui::Popup::menu(&sort_resp).show(|ui| {
+        for (idx, lbl) in sort_labels.iter().enumerate() {
+            if ui.selectable_label(v.sort_mode == idx, *lbl).clicked() {
+                v.sort_mode = idx;
+                ui.close();
+            }
+        }
+    });
+
+    let bw = (w - sort_w - 32.0) / 3.0;
     let can_revert = v.saved.is_some();
     if footer_button(
         ui,
         &g,
-        Rect::from_min_size(pos2(left + 8.0, fy), vec2(bw, 22.0)),
+        Rect::from_min_size(pos2(left + sort_w + 12.0, fy), vec2(bw, 22.0)),
         "revert",
         tr("Revert"),
         can_revert,
@@ -1074,7 +1157,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     footer_button(
         ui,
         &g,
-        Rect::from_min_size(pos2(left + 16.0 + bw, fy), vec2(bw, 22.0)),
+        Rect::from_min_size(pos2(left + sort_w + 16.0 + bw, fy), vec2(bw, 22.0)),
         "delete",
         tr("Delete"),
         false,
@@ -1082,7 +1165,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     footer_button(
         ui,
         &g,
-        Rect::from_min_size(pos2(left + 24.0 + 2.0 * bw, fy), vec2(bw, 22.0)),
+        Rect::from_min_size(pos2(left + sort_w + 20.0 + 2.0 * bw, fy), vec2(bw, 22.0)),
         "save",
         tr("Save…"),
         false,
