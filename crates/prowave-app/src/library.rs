@@ -13,9 +13,9 @@ use crate::widgets::{stroke, BTN_BG, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{pos2, vec2, Align2, Color32, FontId, Painter, Rect, Sense, Shape, Stroke, Ui};
 
-const PANEL_BG: Color32 = Color32::from_rgb(0x38, 0x38, 0x38);
-const ROW_H: f32 = 19.0;
-const SEL_BG: Color32 = Color32::from_rgb(0x5a, 0x5a, 0x5a);
+const PANEL_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
+const ROW_H: f32 = 25.0;
+const SEL_BG: Color32 = Color32::from_rgb(0x1f, 0x26, 0x36);
 
 pub struct Category {
     pub name: &'static str,
@@ -278,7 +278,20 @@ struct Saved {
     category: Option<&'static str>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LibraryTab {
+    Sounds,
+    Loops,
+    Files,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SoundChip {
+    Synth,
+    Bass,
+    Drums,
+}
+
 pub struct LibraryView {
     pub category: Option<usize>,
     pub search: String,
@@ -287,6 +300,58 @@ pub struct LibraryView {
     saved: Option<Saved>,
     scroll_left: f32,
     scroll_right: f32,
+    pub tab: LibraryTab,
+    pub rail_collapsed: bool,
+    pub active_chip: Option<SoundChip>,
+    pub audition_playing: bool,
+    pub audition_volume: f32,
+    pub audition_auto: bool,
+}
+
+impl Default for LibraryView {
+    fn default() -> Self {
+        Self {
+            category: None,
+            search: String::new(),
+            loaded: None,
+            saved: None,
+            scroll_left: 0.0,
+            scroll_right: 0.0,
+            tab: LibraryTab::Sounds,
+            rail_collapsed: false,
+            active_chip: None,
+            audition_playing: false,
+            audition_volume: 0.8,
+            audition_auto: true,
+        }
+    }
+}
+
+pub fn badge_for_patch(patch_name: &str, cat_name: &str) -> (Color32, &'static str) {
+    let lower_cat = cat_name.to_lowercase();
+    let lower_p = patch_name.to_lowercase();
+    if lower_cat.contains("synth") || lower_cat.contains("arp") || lower_cat.contains("cinematic") {
+        (Color32::from_rgb(0x8b, 0x5c, 0xf6), "S")
+    } else if lower_cat.contains("bass") || lower_p.contains("bass") {
+        (Color32::from_rgb(0x06, 0xb6, 0xd4), "B")
+    } else if lower_cat.contains("drum") || lower_cat.contains("percussion") {
+        (Color32::from_rgb(0xf5, 0x9e, 0x0b), "D")
+    } else if lower_cat.contains("keyboard")
+        || lower_cat.contains("piano")
+        || lower_cat.contains("organ")
+        || lower_cat.contains("clav")
+    {
+        (Color32::from_rgb(0x3b, 0x82, 0xf6), "K")
+    } else if lower_cat.contains("guitar") {
+        (Color32::from_rgb(0xec, 0x48, 0x99), "G")
+    } else if lower_cat.contains("string")
+        || lower_cat.contains("horn")
+        || lower_cat.contains("orchestral")
+    {
+        (Color32::from_rgb(0x10, 0xb9, 0x81), "O")
+    } else {
+        (Color32::from_rgb(0x63, 0x66, 0xf1), "P")
+    }
 }
 
 fn id(key: impl std::hash::Hash + std::fmt::Debug) -> egui::Id {
@@ -347,22 +412,50 @@ fn list_row(
     text: &str,
     selected: bool,
     chevron: bool,
+    badge: Option<(Color32, &'static str)>,
 ) -> egui::Response {
     let resp = ui.interact(r, id(key), Sense::click());
     if selected {
-        g.rect_filled(r, 3.0, SEL_BG);
+        g.rect_filled(r, 4.0, SEL_BG);
+        g.rect_stroke(
+            r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgb(0x38, 0x8b, 0xfd)),
+            egui::StrokeKind::Inside,
+        );
     } else if resp.hovered() {
-        g.rect_filled(r, 3.0, Color32::from_white_alpha(10));
+        g.rect_filled(r, 4.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
     }
-    let font = FontId::proportional(12.5);
-    let max_w = r.width() - if chevron { 22.0 } else { 10.0 };
+    let font = FontId::proportional(12.0);
+    let mut text_x = r.left() + 6.0;
+    if let Some((badge_col, glyph)) = badge {
+        let b_size = 20.0;
+        let b_rect =
+            Rect::from_center_size(pos2(r.left() + 14.0, r.center().y), vec2(b_size, b_size));
+        g.rect_filled(b_rect, 4.0, badge_col.gamma_multiply(0.25));
+        g.rect_stroke(
+            b_rect,
+            4.0,
+            Stroke::new(1.0, badge_col),
+            egui::StrokeKind::Inside,
+        );
+        g.text(
+            b_rect.center(),
+            Align2::CENTER_CENTER,
+            glyph,
+            FontId::proportional(10.5),
+            badge_col.lerp_to_gamma(Color32::WHITE, 0.6),
+        );
+        text_x = r.left() + 28.0;
+    }
+    let max_w = (r.right() - if chevron { 22.0 } else { 8.0 } - text_x).max(10.0);
     let shown = crate::mixer::elide(g, text, &font, max_w);
     g.text(
-        pos2(r.left() + 6.0, r.center().y),
+        pos2(text_x, r.center().y),
         Align2::LEFT_CENTER,
         shown,
         font,
-        TEXT,
+        if selected { Color32::WHITE } else { TEXT },
     );
     if chevron {
         let c = pos2(r.right() - 9.0, r.center().y);
@@ -389,6 +482,7 @@ fn column(
     items: &[String],
     selected: Option<usize>,
     chevrons: bool,
+    badges: Option<&[(Color32, &'static str)]>,
 ) -> Option<usize> {
     if ui
         .input(|i| i.pointer.hover_pos())
@@ -407,6 +501,7 @@ fn column(
         }
         let r = Rect::from_min_size(pos2(rect.left() + 4.0, y), vec2(rect.width() - 8.0, ROW_H))
             .intersect(rect);
+        let badge = badges.and_then(|b| b.get(i).copied());
         if list_row(
             ui,
             &gc,
@@ -415,6 +510,7 @@ fn column(
             text,
             selected == Some(i),
             chevrons,
+            badge,
         )
         .clicked()
         {
@@ -429,22 +525,28 @@ fn footer_button(ui: &Ui, g: &Painter, r: Rect, key: &str, label: &str, enabled:
     let hovered = resp.as_ref().is_some_and(|r| r.hovered());
     g.rect_filled(
         r,
-        4.0,
+        6.0,
         if hovered {
-            Color32::from_gray(0x62)
+            Color32::from_rgb(0x25, 0x2a, 0x37)
         } else {
-            BTN_BG
+            Color32::from_rgb(0x1a, 0x1e, 0x29)
         },
+    );
+    g.rect_stroke(
+        r,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
     );
     g.text(
         r.center(),
         Align2::CENTER_CENTER,
         label,
-        FontId::proportional(12.5),
+        FontId::proportional(12.0),
         if enabled {
             TEXT
         } else {
-            Color32::from_gray(0x78)
+            Color32::from_rgb(0x60, 0x68, 0x7a)
         },
     );
     resp.is_some_and(|r| r.clicked())
@@ -457,23 +559,114 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     g.rect_filled(panel, 0.0, PANEL_BG);
     g.line_segment(
         [panel.right_top(), panel.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x22)),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     let v = &mut s.library;
-    let left = panel.left();
-    let w = panel.width();
+
+    // Far-left collapsible icon rail: Sound Library, Loops, Project Files.
+    let rail_w = if v.rail_collapsed { 16.0 } else { 38.0 };
+    let rail_r = Rect::from_min_max(
+        panel.left_top(),
+        pos2(panel.left() + rail_w, panel.bottom()),
+    );
+    g.rect_filled(rail_r, 0.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.line_segment(
+        [rail_r.right_top(), rail_r.right_bottom()],
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+    );
+
+    if v.rail_collapsed {
+        let expand_r = Rect::from_center_size(
+            pos2(rail_r.center().x, rail_r.top() + 20.0),
+            vec2(14.0, 20.0),
+        );
+        if ui
+            .interact(expand_r, id("rail_expand"), Sense::click())
+            .clicked()
+        {
+            v.rail_collapsed = false;
+        }
+        g.text(
+            expand_r.center(),
+            Align2::CENTER_CENTER,
+            "›",
+            FontId::proportional(14.0),
+            TEXT_DIM,
+        );
+    } else {
+        let mut ry = rail_r.top() + 10.0;
+        let tabs = [
+            (LibraryTab::Sounds, "♬", "Sound Library"),
+            (LibraryTab::Loops, "⟳", "Loops"),
+            (LibraryTab::Files, "🗀", "Project Files"),
+        ];
+        for (tab, icon_lbl, tip) in tabs {
+            let active = v.tab == tab;
+            let br = Rect::from_center_size(pos2(rail_r.center().x, ry + 14.0), vec2(28.0, 28.0));
+            let resp = ui.interact(br, id(("rail_tab", tip)), Sense::click());
+            resp.clone().on_hover_text(tip);
+            if resp.clicked() {
+                v.tab = tab;
+            }
+            if active {
+                g.rect_filled(br, 7.0, Color32::from_rgb(0x1a, 0x24, 0x38));
+                g.rect_stroke(
+                    br,
+                    7.0,
+                    Stroke::new(1.0, Color32::from_rgb(0x38, 0x8b, 0xfd)),
+                    egui::StrokeKind::Inside,
+                );
+            } else if resp.hovered() {
+                g.rect_filled(br, 7.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+            }
+            g.text(
+                br.center(),
+                Align2::CENTER_CENTER,
+                icon_lbl,
+                FontId::proportional(14.0),
+                if active {
+                    Color32::from_rgb(0x58, 0xa6, 0xff)
+                } else {
+                    TEXT_DIM
+                },
+            );
+            ry += 36.0;
+        }
+        // Collapse toggle at bottom
+        let coll_r = Rect::from_center_size(
+            pos2(rail_r.center().x, rail_r.bottom() - 20.0),
+            vec2(24.0, 24.0),
+        );
+        let coll_resp = ui.interact(coll_r, id("rail_collapse"), Sense::click());
+        coll_resp.clone().on_hover_text("Collapse Library Rail");
+        if coll_resp.clicked() {
+            v.rail_collapsed = true;
+        }
+        g.text(
+            coll_r.center(),
+            Align2::CENTER_CENTER,
+            "‹",
+            FontId::proportional(14.0),
+            TEXT_DIM,
+        );
+    }
+
+    let left = panel.left() + rail_w;
+    let right = panel.right();
+    let w = right - left;
 
     // Header: "Library  All Sounds ⇕"
     let hy = panel.top() + 14.0;
+    let cx = left + w * 0.5;
     let lib = g.text(
-        pos2(panel.center().x - 6.0, hy),
+        pos2(cx - 6.0, hy),
         Align2::RIGHT_CENTER,
         tr("Library"),
         FontId::proportional(13.0),
         TEXT,
     );
     let all = g.text(
-        pos2(panel.center().x + 2.0, hy),
+        pos2(cx + 2.0, hy),
         Align2::LEFT_CENTER,
         tr("All Sounds"),
         FontId::proportional(12.5),
@@ -494,14 +687,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     ));
     let _ = lib;
 
-    // Big icon of the selected track's sound, and its name.
-    let icon = Rect::from_center_size(pos2(panel.center().x, panel.top() + 82.0), vec2(84.0, 84.0));
+    // Big icon card of the selected track's sound, and its name.
+    let icon_card = Rect::from_center_size(pos2(cx, panel.top() + 72.0), vec2(72.0, 72.0));
+    g.rect_filled(icon_card, 8.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+    g.rect_stroke(
+        icon_card,
+        8.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
+    );
     if let Some(t) = p.tracks.get(p.selected_track) {
-        draw_icon(&g, icon, track_icon(t));
+        draw_icon(&g, icon_card.shrink(6.0), track_icon(t));
         let font = FontId::proportional(12.5);
-        let name = crate::mixer::elide(&g, &t.name, &font, w - 20.0);
+        let name = crate::mixer::elide(&g, &t.name, &font, w - 24.0);
         g.text(
-            pos2(panel.center().x, icon.bottom() + 16.0),
+            pos2(cx, icon_card.bottom() + 12.0),
             Align2::CENTER_CENTER,
             name,
             font,
@@ -509,16 +709,24 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
     }
 
-    // Search field.
-    let search_r =
-        Rect::from_min_size(pos2(left + 8.0, icon.bottom() + 32.0), vec2(w - 16.0, 22.0));
-    g.rect_filled(search_r, 5.0, Color32::from_gray(0x2a));
-    let mc = pos2(search_r.left() + 12.0, search_r.center().y);
+    // Search field as rounded pill.
+    let search_r = Rect::from_min_size(
+        pos2(left + 8.0, icon_card.bottom() + 24.0),
+        vec2(w - 16.0, 24.0),
+    );
+    g.rect_filled(search_r, 12.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+    g.rect_stroke(
+        search_r,
+        12.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
+    );
+    let mc = pos2(search_r.left() + 14.0, search_r.center().y);
     g.circle_stroke(mc + vec2(-1.0, -1.0), 4.0, stroke(TEXT_DIM));
     g.line_segment([mc + vec2(2.0, 2.0), mc + vec2(5.0, 5.0)], stroke(TEXT_DIM));
     let edit_r = Rect::from_min_max(
-        pos2(search_r.left() + 22.0, search_r.top() + 2.0),
-        pos2(search_r.right() - 6.0, search_r.bottom() - 2.0),
+        pos2(search_r.left() + 24.0, search_r.top() + 2.0),
+        pos2(search_r.right() - 8.0, search_r.bottom() - 2.0),
     );
     ui.put(
         edit_r,
@@ -526,15 +734,81 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             .hint_text(tr("Search Sounds"))
             .frame(egui::Frame::NONE)
             .text_color(TEXT)
-            .font(FontId::proportional(12.5)),
+            .font(FontId::proportional(12.0)),
     );
 
-    // Columns.
+    // Color-coded filter chips (violet Synth, cyan Bass, amber Drums)
+    let chips_y = search_r.bottom() + 6.0;
+    let chips = [
+        (
+            SoundChip::Synth,
+            "Synth",
+            Color32::from_rgb(0x8b, 0x5c, 0xf6),
+        ),
+        (SoundChip::Bass, "Bass", Color32::from_rgb(0x06, 0xb6, 0xd4)),
+        (
+            SoundChip::Drums,
+            "Drums",
+            Color32::from_rgb(0xf5, 0x9e, 0x0b),
+        ),
+    ];
+    let chip_gap = 5.0;
+    let chip_w = (w - 16.0 - 2.0 * chip_gap) / 3.0;
+    for (idx, (chip, lbl, col)) in chips.into_iter().enumerate() {
+        let cr = Rect::from_min_size(
+            pos2(left + 8.0 + idx as f32 * (chip_w + chip_gap), chips_y),
+            vec2(chip_w, 20.0),
+        );
+        let active = v.active_chip == Some(chip);
+        let resp = ui.interact(cr, id(("chip", lbl)), Sense::click());
+        if resp.clicked() {
+            v.active_chip = if active { None } else { Some(chip) };
+        }
+        g.rect_filled(
+            cr,
+            10.0,
+            if active {
+                col.gamma_multiply(0.25)
+            } else if resp.hovered() {
+                Color32::from_rgb(0x22, 0x27, 0x35)
+            } else {
+                Color32::from_rgb(0x1a, 0x1e, 0x29)
+            },
+        );
+        g.rect_stroke(
+            cr,
+            10.0,
+            Stroke::new(
+                if active { 1.2 } else { 1.0 },
+                if active {
+                    col
+                } else {
+                    Color32::from_rgb(0x25, 0x2a, 0x37)
+                },
+            ),
+            egui::StrokeKind::Inside,
+        );
+        g.text(
+            cr.center(),
+            Align2::CENTER_CENTER,
+            lbl,
+            FontId::proportional(11.0),
+            if active {
+                col.lerp_to_gamma(Color32::WHITE, 0.4)
+            } else {
+                TEXT_DIM
+            },
+        );
+    }
+
+    // Audition preview controls height + footer height
+    let audition_h = 30.0;
     let footer_h = 34.0;
     let cols = Rect::from_min_max(
-        pos2(left, search_r.bottom() + 8.0),
-        pos2(panel.right(), panel.bottom() - footer_h),
+        pos2(left, chips_y + 26.0),
+        pos2(right, panel.bottom() - footer_h - audition_h),
     );
+
     let query = v.search.trim().to_lowercase();
     if !query.is_empty() {
         // Search results: one column of "Patch" rows across every category.
@@ -553,8 +827,22 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             .iter()
             .map(|(ci, pi)| CATEGORIES[*ci].patches[*pi].to_string())
             .collect();
+        let badges: Vec<(Color32, &'static str)> = hits
+            .iter()
+            .map(|(ci, pi)| badge_for_patch(CATEGORIES[*ci].patches[*pi], CATEGORIES[*ci].name))
+            .collect();
         let sel = v.loaded.and_then(|l| hits.iter().position(|h| *h == l));
-        if let Some(i) = column(ui, &g, cols, 2, &mut v.scroll_right, &items, sel, false) {
+        if let Some(i) = column(
+            ui,
+            &g,
+            cols,
+            2,
+            &mut v.scroll_right,
+            &items,
+            sel,
+            false,
+            Some(&badges),
+        ) {
             let (ci, pi) = hits[i];
             load_patch(p, v, ci, pi);
         }
@@ -568,13 +856,39 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             );
         }
     } else {
+        // Filter categories if active_chip is set
+        let filtered_cat_indices: Vec<usize> = CATEGORIES
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| match v.active_chip {
+                None => true,
+                Some(SoundChip::Synth) => {
+                    let n = c.name.to_lowercase();
+                    n.contains("synth") || n.contains("arp") || n.contains("cinematic")
+                }
+                Some(SoundChip::Bass) => c.name.to_lowercase().contains("bass"),
+                Some(SoundChip::Drums) => {
+                    let n = c.name.to_lowercase();
+                    n.contains("drum") || n.contains("percussion")
+                }
+            })
+            .map(|(i, _)| i)
+            .collect();
+
         let split = if v.category.is_some() {
             left + w * 0.5
         } else {
-            panel.right()
+            right
         };
         let left_col = Rect::from_min_max(cols.min, pos2(split, cols.bottom()));
-        let cat_items: Vec<String> = CATEGORIES.iter().map(|c| tr(c.name).to_string()).collect();
+        let cat_items: Vec<String> = filtered_cat_indices
+            .iter()
+            .map(|&ci| tr(CATEGORIES[ci].name).to_string())
+            .collect();
+        let cat_sel = v
+            .category
+            .and_then(|sel_ci| filtered_cat_indices.iter().position(|&ci| ci == sel_ci));
+
         if let Some(i) = column(
             ui,
             &g,
@@ -582,22 +896,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             0,
             &mut v.scroll_left,
             &cat_items,
-            v.category,
+            cat_sel,
             true,
+            None,
         ) {
-            v.category = if v.category == Some(i) { None } else { Some(i) };
+            let real_ci = filtered_cat_indices[i];
+            v.category = if v.category == Some(real_ci) {
+                None
+            } else {
+                Some(real_ci)
+            };
             v.scroll_right = 0.0;
         }
+
         if let Some(ci) = v.category {
             let right_col = Rect::from_min_max(pos2(split, cols.top()), cols.max);
             g.line_segment(
                 [pos2(split, cols.top()), pos2(split, cols.bottom())],
-                Stroke::new(1.0, Color32::from_gray(0x2c)),
+                Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
             );
             let items: Vec<String> = CATEGORIES[ci]
                 .patches
                 .iter()
                 .map(|n| n.to_string())
+                .collect();
+            let badges: Vec<(Color32, &'static str)> = CATEGORIES[ci]
+                .patches
+                .iter()
+                .map(|pname| badge_for_patch(pname, CATEGORIES[ci].name))
                 .collect();
             let sel = v.loaded.filter(|(c, _)| *c == ci).map(|(_, pi)| pi);
             if let Some(pi) = column(
@@ -609,17 +935,129 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 &items,
                 sel,
                 false,
+                Some(&badges),
             ) {
                 load_patch(p, v, ci, pi);
             }
         }
     }
 
+    // Bottom Audition Preview Controls bar
+    let aud_r = Rect::from_min_size(
+        pos2(left + 8.0, panel.bottom() - footer_h - audition_h + 4.0),
+        vec2(w - 16.0, 24.0),
+    );
+    g.rect_filled(aud_r, 6.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+    g.rect_stroke(
+        aud_r,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
+    );
+
+    // Audition Play/Stop pill
+    let play_btn_r = Rect::from_min_size(
+        pos2(aud_r.left() + 4.0, aud_r.top() + 2.0),
+        vec2(70.0, 20.0),
+    );
+    let play_resp = ui.interact(play_btn_r, id("audition_play"), Sense::click());
+    if play_resp.clicked() {
+        v.audition_playing = !v.audition_playing;
+    }
+    g.rect_filled(
+        play_btn_r,
+        5.0,
+        if v.audition_playing {
+            Color32::from_rgb(0x10, 0xb9, 0x81)
+        } else if play_resp.hovered() {
+            Color32::from_rgb(0x25, 0x2a, 0x37)
+        } else {
+            Color32::from_rgb(0x13, 0x16, 0x1e)
+        },
+    );
+    g.text(
+        play_btn_r.center(),
+        Align2::CENTER_CENTER,
+        if v.audition_playing {
+            "■ Stop"
+        } else {
+            "▶ Audition"
+        },
+        FontId::proportional(11.0),
+        if v.audition_playing {
+            Color32::WHITE
+        } else {
+            TEXT
+        },
+    );
+
+    // Auto-audition toggle
+    let auto_btn_r = Rect::from_min_size(
+        pos2(play_btn_r.right() + 4.0, aud_r.top() + 2.0),
+        vec2(42.0, 20.0),
+    );
+    let auto_resp = ui.interact(auto_btn_r, id("audition_auto"), Sense::click());
+    if auto_resp.clicked() {
+        v.audition_auto = !v.audition_auto;
+    }
+    g.rect_filled(
+        auto_btn_r,
+        5.0,
+        if v.audition_auto {
+            Color32::from_rgb(0x1f, 0x2a, 0x40)
+        } else if auto_resp.hovered() {
+            Color32::from_rgb(0x25, 0x2a, 0x37)
+        } else {
+            Color32::from_rgb(0x13, 0x16, 0x1e)
+        },
+    );
+    if v.audition_auto {
+        g.rect_stroke(
+            auto_btn_r,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x38, 0x8b, 0xfd)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    g.text(
+        auto_btn_r.center(),
+        Align2::CENTER_CENTER,
+        "Auto",
+        FontId::proportional(11.0),
+        if v.audition_auto {
+            Color32::from_rgb(0x58, 0xa6, 0xff)
+        } else {
+            TEXT_DIM
+        },
+    );
+
+    // Mini volume slider
+    let vol_w = (aud_r.right() - auto_btn_r.right() - 14.0).clamp(20.0, 80.0);
+    let vol_r = Rect::from_min_size(
+        pos2(aud_r.right() - vol_w - 6.0, aud_r.center().y - 4.0),
+        vec2(vol_w, 8.0),
+    );
+    g.rect_filled(vol_r, 4.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    let vol_fill_w = vol_w * v.audition_volume.clamp(0.0, 1.0);
+    g.rect_filled(
+        Rect::from_min_size(vol_r.min, vec2(vol_fill_w, 8.0)),
+        4.0,
+        Color32::from_rgb(0x38, 0x8b, 0xfd),
+    );
+    let vol_resp = ui.interact(
+        vol_r.expand2(vec2(2.0, 6.0)),
+        id("audition_vol"),
+        Sense::click_and_drag(),
+    );
+    if let Some(pos) = vol_resp.interact_pointer_pos() {
+        v.audition_volume = ((pos.x - vol_r.left()) / vol_w).clamp(0.0, 1.0);
+    }
+
     // Footer: Revert / Delete / Save…
     let fy = panel.bottom() - footer_h + 6.0;
     g.line_segment(
-        [pos2(left, fy - 6.0), pos2(panel.right(), fy - 6.0)],
-        Stroke::new(1.0, Color32::from_gray(0x2a)),
+        [pos2(left, fy - 6.0), pos2(right, fy - 6.0)],
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     let bw = (w - 32.0) / 3.0;
     let can_revert = v.saved.is_some();

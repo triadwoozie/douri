@@ -33,23 +33,23 @@ const STRIP_FOOTER_H: f32 = 50.0;
 /// what a too-short Mixer panel left on screen (see [`min_panel_height`]).
 const MIN_FADER_H: f32 = 72.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
-const MIXER_BG: Color32 = Color32::from_rgb(0x33, 0x33, 0x33);
-const STRIP_BG: Color32 = Color32::from_rgb(0x3e, 0x3e, 0x3e);
-const STRIP_SEL: Color32 = Color32::from_rgb(0x4d, 0x4d, 0x4d);
-const SLOT_EMPTY: Color32 = Color32::from_rgb(0x2c, 0x2c, 0x2c);
-const SLOT_GRAY: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
-const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x36, 0x6f, 0xd2);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x14);
+const MIXER_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
+const STRIP_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
+const STRIP_SEL: Color32 = Color32::from_rgb(0x22, 0x2a, 0x3d);
+const SLOT_EMPTY: Color32 = Color32::from_rgb(0x11, 0x14, 0x1d);
+const SLOT_GRAY: Color32 = Color32::from_rgb(0x1e, 0x24, 0x33);
+const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x38, 0x8b, 0xfd);
 /// A plug-in in a project that is not installed here: its slot keeps its name and passes the
 /// sound through, and the orange says so.
 pub const PLUGIN_NOT_FOUND: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x1c);
 /// A strip that makes no sound (muted, or another track is soloed): instruments, plug-ins
 /// and sends turn grey, and so do the meters.
-const PLUGIN_OFF: Color32 = Color32::from_rgb(0x4a, 0x4a, 0x4a);
-const METER_OFF: Color32 = Color32::from_rgb(0x70, 0x70, 0x70);
-const READ_GREEN: Color32 = Color32::from_rgb(0x6c, 0xd0, 0x5a);
-const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x8c, 0xe6);
-const SOLO_ON: Color32 = Color32::from_rgb(0xe6, 0xc2, 0x2e);
+const PLUGIN_OFF: Color32 = Color32::from_rgb(0x30, 0x36, 0x46);
+const METER_OFF: Color32 = Color32::from_rgb(0x40, 0x48, 0x5a);
+const READ_GREEN: Color32 = Color32::from_rgb(0x10, 0xb9, 0x81);
+const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
+const SOLO_ON: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
 const OUT_PURPLE: Color32 = Color32::from_rgb(0x8a, 0x3f, 0xc8);
 const MASTER_PINK: Color32 = Color32::from_rgb(0xb0, 0x3c, 0x9a);
 
@@ -225,7 +225,13 @@ pub fn elide(g: &Painter, text: &str, font: &FontId, max_w: f32) -> String {
 }
 
 fn slot(g: &Painter, r: Rect, text: &str, fill: Color32, color: Color32) {
-    g.rect_filled(r, 3.0, fill);
+    g.rect_filled(r, 4.0, fill);
+    g.rect_stroke(
+        r,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        StrokeKind::Inside,
+    );
     if !text.is_empty() {
         let font = FontId::proportional(10.5);
         let shown = elide(g, text, &font, r.width() - 6.0);
@@ -258,11 +264,37 @@ fn small_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(tr(text));
     }
-    g.rect_filled(r, 3.0, if on { on_col } else { SLOT_GRAY });
+    let pill_r = (r.height() * 0.35).min(5.0);
+    if on {
+        g.rect_filled(r, pill_r, on_col);
+        g.rect_stroke(
+            r,
+            pill_r,
+            Stroke::new(1.0, on_col.lerp_to_gamma(Color32::WHITE, 0.3)),
+            StrokeKind::Inside,
+        );
+    } else {
+        let bg = if resp.hovered() {
+            Color32::from_rgb(0x25, 0x2a, 0x37)
+        } else {
+            SLOT_GRAY
+        };
+        g.rect_filled(r, pill_r, bg);
+        g.rect_stroke(
+            r,
+            pill_r,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
+    }
     let txt = if on && on_col == SOLO_ON {
         Color32::BLACK
+    } else if on {
+        Color32::WHITE
+    } else if resp.hovered() {
+        Color32::from_rgb(0xea, 0xee, 0xf4)
     } else {
-        Color32::from_gray(0xe8)
+        Color32::from_rgb(0x8a, 0x93, 0xa5)
     };
     g.text(
         r.center(),
@@ -353,18 +385,18 @@ fn pan_knob(
         out.started |= resp.drag_started();
         out.stopped |= resp.drag_stopped();
     }
-    crate::widgets::draw_knob(g, c, 12.0, value);
+    crate::widgets::draw_radial_pan(g, c, 11.0, value);
     out
 }
 
 /// Logic-style meter colour for a level in dB: green, yellow from -6 dB, red above 0 dB.
 pub(crate) fn meter_colour(db: f32) -> Color32 {
     if db > 0.0 {
-        Color32::from_rgb(0xe8, 0x3a, 0x2c)
+        Color32::from_rgb(0xef, 0x44, 0x44)
     } else if db > -6.0 {
-        Color32::from_rgb(0xe6, 0xc8, 0x2a)
+        Color32::from_rgb(0xf5, 0x9e, 0x0b)
     } else {
-        Color32::from_rgb(0x34, 0xc2, 0x3e)
+        Color32::from_rgb(0x10, 0xb9, 0x81)
     }
 }
 
@@ -447,11 +479,11 @@ fn fader_and_meter(
         pos2(meter_left - 2.0, top - 1.0),
         pos2(meter_left + 2.0 * bar_w + 3.0, bottom + 1.0),
     );
-    g.rect_filled(housing, 2.5, Color32::from_gray(0x10));
+    g.rect_filled(housing, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
     g.rect_stroke(
         housing,
-        2.5,
-        Stroke::new(1.0, Color32::from_gray(0x2e)),
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
         StrokeKind::Inside,
     );
     for (i, (lvl, hd)) in [(levels.0, hold.0), (levels.1, hold.1)]
@@ -460,7 +492,7 @@ fn fader_and_meter(
     {
         let x0 = meter_left + i as f32 * (bar_w + 1.0);
         let bar = Rect::from_min_max(pos2(x0, top), pos2(x0 + bar_w, bottom));
-        g.rect_filled(bar, 0.5, Color32::from_gray(0x08));
+        g.rect_filled(bar, 0.5, Color32::from_rgb(0x13, 0x16, 0x1e));
         let f = db_to_frac(lvl);
         if f > 0.0 {
             let bands = [(-120.0f32, -6.0f32), (-6.0, 0.0), (0.0, 12.0)];
@@ -479,7 +511,7 @@ fn fader_and_meter(
                     g.rect_filled(
                         Rect::from_min_max(seg.min, pos2(seg.left() + bar_w * 0.4, seg.bottom())),
                         0.0,
-                        col.lerp_to_gamma(Color32::WHITE, 0.28),
+                        col.lerp_to_gamma(Color32::WHITE, 0.35),
                     );
                 }
             }
@@ -488,7 +520,7 @@ fn fader_and_meter(
             while y > y_of(f) {
                 g.line_segment(
                     [pos2(bar.left(), y), pos2(bar.right(), y)],
-                    Stroke::new(0.8, Color32::from_black_alpha(110)),
+                    Stroke::new(0.8, Color32::from_rgb(0x0d, 0x0f, 0x14)),
                 );
                 y -= 2.5;
             }
@@ -535,45 +567,43 @@ fn fader_and_meter(
         out.started |= resp.drag_started();
         out.stopped |= resp.drag_stopped();
     }
-    // Logic's cap: a narrow metal block. Soft shadow, silver body that is a little darker at the
-    // edges, a dark groove across the middle with a bright line under it, and engraved ridges
-    // (a dark line with a light line under it) above and below.
+    // Tactile white fader cap with soft shadow, silver-white body, center groove, and engraved ridges
     g.rect_filled(
-        cap.translate(vec2(0.5, 1.5)),
-        2.0,
-        Color32::from_black_alpha(110),
+        cap.translate(vec2(1.0, 2.0)),
+        3.0,
+        Color32::from_black_alpha(120),
     );
-    g.rect_filled(cap, 2.0, Color32::from_gray(0x9c));
+    g.rect_filled(cap, 3.0, Color32::from_rgb(0xea, 0xee, 0xf4));
     g.rect_filled(
         Rect::from_min_max(
-            pos2(cap.left() + 1.5, cap.top() + 1.0),
-            pos2(cap.right() - 1.5, cap.center().y),
+            pos2(cap.left() + 1.0, cap.top() + 1.0),
+            pos2(cap.right() - 1.0, cap.center().y),
         ),
         egui::CornerRadius {
-            nw: 1,
-            ne: 1,
+            nw: 2,
+            ne: 2,
             sw: 0,
             se: 0,
         },
-        Color32::from_gray(0xd4),
+        Color32::from_rgb(0xf8, 0xfa, 0xfc),
     );
     g.rect_filled(
         Rect::from_min_max(
-            pos2(cap.left() + 1.5, cap.center().y),
-            pos2(cap.right() - 1.5, cap.bottom() - 1.0),
+            pos2(cap.left() + 1.0, cap.center().y),
+            pos2(cap.right() - 1.0, cap.bottom() - 1.0),
         ),
         egui::CornerRadius {
             nw: 0,
             ne: 0,
-            sw: 1,
-            se: 1,
+            sw: 2,
+            se: 2,
         },
-        Color32::from_gray(0xb2),
+        Color32::from_rgb(0xd8, 0xde, 0xe9),
     );
     g.rect_stroke(
         cap,
-        2.0,
-        Stroke::new(1.0, Color32::from_gray(0x44)),
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x8a, 0x93, 0xa5)),
         StrokeKind::Inside,
     );
     for dy in [-9.0f32, -6.0, -3.0, 4.5, 7.5, 10.5] {
@@ -582,22 +612,30 @@ fn fader_and_meter(
                 pos2(cap.left() + 2.5, cap_y + dy),
                 pos2(cap.right() - 2.5, cap_y + dy),
             ],
-            Stroke::new(0.8, Color32::from_gray(0x80)),
+            Stroke::new(0.8, Color32::from_rgb(0x94, 0xa3, 0xb8)),
         );
         g.line_segment(
             [
                 pos2(cap.left() + 2.5, cap_y + dy + 1.0),
                 pos2(cap.right() - 2.5, cap_y + dy + 1.0),
             ],
-            Stroke::new(0.6, Color32::from_gray(0xe4)),
+            Stroke::new(0.6, Color32::WHITE),
         );
     }
+    // Deep center alignment groove with bright highlight underneath
     g.line_segment(
         [
             pos2(cap.left() + 1.0, cap_y),
             pos2(cap.right() - 1.0, cap_y),
         ],
-        Stroke::new(1.8, Color32::from_gray(0x24)),
+        Stroke::new(2.0, Color32::from_rgb(0x1e, 0x29, 0x3b)),
+    );
+    g.line_segment(
+        [
+            pos2(cap.left() + 1.0, cap_y + 1.0),
+            pos2(cap.right() - 1.0, cap_y + 1.0),
+        ],
+        Stroke::new(0.8, Color32::WHITE),
     );
     g.line_segment(
         [
@@ -1495,16 +1533,25 @@ pub fn channel_strip(
     } else {
         format!("{vol_db:.1}")
     };
-    slot(
-        g,
+    let font_mono = FontId::monospace(10.0);
+    g.rect_filled(vol_r, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_stroke(
         vol_r,
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        StrokeKind::Inside,
+    );
+    let vol_col = if is_master && meters.master_lufs_integrated > -100.0 {
+        Color32::from_rgb(0x58, 0xa6, 0xff)
+    } else {
+        Color32::from_rgb(0xea, 0xee, 0xf4)
+    };
+    g.text(
+        vol_r.center(),
+        Align2::CENTER_CENTER,
         &vol_text,
-        Color32::from_gray(0x24),
-        if is_master && meters.master_lufs_integrated > -100.0 {
-            Color32::from_rgb(0x80, 0xd0, 0xff)
-        } else {
-            TEXT
-        },
+        font_mono.clone(),
+        vol_col,
     );
 
     let hold_db = if is_master && meters.master_true_peak_db > -100.0 {
@@ -1520,11 +1567,24 @@ pub fn channel_strip(
         format!("{hold_db:.1}")
     };
     let pk_col = if hold_db > 0.0 {
-        Color32::from_rgb(0xff, 0x45, 0x3a)
+        Color32::from_rgb(0xef, 0x44, 0x44)
     } else {
         READ_GREEN
     };
-    slot(g, pk_r, &pk_text, Color32::from_gray(0x24), pk_col);
+    g.rect_filled(pk_r, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_stroke(
+        pk_r,
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        StrokeKind::Inside,
+    );
+    g.text(
+        pk_r.center(),
+        Align2::CENTER_CENTER,
+        &pk_text,
+        font_mono,
+        pk_col,
+    );
     if ui
         .interact(pk_r, id(ns, (key, "peak")), Sense::click())
         .clicked()
@@ -1602,13 +1662,23 @@ pub fn channel_strip(
         }
     }
 
-    // Name.
+    // Name: full-width colored track name plate at bottom of channel strip.
     let name_r = Rect::from_min_max(pos2(strip.left(), strip.bottom() - name_h), strip.max);
-    let font = FontId::proportional(10.5);
+    let font = FontId::proportional(11.0);
     let shown = elide(g, &name, &font, name_r.width() - 6.0);
+    let corner = egui::CornerRadius {
+        nw: 0,
+        ne: 0,
+        sw: 4,
+        se: 4,
+    };
     match name_style {
         NameStyle::Coloured => {
-            g.rect_filled(name_r, 2.0, color);
+            g.rect_filled(name_r, corner, color);
+            g.line_segment(
+                [name_r.left_top(), name_r.right_top()],
+                Stroke::new(1.0, color.lerp_to_gamma(Color32::WHITE, 0.3)),
+            );
             g.text(
                 name_r.center(),
                 Align2::CENTER_CENTER,
@@ -1618,7 +1688,18 @@ pub fn channel_strip(
             );
         }
         NameStyle::Plain => {
-            g.text(name_r.center(), Align2::CENTER_CENTER, shown, font, TEXT);
+            g.rect_filled(name_r, corner, Color32::from_rgb(0x13, 0x16, 0x1e));
+            g.line_segment(
+                [name_r.left_top(), name_r.right_top()],
+                Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            );
+            g.text(
+                name_r.center(),
+                Align2::CENTER_CENTER,
+                shown,
+                font,
+                Color32::from_rgb(0xea, 0xee, 0xf4),
+            );
         }
     }
     if key == StripKey::StereoOut && name_style == NameStyle::Coloured {
@@ -2005,8 +2086,16 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
         let r = Rect::from_min_size(pos2(rx - 26.0, cy - 10.0), vec2(26.0, 20.0));
         let resp = ui.interact(r, id(NS, key), Sense::click());
         if v.wide == wide {
-            g.rect_filled(r, 4.0, Color32::from_gray(0x5a));
+            g.rect_filled(r, 4.0, Color32::from_rgb(0x25, 0x2a, 0x37));
+        } else {
+            g.rect_filled(r, 4.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
         }
+        g.rect_stroke(
+            r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
         let c = r.center();
         let iw = if wide { 13.0 } else { 9.0 };
         g.rect_stroke(
@@ -2040,13 +2129,40 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
             let r = Rect::from_min_size(pos2(rx - w, cy - 10.0), vec2(w, 20.0));
             let resp = ui.interact(r, id(NS, ("filter", i)), Sense::click());
             let on = v.filters[i];
-            g.rect_filled(r, 4.0, if on { BLUE } else { Color32::from_gray(0x50) });
+            g.rect_filled(
+                r,
+                4.0,
+                if on {
+                    Color32::from_rgb(0x1a, 0x24, 0x38)
+                } else if resp.hovered() {
+                    Color32::from_rgb(0x22, 0x27, 0x35)
+                } else {
+                    Color32::from_rgb(0x1a, 0x1e, 0x29)
+                },
+            );
+            g.rect_stroke(
+                r,
+                4.0,
+                Stroke::new(
+                    1.0,
+                    if on {
+                        Color32::from_rgb(0x38, 0x8b, 0xfd)
+                    } else {
+                        Color32::from_rgb(0x25, 0x2a, 0x37)
+                    },
+                ),
+                StrokeKind::Inside,
+            );
             g.text(
                 r.center(),
                 Align2::CENTER_CENTER,
                 tr(label),
-                FontId::proportional(12.5),
-                if on { Color32::WHITE } else { TEXT_DIM },
+                FontId::proportional(12.0),
+                if on {
+                    Color32::from_rgb(0x58, 0xa6, 0xff)
+                } else {
+                    TEXT_DIM
+                },
             );
             if resp.clicked() {
                 v.filters[i] = !v.filters[i];
@@ -2089,17 +2205,40 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
         );
         let resp = ui.interact(r, id(NS, ("mode", *label)), Sense::click());
         let on = v.mode == *m;
-        if on {
-            g.rect_filled(r, 4.0, BLUE);
-        } else if resp.hovered() {
-            g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
-        }
+        g.rect_filled(
+            r,
+            4.0,
+            if on {
+                Color32::from_rgb(0x1a, 0x24, 0x38)
+            } else if resp.hovered() {
+                Color32::from_rgb(0x22, 0x27, 0x35)
+            } else {
+                Color32::from_rgb(0x1a, 0x1e, 0x29)
+            },
+        );
+        g.rect_stroke(
+            r,
+            4.0,
+            Stroke::new(
+                1.0,
+                if on {
+                    Color32::from_rgb(0x38, 0x8b, 0xfd)
+                } else {
+                    Color32::from_rgb(0x25, 0x2a, 0x37)
+                },
+            ),
+            StrokeKind::Inside,
+        );
         g.text(
             r.center(),
             Align2::CENTER_CENTER,
             *label,
-            FontId::proportional(12.5),
-            if on { Color32::WHITE } else { TEXT },
+            FontId::proportional(12.0),
+            if on {
+                Color32::from_rgb(0x58, 0xa6, 0xff)
+            } else {
+                TEXT
+            },
         );
         if resp.clicked() {
             v.mode = *m;
