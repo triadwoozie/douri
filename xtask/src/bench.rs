@@ -113,9 +113,9 @@ fn evaluate(report: &str, window_advisory: bool) -> (Vec<String>, bool) {
 }
 
 pub fn bench(root: &Path) -> bool {
-    println!("\n==> bench: cargo build --release -p prowave-app");
+    println!("\n==> bench: cargo build --release -p douri");
     let built = Command::new("cargo")
-        .args(["build", "--release", "-p", "prowave-app"])
+        .args(["build", "--release", "-p", "douri"])
         .current_dir(root)
         .status()
         .is_ok_and(|s| s.success());
@@ -126,7 +126,7 @@ pub fn bench(root: &Path) -> bool {
     let exe = root
         .join("target")
         .join("release")
-        .join(format!("prowave{}", std::env::consts::EXE_SUFFIX));
+        .join(format!("douri{}", std::env::consts::EXE_SUFFIX));
     let binary_mb = match std::fs::metadata(&exe) {
         Ok(m) => m.len() as f64 / (1024.0 * 1024.0),
         Err(e) => {

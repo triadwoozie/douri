@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Dōri
+Comment=Music production studio
+Exec=douri %F
+Icon=io.github.triadwoozie.douri
+StartupWMClass=io.github.triadwoozie.douri
+Terminal=false
+Categories=AudioVideo;Audio;Music;Midi;Sequencer;
+MimeType=application/x-douri;application/x-prowave;

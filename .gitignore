@@ -24,3 +24,7 @@ Thumbs.db
 
 # A target dir made inside crates/ by a relative CARGO_TARGET_DIR
 /crates/target
+
+# Donor references (never commit)
+/references
+references/

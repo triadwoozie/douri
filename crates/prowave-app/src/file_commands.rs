@@ -81,7 +81,7 @@ pub fn content(p: &Project) -> ProjectDoc {
 }
 
 fn dialog() -> FileDialog {
-    FileDialog::new().add_filter(tr("Pro Wave Project"), &[prowave_project::EXTENSION])
+    FileDialog::new().add_filter(tr("Dōri Project"), &[prowave_project::EXTENSION])
 }
 
 /// Opens the system's file manager with `path` (the project file) selected.
@@ -182,7 +182,7 @@ impl App {
         let mut answer = None;
         let modal = egui::Modal::new(egui::Id::unique(("file", "save_prompt"))).show(ctx, |ui| {
             ui.set_width(380.0);
-            ui.heading("Pro Wave");
+            ui.heading("Dōri");
             ui.add_space(6.0);
             ui.label(trf(
                 "Do you want to save the changes made to the project \"{}\"?",
@@ -232,7 +232,7 @@ impl App {
         let mut answer = None;
         let modal = egui::Modal::new(egui::Id::unique(("file", "revert_prompt"))).show(ctx, |ui| {
             ui.set_width(380.0);
-            ui.heading("Pro Wave");
+            ui.heading("Dōri");
             ui.add_space(6.0);
             ui.label(trf(
                 "Do you want to revert the project \"{}\" to the last saved version?",

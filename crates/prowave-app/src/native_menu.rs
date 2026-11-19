@@ -44,7 +44,7 @@ pub fn kind(label: &str) -> Kind {
         "Zoom" => return Kind::System(SystemItem::Zoom),
         "Enter Full Screen" => return Kind::System(SystemItem::FullScreen),
         "Bring All to Front" => return Kind::System(SystemItem::BringAllToFront),
-        "About Pro Wave" => return Kind::Skip,
+        "About Dōri" | "About Pro Wave" => return Kind::Skip,
         _ => {}
     }
     if crate::menus::is_checkable(label) {
@@ -200,21 +200,30 @@ mod mac {
 
             let menu = Menu::new();
             let about = AboutMetadata {
-                name: Some("Pro Wave".into()),
+                name: Some("Dōri".into()),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
+                authors: Some(vec![
+                    "Dōri contributors".into(),
+                    "fabox-os/Pro-Wave".into(),
+                    "yuribeats/prowave".into(),
+                    "storytold/soundcraft".into(),
+                    "Ardour".into(),
+                ]),
+                comments: Some("Pure-Rust digital audio workstation inspired by Logic Pro".into()),
+                copyright: Some("GPL-3.0-or-later".into()),
                 license: Some("GPL-3.0-or-later".into()),
                 ..Default::default()
             };
-            let app_menu = Submenu::new("Pro Wave", true);
+            let app_menu = Submenu::new("Dōri", true);
             let quit = MenuItem::with_id(
                 QUIT,
-                tr("Quit Pro Wave"),
+                tr("Quit Dōri"),
                 true,
                 Some(Accelerator::new(Modifiers::META, Code::KeyQ)),
             );
-            let about = PredefinedMenuItem::about(Some(tr("About Pro Wave")), Some(about));
+            let about = PredefinedMenuItem::about(Some(tr("About Dōri")), Some(about));
             let services = PredefinedMenuItem::services(Some(tr("Services")));
-            let hide = PredefinedMenuItem::hide(Some(tr("Hide Pro Wave")));
+            let hide = PredefinedMenuItem::hide(Some(tr("Hide Dōri")));
             let hide_others = PredefinedMenuItem::hide_others(Some(tr("Hide Others")));
             let show_all = PredefinedMenuItem::show_all(Some(tr("Show All")));
             let _ = app_menu.append_items(&[
@@ -233,10 +242,10 @@ mod mac {
             let mut checks = Vec::new();
             let mut plains = Vec::new();
             let mut labels = vec![
-                ("Quit Pro Wave", Label::Item(quit.clone())),
-                ("About Pro Wave", Label::System(about)),
+                ("Quit Dōri", Label::Item(quit.clone())),
+                ("About Dōri", Label::System(about)),
                 ("Services", Label::System(services)),
-                ("Hide Pro Wave", Label::System(hide)),
+                ("Hide Dōri", Label::System(hide)),
                 ("Hide Others", Label::System(hide_others)),
                 ("Show All", Label::System(show_all)),
             ];
@@ -383,7 +392,7 @@ mod tests {
             Kind::System(SystemItem::FullScreen)
         );
         assert_eq!(
-            kind("About Pro Wave"),
+            kind("About Dōri"),
             Kind::Skip,
             "it lives in the app menu"
         );

@@ -331,7 +331,7 @@ pub(crate) mod tests {
     }
 
     /// Texts that are the same in every language and need no translation line.
-    const UNTRANSLATED: [&str; 3] = ["MIDI", "EQ", "Pro Wave"];
+    const UNTRANSLATED: [&str; 4] = ["MIDI", "EQ", "Dōri", "Pro Wave"];
 
     /// The Rust string literal starting at `s` (just after its opening quote), unescaped.
     fn literal(s: &str) -> Option<String> {

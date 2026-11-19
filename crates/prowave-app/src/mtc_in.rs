@@ -22,7 +22,7 @@ const QUEUE: usize = 1024;
 
 /// The names of the MIDI input ports on this computer, without the system's "Through" port.
 pub fn ports() -> Vec<String> {
-    let Ok(input) = MidiInput::new("Pro Wave") else {
+    let Ok(input) = MidiInput::new("Dōri") else {
         return Vec::new();
     };
     input
@@ -79,7 +79,7 @@ impl MtcIn {
         let Some(name) = self.port.clone() else {
             return;
         };
-        let Ok(mut input) = MidiInput::new("Pro Wave MTC") else {
+        let Ok(mut input) = MidiInput::new("Dōri MTC") else {
             return;
         };
         // Time code arrives as system messages, which midir would drop by default.

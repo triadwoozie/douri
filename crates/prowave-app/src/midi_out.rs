@@ -96,7 +96,7 @@ pub fn panic_messages(channel: u8) -> [[u8; 3]; 2] {
 
 /// The names of the MIDI output ports on this computer, without the system's "Through" port.
 pub fn ports() -> Vec<String> {
-    let Ok(out) = MidiOutput::new("Pro Wave") else {
+    let Ok(out) = MidiOutput::new("Dōri") else {
         return Vec::new();
     };
     out.ports()
@@ -507,7 +507,7 @@ impl Sender {
 }
 
 fn open_port(port: &str) -> Option<MidiOutputConnection> {
-    let out = MidiOutput::new("Pro Wave").ok()?;
+    let out = MidiOutput::new("Dōri").ok()?;
     let found = out
         .ports()
         .into_iter()

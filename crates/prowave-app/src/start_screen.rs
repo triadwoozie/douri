@@ -221,7 +221,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     g.text(
         side.left_top() + vec2(20.0, 28.0),
         Align2::LEFT_CENTER,
-        "Pro Wave",
+        "Dōri",
         FontId::proportional(18.0),
         TEXT,
     );

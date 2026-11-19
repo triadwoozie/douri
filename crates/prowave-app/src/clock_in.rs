@@ -26,7 +26,7 @@ impl Arrival {
 
 /// The names of the MIDI input ports on this computer, without the system's "Through" port.
 pub fn ports() -> Vec<String> {
-    let Ok(input) = MidiInput::new("Pro Wave clock") else {
+    let Ok(input) = MidiInput::new("Dōri clock") else {
         return Vec::new();
     };
     input
@@ -83,7 +83,7 @@ impl ClockIn {
         let Some(name) = want else {
             return;
         };
-        let Ok(input) = MidiInput::new("Pro Wave clock") else {
+        let Ok(input) = MidiInput::new("Dōri clock") else {
             return;
         };
         let Some(port) = input

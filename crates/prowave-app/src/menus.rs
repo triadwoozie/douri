@@ -296,7 +296,7 @@ const HELP: &[&str] = &[
     "Check for Updates…",
     "Check for Updates Automatically",
     "-",
-    "About Pro Wave",
+    "About Dōri",
 ];
 
 /// Help > Language: every language, each named in its own language.
@@ -727,6 +727,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             s.update_auto = !s.update_auto;
             crate::updater::set_auto_enabled(s.update_auto);
         }
+        "About Dōri" => s.show_about = true,
         "Show Tempo Track" => s.tracks.show_tempo = !s.tracks.show_tempo,
         "Show Marker Track" => s.tracks.show_markers = !s.tracks.show_markers,
         "Show Signature Track" => s.tracks.show_signatures = !s.tracks.show_signatures,
@@ -1172,7 +1173,7 @@ pub fn menu_bar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) -> f
         .config(egui::containers::menu::MenuConfig::new().style(menu_style(light)));
     bar.ui(ui, |ui| {
         ui.label(
-            egui::RichText::new("Pro Wave")
+            egui::RichText::new("Dōri")
                 .strong()
                 .color(look(light).bar_text),
         );

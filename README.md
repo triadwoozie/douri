@@ -1,29 +1,27 @@
-<p align="center"><img src="docs/logo.png" alt="Pro Wave logo" width="160"></p>
+<p align="center"><img src="docs/logo.png" alt="Dōri logo" width="160"></p>
 
-<h1 align="center">Pro Wave</h1>
+<h1 align="center">Dōri (道理)</h1>
 
-<p align="center"><b>An open-source music production app in pure Rust, with the look and workflow of Logic Pro.</b></p>
+<p align="center"><b>A pure-Rust + egui digital audio workstation targeting Linux-first with cross-platform desktop support, inspired by Logic Pro.</b></p>
 
-<p align="center">Tracks, MIDI and audio, a Piano Roll, a Mixer with real effects and automation, and a lock-free real-time engine. Drawn with egui, played through cpal: no Electron, no JUCE.</p>
+<p align="center">Tracks, MIDI and audio, a Piano Roll, a Mixer with real effects and automation, and a lock-free real-time engine. Drawn with egui, played through cpal (PipeWire/ALSA on Linux, WASAPI on Windows, CoreAudio on macOS): no Electron, no JUCE.</p>
 
 <p align="center">
-  <a href="https://github.com/fabox-os/Pro-Wave/actions"><img src="https://img.shields.io/github/actions/workflow/status/fabox-os/Pro-Wave/ci.yml?branch=main&label=CI" alt="CI"></a>
-  <a href="https://github.com/fabox-os/Pro-Wave/releases"><img src="https://img.shields.io/github/v/release/fabox-os/Pro-Wave?include_prereleases&label=release" alt="release"></a>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="license GPL-3.0">
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="rust">
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational" alt="platform">
 </p>
 
 <p align="center">
-  <a href="https://fabox-os.github.io/Pro-Wave/">Website</a> •
-  <a href="#downloads">Download</a> •
   <a href="#features">Features</a> •
   <a href="#building">Build from source</a> •
   <a href="#workspace">Architecture</a> •
+  <a href="AUDIT_AND_PLAN.md">Audit & Plan</a> •
   <a href="ROADMAP.md">Roadmap</a> •
   <a href="AGENTS.md">Contributing</a>
 </p>
 
-![Pro Wave: Tracks area with MIDI and audio regions, the Library, inspector and Mixer](docs/screenshots/tracks-and-mixer.webp)
+![Dōri: Tracks area with MIDI and audio regions, the Library, inspector and Mixer](docs/screenshots/tracks-and-mixer.webp)
 
 <table>
   <tr>
@@ -36,9 +34,14 @@
   </tr>
 </table>
 
-ProWave is an independent project. It is not affiliated with, sponsored by or endorsed by Apple
-Inc. Logic Pro is a trademark of Apple Inc., used here only to describe the workflow ProWave
-follows. ProWave contains no Apple code, artwork or sounds.
+Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave). It is not affiliated with, sponsored by, or endorsed by Apple Inc. Logic Pro is a trademark of Apple Inc., referenced solely for clean-room workflow and parameter alignment. Dōri contains no proprietary Apple code, artwork, or audio assets.
+
+### Upstream & Donor Attributions (GPL-3.0 Section 5 Compliance)
+Dōri incorporates and builds upon work from several foundational open-source projects:
+- **[fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave)** (GPL-3.0-or-later): Upstream core DAW architecture, real-time lock-free engine, egui user interface, and built-in DSP effects.
+- **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version enhancements including arranging tools, Vocal Top Line/Singer concepts, and plugin workflows.
+- **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): High-performance offline bounce architecture, EBU R128 true-peak/loudness metering, and modern audio engine donor code.
+- **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning reference.
 
 ## Status
 
@@ -104,13 +107,13 @@ publishing.
 ## Run from source
 
 ```sh
-cargo run --release -p prowave-app                  # the app
-cargo run --release -p prowave-app -- song.prowave   # open a project
-cargo run --release -p prowave-app -- drums.wav      # new project, import audio files
-cargo run --release -p prowave-app -- --play         # start playing right away
-cargo run --release -p prowave-app -- --piano        # open the Piano Roll on start
-cargo run --release -p prowave-app -- --screenshot shot.png   # save one picture of the window, then exit
-cargo run -p prowave-engine --example beep           # 440 Hz test tone, reports output latency
+cargo run --release -p douri                    # the app
+cargo run --release -p douri -- song.prowave     # open a project
+cargo run --release -p douri -- drums.wav        # new project, import audio files
+cargo run --release -p douri -- --play           # start playing right away
+cargo run --release -p douri -- --piano          # open the Piano Roll on start
+cargo run --release -p douri -- --screenshot shot.png   # save one picture of the window, then exit
+cargo run -p prowave-engine --example beep       # 440 Hz test tone, reports output latency
 ```
 
 Linux uses Ctrl where macOS uses Cmd: Space plays and stops, Ctrl+N/O/S new, open and save,
@@ -127,7 +130,7 @@ Rust stable is required. On Linux, install ALSA's development files and `pkg-con
 | Arch, Manjaro, EndeavourOS | `alsa-lib pkgconf` |
 
 ```sh
-cargo build --release -p prowave-app   # the program is target/release/prowave
+cargo build --release -p douri         # the program is target/release/douri
 cargo xtask check                      # fmt, clippy -D warnings, tests, no-alloc check, cargo-deny, wasm check
 ```
 
@@ -138,7 +141,7 @@ as the starting point for issue #79's OpenBSD request), leave both X11 and the s
 feature out — `accesskit_winit`'s defaults pull the X11 backend in on Linux:
 
 ```sh
-cargo build --release -p prowave-app --no-default-features
+cargo build --release -p douri --no-default-features
 ```
 
 That build has no X11 dependency (`cargo tree --no-default-features -e features | grep x11`
@@ -172,15 +175,21 @@ not a Rust tier-1 target; a report from a build there is welcome.
 | [`GARAGEBAND-FORMAT-SPEC.md`](GARAGEBAND-FORMAT-SPEC.md) | Notes for reading GarageBand `.band` projects (plan for issue #35) |
 | [`SECURITY.md`](SECURITY.md) | Reporting security problems |
 
-## License
+## License & Attribution
 
-Copyright (C) 2026 the ProWave contributors.
+Copyright (C) 2026 the Dōri contributors.
+Original work Copyright (C) 2026 the ProWave contributors.
 
-ProWave is free software: you can redistribute it and/or modify it under the terms of the
+Dōri is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License](LICENSE) as published by the Free Software Foundation, either
 version 3 of the License, or (at your option) any later version (GPL-3.0-or-later).
 Contributions are licensed the same way.
 
-ProWave is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+Per Section 5 of the GNU General Public License v3:
+- This work is a modified version based on Pro-Wave by fabox-os.
+- Additional donor code, algorithms, and references are incorporated from yuribeats/prowave, storytold/soundcraft, and Ardour.
+- All original copyright notices and license texts are preserved.
+
+Dōri is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
 even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 [`LICENSE`](LICENSE) file for details.

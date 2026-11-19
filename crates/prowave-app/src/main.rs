@@ -243,6 +243,8 @@ pub struct UiState {
     /// (`None`: Show All).
     pub plugin_manager_search: String,
     pub plugin_manager_vendor: Option<String>,
+    /// Help > About Dōri window is open.
+    pub show_about: bool,
 }
 
 impl UiState {
@@ -331,6 +333,7 @@ impl UiState {
             drum_error: None,
             plugin_manager_search: String::new(),
             plugin_manager_vendor: None,
+            show_about: false,
         }
     }
 
@@ -1477,8 +1480,41 @@ impl eframe::App for App {
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
+        show_about_dialog(&ctx, &mut self.ui.show_about);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
+    }
+}
+
+fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
+    if !*open {
+        return;
+    }
+    let modal = egui::Modal::new(egui::Id::unique(("help", "about_dōri"))).show(ctx, |ui| {
+        ui.set_width(440.0);
+        ui.vertical_centered(|ui| {
+            ui.add_space(8.0);
+            ui.heading("Dōri (道理)");
+            ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+            ui.add_space(6.0);
+            ui.label("A pure-Rust digital audio workstation inspired by Logic Pro.");
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label("Based on fabox-os/Pro-Wave, with contributions and donor code from:");
+            ui.label("• yuribeats/prowave");
+            ui.label("• storytold/soundcraft");
+            ui.label("• Ardour");
+            ui.add_space(8.0);
+            ui.label("Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).");
+            ui.add_space(12.0);
+            if ui.button("Close").clicked() {
+                *open = false;
+            }
+        });
+    });
+    if modal.should_close() {
+        *open = false;
     }
 }
 
@@ -1767,17 +1803,17 @@ fn window_app_id() -> String {
     std::env::var("FLATPAK_ID")
         .ok()
         .filter(|id| !id.is_empty())
-        .unwrap_or_else(|| "prowave-studio".to_string())
+        .unwrap_or_else(|| "io.github.triadwoozie.douri".to_string())
 }
 
 /// What `--help` prints.
 fn print_help() {
     println!(
-        "Pro Wave {} — a music production app in Rust (egui + cpal)",
+        "Dōri {} — a music production app in Rust (egui + cpal)",
         env!("CARGO_PKG_VERSION")
     );
     println!();
-    println!("Usage: prowave [options] [project.prowave] [audio files...]");
+    println!("Usage: douri [options] [project.prowave] [audio files...]");
     println!();
     println!("  --play                    start playing on launch");
     println!("  --piano                   open the Piano Roll on launch");
@@ -1824,7 +1860,7 @@ fn main() -> eframe::Result {
         all_args.iter().any(|a| a.as_os_str() == name)
     };
     if flag("--version") || flag("-V") {
-        println!("Pro Wave {}", env!("CARGO_PKG_VERSION"));
+        println!("Dōri {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     if flag("--help") || flag("-h") {
@@ -1837,7 +1873,7 @@ fn main() -> eframe::Result {
     // A `--screenshot` without a file is an error before the window opens: the session it
     // would otherwise start is not a measuring run and may change the user's settings.
     if shot_out.is_none() && all_args.iter().any(|a| a == bench::SCREENSHOT_ARG) {
-        eprintln!("--screenshot needs a file name, for example: prowave --screenshot shot.png");
+        eprintln!("--screenshot needs a file name, for example: douri --screenshot shot.png");
         std::process::exit(2);
     }
     let shot_exit = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0));
@@ -1848,7 +1884,7 @@ fn main() -> eframe::Result {
     let measuring = bench_out.is_some() || shots_dir.is_some() || shot_out.is_some();
     // Release builds: on a crash, write a report to the temp folder instead of a raw panic.
     human_panic::setup_panic!(human_panic::Metadata::new(
-        "Pro Wave",
+        "Dōri",
         env!("CARGO_PKG_VERSION")
     ));
     init_logging();
@@ -1861,7 +1897,7 @@ fn main() -> eframe::Result {
         // Fill the screen, as Logic does; on a small screen 1600 x 980 would not fit.
         .with_maximized(true)
         // Just the app name, on every system: no project name or view in the title bar.
-        .with_title("Pro Wave")
+        .with_title("Dōri")
         // Window class: lets Linux desktops match the window to its .desktop entry and icon.
         .with_app_id(window_app_id())
         // Windows and Linux: no title bar from the system; the menu bar row has the window
@@ -1903,7 +1939,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     let result = eframe::run_native(
-        "Pro Wave",
+        "Dōri",
         opts,
         Box::new(|cc| {
             theme::apply(&cc.egui_ctx);

@@ -1,12 +1,12 @@
 [package]
-name = "prowave-app"
+name = "douri"
 version = "0.3.0"
 edition = "2021"
-description = "Pro Wave desktop app (egui) - clean-room DAW UI inspired by Logic Pro"
+description = "Dōri desktop app (egui) - clean-room DAW UI inspired by Logic Pro"
 license = "GPL-3.0-or-later"
 
 [[bin]]
-name = "prowave"
+name = "douri"
 path = "src/main.rs"
 
 [features]

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Pro Wave
+Name=Dōri
 Comment=Music production studio
-Exec=prowave %F
-Icon=prowave
-StartupWMClass=prowave-studio
+Exec=douri %F
+Icon=io.github.triadwoozie.douri
+StartupWMClass=io.github.triadwoozie.douri
 Terminal=false
 Categories=AudioVideo;Audio;Music;Midi;Sequencer;
-MimeType=application/x-prowave;
+MimeType=application/x-douri;application/x-prowave;

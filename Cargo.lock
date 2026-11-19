@@ -1155,6 +1155,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "douri"
+version = "0.3.0"
+dependencies = [
+ "assert_no_alloc",
+ "eframe",
+ "egui",
+ "flate2",
+ "human-panic",
+ "image",
+ "midir",
+ "muda",
+ "prowave-engine",
+ "prowave-exs",
+ "prowave-garageband-import",
+ "prowave-ladspa",
+ "prowave-plugin-host",
+ "prowave-project",
+ "prowave-sfz",
+ "rfd",
+ "rhai",
+ "rtrb",
+ "serde_json",
+ "sha2",
+ "sysinfo",
+ "tar",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "winit",
+ "winresource",
+ "zip",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3421,41 +3456,6 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
-
-[[package]]
-name = "prowave-app"
-version = "0.3.0"
-dependencies = [
- "assert_no_alloc",
- "eframe",
- "egui",
- "flate2",
- "human-panic",
- "image",
- "midir",
- "muda",
- "prowave-engine",
- "prowave-exs",
- "prowave-garageband-import",
- "prowave-ladspa",
- "prowave-plugin-host",
- "prowave-project",
- "prowave-sfz",
- "rfd",
- "rhai",
- "rtrb",
- "serde_json",
- "sha2",
- "sysinfo",
- "tar",
- "tempfile",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "winit",
- "winresource",
- "zip",
-]
 
 [[package]]
 name = "prowave-dssi"

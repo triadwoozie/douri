@@ -133,7 +133,7 @@ impl MidiIn {
 
     fn connect(&mut self) {
         self.last_try = Some(Instant::now());
-        let Ok(input) = MidiInput::new("Pro Wave") else {
+        let Ok(input) = MidiInput::new("Dōri") else {
             return;
         };
         let ports = input.ports();
