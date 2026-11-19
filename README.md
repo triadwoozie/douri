@@ -98,6 +98,12 @@ Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https:/
 - **Native Linux Plugin Windows (X11 / XWayland)**: Dynamically embedded native GUI windows via `libloading` with zero compile-time X11 linker dependencies, full event loop handling, and double-click access from mixer channel strips and the track inspector.
 - **Plug-In Manager & Custom Scan Paths**: Dedicated manager (**Settings > Plug-In Manager…** or **Window > Plugin Manager**) featuring real-time search, category filters (All / Instruments / Effects), format filters (CLAP, VST3, AU, LADSPA), status reporting (Working, Incompatible, Crashed), and custom scan directory configuration.
 
+### Vulkan, Liquid Glass UI & MCP Server (Milestone 4)
+- **Vulkan (`wgpu`) Graphics Backend**: Native Vulkan GPU rendering via `eframe` (`Renderer::Wgpu`) with automatic fallback to OpenGL (`Renderer::Glow`) in headless or CI environments.
+- **Liquid Glass Floating Capsules**: Liquid Rust-inspired WGSL shader pipeline for floating capsules, utility dialogs, and top bar controls.
+- **Matte Obsidian Workspace**: High-contrast dark palette (`#0D0F14` canvas, `#13161E` panels, `#1A1E29` cards/capsules) with radial-arc pan knobs and tactile faders.
+- **Built-in Model Context Protocol (MCP) Server**: Zero-alloc real-time safe MCP bridge accessible over local TCP (`127.0.0.1:38420`) and `--mcp-stdio` CLI mode, supporting 4 live resources and 19 automation/control tools.
+
 ---
 
 ## Quick Start
