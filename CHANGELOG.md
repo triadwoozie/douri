@@ -2,11 +2,34 @@
 
 What changed in each Dōri release.
 
-## 0.1.0-alpha (Milestone 1 — Core Editing, Safety & Export Essentials)
+## 0.1.0 (Milestones 1 & 2)
 
-### All Systems (Linux, Windows, macOS)
+### Flex Pitch Per-Note Editor & Tracker
+- **Logic-Style Flex Pitch Piano Roll**: Full per-note pitch editor in `pitch_editor.rs` for monophonic audio tracks, with real-time interactive hot-corner and edge handles:
+  - **Fine Pitch**: Vertical note drag with precise cent offset display.
+  - **Pitch Drift**: Entry and exit pitch drift curve handles to reshape transition glides.
+  - **Vibrato Depth**: Modulation depth handle to tame or exaggerate vocal vibrato.
+  - **Formant Shift & Note Gain**: Formant adjustment handles and per-note gain leveling.
+  - **Scale Quantize**: One-click "Snap to Scale" button aligning notes to the project key signature.
+  - **Create MIDI Track from Flex Pitch**: Extracts detected pitch notes and generates a parallel MIDI track.
+- **Pure-Rust Resynthesis Engine**: Off-audio-thread spectral analysis (`spectral.rs`), monophonic pitch tracking (`pitch_tracker.rs`), melody segmentation (`melody.rs`), and PSOLA pitch correction resynthesis (`note_render.rs`).
 
-- **Rebranded to Dōri**: Project fork and independent continuation based on Pro-Wave, targeting Linux-first audio production with PipeWire/ALSA and cross-platform desktop support.
+### Lemon Studio FX & SoundCraft Audio Nodes
+- **Lemon Studio Dynamics & Color Effects**: Ported from Lemon Studio with dedicated Logic Pro-styled parameter editors, zero-alloc audio-thread processing, and full delay-compensation (PDC):
+  - **Lemon Limiter**: Lookahead peak limiter with transient preservation and true peak safety.
+  - **Lemon Soft Clipper**: Analog-style saturating soft clipper for drums and bus warmth.
+  - **Lemon Fast Distortion**: Harmonic overdrive and saturation stage with dynamic bite.
+  - **Lemon Transient Processor**: Attack and sustain shaper for percussive punch and room control.
+- **SoundCraft Audio FX**: Ported from SoundCraft (MIT/Apache-2.0 attribution preserved):
+  - **Bode Frequency Shifter**: Classic single-sideband frequency shifter with continuous frequency offset and feedback.
+  - **Auto-Pan**: Zero-alloc stereo panning modulator with rate, depth, and LFO waveform control.
+
+### EXS24 Sampler & Sound Library Path Support
+- **Apple EXS24 Instrument Playback**: Native parser and playback engine for binary `.exs` instruments in `sampler_load.rs`, supporting multi-zone key ranges, velocity layers, root notes, loop boundaries, and ADSR envelope parameters.
+- **Intelligent Sample Resolution**: `sound_library.rs` automatically maps sample references across project directories, `Samples/`, `Audio Files/`, and fallback audio formats (`.caf`, `.aif`, `.aiff`, `.wav`, `.flac`, `.mp3`).
+- **Configurable Sound Library Path**: Configurable and persisted Sound Library directory under **Project Settings > General**, allowing seamless use of external sound banks and factory libraries.
+
+### Core Arranging, Safety & Export Essentials (Milestone 1)
 - **Marquee Tool**: Logic Pro-style marquee selection tool in the tracks area supporting marquee split (`Cmd/Ctrl+T`), rectangular region time-slice selection, and drag/delete operations (`marquee.rs`).
 - **Gap-Free Snap Grid**: Smart musical snapping to bars, beats, and division intervals without micro-gap overlaps (`snap_grid.rs`).
 - **Autosave & Crash Recovery**: Periodic background state snapshotting and seamless automatic recovery prompt on startup after unexpected shutdowns (`recovery.rs`).

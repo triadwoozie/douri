@@ -49,7 +49,8 @@ Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https:/
 - **Zero audio-thread allocation**: Audio processing paths strictly guarantee `#![forbid(alloc)]` and `assert_no_alloc` safety — no allocations, no mutexes, and no blocking I/O on the real-time thread.
 - **64-bit float summing & Plug-in Delay Compensation (PDC)**: True 64-bit precision summing bus with automatic sample-accurate delay compensation across all tracks and effect chains.
 
-### Arranging & Editing (Milestone 1 Additions)
+### Arranging & Editing (Milestones 1 & 2)
+- **Flex Pitch Per-Note Editor**: Interactive piano-roll vocal and melodic pitch editor for monophonic audio regions, featuring fine pitch cent adjustments, entry/exit pitch drift curves, vibrato modulation depth, formant shift, note gain leveling, scale quantization ("Snap to Scale"), and "Create MIDI Track from Flex Pitch" using pure-Rust PSOLA resynthesis.
 - **Marquee Selection Tool**: Logic-style marquee tool for precision time-slice selection, Marquee split (`Cmd/Ctrl+T`), and marquee region drag/delete.
 - **Gap-Free Snap Grid**: Smart musical snapping to bars, beats, and division intervals preventing unintended micro-gaps and overlaps.
 - **Option/Alt-Drag Duplication**: Fast region cloning in the tracks area with Alt/Option-drag.
@@ -57,16 +58,25 @@ Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https:/
 - **Multi-Track Arranger**: Audio, Instrument, Drummer, Pattern, Aux, VCA, Folder, and External MIDI tracks. Move, repeat, cut, copy, paste, split, join, bounce in place, and bounce & join with infinite undo history.
 
 ### Instruments & Sound Engines
+- **Apple EXS24 & SFZ Sampler**: Multi-zone sample playback engine loading binary Apple EXS24 (`.exs`) instruments and SFZ format with 4-point cubic resampling, velocity layering, choke groups, and automatic sample resolution across project folders and the user Sound Library path.
+- **Sound Library Management**: Configurable Sound Library root path under **Project Settings > General** with automatic fallback searches for `.caf`, `.aif`, `.aiff`, `.wav`, and other standard sample formats.
 - **808 Bass Synthesizer**: Pure sine-drop sub-bass synth engine with glide, tune, and saturation controls (`bass808.rs`).
 - **SoundFont Player**: Built-in `.sf2` player supporting multi-sampled SoundFont instruments with velocity layers and filter envelopes.
-- **Sampler & Quick Sampler**: Multi-zone sample playback engine loading SFZ, EXS24 (`.exs`), and raw audio samples with 4-point cubic resampling, velocity layering, and choke groups.
 - **Physically Modelled Electric Piano**: Reed-based physical model (Wurlitzer 200A style) with non-linear pickup saturation, tremolo, and tone bark.
 - **Vintage B3 Organ**: Additive drawbar organ with nine drawbars (16' to 1'), percussion harmonics, key click, and Leslie speaker simulation.
 - **Drum Machine**: 16-pad drum synthesizer (Kick, Snare, Hi-Hats, Toms, Claps) and custom sample loader with choke groups.
 - **Subtractive Synthesizer**: 48-voice virtual analog polyphonic synthesizer with resonant filters and modulation routing.
 
 ### Built-In DSP Effects & Metering
-- **Logic Pro-Style MultiMeter (Milestone 1)**: Dedicated analyzer window (**Window > MultiMeter**) with:
+- **Lemon Studio Dynamics & Color Effects**:
+  - **Lemon Limiter**: Transparent lookahead peak limiter with transient punch.
+  - **Lemon Soft Clipper**: Analog warmth and saturating soft clipping.
+  - **Lemon Fast Distortion**: Harmonic overdrive stage with dynamic bite.
+  - **Lemon Transient Processor**: Precision attack and sustain shaper for drums and stems.
+- **SoundCraft Audio FX**:
+  - **Bode Frequency Shifter**: Zero-alloc single-sideband frequency shifter with feedback.
+  - **Auto-Pan**: Zero-alloc stereo panning modulator with rate, depth, and LFO waveform control.
+- **Logic Pro-Style MultiMeter**: Dedicated analyzer window (**Window > MultiMeter**) with:
   - ITU-R BS.1770-4 K-weighted LUFS metering: Momentary (400 ms), Short-term (3 s), and Gated Integrated LUFS (-70 LUFS / -10 LU gates) with streaming (-14 LUFS) and broadcast (-23 LUFS) reference markers.
   - 4× oversampled polyphase windowed sinc True Peak filter with inter-sample peak clip indicator.
 - **Mixer Channel Strips**: Master and Stereo Out strips display live Integrated LUFS and True Peak values.
