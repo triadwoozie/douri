@@ -965,6 +965,14 @@ impl McpEngine {
             "search_sound_browser" => {
                 let q = args["query"].as_str().unwrap_or("");
                 s.library.search = q.to_string();
+                if let Some(chip_str) = args["chip"].as_str() {
+                    s.library.active_chip = match chip_str {
+                        "synth" => Some(crate::library::SoundChip::Synth),
+                        "bass" => Some(crate::library::SoundChip::Bass),
+                        "drums" => Some(crate::library::SoundChip::Drums),
+                        _ => None,
+                    };
+                }
                 Ok(json!({ "query": q, "status": "filtered" }))
             }
             "set_workspace_view" => {

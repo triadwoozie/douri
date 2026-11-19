@@ -26,19 +26,19 @@ const NUM_W: f32 = 24.0;
 /// How far each folder nesting level moves a track header's contents to the right.
 const INDENT_W: f32 = 14.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
-const HEADER_BG: Color32 = Color32::from_rgb(0x41, 0x41, 0x41);
-const HEADER_SEL: Color32 = Color32::from_rgb(0x58, 0x58, 0x58);
-const LANE_BG: Color32 = Color32::from_rgb(0x2a, 0x2a, 0x2a);
-const LANE_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x30);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
+const HEADER_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
+const HEADER_SEL: Color32 = Color32::from_rgb(0x22, 0x2a, 0x3d);
+const LANE_BG: Color32 = Color32::from_rgb(0x13, 0x16, 0x1e);
+const LANE_SEL: Color32 = Color32::from_rgb(0x18, 0x1c, 0x27);
 /// The band over a track stack's tracks in its parent's lane: purple-grey.
-const STACK_BAND: Color32 = Color32::from_rgb(0x5d, 0x52, 0x6e);
-const RULER_BG: Color32 = Color32::from_rgb(0x38, 0x38, 0x38);
-const CYCLE: Color32 = Color32::from_rgb(0xd4, 0x9e, 0x2a);
-const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x8c, 0xe6);
-const SOLO_ON: Color32 = Color32::from_rgb(0xe6, 0xc2, 0x2e);
-const REC_ON: Color32 = Color32::from_rgb(0xe0, 0x3a, 0x30);
-const MON_ON: Color32 = Color32::from_rgb(0xe8, 0x8a, 0x2c);
+const STACK_BAND: Color32 = Color32::from_rgb(0x35, 0x2e, 0x48);
+const RULER_BG: Color32 = Color32::from_rgb(0x0d, 0x0f, 0x14);
+const CYCLE: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+const MUTE_ON: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
+const SOLO_ON: Color32 = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+const REC_ON: Color32 = Color32::from_rgb(0xef, 0x44, 0x44);
+const MON_ON: Color32 = Color32::from_rgb(0xf9, 0x73, 0x16);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Snap {
@@ -662,9 +662,24 @@ fn icon_button(
 ) -> egui::Response {
     let resp = ui.interact(rect, id(("icon", key)), Sense::click());
     if on {
-        g.rect_filled(rect, 4.0, BLUE);
-    } else if resp.hovered() {
-        g.rect_filled(rect, 4.0, Color32::from_white_alpha(14));
+        g.rect_filled(rect, 5.0, BLUE);
+        g.rect_stroke(
+            rect,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x00, 0xd2, 0xff)),
+            StrokeKind::Inside,
+        );
+    } else {
+        g.rect_filled(rect, 5.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+        g.rect_stroke(
+            rect,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
+        if resp.hovered() {
+            g.rect_filled(rect, 5.0, Color32::from_white_alpha(15));
+        }
     }
     draw(g, rect, if on { Color32::WHITE } else { TEXT });
     resp
@@ -682,23 +697,36 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
         v = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
     }
     let cy = rect.center().y;
-    g.line_segment(
-        [pos2(rect.left(), cy), pos2(rect.right(), cy)],
-        Stroke::new(2.0, Color32::from_gray(0x22)),
+    let trough = Rect::from_center_size(pos2(rect.center().x, cy), vec2(rect.width(), 4.0));
+    g.rect_filled(trough, 2.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_stroke(
+        trough,
+        2.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        StrokeKind::Inside,
     );
-    g.circle_filled(
-        pos2(rect.left() + rect.width() * v, cy),
+    if v > 0.0 {
+        let fill = Rect::from_min_max(
+            trough.min,
+            pos2(trough.left() + trough.width() * v, trough.bottom()),
+        );
+        g.rect_filled(fill, 2.0, Color32::from_rgb(0x00, 0xd2, 0xff));
+    }
+    let thumb_c = pos2(rect.left() + rect.width() * v, cy);
+    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xe6, 0xed, 0xf3));
+    g.circle_stroke(
+        thumb_c,
         5.5,
-        Color32::from_gray(0xc8),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     v
 }
 
 fn header_button_bg(selected_row: bool) -> Color32 {
     if selected_row {
-        Color32::from_gray(0x72)
+        Color32::from_rgb(0x25, 0x2a, 0x37)
     } else {
-        Color32::from_gray(0x5a)
+        Color32::from_rgb(0x13, 0x16, 0x1e)
     }
 }
 
@@ -717,19 +745,37 @@ fn header_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(crate::i18n::tr(text));
     }
-    g.rect_filled(
-        rect,
-        3.0,
-        if on {
-            on_col
+    let pill_r = (rect.height() * 0.35).min(5.0);
+    if on {
+        g.rect_filled(rect, pill_r, on_col);
+        g.rect_stroke(
+            rect,
+            pill_r,
+            Stroke::new(1.0, on_col.lerp_to_gamma(Color32::WHITE, 0.3)),
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        let bg = if resp.hovered() {
+            Color32::from_rgb(0x25, 0x2a, 0x37)
         } else {
             header_button_bg(selected_row)
-        },
-    );
+        };
+        g.rect_filled(rect, pill_r, bg);
+        g.rect_stroke(
+            rect,
+            pill_r,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            egui::StrokeKind::Inside,
+        );
+    }
     let txt = if on && on_col == SOLO_ON {
         Color32::BLACK
+    } else if on {
+        Color32::WHITE
+    } else if resp.hovered() {
+        Color32::from_rgb(0xea, 0xee, 0xf4)
     } else {
-        Color32::from_gray(0xe8)
+        Color32::from_rgb(0x8a, 0x93, 0xa5)
     };
     g.text(
         rect.center(),
@@ -873,7 +919,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
     g.rect_filled(bar, 0.0, TOOLBAR_BG);
     g.line_segment(
         [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x24)),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
     let cy = bar.center().y;
     let (can_undo, can_redo) = (s.can_undo, s.can_redo);
@@ -1238,8 +1284,15 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
             vec2(40.0, 20.0),
         );
         let resp = ui.interact(r, id(*key), Sense::click());
+        g.rect_filled(r, 5.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+        g.rect_stroke(
+            r,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            StrokeKind::Inside,
+        );
         if resp.hovered() {
-            g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
+            g.rect_filled(r, 5.0, Color32::from_white_alpha(15));
         }
         let icon_at = pos2(r.left() + 13.0, cy);
         let active_tool = if i == 0 { v.tool } else { v.cmd_tool };
@@ -2644,7 +2697,13 @@ fn volume_slider(
     if resp.double_clicked() {
         t.volume_db = 0.0;
     }
-    g.rect_filled(sl, SLIDER_H / 2.0, Color32::from_rgb(55, 54, 54));
+    g.rect_filled(sl, SLIDER_H / 2.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_stroke(
+        sl,
+        SLIDER_H / 2.0,
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        egui::StrokeKind::Inside,
+    );
     // Level meter inside the pill, as in Logic: two thin bars (L over R) that follow the
     // slider's own scale, green, yellow from -6 dB and red above 0 dB.
     let silent = t.mute || silenced;
@@ -2666,7 +2725,7 @@ fn volume_slider(
                 } else {
                     crate::mixer::meter_colour(to - 0.01)
                 };
-                g.rect_filled(r, 1.0, color);
+                g.rect_filled(r, 0.5, color);
             }
             from = edge;
         }
@@ -2675,12 +2734,23 @@ fn volume_slider(
         travel.0 + (travel.1 - travel.0) * db_to_slider(t.volume_db),
         sl.center().y,
     );
-    g.circle_filled(knob, SLIDER_H / 2.0 - 1.0, Color32::from_rgb(136, 134, 135));
+    // White/silver tactile fader thumb
+    g.circle_filled(
+        knob + vec2(0.5, 1.0),
+        SLIDER_H / 2.0 - 0.5,
+        Color32::from_black_alpha(100),
+    );
+    g.circle_filled(
+        knob,
+        SLIDER_H / 2.0 - 1.0,
+        Color32::from_rgb(0xea, 0xee, 0xf4),
+    );
     g.circle_stroke(
         knob,
         SLIDER_H / 2.0 - 1.0,
-        Stroke::new(1.0, Color32::from_rgb(98, 97, 97)),
+        Stroke::new(1.0, Color32::from_rgb(0x8a, 0x93, 0xa5)),
     );
+    g.circle_filled(knob, 1.5, Color32::from_rgb(0x25, 0x2a, 0x37));
 }
 
 /// The pan knob of a track header (drag up or down; double-click centres it).
@@ -2697,7 +2767,7 @@ fn pan_knob(ui: &Ui, g: &Painter, t: &mut Track, i: usize, hdr: Rect) {
     if kresp.double_clicked() {
         t.pan = 0.0;
     }
-    crate::widgets::draw_knob(g, kc, 9.0, t.pan);
+    crate::widgets::draw_radial_pan(g, kc, 8.5, t.pan);
 }
 
 /// The lane band of a track stack: the span, in quarter notes, of the regions of the tracks
@@ -2749,8 +2819,12 @@ fn header(
     g.rect_filled(hdr, 0.0, if selected { HEADER_SEL } else { HEADER_BG });
     g.line_segment(
         [hdr.left_bottom(), hdr.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x2a)),
+        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
     );
+    if selected {
+        let ind = Rect::from_min_size(hdr.min, vec2(3.0, hdr.height()));
+        g.rect_filled(ind, 0.0, Color32::from_rgb(0x38, 0x8b, 0xfd));
+    }
     let num = Rect::from_min_size(hdr.min, vec2(NUM_W, hdr.height()));
     if show_number {
         g.text(
@@ -2765,7 +2839,6 @@ fn header(
     let resp = ui.interact(hdr, id(("hdr", i)), Sense::click());
 
     let h = hdr.height();
-    let icon_size = (h - 14.0).clamp(22.0, 40.0);
     let indent = f32::from(p.tracks[i].indent) * INDENT_W;
     // A track stack's parent: the arrow folds its tracks, and its level and mute reach them.
     let folder = p.tracks[i].is_stack_parent();
@@ -2789,18 +2862,30 @@ fn header(
             Stroke::new(1.0, STACK_COLOR),
         );
     }
-    let icon = Rect::from_min_size(
+    let badge_size = 28.0f32.min(h - 8.0).max(20.0);
+    let badge_r = Rect::from_center_size(
         pos2(
-            content_x + if folder { 14.0 } else { 0.0 },
-            hdr.center().y - icon_size / 2.0,
+            content_x + if folder { 14.0 } else { 0.0 } + badge_size / 2.0,
+            hdr.center().y,
         ),
-        vec2(icon_size, icon_size),
+        vec2(badge_size, badge_size),
     );
     if show_icon {
-        draw_icon(g, icon, track_icon(&p.tracks[i]));
+        g.rect_filled(badge_r, 6.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+        g.rect_stroke(
+            badge_r,
+            6.0,
+            Stroke::new(1.0, Color32::from_rgb(0x2e, 0x35, 0x47)),
+            egui::StrokeKind::Inside,
+        );
+        draw_icon(g, badge_r.shrink(3.0), track_icon(&p.tracks[i]));
     }
 
-    let name_x = icon.right() + 10.0;
+    let name_x = if show_icon {
+        badge_r.right() + 10.0
+    } else {
+        content_x + if folder { 14.0 } else { 0.0 }
+    };
     let compact = h < 46.0;
     let name_y = if compact {
         hdr.center().y
@@ -2917,7 +3002,13 @@ fn header(
 const MASTER_STRIP_H: f32 = 36.0;
 
 /// The Master strip: its name and the master fader, the same control as the transport's.
-fn master_strip(ui: &mut Ui, p: &mut Project, rect: Rect, meters: &crate::mixer::Meters) {
+fn master_strip(
+    ui: &mut Ui,
+    p: &mut Project,
+    rect: Rect,
+    meters: &crate::mixer::Meters,
+    quality: crate::liquid_glass::GlassQuality,
+) {
     let g = ui.painter_at(rect);
     g.rect_filled(rect, 0.0, HEADER_BG);
     g.line_segment(
@@ -2942,6 +3033,7 @@ fn master_strip(ui: &mut Ui, p: &mut Project, rect: Rect, meters: &crate::mixer:
         slider,
         Some(meters.master),
         id(("tracks", "master")),
+        quality,
     );
 }
 
@@ -2965,7 +3057,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     let area = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - master_h));
     if p.show_master_track {
         let strip = Rect::from_min_max(pos2(full.left(), area.bottom()), full.max);
-        master_strip(ui, p, strip, meters);
+        master_strip(ui, p, strip, meters, s.glass_quality);
     }
     let tb = Rect::from_min_size(area.min, vec2(area.width(), TOOLBAR_H));
     let ruler_y = tb.bottom();
