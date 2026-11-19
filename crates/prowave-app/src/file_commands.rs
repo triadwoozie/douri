@@ -449,6 +449,8 @@ mod tests {
             clock_follow: crate::clock_follow::ClockFollower::default(),
             chase: crate::mtc_in::Chase::default(),
             updater: crate::updater::Updater::new(),
+            mcp_bridge: None,
+            mcp_receiver: None,
         }
     }
 

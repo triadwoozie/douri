@@ -37,6 +37,7 @@ mod library;
 pub mod liquid_glass;
 mod marker_track;
 mod marquee;
+pub mod mcp_server;
 mod menus;
 mod midi_file;
 mod midi_fx;
@@ -434,6 +435,9 @@ struct App {
     chase: mtc_in::Chase,
     /// Looks for a newer release and installs it (Windows).
     updater: updater::Updater,
+    /// MCP Server command bridge and receiver.
+    mcp_bridge: Option<mcp_server::McpBridge>,
+    mcp_receiver: Option<std::sync::mpsc::Receiver<mcp_server::McpCommand>>,
 }
 
 impl App {
@@ -1304,6 +1308,7 @@ impl eframe::App for App {
         smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
         flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
         groove::poll(&ctx, &mut self.project, &mut self.ui);
+
         if let Some(probe) = self.bench.as_mut() {
             if probe.frame(&ctx) {
                 self.bench = None;
@@ -1417,6 +1422,21 @@ impl eframe::App for App {
         self.ui
             .audio_rec
             .show_levels(&self.project, &mut meters.tracks);
+        if let Some(rx) = &self.mcp_receiver {
+            while let Ok(cmd) = rx.try_recv() {
+                match cmd {
+                    mcp_server::McpCommand::Execute { request, responder } => {
+                        let resp = mcp_server::McpEngine::handle_request(
+                            request,
+                            &mut self.project,
+                            &mut self.ui,
+                            Some(&meters),
+                        );
+                        let _ = responder.send(resp);
+                    }
+                }
+            }
+        }
         let p = &mut self.project;
         let s = &mut self.ui;
 
@@ -1626,7 +1646,7 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
         return;
     }
     let mut close = false;
-    egui::Window::new("About Dōri")
+    crate::liquid_glass::glass_window("About Dōri")
         .open(open)
         .resizable(false)
         .collapsible(false)
@@ -1981,6 +2001,9 @@ fn print_help() {
         "  --layout-shots <folder>   save pictures of the layout at four window sizes, then exit"
     );
     println!("  --screenshot <file.png>   save one picture of the window, then exit");
+    println!(
+        "  --mcp-stdio               run as a Model Context Protocol (MCP) JSON-RPC stdio server"
+    );
     println!("  --scan-ladspa <file>      list the plug-ins in a LADSPA library, then exit (the");
     println!("                            Plugin Manager reads each library in a child process)");
     println!();
@@ -2011,11 +2034,18 @@ fn main() -> eframe::Result {
     if hosted_plugins::run_scan_if_requested(&all_args) {
         return Ok(());
     }
-    // `--version` and `--help` answer without opening a window.
+    // `--version`, `--help`, and `--mcp-stdio` answer without opening a window.
     let flag = |name: &str| {
         let name = std::ffi::OsStr::new(name);
         all_args.iter().any(|a| a.as_os_str() == name)
     };
+    if flag("--mcp-stdio") {
+        if let Err(e) = mcp_server::run_stdio_mode() {
+            eprintln!("Dōri MCP server stdio error: {e}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     if flag("--version") || flag("-V") {
         println!("Dōri {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -2145,6 +2175,14 @@ fn main() -> eframe::Result {
                     None
                 }
             };
+            let (mcp_tx, mcp_rx) = std::sync::mpsc::channel();
+            let mcp_bridge = mcp_server::McpBridge::new(mcp_tx);
+            if !measuring {
+                let _ = mcp_server::start_tcp_listener(
+                    mcp_server::DEFAULT_MCP_PORT,
+                    mcp_bridge.clone(),
+                );
+            }
             let mut app = App {
                 saved: file_commands::content(&project),
                 history: undo::History::new(&project),
@@ -2170,6 +2208,8 @@ fn main() -> eframe::Result {
                 clock_follow: clock_follow::ClockFollower::default(),
                 chase: mtc_in::Chase::default(),
                 updater: updater::Updater::new(),
+                mcp_bridge: Some(mcp_bridge),
+                mcp_receiver: Some(mcp_rx),
             };
             if !measuring {
                 app.ui.update_auto = updater::auto_enabled();

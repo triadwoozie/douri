@@ -89,7 +89,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
         return;
     };
     let mut open = true;
-    egui::Window::new(tr("Project Settings"))
+    crate::liquid_glass::glass_window(tr("Project Settings"))
         .id(egui::Id::unique("project_settings_window"))
         .open(&mut open)
         .resizable(false)

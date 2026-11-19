@@ -179,7 +179,7 @@ pub fn show(ctx: &egui::Context, p: &Project, s: &mut UiState) {
     let in_use = not_found(p);
     let mut open = true;
     let mut done = false;
-    egui::Window::new(tr("Plugin Manager"))
+    crate::liquid_glass::glass_window(tr("Plugin Manager"))
         .id(egui::Id::unique("plugin_manager_window"))
         .open(&mut open)
         .default_width(780.0)

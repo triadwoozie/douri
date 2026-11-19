@@ -34,7 +34,7 @@ pub fn show(ctx: &egui::Context, open: &mut bool, meters: &Meters, sync: &mut Op
         .corner_radius(CornerRadius::same(10))
         .inner_margin(egui::Margin::symmetric(16, 14));
 
-    egui::Window::new(tr("MultiMeter · Loudness & True Peak"))
+    crate::liquid_glass::glass_window(tr("MultiMeter · Loudness & True Peak"))
         .id(egui::Id::unique("multimeter_window"))
         .open(open)
         .resizable(false)

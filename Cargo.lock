@@ -1178,6 +1178,7 @@ dependencies = [
  "rfd",
  "rhai",
  "rtrb",
+ "serde",
  "serde_json",
  "sha2",
  "sysinfo",
