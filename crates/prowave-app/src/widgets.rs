@@ -5,9 +5,9 @@ use egui::{
     Ui,
 };
 
-pub const TEXT: Color32 = Color32::from_rgb(0xe6, 0xed, 0xf3);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(0x8a, 0x93, 0xa5);
-pub const BTN_BG: Color32 = Color32::from_rgb(0x1a, 0x1e, 0x29);
+pub const TEXT: Color32 = Color32::from_rgb(0xdc, 0xdc, 0xdc);
+pub const TEXT_DIM: Color32 = Color32::from_rgb(0x96, 0x96, 0x96);
+pub const BTN_BG: Color32 = Color32::from_rgb(0x58, 0x58, 0x58);
 pub const BLUE: Color32 = Color32::from_rgb(0x2f, 0x6f, 0xd8);
 
 pub fn stroke(c: Color32) -> Stroke {
@@ -65,13 +65,7 @@ pub fn menu_title(
     let r = Rect::from_min_size(pos2(left, cy - 10.0), vec2(w, 20.0));
     let resp = ui.interact(r, id, Sense::click());
     if resp.hovered() {
-        g.rect_filled(r, 5.0, Color32::from_rgba_premultiplied(36, 42, 58, 180));
-        g.rect_stroke(
-            r,
-            5.0,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
-            egui::StrokeKind::Inside,
-        );
+        g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
     }
     g.text(
         pos2(r.left() + 6.0, cy),
@@ -97,18 +91,12 @@ pub fn popup_button(ui: &Ui, g: &Painter, rect: Rect, id: Id, text: &str) -> Res
     let resp = ui.interact(rect, id, Sense::click());
     g.rect_filled(
         rect,
-        6.0,
+        4.0,
         if resp.hovered() {
-            Color32::from_rgb(0x26, 0x2c, 0x3c)
+            Color32::from_gray(0x60)
         } else {
             BTN_BG
         },
-    );
-    g.rect_stroke(
-        rect,
-        6.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
-        egui::StrokeKind::Inside,
     );
     // Long values (some languages) end in "…" instead of running under the arrows.
     let font = FontId::proportional(12.5);
@@ -252,66 +240,5 @@ pub fn draw_knob(g: &Painter, c: Pos2, r: f32, value: f32) {
     g.line_segment(
         [c + d * (r * 0.18), c + d * (r * 0.9)],
         Stroke::new(1.8, Color32::from_gray(0xf6)),
-    );
-}
-
-/// Precision radial-arc pan dial with background guide arc, dynamic colored swept arc,
-/// center top notch, and obsidian tactile inner dial with indicator.
-pub fn draw_radial_pan(g: &Painter, c: Pos2, r: f32, value: f32) {
-    let arc_r = r + 1.5;
-    // Outer track arc (-135 deg to +135 deg, relative to 12 o'clock / -90 deg)
-    let total_steps = 24;
-    let base_pts: Vec<Pos2> = (0..=total_steps)
-        .map(|i| {
-            let frac = i as f32 / total_steps as f32;
-            let deg = -135.0 + frac * 270.0;
-            let rad = (deg - 90.0).to_radians();
-            c + vec2(rad.cos(), rad.sin()) * arc_r
-        })
-        .collect();
-    g.add(Shape::line(
-        base_pts,
-        Stroke::new(2.2, Color32::from_rgb(0x25, 0x2a, 0x37)),
-    ));
-
-    // Center 12 o'clock notch
-    let top_notch = c + vec2(0.0, -arc_r);
-    g.line_segment(
-        [top_notch + vec2(0.0, -1.0), top_notch + vec2(0.0, 1.5)],
-        Stroke::new(1.0, Color32::from_rgb(0x8a, 0x93, 0xa5)),
-    );
-
-    // Active swept arc from 12 o'clock to current pan
-    let val_clamped = value.clamp(-1.0, 1.0);
-    if val_clamped.abs() > 0.02 {
-        let swept_steps = 12;
-        let arc_col = Color32::from_rgb(0x38, 0x8b, 0xfd);
-        let active_pts: Vec<Pos2> = (0..=swept_steps)
-            .map(|i| {
-                let frac = i as f32 / swept_steps as f32;
-                let deg = frac * val_clamped * 135.0;
-                let rad = (deg - 90.0).to_radians();
-                c + vec2(rad.cos(), rad.sin()) * arc_r
-            })
-            .collect();
-        g.add(Shape::line(active_pts, Stroke::new(2.4, arc_col)));
-    }
-
-    // Inner dial knob body
-    let inner_r = (r - 2.0).max(4.0);
-    g.circle_filled(c + vec2(0.5, 1.0), inner_r, Color32::from_black_alpha(100));
-    g.circle_filled(c, inner_r, Color32::from_rgb(0x13, 0x16, 0x1e));
-    g.circle_stroke(
-        c,
-        inner_r,
-        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x35, 0x47)),
-    );
-
-    // Pointer indicator
-    let a = (-90.0 + val_clamped * 135.0).to_radians();
-    let d = vec2(a.cos(), a.sin());
-    g.line_segment(
-        [c + d * (inner_r * 0.25), c + d * (inner_r - 1.0)],
-        Stroke::new(1.6, Color32::from_rgb(0xea, 0xee, 0xf4)),
     );
 }
