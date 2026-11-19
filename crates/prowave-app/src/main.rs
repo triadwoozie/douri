@@ -1465,6 +1465,12 @@ impl eframe::App for App {
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
             });
+            if let Some(i) = s.mixer.show_drum_machine.take() {
+                s.show_drum_machine = Some(i);
+            }
+            if let Some(i) = s.mixer.show_bass808.take() {
+                s.show_bass808 = Some(i);
+            }
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::new())

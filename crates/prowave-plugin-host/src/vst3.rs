@@ -1801,6 +1801,19 @@ impl Vst3Backend {
     }
 }
 
+
+
+#[allow(dead_code)]
+const PLATFORM_TYPE: Option<&CStr> = if cfg!(target_os = "macos") {
+    Some(c"NSView")
+} else if cfg!(target_os = "windows") {
+    Some(c"HWND")
+} else if cfg!(target_os = "linux") {
+    Some(c"X11EmbedWindowID")
+} else {
+    None
+};
+
 impl Backend for Vst3Backend {
     fn params(&self) -> Vec<ParamInfo> {
         self.names.clone()
@@ -2043,17 +2056,17 @@ impl Backend for Vst3Backend {
         right[..frames].copy_from_slice(&audio.output[usize::from(!audio.mono_out)][..frames]);
     }
 
+
+
     fn main_has_editor(&self) -> bool {
         // The view is made when it is first shown (making it needs the main thread's run
         // loop); until then a controller is taken to have one.
-        cfg!(target_os = "macos") && !self.controller.is_null()
+        PLATFORM_TYPE.is_some() && !self.controller.is_null()
     }
 
     fn main_editor_open(&self, parent: *mut c_void) -> Option<(u32, u32)> {
         let ctl = self.controller()?;
-        if !cfg!(target_os = "macos") {
-            return None;
-        }
+        let pt = PLATFORM_TYPE?;
         // SAFETY: the controller's and the view's functions on the main thread, in VST3's
         // order: make the view, give it its frame, put it in the parent view (which the caller
         // keeps alive), measure it.
@@ -2065,7 +2078,7 @@ impl Backend for Vst3Backend {
                     return None;
                 }
                 let t = table::<ViewTable>(view);
-                if (t.supported)(view, c"NSView".as_ptr()) != OK {
+                if (t.supported)(view, pt.as_ptr()) != OK {
                     release(view);
                     return None;
                 }
@@ -2073,7 +2086,7 @@ impl Backend for Vst3Backend {
                     view,
                     std::ptr::from_ref::<Frame>(&self.frame).cast_mut().cast(),
                 );
-                if (t.attached)(view, parent, c"NSView".as_ptr()) != OK {
+                if (t.attached)(view, parent, pt.as_ptr()) != OK {
                     (t.set_frame)(view, std::ptr::null_mut());
                     release(view);
                     return None;

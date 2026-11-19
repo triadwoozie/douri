@@ -90,6 +90,17 @@ fn window_width(kind: FxKind) -> f32 {
 
 /// Draws the effect window for the insert the Mixer opened, if any.
 pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, meters: &Meters) {
+    if let Some(ti) = s.mixer.inst_window {
+        if let Some(track) = p.tracks.get(ti) {
+            if track.hosted_instrument != 0 {
+                let insert = Insert::new_hosted(track.hosted_instrument);
+                forget_editor(s, Some(track.hosted_instrument));
+                plugin_window(ctx, p, s, ti, 999, insert);
+                return;
+            }
+        }
+        s.mixer.inst_window = None;
+    }
     let Some((ti, slot)) = s.mixer.fx_window else {
         forget_editor(s, None);
         return;
@@ -416,6 +427,20 @@ fn apply_plugin_window(
     open: bool,
     reload: bool,
 ) {
+    if slot == 999 {
+        if let Some(t) = p.tracks.get_mut(ti) {
+            if reload {
+                if let Some(fresh) = crate::hosted_plugins::again(insert.hosted) {
+                    t.hosted_instrument = fresh;
+                }
+            }
+        }
+        if !open {
+            s.mixer.inst_window = None;
+            forget_editor(s, None);
+        }
+        return;
+    }
     let inserts = if ti == crate::mixer::MASTER_STRIP {
         Some(&mut p.master_inserts)
     } else {

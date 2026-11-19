@@ -1017,6 +1017,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 };
                 let rect = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
                 if let Some(resp) = popup(ui, &g, rect, "soundfont", &shown, true) {
+                    if resp.double_clicked() {
+                        if hosted_inst != 0 {
+                            s.mixer.inst_window = Some(ti);
+                            s.mixer.fx_window = None;
+                            s.mixer.plugin_controls = false;
+                        } else if has_drums {
+                            s.show_drum_machine = Some(ti);
+                        } else if has_bass808 {
+                            s.show_bass808 = Some(ti);
+                        }
+                    }
                     egui::Popup::menu(&resp).show(|ui| {
                         if ui.button(tr("Choose SoundFont…")).clicked() {
                             if let Some(path) = rfd::FileDialog::new()

@@ -85,6 +85,12 @@ pub struct MixerView {
     pub peak_hold: HashMap<StripKey, f32>,
     /// The effect whose window is open: (track, slot).
     pub fx_window: Option<(usize, usize)>,
+    /// The instrument whose window is open: (track).
+    pub inst_window: Option<usize>,
+    /// Requests opening the Drum Machine editor window for a track.
+    pub show_drum_machine: Option<usize>,
+    /// Requests opening the 808 Bass editor window for a track.
+    pub show_bass808: Option<usize>,
     /// The Automation editor window.
     pub auto_editor: crate::automation::AutoEditor,
     /// Sends on Faders: the bus whose send levels the faders set.
@@ -122,6 +128,9 @@ impl Default for MixerView {
             scroll_x: 0.0,
             peak_hold: HashMap::new(),
             fx_window: None,
+            inst_window: None,
+            show_drum_machine: None,
+            show_bass808: None,
             auto_editor: Default::default(),
             sends_on_faders: None,
             copied: None,
@@ -1250,7 +1259,22 @@ pub fn channel_strip(
         let input_r = row(r.input, 16.0);
         match (kind, instrument) {
             (Some(TrackKind::Instrument | TrackKind::Drummer), Some(inst)) => {
-                slot(g, input_r, inst, plug, plug_text)
+                slot(g, input_r, inst, plug, plug_text);
+                let inst_resp = ui.interact(input_r, id(ns, (key, "inst_slot")), Sense::click());
+                if inst_resp.double_clicked() {
+                    if let StripKey::Track(i) = key {
+                        let t = &p.tracks[i];
+                        if t.hosted_instrument != 0 {
+                            v.inst_window = Some(i);
+                            v.fx_window = None;
+                            v.plugin_controls = false;
+                        } else if t.drums.is_some() {
+                            v.show_drum_machine = Some(i);
+                        } else if t.bass808.is_some() {
+                            v.show_bass808 = Some(i);
+                        }
+                    }
+                }
             }
             // An aux strip's input is the bus it listens to: Aux 1 takes Bus 1, and so on.
             (Some(TrackKind::Aux), _) => {

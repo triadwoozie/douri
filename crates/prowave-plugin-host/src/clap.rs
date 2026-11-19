@@ -531,8 +531,13 @@ static HOST_GUI: HostGui = HostGui {
 };
 
 /// The window API this system's plug-in views use (none where views are not hosted yet).
+#[allow(dead_code)]
 const WINDOW_API: Option<&CStr> = if cfg!(target_os = "macos") {
     Some(c"cocoa")
+} else if cfg!(target_os = "windows") {
+    Some(c"win32")
+} else if cfg!(target_os = "linux") {
+    Some(c"x11")
 } else {
     None
 };
@@ -934,18 +939,39 @@ impl Backend for ClapBackend {
 
     fn main_has_editor(&self) -> bool {
         // SAFETY: a non-null extension is static data of the plug-in.
-        let supported = unsafe { self.gui_ext.as_ref() }.and_then(|e| e.is_api_supported);
-        match (supported, WINDOW_API) {
-            // SAFETY: the extension's function on the main thread, with a NUL-terminated id.
-            (Some(supported), Some(api)) => unsafe { supported(self.plugin, api.as_ptr(), false) },
-            _ => false,
+        let Some(gui) = (unsafe { self.gui_ext.as_ref() }) else { return false; };
+        let Some(supported) = gui.is_api_supported else { return false; };
+        let is_sup = |api: &CStr| unsafe { supported(self.plugin, api.as_ptr(), false) };
+        if cfg!(target_os = "macos") {
+            is_sup(c"cocoa")
+        } else if cfg!(target_os = "windows") {
+            is_sup(c"win32")
+        } else if cfg!(target_os = "linux") {
+            is_sup(c"x11") || is_sup(c"wayland")
+        } else {
+            false
         }
     }
 
     fn main_editor_open(&self, parent: *mut c_void) -> Option<(u32, u32)> {
-        let api = WINDOW_API?;
         // SAFETY: a non-null extension is static data of the plug-in.
         let gui = unsafe { self.gui_ext.as_ref() }?;
+        let is_sup = |api: &CStr| gui.is_api_supported.map_or(false, |f| unsafe { f(self.plugin, api.as_ptr(), false) });
+        let api = if cfg!(target_os = "macos") {
+            c"cocoa"
+        } else if cfg!(target_os = "windows") {
+            c"win32"
+        } else if cfg!(target_os = "linux") {
+            if is_sup(c"x11") {
+                c"x11"
+            } else if is_sup(c"wayland") {
+                c"wayland"
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
         let window = GuiWindow {
             api: api.as_ptr(),
             handle: parent,

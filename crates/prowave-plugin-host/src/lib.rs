@@ -35,6 +35,10 @@ mod au;
 mod clap;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "windows")]
+mod windows;
 #[cfg(unix)]
 mod sandbox;
 mod vst3;
@@ -168,8 +172,6 @@ impl std::error::Error for Error {}
 /// One format's side of a loaded plug-in. The `main_` methods are called on the main thread
 /// only, `process` and `reset` on the audio thread only; the two may run at the same time, as
 /// each format allows.
-// The window methods are used where plug-in windows are hosted (macOS, for now).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) trait Backend {
     fn params(&self) -> Vec<ParamInfo>;
     /// The position (0..=1) of parameter `index` now.
@@ -197,16 +199,20 @@ pub(crate) trait Backend {
     }
     fn reset(&self);
     /// Whether the plug-in has a window of its own.
+    #[allow(dead_code)]
     fn main_has_editor(&self) -> bool {
         false
     }
     /// Puts the plug-in's own view inside `parent` (macOS: an `NSView`) and returns its size
     /// in points, or `None` if it has no view or refused.
+    #[allow(dead_code)]
     fn main_editor_open(&self, _parent: *mut std::ffi::c_void) -> Option<(u32, u32)> {
         None
     }
+    #[allow(dead_code)]
     fn main_editor_close(&self) {}
     /// The size the plug-in asked its window to take since the last call, if it asked.
+    #[allow(dead_code)]
     fn main_editor_resized(&self) -> Option<(u32, u32)> {
         None
     }

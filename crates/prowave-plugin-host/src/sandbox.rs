@@ -884,6 +884,10 @@ struct Server {
     last_tick: Instant,
     #[cfg(target_os = "macos")]
     window: Option<crate::mac::Window>,
+    #[cfg(target_os = "linux")]
+    window: Option<crate::linux::Window>,
+    #[cfg(target_os = "windows")]
+    window: Option<crate::windows::Window>,
 }
 
 impl Server {
@@ -972,10 +976,54 @@ impl Server {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    fn editor(&mut self, open: bool, power: bool, title: &str) {
+        let Some(local) = self.instance.local().cloned() else {
+            return;
+        };
+        if open {
+            if self.window.is_none() {
+                let Some(mut window) = crate::linux::Window::new(&self.name) else {
+                    return;
+                };
+                match local.backend().main_editor_open(window.parent()) {
+                    Some((width, height)) => {
+                        window.set_plugin_size(width, height);
+                        self.window = Some(window);
+                    }
+                    None => return,
+                }
+            }
+            if let Some(window) = &mut self.window {
+                window.set_title(title);
+                window.set_power(power);
+                window.show();
+                self.out.line("e\teditor\t1");
+            }
+        } else if let Some(window) = &mut self.window {
+            window.hide();
+            self.out.line("e\teditor\t0");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn editor(&mut self, _open: bool, _power: bool, _title: &str) {}
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     fn editor(&mut self, _open: bool, _power: bool, _title: &str) {}
 
     fn tick(&mut self) {
+        #[cfg(target_os = "linux")]
+        if let Some(window) = &mut self.window {
+            let mut closed = false;
+            window.tick(|| {
+                closed = true;
+            });
+            if closed {
+                window.hide();
+                self.out.line("e\teditor\t0");
+            }
+        }
         loop {
             match self.requests.try_recv() {
                 Ok(line) => self.request(&line),
@@ -1059,7 +1107,8 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
     let Some(local) = instance.local().cloned() else {
         fail("the plug-in is not in this process")
     };
-    let has_editor = cfg!(target_os = "macos") && local.backend().main_has_editor();
+    let has_editor = (cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows"))
+        && local.backend().main_has_editor();
     let latency = instance.latency_samples();
     out.line(&format!("r\tready\t{latency}\t{}", u8::from(has_editor)));
     for (i, param) in instance.params().iter().enumerate() {
@@ -1096,12 +1145,21 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
         last_tick: Instant::now(),
         #[cfg(target_os = "macos")]
         window: None,
+        #[cfg(target_os = "linux")]
+        window: None,
+        #[cfg(target_os = "windows")]
+        window: None,
     };
     #[cfg(target_os = "macos")]
     crate::mac::run(Box::new(move || server.tick()));
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    crate::linux::run(Box::new(move || server.tick()));
+    #[cfg(target_os = "windows")]
+    crate::windows::run(Box::new(move || server.tick()));
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     loop {
         server.tick();
         std::thread::sleep(Duration::from_millis(4));
     }
+    std::process::exit(0);
 }
