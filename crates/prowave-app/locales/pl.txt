@@ -910,3 +910,5 @@ Snap to Grid = Przyciągaj do siatki
 Snap Regions to Relative Value = Przyciągaj regiony względnie
 Snap Regions to Absolute Value = Przyciągaj regiony bezwzględnie
 Snap = Przyciąganie
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

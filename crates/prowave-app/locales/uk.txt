@@ -910,3 +910,5 @@ Snap to Grid = Прив’язка до сітки
 Snap Regions to Relative Value = Прив’язувати регіони відносно
 Snap Regions to Absolute Value = Прив’язувати регіони абсолютно
 Snap = Прив’язка
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

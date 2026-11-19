@@ -910,3 +910,5 @@ Snap to Grid = グリッドにスナップ
 Snap Regions to Relative Value = リージョンを相対値にスナップ
 Snap Regions to Absolute Value = リージョンを絶対値にスナップ
 Snap = スナップ
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

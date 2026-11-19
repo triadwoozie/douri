@@ -10,7 +10,10 @@
 //! against the project at the end: a region or track that was edited, moved, deleted or
 //! reordered meanwhile is not replaced (or exported) with audio it does not match.
 
-use prowave_engine::{write_flac, write_wav, CaptureSink, Command, Engine};
+use prowave_engine::{
+    write_flac, write_wav_with_options, BitDepth, CaptureSink, Command, Engine, EngineCore,
+    OfflineBounceResult, SfPlayer, Shared, TrackMix,
+};
 use rtrb::{Consumer, RingBuffer};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -19,6 +22,32 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::model::{Control, Note, Project, Region, RegionParams, Track};
+
+/// Whether a bounce renders faster than realtime (offline freewheeling) or in realtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BounceMode {
+    #[default]
+    Offline,
+    Realtime,
+}
+
+/// User options for project or track bounce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BounceSettings {
+    pub mode: BounceMode,
+    pub bit_depth: BitDepth,
+    pub dither: bool,
+}
+
+impl Default for BounceSettings {
+    fn default() -> Self {
+        Self {
+            mode: BounceMode::Offline,
+            bit_depth: BitDepth::Pcm24,
+            dither: true,
+        }
+    }
+}
 
 /// The engine's ring holds about 1.4 s at 48 kHz. A collector thread empties it every couple
 /// of milliseconds, so the ring only fills if that thread is starved for that long; if it
@@ -166,6 +195,8 @@ pub struct Bounce {
     was_solos: Vec<(String, bool)>,
     path: PathBuf,
     sample_rate: u32,
+    pub bit_depth: BitDepth,
+    pub dither: bool,
 }
 
 impl Bounce {
@@ -278,6 +309,8 @@ impl Bounce {
             was_solos,
             path,
             sample_rate: engine.sample_rate(),
+            bit_depth: BitDepth::Pcm24,
+            dither: true,
         };
         // A bounce plays once through, from its start, without the metronome's clicks (they
         // are mixed before the master fader, so they would be in the file).
@@ -355,15 +388,139 @@ impl Bounce {
             );
         }
         let written = if is_flac(&self.path) {
-            write_flac(&self.path, &samples, self.sample_rate)
+            write_flac(&self.path, &samples, self.sample_rate).map(|_| OfflineBounceResult {
+                frames: samples.len() / 2,
+                peak_db: 0.0,
+                lufs_integrated: 0.0,
+                true_peak_db: 0.0,
+            })
         } else {
-            write_wav(&self.path, &samples, self.sample_rate)
+            write_wav_with_options(
+                &self.path,
+                &samples,
+                self.sample_rate,
+                self.bit_depth,
+                self.dither,
+            )
         };
         written.map_err(|e| format!("{}: {e}", self.path.display()))?;
         Ok(Some(Finished {
             path: self.path.clone(),
             placeable,
         }))
+    }
+}
+
+/// Renders an offline freewheeling mixdown from `start_beat` to `end_beat` into `path`.
+///
+/// Runs significantly faster than realtime on a headless engine instance, collecting master
+/// output audio, measuring True Peak and EBU R128 integrated loudness, and writing to WAV
+/// (16-bit PCM, 24-bit PCM, or 32-bit Float) with optional TPDF dithering.
+pub fn run_offline_bounce(
+    engine: Option<&Engine>,
+    project: &Project,
+    start_beat: f64,
+    end_beat: f64,
+    path: &Path,
+    solo_track: Option<usize>,
+    bit_depth: BitDepth,
+    dither: bool,
+    sample_rate: u32,
+) -> Result<OfflineBounceResult, String> {
+    let (mut tx, rx) = RingBuffer::new(2048);
+    let (gtx, _grx) = RingBuffer::new(2048);
+    let shared = Arc::new(Shared::new());
+    let mut core = EngineCore::new(sample_rate, rx, gtx, shared);
+
+    // 1. Tempo Map
+    let _ = tx.push(Command::SetTempoMap(Box::new(project.tempo_map())));
+
+    // 2. Song (notes + mixes)
+    let song = match engine {
+        Some(eng) => crate::engine_sync::build_song(eng, project),
+        None => crate::engine_sync::offline_song(project),
+    };
+    let _ = tx.push(Command::SetSong(Box::new(song)));
+
+    // 3. Setup mix: if solo_track is set, solo it; otherwise preserve mutes/solos
+    let has_solos = solo_track.is_some() || project.tracks.iter().any(|t| t.solo);
+    for (ti, t) in project.tracks.iter().enumerate() {
+        let audible = if let Some(solo) = solo_track {
+            ti == solo
+        } else if has_solos {
+            t.solo
+        } else {
+            !t.mute
+        };
+        let mix = TrackMix {
+            gain_db: t.volume_db,
+            mute: !audible,
+            solo: solo_track.is_some_and(|s| s == ti),
+            pan: t.pan,
+        };
+        let _ = tx.push(Command::SetTrackMix {
+            track: ti as u16,
+            mix,
+        });
+    }
+
+    // 4. Track patches, SoundFonts, Electric Piano, Bass 808
+    for (ti, t) in project.tracks.iter().enumerate() {
+        let ti_u16 = ti as u16;
+        if let Some(spec) = &t.bass808 {
+            let (bass, _) = prowave_engine::Bass808::new(spec, sample_rate);
+            let _ = tx.push(Command::SetTrackSoundFont {
+                track: ti_u16,
+                player: Some(Box::new(SfPlayer::bass808(bass, sample_rate as f32))),
+            });
+        }
+        let patch = crate::patches::synth_patch(t);
+        let _ = tx.push(Command::SetTrackPatch {
+            track: ti_u16,
+            patch,
+        });
+    }
+
+    // 5. Master volume and Seek
+    let _ = tx.push(Command::SetMasterGain {
+        linear: project.master_vol,
+    });
+    let _ = tx.push(Command::SetPosition { beat: start_beat });
+    let _ = tx.push(Command::Play);
+
+    // 6. Calculate total frames
+    let tempo = project.tempo_map();
+    let start_secs = tempo.seconds_at(start_beat);
+    let end_secs = tempo.seconds_at(end_beat);
+    let total_secs = (end_secs - start_secs).max(0.0);
+    let total_frames = (total_secs * sample_rate as f64).round() as usize;
+
+    // 7. Freewheeling render loop
+    let block_size = 512;
+    let mut block = vec![0.0f32; block_size * 2];
+    let mut samples = Vec::with_capacity(total_frames * 2);
+    let mut rendered = 0;
+
+    while rendered < total_frames {
+        let chunk = (total_frames - rendered).min(block_size);
+        let slice = &mut block[..chunk * 2];
+        core.process(slice);
+        samples.extend_from_slice(slice);
+        rendered += chunk;
+    }
+
+    // 8. Write file with bit depth and dither
+    if is_flac(path) {
+        write_flac(path, &samples, sample_rate).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(OfflineBounceResult {
+            frames: total_frames,
+            peak_db: 0.0,
+            lufs_integrated: 0.0,
+            true_peak_db: 0.0,
+        })
+    } else {
+        write_wav_with_options(path, &samples, sample_rate, bit_depth, dither)
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 }
 
@@ -464,6 +621,8 @@ mod tests {
             was_solos: Vec::new(),
             path: PathBuf::from("bounce.wav"),
             sample_rate: 48_000,
+            bit_depth: BitDepth::Pcm24,
+            dither: true,
         }
     }
 

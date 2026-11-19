@@ -293,6 +293,7 @@ const WINDOW: &[&str] = &[
     "Mixer",
     "Show Musical Typing",
     "Plugin Manager",
+    "MultiMeter",
     "Video",
     "-",
     "Bring All to Front",
@@ -528,6 +529,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Edit Groups…" => true,
         "Show Musical Typing" => true,
         "Plugin Manager" => true,
+        "MultiMeter" => true,
         // Opens the Space Designer on the selected track (adding one when it has none). The
         // mastering presets go on the Stereo Out strip (the master bus).
         "Show" => p
@@ -575,6 +577,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
                     .get(p.selected_track)
                     .is_some_and(|t| !t.regions.is_empty())
         }
+        "All Tracks as Audio Files…" => !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty()),
         // Bounce in place: the selected region must be MIDI (audio is already audio).
         "Regions in Place…" | "Bounce In Place" | "Bounce and Join" => {
             !s.bouncing
@@ -726,6 +729,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             }
         }
         "Plugin Manager" => s.show_plugin_manager = true,
+        "MultiMeter" => s.show_multimeter = !s.show_multimeter,
         "Select All" => s.tracks.select_all(p),
         "Join" => crate::region_edit::join_selected(p, &mut s.tracks),
         "Show Mixer" | "Mixer" => {
@@ -810,6 +814,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Score as MusicXML…" => s.export_xml_cmd = true,
         "Project or Section…" => s.bounce_cmd = true,
         "Track as Audio File…" => s.export_track_cmd = true,
+        "All Tracks as Audio Files…" => s.export_all_tracks_cmd = true,
         "Regions in Place…" | "Bounce In Place" => s.bounce_region_cmd = true,
         "Bounce and Join" => s.bounce_join_cmd = true,
         "Record Toggle" => p.recording = !p.recording,
@@ -1315,7 +1320,13 @@ mod tests {
                     p.header_hidden.len(),
                     s.track_dialog.is_some(),
                     p.tracks.get(p.selected_track).is_some_and(|t| t.rec),
-                    (s.show_groups, s.typing.open, s.show_plugin_manager)
+                    (
+                        s.show_groups,
+                        s.typing.open,
+                        s.show_plugin_manager,
+                        s.show_multimeter,
+                        s.export_all_tracks_cmd,
+                    )
                 ),
                 (
                     s.tracks.show_tempo,

@@ -522,6 +522,8 @@ pub enum Command {
         rate: SmpteRate,
         offset_frames: i64,
     },
+    /// Resets the ITU-R BS.1770 / EBU R128 loudness meter and true-peak hold.
+    ResetLoudnessMeter,
 }
 
 impl Command {
@@ -598,6 +600,14 @@ pub struct EngineState {
     pub block_frames: u32,
     /// Device-reported delay from callback to DAC, in microseconds (0 if unknown).
     pub output_latency_us: u32,
+    /// Master momentary loudness in LUFS (400 ms window, ITU-R BS.1770 / EBU R128).
+    pub master_lufs_momentary: f32,
+    /// Master short-term loudness in LUFS (3 s window).
+    pub master_lufs_short: f32,
+    /// Master gated integrated loudness in LUFS.
+    pub master_lufs_integrated: f32,
+    /// Master 4× oversampled True Peak in dBTP.
+    pub master_true_peak_db: f32,
 }
 
 impl Default for EngineState {
@@ -613,6 +623,10 @@ impl Default for EngineState {
             master_fx_input: 0.0,
             block_frames: 0,
             output_latency_us: 0,
+            master_lufs_momentary: crate::meter::MIN_DB,
+            master_lufs_short: crate::meter::MIN_DB,
+            master_lufs_integrated: crate::meter::MIN_DB,
+            master_true_peak_db: crate::meter::MIN_DB,
         }
     }
 }
@@ -885,6 +899,8 @@ pub struct EngineCore {
     test_hz: f32,
     test_gain: f32,
     test_phase: f32,
+    /// ITU-R BS.1770 / EBU R128 loudness and 4× oversampled true-peak meter.
+    pub loudness: crate::meter::LoudnessMeter,
 }
 
 /// Keeps an oscillator phase in 0..1. `fract` costs a `floorf` call per sample on baseline
@@ -1020,6 +1036,7 @@ impl EngineCore {
             test_hz: 0.0,
             test_gain: 0.0,
             test_phase: 0.0,
+            loudness: crate::meter::LoudnessMeter::new(sample_rate.max(1) as f32, 2),
         }
     }
 
@@ -1611,6 +1628,9 @@ impl EngineCore {
                     self.mtc_rate = rate;
                     self.mtc_offset_frames = offset_frames;
                     self.mtc_locate();
+                }
+                Command::ResetLoudnessMeter => {
+                    self.loudness.reset();
                 }
                 Command::SetMetronome { on } => self.metronome = on,
                 Command::SetClick { gain_db, accent } => {
@@ -2350,6 +2370,7 @@ impl EngineCore {
             let r = finite_or_zero((r * master) as f32).clamp(-1.0, 1.0);
             pk_l = pk_l.max(l.abs());
             pk_r = pk_r.max(r.abs());
+            self.loudness.process_sample(l, r);
             frame[0] = l;
             frame[1] = r;
             // A bounce gets exactly what is heard: the mix after the master effects and fader.
@@ -2441,6 +2462,10 @@ impl EngineCore {
         }
         shown.master_reduction = self.master_chain.as_ref().map_or(0.0, |c| c.reduction_db());
         shown.master_fx_input = self.master_chain.as_ref().map_or(0.0, |c| c.input_level());
+        shown.master_lufs_momentary = self.loudness.momentary_lufs();
+        shown.master_lufs_short = self.loudness.short_term_lufs();
+        shown.master_lufs_integrated = self.loudness.integrated_lufs();
+        shown.master_true_peak_db = self.loudness.true_peak_db();
         *self.state.input() = *shown;
         self.state.publish();
     }

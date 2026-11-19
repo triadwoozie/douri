@@ -44,6 +44,7 @@ mod midi_out;
 mod mixer;
 mod model;
 mod mtc_in;
+mod multimeter;
 mod musical_typing;
 mod native_menu;
 mod new_track_dialog;
@@ -186,6 +187,8 @@ pub struct UiState {
     pub import_audio_cmd: bool,
     /// File > Export > Track as Audio File… picked this frame.
     pub export_track_cmd: bool,
+    /// File > Export > All Tracks as Audio Files… picked this frame (stem export).
+    pub export_all_tracks_cmd: bool,
     /// File > Bounce > Regions in Place… (and Record > Bounce In Place) picked this frame.
     pub bounce_region_cmd: bool,
     /// Edit > Bounce and Join picked this frame.
@@ -245,6 +248,8 @@ pub struct UiState {
     pub drum_error: Option<String>,
     /// The track whose 808 Bass window is open.
     pub show_bass808: Option<usize>,
+    /// MultiMeter analyzer window is open.
+    pub show_multimeter: bool,
     /// The text in the Plugin Manager's search field, and the manufacturer chosen in its list
     /// (`None`: Show All).
     pub plugin_manager_search: String,
@@ -308,6 +313,7 @@ impl UiState {
             show_undo_history: false,
             import_audio_cmd: false,
             export_track_cmd: false,
+            export_all_tracks_cmd: false,
             bounce_region_cmd: false,
             bounce_join_cmd: false,
             bounce_cmd: false,
@@ -338,6 +344,7 @@ impl UiState {
             drum_held: None,
             drum_error: None,
             show_bass808: None,
+            show_multimeter: false,
             plugin_manager_search: String::new(),
             plugin_manager_vendor: None,
             show_about: false,
@@ -602,17 +609,40 @@ impl App {
             self.ui.status = Some("cannot bounce: there is no audio output".to_string());
             return;
         };
-        match bounce::Bounce::start(&mut sync.engine, &mut self.project, start, end, path) {
-            Ok(running) => {
-                self.bounce = Some(running);
-                self.region_bounce = None;
-                // Send the seek and Play in this same frame, so the engine starts capturing
-                // exactly when playback starts (no silent lead-in in the file).
-                if let Some(sync) = self.sync.as_mut() {
-                    sync.sync(&mut self.project);
+
+        let sample_rate = sync.engine.sample_rate();
+        let eng = Some(&sync.engine);
+        match bounce::run_offline_bounce(
+            eng,
+            &self.project,
+            start,
+            end,
+            &path,
+            None,
+            prowave_engine::BitDepth::Pcm24,
+            true,
+            sample_rate,
+        ) {
+            Ok(res) => {
+                let fname = path
+                    .file_name()
+                    .map_or_else(|| "mix".into(), |n| n.to_string_lossy());
+                self.ui.status = Some(format!(
+                    "Bounced {} · Peak: {:.1} dBFS · Integrated LUFS: {:.1} · True Peak: {:.1} dBTP",
+                    fname, res.peak_db, res.lufs_integrated, res.true_peak_db
+                ));
+            }
+            Err(_) => {
+                // Fall back to realtime bounce if offline initialization encounters an error
+                match bounce::Bounce::start(&mut sync.engine, &mut self.project, start, end, path) {
+                    Ok(running) => {
+                        self.bounce = Some(running);
+                        self.region_bounce = None;
+                        sync.sync(&mut self.project);
+                    }
+                    Err(e) => self.ui.status = Some(e),
                 }
             }
-            Err(e) => self.ui.status = Some(e),
         }
     }
 
@@ -688,6 +718,64 @@ impl App {
             }
             Err(e) => self.ui.status = Some(e),
         }
+    }
+
+    /// File > Export > All Tracks as Audio Files…: exports every active track as an individual stem
+    /// using faster-than-realtime offline bounce.
+    fn export_all_tracks(&mut self) {
+        let Some(dir) = rfd::FileDialog::new()
+            .set_title(i18n::tr("All Tracks as Audio Files…"))
+            .pick_folder()
+        else {
+            return;
+        };
+
+        let end = self
+            .project
+            .tracks
+            .iter()
+            .flat_map(|t| t.regions.iter())
+            .map(|r| self.project.region_end_beats(r))
+            .fold(0.0, f64::max);
+        if end <= 0.0 {
+            self.ui.status = Some("no active regions to export".to_string());
+            return;
+        }
+
+        let sample_rate = self
+            .sync
+            .as_ref()
+            .map_or(48_000, |s| s.engine.sample_rate());
+        let eng = self.sync.as_ref().map(|s| &s.engine);
+        let mut count = 0;
+        let proj_name = file_name(&self.project.name);
+
+        for (ti, t) in self.project.tracks.iter().enumerate() {
+            if t.regions.is_empty() {
+                continue;
+            }
+            let track_name = file_name(&t.name);
+            let path = dir.join(format!("{proj_name}_{track_name}.wav"));
+            if bounce::run_offline_bounce(
+                eng,
+                &self.project,
+                0.0,
+                end,
+                &path,
+                Some(ti),
+                prowave_engine::BitDepth::Pcm24,
+                true,
+                sample_rate,
+            )
+            .is_ok()
+            {
+                count += 1;
+            }
+        }
+        self.ui.status = Some(format!(
+            "Exported {count} track stems to {}",
+            dir.display()
+        ));
     }
 
     /// File > Bounce > Regions in Place… and Record > Bounce In Place: plays the selected MIDI
@@ -1288,14 +1376,21 @@ impl eframe::App for App {
         }
         let master_peaks = self.sync.as_mut().map(|s| s.master_peaks());
         let mut meters = match self.sync.as_mut() {
-            Some(sync) => mixer::Meters {
-                tracks: sync.track_meters(self.project.tracks.len()),
-                reduction: sync.gain_reduction(self.project.tracks.len()),
-                fx_input: sync.fx_inputs(self.project.tracks.len()),
-                master_reduction: sync.master_fx_meters().0,
-                master_fx_input: sync.master_fx_meters().1,
-                master: sync.master_peaks(),
-            },
+            Some(sync) => {
+                let (lufs_m, lufs_s, lufs_i, tp) = sync.master_loudness();
+                mixer::Meters {
+                    tracks: sync.track_meters(self.project.tracks.len()),
+                    reduction: sync.gain_reduction(self.project.tracks.len()),
+                    fx_input: sync.fx_inputs(self.project.tracks.len()),
+                    master_reduction: sync.master_fx_meters().0,
+                    master_fx_input: sync.master_fx_meters().1,
+                    master: sync.master_peaks(),
+                    master_lufs_momentary: lufs_m,
+                    master_lufs_short: lufs_s,
+                    master_lufs_integrated: lufs_i,
+                    master_true_peak_db: tp,
+                }
+            }
             None => mixer::Meters::default(),
         };
         self.ui
@@ -1451,6 +1546,9 @@ impl eframe::App for App {
         if std::mem::take(&mut self.ui.export_track_cmd) {
             self.export_track();
         }
+        if std::mem::take(&mut self.ui.export_all_tracks_cmd) {
+            self.export_all_tracks();
+        }
         if std::mem::take(&mut self.ui.bounce_region_cmd) {
             self.bounce_region_in_place();
         }
@@ -1486,6 +1584,7 @@ impl eframe::App for App {
         musical_typing::show(&ctx, &mut self.ui.typing, typed.as_deref());
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
         bass808_ui::show(&ctx, &mut self.project, &mut self.ui);
+        multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
         show_about_dialog(&ctx, &mut self.ui.show_about);

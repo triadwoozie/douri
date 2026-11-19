@@ -910,3 +910,5 @@ Snap to Grid = Lygiuoti pagal tinklelį
 Snap Regions to Relative Value = Lygiuoti regionus santykine verte
 Snap Regions to Absolute Value = Lygiuoti regionus absoliučia verte
 Snap = Lygiavimas
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

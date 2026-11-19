@@ -910,3 +910,5 @@ Snap to Grid = Fest til rutenett
 Snap Regions to Relative Value = Fest regioner til relativ verdi
 Snap Regions to Absolute Value = Fest regioner til absolutt verdi
 Snap = Fest
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

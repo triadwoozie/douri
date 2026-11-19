@@ -910,3 +910,5 @@ Snap to Grid = Ajustar à grelha
 Snap Regions to Relative Value = Ajustar regiões ao valor relativo
 Snap Regions to Absolute Value = Ajustar regiões ao valor absoluto
 Snap = Ajuste
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

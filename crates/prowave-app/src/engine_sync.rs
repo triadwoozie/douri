@@ -537,7 +537,7 @@ fn audio_layout(p: &Project) -> AudioLayout {
     }
 }
 
-fn build_song(engine: &Engine, p: &Project) -> Song {
+pub fn build_song(engine: &Engine, p: &Project) -> Song {
     // Every clip reads ahead as much as the whole song's prefetch memory allows.
     let streamed = playing_regions(p)
         .filter(|(_, _, r, _)| r.audio.is_some())
@@ -1499,6 +1499,21 @@ impl EngineSync {
 
     pub fn master_peaks(&mut self) -> (f32, f32) {
         self.engine.state().peaks
+    }
+
+    /// (momentary LUFS, short-term LUFS, integrated LUFS, true peak dBTP)
+    pub fn master_loudness(&mut self) -> (f32, f32, f32, f32) {
+        let s = self.engine.state();
+        (
+            s.master_lufs_momentary,
+            s.master_lufs_short,
+            s.master_lufs_integrated,
+            s.master_true_peak_db,
+        )
+    }
+
+    pub fn reset_loudness_meter(&mut self) {
+        self.engine.send(Command::ResetLoudnessMeter);
     }
 }
 

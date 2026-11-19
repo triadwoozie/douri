@@ -910,3 +910,5 @@ Snap to Grid = ग्रिड पर स्नैप करें
 Snap Regions to Relative Value = रीजन को सापेक्ष मान पर स्नैप करें
 Snap Regions to Absolute Value = रीजन को निरपेक्ष मान पर स्नैप करें
 Snap = स्नैप
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

@@ -146,6 +146,10 @@ pub struct Meters {
     pub master_reduction: f32,
     pub master_fx_input: f32,
     pub master: (f32, f32),
+    pub master_lufs_momentary: f32,
+    pub master_lufs_short: f32,
+    pub master_lufs_integrated: f32,
+    pub master_true_peak_db: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1452,24 +1456,42 @@ pub fn channel_strip(
     };
     let hold = v.peak_hold.entry(key).or_insert(0.0);
     *hold = hold.max(peaks.0.max(peaks.1));
+    let is_master = matches!(key, StripKey::StereoOut | StripKey::Master);
     let half = (inner_w - 4.0) / 2.0;
     let vol_r = Rect::from_min_size(pos2(sx, r.db), vec2(half, 14.0));
     let pk_r = Rect::from_min_size(pos2(sx + half + 4.0, r.db), vec2(half, 14.0));
+
+    let vol_text = if is_master && meters.master_lufs_integrated > -100.0 {
+        format!("{:.1} I", meters.master_lufs_integrated)
+    } else {
+        format!("{vol_db:.1}")
+    };
     slot(
         g,
         vol_r,
-        &format!("{vol_db:.1}"),
+        &vol_text,
         Color32::from_gray(0x24),
-        TEXT,
+        if is_master && meters.master_lufs_integrated > -100.0 {
+            Color32::from_rgb(0x80, 0xd0, 0xff)
+        } else {
+            TEXT
+        },
     );
-    let hold_db = lin_to_db(*hold);
-    let pk_text = if *hold <= 1e-5 {
+
+    let hold_db = if is_master && meters.master_true_peak_db > -100.0 {
+        meters.master_true_peak_db
+    } else {
+        lin_to_db(*hold)
+    };
+    let pk_text = if is_master && meters.master_true_peak_db > -100.0 {
+        format!("{hold_db:.1} TP")
+    } else if *hold <= 1e-5 {
         String::new()
     } else {
         format!("{hold_db:.1}")
     };
     let pk_col = if hold_db > 0.0 {
-        Color32::from_rgb(0xff, 0x5a, 0x4a)
+        Color32::from_rgb(0xff, 0x45, 0x3a)
     } else {
         READ_GREEN
     };
@@ -2536,6 +2558,7 @@ mod tests {
             master_reduction: 0.0,
             master_fx_input: 0.0,
             master: (0.3, 0.3),
+            ..Default::default()
         };
         for _ in 0..3 {
             h.frame(vec![], |ui| show(ui, &mut p, &mut s, &meters));

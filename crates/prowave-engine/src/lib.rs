@@ -28,8 +28,10 @@ pub mod hydrogen;
 pub mod ir_file;
 #[cfg(not(target_arch = "wasm32"))]
 mod mapped;
+pub mod meter;
 mod monitor;
 mod mtc;
+pub mod offline;
 mod output;
 pub mod plugin;
 pub mod pult_eq;
@@ -78,6 +80,12 @@ pub use crate::flex::{
 pub use crate::fx::{
     eq_response_db, response_db, Chain, Fx, FxKind, ParamInfo, Pdc, AMP_CABS, AMP_MODELS,
     MAX_FX_PARAMS, MAX_INSERTS,
+};
+pub use crate::meter::{
+    db_to_gain, gain_to_db, LoudnessMeter, PeakMeter, RmsMeter, MIN_DB as METER_MIN_DB,
+};
+pub use crate::offline::{
+    write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult,
 };
 pub use crate::monitor::{InputFeed, MonitorTrack, MAX_MONITORS};
 pub use crate::mtc::{

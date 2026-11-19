@@ -910,3 +910,5 @@ Snap to Grid = Am Raster ausrichten
 Snap Regions to Relative Value = Regionen relativ einrasten
 Snap Regions to Absolute Value = Regionen absolut einrasten
 Snap = Einrasten
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

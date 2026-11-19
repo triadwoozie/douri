@@ -910,3 +910,5 @@ Snap to Grid = Magnétisme de la grille
 Snap Regions to Relative Value = Aligner les régions en valeur relative
 Snap Regions to Absolute Value = Aligner les régions en valeur absolue
 Snap = Magnétisme
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak

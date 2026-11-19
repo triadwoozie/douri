@@ -910,3 +910,5 @@ Snap to Grid = I-snap sa Grid
 Snap Regions to Relative Value = I-snap ang mga Rehiyon sa Relatibong Halaga
 Snap Regions to Absolute Value = I-snap ang mga Rehiyon sa Absolutong Halaga
 Snap = Snap
+MultiMeter = MultiMeter
+MultiMeter · Loudness & True Peak = MultiMeter · Loudness & True Peak
