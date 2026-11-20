@@ -510,11 +510,11 @@ fn body(
         4.0 * k,
         Color32::from_gray(if mem.link { 0x70 } else { 0x44 }),
     );
-    g.text(
-        link.center(),
-        Align2::CENTER_CENTER,
-        "🔗",
-        FontId::proportional(12.0 * k),
+    crate::icons::paint_regular(
+        &g,
+        link,
+        crate::icons::LINK,
+        12.0 * k,
         Color32::from_gray(0xe6),
     );
 

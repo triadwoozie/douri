@@ -17,14 +17,20 @@ pub const BORDER_STROKE: Stroke = Stroke {
 pub const BG: Color32 = CHROME_BG;
 pub const PANEL: Color32 = CARD_BG;
 pub const GRID_BG: Color32 = CANVAS_BG;
+// Top chrome surfaces & dividers
+pub const MENU_BAR_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25); // #222225 menu bar
+pub const CONTROL_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a); // #18181A control bar well
+pub const SUB_TOOLBAR_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25); // #222225 sub-toolbar
+pub const TOP_DIVIDER: Color32 = Color32::from_rgb(0x11, 0x11, 0x13); // 1px #111113 dividers
+
 pub const TEXT: Color32 = Color32::from_rgb(0xe6, 0xe6, 0xeb);
 pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x8e, 0x8e, 0x93);
 
 // Functional studio accents (Logic Pro 11+ desaturated pro-audio palette)
-pub const ACCENT_BLUE: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5); // #3A7BD5 active view toggle pills
-pub const ACCENT_EMERALD: Color32 = Color32::from_rgb(0x2e, 0xbd, 0x6b); // #2EBD6B play & audio level meters
-pub const ACCENT_CRIMSON: Color32 = Color32::from_rgb(0xe0, 0x48, 0x48); // #E04848 record active
-pub const ACCENT_AMBER: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b); // #E5A93B solo & cycle loop
+pub const ACCENT_BLUE: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5); // #3A7BD5 selection
+pub const ACCENT_EMERALD: Color32 = Color32::from_rgb(0x30, 0xd1, 0x58); // #30D158 play & audio level meters
+pub const ACCENT_CRIMSON: Color32 = Color32::from_rgb(0xff, 0x45, 0x3a); // #FF453A record active
+pub const ACCENT_AMBER: Color32 = Color32::from_rgb(0xff, 0xd6, 0x0a); // #FFD60A cycle loop
 pub const ACCENT_VIOLET: Color32 = Color32::from_rgb(0x8b, 0x5c, 0xf6); // #8B5CF6 synth tags / signature
 pub const ACCENT_CYAN: Color32 = Color32::from_rgb(0x06, 0xb6, 0xd4); // #06B6D4 bass tags
 
@@ -61,11 +67,12 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(0x42, 0x42, 0x48));
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
 
-    // Active states: studio blue fill
-    v.widgets.active.bg_fill = ACCENT_BLUE;
-    v.widgets.active.weak_bg_fill = ACCENT_BLUE;
-    v.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT_BLUE);
-    v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+    // Active states: soft translucent neutral highlight (rgba(255, 255, 255, 0.14))
+    v.widgets.active.bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 36);
+    v.widgets.active.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 36);
+    v.widgets.active.bg_stroke =
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20));
+    v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::from_rgb(0xf5, 0xf5, 0xf7));
 
     // Selection
     v.selection.bg_fill = Color32::from_rgba_premultiplied(0x3a, 0x7b, 0xd5, 130);

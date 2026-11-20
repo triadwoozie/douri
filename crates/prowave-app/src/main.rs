@@ -30,6 +30,7 @@ mod group_editor;
 mod groups;
 mod hosted_plugins;
 mod i18n;
+mod icons;
 mod import;
 mod inspector;
 mod ir_files;
@@ -1470,7 +1471,10 @@ impl eframe::App for App {
             .show(ui, |ui| transport::control_bar(ui, p, s, master_peaks));
         if s.show_library {
             egui::Panel::left("library")
-                .exact_size(290.0)
+                .resizable(true)
+                .min_size(200.0)
+                .max_size(460.0)
+                .default_size(250.0)
                 .frame(egui::Frame::new())
                 .show(ui, |ui| library::show(ui, p, s));
         }
@@ -1509,14 +1513,12 @@ impl eframe::App for App {
             // the window, so it is never outside its range when the window shrinks.)
             let room = ui.available_height();
             let usual = (room * 0.48).clamp(160.0, 500.0);
-            let panel = egui::Panel::bottom("bottom").frame(egui::Frame::new());
-            let panel = if s.bottom == Bottom::Mixer {
-                panel
-                    .resizable(false)
-                    .exact_size(mixer::panel_height(room, p, &s.mixer))
-            } else {
-                panel.resizable(true).default_size(usual)
-            };
+            let panel = egui::Panel::bottom("bottom")
+                .resizable(true)
+                .min_size(140.0)
+                .max_size(520.0)
+                .default_size(240.0)
+                .frame(egui::Frame::new());
             panel.show(ui, |ui| match s.bottom {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
@@ -2170,6 +2172,9 @@ fn main() -> eframe::Result {
         "Dōri",
         opts,
         Box::new(|cc| {
+            let mut fonts = egui::FontDefinitions::default();
+            icons::install_fonts(&mut fonts);
+            cc.egui_ctx.set_fonts(fonts);
             theme::apply(&cc.egui_ctx);
             // Cmd/Ctrl + = / - / 0 resize the interface through `ui_scale` instead, which
             // also keeps the fit for small windows.
@@ -2422,6 +2427,17 @@ fn main() -> eframe::Result {
             if scene == "glass-menu" {
                 app.ui.show_multimeter = true;
                 app.ui.shot_top_menu = Some("Track".to_string());
+            }
+            if scene == "piano-roll" {
+                app.ui.bottom = Bottom::PianoRoll;
+                app.ui.score_tab = false;
+            }
+            if scene == "step-sequencer" {
+                app.ui.bottom = Bottom::PianoRoll;
+                app.ui.score_tab = true;
+            }
+            if scene == "patches" {
+                app.ui.library.category = Some(1); // Bass category with badges
             }
             // `prowave song.prowave` opens a project; `prowave song.wav drums.aiff` imports each
             // file as an audio track (into the opened project, if any).

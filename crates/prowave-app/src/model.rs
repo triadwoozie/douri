@@ -1044,6 +1044,15 @@ pub struct Project {
     pub show_master_track: bool,
     /// Parts hidden from every track header (Track > Configure Track Header). Empty: all shown.
     pub header_hidden: Vec<HeaderPart>,
+    /// Global chord track chord blocks.
+    pub chords: Vec<ChordBlock>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChordBlock {
+    pub name: String,
+    pub start_beat: f64,
+    pub len_beats: f64,
 }
 
 /// Deterministic pseudo-random so demo content is stable across runs.
@@ -1261,19 +1270,20 @@ impl Project {
             recording: false,
             cycle: false,
             metronome: false,
-            count_in: true,
+            count_in: false,
             counting_in: false,
             notes: String::new(),
             cycle_start: 8.0,
             cycle_end: 88.0,
-            position_beats: 16.0,
+            position_beats: 0.0,
             selected_track: 0,
-            master_vol: 0.8,
+            master_vol: 1.0,
             master_inserts: Vec::new(),
             groups: Vec::new(),
             song_rev: 0,
             show_master_track: false,
             header_hidden: Vec::new(),
+            chords: Vec::new(),
             tempo_ramp: false,
             groove_onsets: Default::default(),
             groove_key: 0,

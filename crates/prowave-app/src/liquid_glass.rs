@@ -361,60 +361,56 @@ pub fn paint_glass_pill(
     let r = radius.clamp(2.0, (rect.height() * 0.5).min(rect.width() * 0.5));
     let corners = CornerRadius::same(r.round() as u8);
 
-    let default_tint = if is_recessed {
-        Color32::from_rgb(0x11, 0x11, 0x13) // #111113 deep pill LCD cavity
-    } else {
-        Color32::from_rgba_unmultiplied(42, 42, 46, 199) // rgba(42, 42, 46, 0.78)
-    };
-    let tint = tint_opt.unwrap_or(default_tint);
-
-    let default_rim = if is_recessed {
-        Color32::from_rgb(0x26, 0x26, 0x2a)
-    } else {
-        Color32::from_rgba_unmultiplied(255, 255, 255, 20) // subtle 1px top-lit specular hairline
-    };
-    let rim = rim_opt.unwrap_or(default_rim);
-
     if is_recessed {
         // Recessed cavity styling (LCD display & recessed wells)
+        let tint = tint_opt.unwrap_or(Color32::from_rgb(0x11, 0x11, 0x13)); // #111113 deep pill LCD cavity
         painter.rect_filled(rect, corners, tint);
         // Subtle top inset shadow
         let top_shadow = Rect::from_min_max(rect.min, Pos2::new(rect.max.x, rect.min.y + 2.0));
         painter.rect_filled(top_shadow, corners, Color32::from_black_alpha(65));
         // Subtle 1px neutral border
+        let border_col = rim_opt.unwrap_or(Color32::from_rgb(0x28, 0x28, 0x2c));
         painter.rect_stroke(
             rect,
             corners,
-            Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+            Stroke::new(1.0, border_col),
             StrokeKind::Inside,
         );
     } else {
         // Floating pill capsule styling (soft translucent dark-charcoal)
-        // 1. Subtle drop shadow
-        let shadow_rect = rect.translate(Vec2::new(0.0, 1.5));
+        // 1. Soft dark drop shadow (rgba(0, 0, 0, 0.45), 2px Y-offset)
+        let shadow_rect = rect.translate(Vec2::new(0.0, 2.0));
         painter.rect_filled(
             shadow_rect,
             corners,
-            Color32::from_black_alpha(if quality == GlassQuality::FlatLowPower {
-                25
-            } else {
-                55
-            }),
+            Color32::from_rgba_unmultiplied(0, 0, 0, 115),
         );
-        // 2. Base glass fill
-        painter.rect_filled(rect, corners, tint);
-        // 3. Subtle top-lit specular hairline (rgba(255, 255, 255, 0.08))
-        if quality != GlassQuality::FlatLowPower && rect.width() > 16.0 {
-            let sheen_start = egui::pos2(rect.left() + r * 0.4, rect.top() + 0.5);
-            let sheen_end = egui::pos2(rect.right() - r * 0.4, rect.top() + 0.5);
-            painter.line_segment([sheen_start, sheen_end], Stroke::new(1.0, rim));
+
+        // 2. Subtle vertical gradient (#2C2D31 top to #1F2024 bottom)
+        let mut mesh = egui::Mesh::default();
+        let mut tessellator = eframe::epaint::Tessellator::new(
+            ui.ctx().pixels_per_point(),
+            eframe::epaint::TessellationOptions::default(),
+            [1, 1],
+            Vec::new(),
+        );
+        let rect_shape = eframe::epaint::RectShape::filled(rect, corners, Color32::WHITE);
+        tessellator.tessellate_rect(&rect_shape, &mut mesh);
+        let top_c = Color32::from_rgb(0x2c, 0x2d, 0x31);
+        let bot_c = Color32::from_rgb(0x1f, 0x20, 0x24);
+        for v in &mut mesh.vertices {
+            let t = ((v.pos.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
+            v.color = Color32::from_rgba_premultiplied(
+                (top_c.r() as f32 * (1.0 - t) + bot_c.r() as f32 * t).round() as u8,
+                (top_c.g() as f32 * (1.0 - t) + bot_c.g() as f32 * t).round() as u8,
+                (top_c.b() as f32 * (1.0 - t) + bot_c.b() as f32 * t).round() as u8,
+                255,
+            );
         }
-        // 4. Hairline border: 1px #343439 neutral divider (zero cyan or bright white)
-        let stroke_color = if quality == GlassQuality::FlatLowPower {
-            Color32::from_rgb(0x2e, 0x2e, 0x33)
-        } else {
-            Color32::from_rgb(0x34, 0x34, 0x39)
-        };
+        painter.add(mesh);
+
+        // 3. Soft 1px inner border (rgba(255, 255, 255, 0.08)) following rounded path
+        let stroke_color = rim_opt.unwrap_or(Color32::from_rgba_unmultiplied(255, 255, 255, 20));
         painter.rect_stroke(
             rect,
             corners,

@@ -401,7 +401,7 @@ struct Look {
 }
 
 const DARK: Look = Look {
-    bar: Color32::from_rgb(0x3a, 0x3a, 0x3c),
+    bar: Color32::from_rgb(0x22, 0x22, 0x25),
     bar_text: Color32::from_rgb(0xdc, 0xdc, 0xdc),
     menu: Color32::from_rgb(0x4a, 0x4a, 0x4c),
     text: Color32::from_rgb(0xe6, 0xe6, 0xe6),
@@ -1434,9 +1434,11 @@ mod tests {
             // These may already be where they would take you.
             let may_stay = [
                 "Go to Next Region",
+                "Go to Previous Region",
                 "Actual Interface Size",
                 "English (Default)",
                 "Snap Regions to Relative Value",
+                "Go to Beginning",
             ]
             .contains(&label);
             assert!(

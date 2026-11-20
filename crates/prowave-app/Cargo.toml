@@ -43,6 +43,7 @@ winit = { version = "0.30.13", default-features = false, features = [
     "wayland-csd-adwaita",
 ] }
 egui = "0.37"
+phosphor-egui = { package = "egui-phosphor", version = "0.14", default-features = false, features = ["regular", "fill", "bold"] }
 human-panic = "2.0.8"
 prowave-engine = { version = "0.3.0", path = "../prowave-engine" }
 prowave-garageband-import = { version = "0.3.0", path = "../prowave-garageband-import" }

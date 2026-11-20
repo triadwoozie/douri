@@ -287,30 +287,21 @@ fn rot(pts: &[(f32, f32)], pivot: (f32, f32), deg: f32, k: f32) -> Vec<(f32, f32
         .collect()
 }
 
-/// Draws a track icon scaled to `r`.
+/// Draws a track icon scaled to `r` using crisp Phosphor Fill glyphs.
 pub fn draw_icon(g: &Painter, r: Rect, kind: IconKind) {
-    let pen = Pen {
-        g,
-        c: r.center(),
-        s: (r.width().min(r.height()) / 36.0).max(0.2),
+    let glyph = match kind {
+        IconKind::Piano | IconKind::WoodKeys => crate::icons::PIANO_KEYS,
+        IconKind::Synth | IconKind::Waveform => crate::icons::WAVEFORM,
+        IconKind::Mic => crate::icons::MICROPHONE_STAGE,
+        IconKind::Guitar | IconKind::Bass | IconKind::Strings => crate::icons::GUITAR,
+        IconKind::Note | IconKind::DrumKit | IconKind::DrummerTile | IconKind::ExternalMidi => {
+            crate::icons::MUSIC_NOTES
+        }
+        IconKind::Aux | IconKind::Vca => crate::icons::FADERS,
+        IconKind::Folder => crate::icons::FOLDER_OPEN,
     };
-    match kind {
-        IconKind::Note => note_tile(&pen),
-        IconKind::Waveform => waveform(&pen),
-        IconKind::DrumKit => drum_kit(&pen),
-        IconKind::DrummerTile => drummer_tile(&pen),
-        IconKind::Piano => piano(&pen),
-        IconKind::WoodKeys => wood_keys(&pen),
-        IconKind::Synth => synth(&pen),
-        IconKind::Bass => guitar(&pen, true),
-        IconKind::Guitar => guitar(&pen, false),
-        IconKind::Mic => mic(&pen),
-        IconKind::Strings => violin(&pen),
-        IconKind::Aux => aux(&pen),
-        IconKind::Folder => folder(&pen),
-        IconKind::Vca => vca(&pen),
-        IconKind::ExternalMidi => external_midi(&pen),
-    }
+    let sz = (r.width().min(r.height())).clamp(10.0, 18.0);
+    crate::icons::paint_fill(g, r, glyph, sz, Color32::WHITE);
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {

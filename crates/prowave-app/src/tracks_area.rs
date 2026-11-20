@@ -26,7 +26,7 @@ const NUM_W: f32 = 24.0;
 /// How far each folder nesting level moves a track header's contents to the right.
 const INDENT_W: f32 = 14.0;
 
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
 const HEADER_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
 const HEADER_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
 const LANE_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
@@ -459,7 +459,7 @@ impl Default for TracksView {
             show_tempo: false,
             show_markers: false,
             show_signatures: false,
-            show_chords: true,
+            show_chords: false,
             show_live_loops: false,
             live_loops_split: 380.0,
             selected: None,
@@ -495,10 +495,10 @@ const SELECTED_EDGE: Color32 = Color32::from_rgb(176, 200, 72);
 const RULER_SELECTION: Color32 = Color32::from_rgb(169, 126, 25);
 const RULER_SELECTION_EDGE: Color32 = Color32::from_rgb(95, 69, 20);
 
-/// Logic's playhead is yellow: a pale yellow line and a yellow head.
-pub(crate) const PLAYHEAD_LINE: Color32 = Color32::from_rgb(214, 196, 112);
-pub(crate) const PLAYHEAD_HEAD: Color32 = Color32::from_rgb(240, 206, 84);
-pub(crate) const PLAYHEAD_EDGE: Color32 = Color32::from_rgb(146, 118, 30);
+/// Modern Logic-style crisp white playhead with subtle grey edge.
+pub(crate) const PLAYHEAD_LINE: Color32 = Color32::from_rgb(0xf5, 0xf5, 0xf7);
+pub(crate) const PLAYHEAD_HEAD: Color32 = Color32::from_rgb(0xf5, 0xf5, 0xf7);
+pub(crate) const PLAYHEAD_EDGE: Color32 = Color32::from_rgb(0xc8, 0xc8, 0xce);
 /// While recording the playhead turns red.
 const PLAYHEAD_LINE_REC: Color32 = Color32::from_rgb(176, 42, 38);
 const PLAYHEAD_HEAD_REC: Color32 = Color32::from_rgb(206, 32, 26);
@@ -683,7 +683,7 @@ fn icon_button(
         g.rect_stroke(
             rect,
             5.0,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
             StrokeKind::Inside,
         );
         if resp.hovered() {
@@ -711,7 +711,7 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
     g.rect_stroke(
         trough,
         2.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
         StrokeKind::Inside,
     );
     if v > 0.0 {
@@ -726,7 +726,7 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
     g.circle_stroke(
         thumb_c,
         5.5,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
     );
     v
 }
@@ -754,7 +754,7 @@ fn header_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(crate::i18n::tr(text));
     }
-    let pill_r = (rect.height() * 0.35).min(5.0);
+    let pill_r = 3.0;
     if on {
         g.rect_filled(rect, pill_r, on_col);
         g.rect_stroke(
@@ -868,14 +868,8 @@ fn draw_catch_icon(g: &Painter, r: Rect, c: Color32) {
 }
 
 fn draw_pointer(g: &Painter, at: Pos2, c: Color32) {
-    let pts = vec![
-        at + vec2(-3.0, -7.0),
-        at + vec2(5.0, 1.0),
-        at + vec2(1.0, 1.5),
-        at + vec2(-1.0, 6.0),
-        at + vec2(-3.0, -7.0),
-    ];
-    g.add(Shape::line(pts, stroke(c)));
+    let r = Rect::from_center_size(at, vec2(14.0, 14.0));
+    crate::icons::paint_regular(g, r, crate::icons::CURSOR, 13.0, c);
 }
 
 /// The Fade tool's icon: a ramp down to a baseline.
@@ -928,7 +922,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
     g.rect_filled(bar, 0.0, TOOLBAR_BG);
     g.line_segment(
         [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
     );
     let cy = bar.center().y;
     let (can_undo, can_redo) = (s.can_undo, s.can_redo);
@@ -1295,11 +1289,11 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
             vec2(40.0, 20.0),
         );
         let resp = ui.interact(r, id(*key), Sense::click());
-        g.rect_filled(r, 5.0, Color32::from_rgb(0x1a, 0x1e, 0x29));
+        g.rect_filled(r, 5.0, Color32::from_rgb(0x26, 0x26, 0x2a));
         g.rect_stroke(
             r,
             5.0,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
             StrokeKind::Inside,
         );
         if resp.hovered() {
@@ -2622,7 +2616,7 @@ fn disclosure_triangle(g: &Painter, c: Pos2, open: bool, col: Color32) {
 
 /// A folder's M and S buttons: they set the same state on every track inside the folder.
 fn folder_buttons(ui: &Ui, g: &Painter, p: &mut Project, i: usize, x: f32, y: f32, selected: bool) {
-    let size = vec2(18.0, 15.0);
+    let size = vec2(16.0, 16.0);
     let (mute, solo) = (p.tracks[i].mute, p.tracks[i].solo);
     if header_button(
         ui,
@@ -2639,7 +2633,7 @@ fn folder_buttons(ui: &Ui, g: &Painter, p: &mut Project, i: usize, x: f32, y: f3
     if header_button(
         ui,
         g,
-        Rect::from_min_size(pos2(x + 21.0, y), size),
+        Rect::from_min_size(pos2(x + 19.0, y), size),
         (i, "s"),
         "S",
         solo,
@@ -2650,7 +2644,7 @@ fn folder_buttons(ui: &Ui, g: &Painter, p: &mut Project, i: usize, x: f32, y: f3
     }
 }
 
-const SLIDER_W: f32 = 58.0;
+const SLIDER_W: f32 = 72.0;
 const SLIDER_H: f32 = 14.0;
 
 /// Where 0 dB sits on a track header's volume slider (Logic puts unity about two thirds up).
@@ -2689,10 +2683,9 @@ fn volume_slider(
     peaks: (f32, f32),
     silenced: bool,
 ) {
-    // Volume slider (dB, -60..+6; double-click resets to 0 dB) and pan knob.
-    // Logic's slider: a dark pill with a grey thumb that stays inside it.
+    // Volume slider with embedded green level meter
     let sl = Rect::from_min_size(
-        pos2(hdr.right() - 98.0, hdr.center().y - SLIDER_H / 2.0),
+        pos2(hdr.right() - 86.0, hdr.center().y - SLIDER_H / 2.0),
         vec2(SLIDER_W, SLIDER_H),
     );
     let travel = (sl.left() + SLIDER_H / 2.0, sl.right() - SLIDER_H / 2.0);
@@ -2832,11 +2825,10 @@ fn header(
         [hdr.left_bottom(), hdr.right_bottom()],
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
-    if selected {
-        let ind = Rect::from_min_size(hdr.min, vec2(3.0, hdr.height()));
-        g.rect_filled(ind, 0.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
-    }
-    let num = Rect::from_min_size(hdr.min, vec2(NUM_W, hdr.height()));
+    // 4px flush left vertical track color bar
+    let color_bar = Rect::from_min_size(hdr.min, vec2(4.0, hdr.height()));
+    g.rect_filled(color_bar, 0.0, p.tracks[i].color);
+    let num = Rect::from_min_size(pos2(hdr.left() + 4.0, hdr.top()), vec2(NUM_W - 4.0, hdr.height()));
     if show_number {
         g.text(
             num.center(),
@@ -2927,19 +2919,16 @@ fn header(
         if show_volume {
             volume_slider(ui, g, &mut p.tracks[i], i, hdr, peaks, silenced);
         }
-        if show_pan && p.tracks[i].kind == TrackKind::Aux {
-            pan_knob(ui, g, &mut p.tracks[i], i, hdr);
-        }
         return resp;
     }
 
-    // M S R (I) buttons under the name (compact tracks: hidden, like Logic at small heights).
+    // M S R (I) 16x16 boxed micro-buttons under the name
     let audio = p.tracks[i].kind == TrackKind::Audio;
     let t = &mut p.tracks[i];
     if !compact && show_buttons {
         let by = hdr.center().y + 3.0;
         let mut bx = name_x;
-        let size = vec2(18.0, 15.0);
+        let size = vec2(16.0, 16.0);
         if header_button(
             ui,
             g,
@@ -2952,7 +2941,7 @@ fn header(
         ) {
             t.mute = !t.mute;
         }
-        bx += 21.0;
+        bx += 19.0;
         if header_button(
             ui,
             g,
@@ -2965,7 +2954,7 @@ fn header(
         ) {
             t.solo = !t.solo;
         }
-        bx += 21.0;
+        bx += 19.0;
         // Aux and Folder tracks hold no regions, so there is nothing to record into.
         if t.kind.has_regions()
             && header_button(
@@ -2982,7 +2971,7 @@ fn header(
             t.rec = !t.rec;
         }
         if audio {
-            bx += 21.0;
+            bx += 19.0;
             if header_button(
                 ui,
                 g,
@@ -3000,9 +2989,6 @@ fn header(
 
     if show_volume {
         volume_slider(ui, g, t, i, hdr, peaks, silenced);
-    }
-    if show_pan {
-        pan_knob(ui, g, t, i, hdr);
     }
     resp
 }
@@ -3249,16 +3235,22 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             v.clear_selection();
         }
     }
-    // Double-click on an empty stretch of a Drummer track: a Drummer region there, as in Logic.
+    // Double-click on an empty stretch: creates a 4-bar MIDI region (or Drummer region) and opens it
     if lane_resp.double_clicked() {
         if let Some(pt) = lane_resp.interact_pointer_pos() {
-            let drummer_row = row_at(&rows, pt.y - lanes.top() + scroll_y)
-                .filter(|row| p.tracks[*row].kind == TrackKind::Drummer);
-            if let Some(row) = drummer_row {
+            if let Some(row) = row_at(&rows, pt.y - lanes.top() + scroll_y) {
                 let bar = p.beats_to_bar(beat_of(pt.x)).floor() as f32 + 1.0;
-                if let Some(ri) = p.add_generated_region(row, true, bar) {
-                    p.selected_track = row;
-                    v.select_only(row, ri);
+                if p.tracks[row].kind == TrackKind::Drummer {
+                    if let Some(ri) = p.add_generated_region(row, true, bar) {
+                        p.selected_track = row;
+                        v.select_only(row, ri);
+                    }
+                } else if p.tracks[row].kind.has_regions() && p.tracks[row].kind != TrackKind::Audio {
+                    if let Some(ri) = p.add_empty_region(row, bar) {
+                        p.selected_track = row;
+                        v.select_only(row, ri);
+                        s.bottom = Bottom::PianoRoll;
+                    }
                 }
             }
         }
@@ -3775,14 +3767,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         );
 
-        let chords = ["Cmaj7", "Am7", "Fmaj7", "G7", "Em7", "A7", "Dm7", "G7"];
-        let bpb_val = p.bar_len(0);
-        for b_idx in 0..128 {
-            let chord_name = chords[b_idx % chords.len()];
-            let start_beat = (b_idx as f64) * (bpb_val as f64);
-            let end_beat = ((b_idx + 1) as f64) * (bpb_val as f64);
-            let x0 = x_of(start_beat);
-            let x1 = x_of(end_beat);
+        for chord in &p.chords {
+            let x0 = x_of(chord.start_beat);
+            let x1 = x_of(chord.start_beat + chord.len_beats);
             if x1 < chord_lane.left() || x0 > chord_lane.right() {
                 continue;
             }
@@ -3801,7 +3788,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 gl.text(
                     block_r.center(),
                     Align2::CENTER_CENTER,
-                    chord_name,
+                    &chord.name,
                     FontId::proportional(11.0),
                     Color32::from_rgb(0xea, 0xee, 0xf4),
                 );
@@ -4045,20 +4032,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             BTN_BG
         },
     );
-    gc.line_segment(
-        [
-            plus.center() + vec2(-5.0, 0.0),
-            plus.center() + vec2(5.0, 0.0),
-        ],
-        stroke(TEXT),
-    );
-    gc.line_segment(
-        [
-            plus.center() + vec2(0.0, -5.0),
-            plus.center() + vec2(0.0, 5.0),
-        ],
-        stroke(TEXT),
-    );
+    crate::icons::paint_regular(&gc, plus, crate::icons::PLUS, 13.0, TEXT);
     if pr.clicked() {
         s.new_track.open();
     }
@@ -4073,23 +4047,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         BTN_BG
     };
     gc.rect_filled(dup, 4.0, dup_bg);
-    gc.rect_stroke(
-        Rect::from_center_size(dup.center() + vec2(1.5, -1.5), vec2(8.0, 7.0)),
-        1.0,
-        stroke(TEXT),
-        StrokeKind::Middle,
-    );
-    gc.rect_filled(
-        Rect::from_center_size(dup.center() + vec2(-1.5, 1.5), vec2(8.0, 7.0)),
-        1.0,
-        dup_bg,
-    );
-    gc.rect_stroke(
-        Rect::from_center_size(dup.center() + vec2(-1.5, 1.5), vec2(8.0, 7.0)),
-        1.0,
-        stroke(TEXT),
-        StrokeKind::Middle,
-    );
+    crate::icons::paint_regular(&gc, dup, crate::icons::COPY, 13.0, TEXT);
     if dr.clicked() {
         if let Some(t) = p.tracks.get(p.selected_track).cloned() {
             p.tracks.insert(p.selected_track + 1, t);

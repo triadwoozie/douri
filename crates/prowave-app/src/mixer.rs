@@ -1241,6 +1241,12 @@ pub fn channel_strip(
         STRIP_BG
     };
     g.rect_filled(strip, 2.0, bg);
+    g.rect_stroke(
+        strip,
+        2.0,
+        Stroke::new(1.0, Color32::from_rgb(0x14, 0x15, 0x18)),
+        StrokeKind::Inside,
+    );
     let inner_w = strip.width() - 8.0;
     let sx = strip.left() + 4.0;
     let row = |y: f32, h: f32| Rect::from_min_size(pos2(sx, y), vec2(inner_w, h));
@@ -2208,20 +2214,21 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
     let fit = fit_toolbar(menus_end, bar.center().x, rx, filters_w);
 
     if fit.filters_inline {
+        let all_on = v.filters.iter().all(|&b| b);
         for (i, label) in FILTERS.iter().enumerate().rev() {
             let w = filter_widths[i];
             let r = Rect::from_min_size(pos2(rx - w, cy - 10.0), vec2(w, 20.0));
             let resp = ui.interact(r, id(NS, ("filter", i)), Sense::click());
-            let on = v.filters[i];
+            let active = !all_on && v.filters[i];
             g.rect_filled(
                 r,
                 4.0,
-                if on {
+                if active {
                     Color32::from_rgb(0x3a, 0x7b, 0xd5)
                 } else if resp.hovered() {
                     Color32::from_rgb(0x30, 0x30, 0x35)
                 } else {
-                    Color32::from_rgb(0x26, 0x26, 0x2a)
+                    Color32::from_rgb(0x22, 0x23, 0x27)
                 },
             );
             g.rect_stroke(
@@ -2229,7 +2236,7 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
                 4.0,
                 Stroke::new(
                     1.0,
-                    if on {
+                    if active {
                         Color32::from_rgb(0x3a, 0x7b, 0xd5)
                     } else {
                         Color32::from_rgb(0x34, 0x34, 0x39)
@@ -2242,10 +2249,18 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
                 Align2::CENTER_CENTER,
                 tr(label),
                 FontId::proportional(12.0),
-                if on { Color32::WHITE } else { TEXT_DIM },
+                if active { Color32::WHITE } else { TEXT_DIM },
             );
             if resp.clicked() {
-                v.filters[i] = !v.filters[i];
+                if all_on {
+                    v.filters = [false; 8];
+                    v.filters[i] = true;
+                } else {
+                    v.filters[i] = !v.filters[i];
+                    if v.filters.iter().all(|&b| !b) {
+                        v.filters = [true; 8];
+                    }
+                }
             }
             rx = r.left() - 3.0;
         }
@@ -2371,15 +2386,36 @@ fn draw_sends_on_faders(ui: &Ui, g: &egui::Painter, x: f32, cy: f32, bus: &mut O
         FontId::proportional(12.5),
         TEXT_DIM,
     );
-    let pw = pos2(x + 112.0, cy + 1.0);
-    g.circle_stroke(pw, 5.5, stroke(TEXT_DIM));
-    g.line_segment(
-        [pw + vec2(0.0, -7.5), pw + vec2(0.0, -1.5)],
-        Stroke::new(3.0, TOOLBAR_BG),
+    let pw_r = Rect::from_center_size(pos2(x + 112.0, cy), vec2(16.0, 16.0));
+    let pw_resp = ui.interact(pw_r, id(NS, "sends_on_faders_power"), Sense::click());
+    if pw_resp.clicked() {
+        if bus.is_some() {
+            *bus = None;
+        } else {
+            *bus = Some(1);
+        }
+    }
+    g.circle_filled(
+        pw_r.center(),
+        8.0,
+        if bus.is_some() {
+            Color32::from_rgb(0x28, 0xb4, 0x46)
+        } else if pw_resp.hovered() {
+            Color32::from_rgb(0x30, 0x30, 0x35)
+        } else {
+            Color32::from_rgb(0x26, 0x26, 0x2a)
+        },
     );
-    g.line_segment(
-        [pw + vec2(0.0, -7.0), pw + vec2(0.0, -2.0)],
-        stroke(TEXT_DIM),
+    crate::icons::paint_regular(
+        g,
+        pw_r,
+        crate::icons::POWER,
+        13.0,
+        if bus.is_some() {
+            Color32::WHITE
+        } else {
+            TEXT_DIM
+        },
     );
     let sof = Rect::from_min_size(pos2(x + 126.0, cy - 10.0), vec2(110.0, 20.0));
     let label = match bus {
@@ -2436,7 +2472,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     // Which strips, in order.
     let keys = strip_keys(p, v);
 
-    let strip_w = if v.wide { 96.0 } else { 80.0 };
+    let strip_w = if v.wide { 80.0 } else { 50.0 };
     let total_w = keys.len() as f32 * (strip_w + GAP);
     if ui
         .input(|i| i.pointer.hover_pos())

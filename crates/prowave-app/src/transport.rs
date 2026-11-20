@@ -23,14 +23,14 @@ const LCD_BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x13);
 const LCD_TEXT: Color32 = Color32::from_rgb(0xe6, 0xe6, 0xeb);
 const LCD_MID: Color32 = Color32::from_rgb(0x8e, 0x8e, 0x93);
 const LCD_DIM: Color32 = Color32::from_rgb(0x42, 0x42, 0x48);
-const PLAY_GREEN: Color32 = Color32::from_rgb(0x2e, 0xbd, 0x6b);
+const PLAY_GREEN: Color32 = Color32::from_rgb(0x30, 0xd1, 0x58);
 /// The LCD while recording turns dark crimson, as in Logic.
 const LCD_REC_BG: Color32 = Color32::from_rgb(32, 14, 16);
 const LCD_REC_TEXT: Color32 = Color32::from_rgb(244, 98, 86);
 const LCD_REC_MID: Color32 = Color32::from_rgb(170, 62, 54);
 const LCD_REC_DIM: Color32 = Color32::from_rgb(84, 30, 28);
 /// The record button's background while recording.
-const REC_BUTTON_ON: Color32 = Color32::from_rgb(165, 26, 22);
+const REC_BUTTON_ON: Color32 = Color32::from_rgb(0xff, 0x45, 0x3a);
 
 /// The LCD's colours: normal or recording.
 struct LcdColors {
@@ -60,8 +60,8 @@ impl LcdColors {
     }
 }
 
-const REC_RED: Color32 = Color32::from_rgb(0xe0, 0x48, 0x48);
-const CYCLE_YELLOW: Color32 = Color32::from_rgb(0xe5, 0xa9, 0x3b);
+const REC_RED: Color32 = Color32::from_rgb(0xff, 0x45, 0x3a);
+const CYCLE_YELLOW: Color32 = Color32::from_rgb(0xff, 0xd6, 0x0a);
 const PURPLE: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
 
 fn stroke(c: Color32) -> Stroke {
@@ -83,304 +83,90 @@ fn tip(resp: &egui::Response, key: &str) {
 
 // ---------------------------------------------------------------- icons
 
-type IconFn = fn(&Painter, Rect, Color32);
+type IconFn = fn(&Painter, Rect, Color32, bool);
 
-fn icon_library(g: &Painter, r: Rect, c: Color32) {
-    // Inbox tray.
-    let b = Rect::from_center_size(r.center(), vec2(14.0, 11.0));
-    g.rect_stroke(b, 2.0, stroke(c), StrokeKind::Middle);
-    let y = b.top() + 6.0;
-    g.add(Shape::line(
-        vec![
-            pos2(b.left(), y),
-            pos2(b.left() + 4.0, y),
-            pos2(b.left() + 5.0, y + 2.0),
-            pos2(b.right() - 5.0, y + 2.0),
-            pos2(b.right() - 4.0, y),
-            pos2(b.right(), y),
-        ],
-        stroke(c),
-    ));
+fn icon_library(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::ARCHIVE_BOX, 15.0, c, on);
 }
 
-fn icon_inspector(g: &Painter, r: Rect, c: Color32) {
-    let ctr = r.center();
-    g.circle_stroke(ctr, 7.0, stroke(c));
-    g.circle_filled(ctr + vec2(0.0, -3.4), 1.1, c);
-    g.line_segment(
-        [ctr + vec2(0.0, -1.0), ctr + vec2(0.0, 4.0)],
-        Stroke::new(1.6, c),
-    );
+fn icon_inspector(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::INFO, 15.0, c, on);
 }
 
-fn icon_help(g: &Painter, r: Rect, c: Color32) {
-    let ctr = r.center();
-    g.circle_stroke(ctr, 7.0, stroke(c));
-    g.text(
-        ctr + vec2(0.0, 0.5),
-        Align2::CENTER_CENTER,
-        "?",
-        FontId::proportional(10.5),
-        c,
-    );
+fn icon_help(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::QUESTION, 15.0, c, on);
 }
 
-fn icon_toolbar(g: &Painter, r: Rect, c: Color32) {
-    let b = Rect::from_center_size(r.center(), vec2(15.0, 11.0));
-    g.rect_stroke(b, 1.5, stroke(c), StrokeKind::Middle);
-    g.line_segment(
-        [
-            pos2(b.left(), b.top() + 3.5),
-            pos2(b.right(), b.top() + 3.5),
-        ],
-        stroke(c),
-    );
-    g.line_segment(
-        [
-            pos2(b.left() + 4.0, b.top() + 6.5),
-            pos2(b.right() - 4.0, b.top() + 6.5),
-        ],
-        Stroke::new(1.0, c),
-    );
+fn icon_toolbar(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::APP_WINDOW, 15.0, c, on);
 }
 
-fn icon_smart_controls(g: &Painter, r: Rect, c: Color32) {
-    let ctr = r.center();
-    g.circle_stroke(ctr, 3.6, stroke(c));
-    for i in 0..8 {
-        let a = i as f32 * std::f32::consts::FRAC_PI_4;
-        let d = vec2(a.cos(), a.sin());
-        g.line_segment([ctr + d * 5.6, ctr + d * 7.6], stroke(c));
-    }
+fn icon_smart_controls(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::SLIDERS, 15.0, c, on);
 }
 
-fn icon_mixer(g: &Painter, r: Rect, c: Color32) {
-    let ctr = r.center();
-    for (i, knob) in [2.5f32, -3.0, 1.0].iter().enumerate() {
-        let x = ctr.x + (i as f32 - 1.0) * 4.5;
-        g.line_segment(
-            [pos2(x, ctr.y - 7.0), pos2(x, ctr.y + 7.0)],
-            Stroke::new(1.2, c),
-        );
-        g.rect_filled(
-            Rect::from_center_size(pos2(x, ctr.y + knob), vec2(4.0, 2.4)),
-            0.5,
-            c,
-        );
-    }
+fn icon_mixer(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::FADERS, 15.0, c, on);
 }
 
-fn icon_editors(g: &Painter, r: Rect, c: Color32) {
-    // Scissors.
-    let ctr = r.center();
-    g.circle_stroke(ctr + vec2(-3.5, 4.5), 2.2, stroke(c));
-    g.circle_stroke(ctr + vec2(3.5, 4.5), 2.2, stroke(c));
-    g.line_segment([ctr + vec2(-2.4, 2.6), ctr + vec2(3.0, -7.0)], stroke(c));
-    g.line_segment([ctr + vec2(2.4, 2.6), ctr + vec2(-3.0, -7.0)], stroke(c));
-}
-
-fn tri(g: &Painter, pts: [Pos2; 3], c: Color32) {
-    g.add(Shape::convex_polygon(pts.to_vec(), c, Stroke::NONE));
+fn icon_editors(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::SCISSORS, 15.0, c, on);
 }
 
 fn icon_rewind(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    tri(
-        g,
-        [p + vec2(-8.0, 0.0), p + vec2(0.0, -6.0), p + vec2(0.0, 6.0)],
-        c,
-    );
-    tri(
-        g,
-        [p + vec2(0.0, 0.0), p + vec2(8.0, -6.0), p + vec2(8.0, 6.0)],
-        c,
-    );
+    crate::icons::paint_fill(g, r, crate::icons::REWIND, 15.0, c);
 }
 
 fn icon_forward(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    tri(
-        g,
-        [
-            p + vec2(-8.0, -6.0),
-            p + vec2(0.0, 0.0),
-            p + vec2(-8.0, 6.0),
-        ],
-        c,
-    );
-    tri(
-        g,
-        [p + vec2(0.0, -6.0), p + vec2(8.0, 0.0), p + vec2(0.0, 6.0)],
-        c,
-    );
+    crate::icons::paint_fill(g, r, crate::icons::FAST_FORWARD, 15.0, c);
 }
 
 fn icon_to_start(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    g.rect_filled(
-        Rect::from_center_size(p + vec2(-5.5, 0.0), vec2(2.4, 12.0)),
-        0.5,
-        c,
-    );
-    tri(
-        g,
-        [p + vec2(-4.0, 0.0), p + vec2(5.5, -6.0), p + vec2(5.5, 6.0)],
-        c,
-    );
+    crate::icons::paint_fill(g, r, crate::icons::SKIP_BACK, 15.0, c);
+}
+
+fn icon_stop(g: &Painter, r: Rect, c: Color32) {
+    crate::icons::paint_fill(g, r, crate::icons::STOP, 15.0, c);
 }
 
 fn icon_play(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center() + vec2(1.0, 0.0);
-    tri(
-        g,
-        [
-            p + vec2(-5.0, -7.0),
-            p + vec2(7.0, 0.0),
-            p + vec2(-5.0, 7.0),
-        ],
-        c,
-    );
+    crate::icons::paint_fill(g, r, crate::icons::PLAY, 15.0, c);
 }
 
-fn icon_cycle(g: &Painter, r: Rect, c: Color32) {
-    // Two half-loops with arrow heads (loop/cycle symbol).
-    let p = r.center();
-    let (rx, ry) = (7.5f32, 4.5f32);
-    let arc = |from: f32, to: f32| -> Vec<Pos2> {
-        (0..=12)
-            .map(|i| {
-                let a = from + (to - from) * i as f32 / 12.0;
-                p + vec2(a.cos() * rx, a.sin() * ry)
-            })
-            .collect()
-    };
-    use std::f32::consts::PI;
-    g.add(Shape::line(arc(PI * 1.05, PI * 1.95), Stroke::new(1.6, c)));
-    g.add(Shape::line(arc(PI * 0.05, PI * 0.95), Stroke::new(1.6, c)));
-    // heads: top-right pointing right, bottom-left pointing left
-    let tr = p + vec2(rx * 0.95, -ry * 0.3);
-    tri(
-        g,
-        [
-            tr + vec2(-3.5, -3.0),
-            tr + vec2(1.8, -0.2),
-            tr + vec2(-2.0, 2.5),
-        ],
-        c,
-    );
-    let bl = p + vec2(-rx * 0.95, ry * 0.3);
-    tri(
-        g,
-        [
-            bl + vec2(3.5, 3.0),
-            bl + vec2(-1.8, 0.2),
-            bl + vec2(2.0, -2.5),
-        ],
-        c,
-    );
+fn icon_record(g: &Painter, r: Rect, c: Color32) {
+    crate::icons::paint_fill(g, r, crate::icons::RECORD, 15.0, c);
 }
 
-fn icon_low_latency(g: &Painter, r: Rect, c: Color32) {
-    // Shield with a check mark.
-    let p = r.center();
-    let pts = vec![
-        p + vec2(-6.0, -6.5),
-        p + vec2(6.0, -6.5),
-        p + vec2(6.0, 0.0),
-        p + vec2(0.0, 7.0),
-        p + vec2(-6.0, 0.0),
-        p + vec2(-6.0, -6.5),
-    ];
-    g.add(Shape::line(pts, stroke(c)));
-    g.add(Shape::line(
-        vec![
-            p + vec2(-3.0, -0.5),
-            p + vec2(-0.5, 2.0),
-            p + vec2(3.5, -3.0),
-        ],
-        stroke(c),
-    ));
-}
-
-fn icon_tuner(g: &Painter, r: Rect, c: Color32) {
-    // Tuning fork.
-    let p = r.center();
-    g.add(Shape::line(
-        vec![
-            p + vec2(-3.0, -7.0),
-            p + vec2(-3.0, 0.0),
-            p + vec2(0.0, 2.5),
-            p + vec2(3.0, 0.0),
-            p + vec2(3.0, -7.0),
-        ],
-        stroke(c),
-    ));
-    g.line_segment([p + vec2(0.0, 2.5), p + vec2(0.0, 7.5)], stroke(c));
-}
-
-fn icon_metronome(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    let body = vec![
-        p + vec2(-6.0, 7.0),
-        p + vec2(-2.5, -7.0),
-        p + vec2(2.5, -7.0),
-        p + vec2(6.0, 7.0),
-        p + vec2(-6.0, 7.0),
-    ];
-    g.add(Shape::line(body, stroke(c)));
-    g.line_segment([p + vec2(-4.8, 3.0), p + vec2(4.8, 3.0)], stroke(c));
-    g.line_segment([p + vec2(0.0, 3.0), p + vec2(4.5, -6.0)], stroke(c));
-}
-
-fn icon_list_editors(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    for i in -1..=1 {
-        let y = p.y + i as f32 * 4.5;
-        g.circle_filled(pos2(p.x - 6.0, y), 1.1, c);
-        g.line_segment([pos2(p.x - 3.0, y), pos2(p.x + 7.0, y)], stroke(c));
+fn icon_cycle(g: &Painter, r: Rect, c: Color32, on: bool) {
+    if on {
+        crate::icons::paint_bold(g, r, crate::icons::ARROWS_CLOCKWISE, 15.0, c);
+    } else {
+        crate::icons::paint_regular(g, r, crate::icons::ARROWS_CLOCKWISE, 15.0, c);
     }
 }
 
-fn icon_note_pad(g: &Painter, r: Rect, c: Color32) {
-    let b = Rect::from_center_size(r.center(), vec2(13.0, 13.0));
-    g.rect_stroke(b, 2.0, stroke(c), StrokeKind::Middle);
-    g.line_segment(
-        [
-            b.left_top() + vec2(0.0, 4.0),
-            b.right_top() + vec2(0.0, 4.0),
-        ],
-        stroke(c),
-    );
-    g.line_segment(
-        [
-            b.left_top() + vec2(3.0, 8.0),
-            b.right_top() + vec2(-3.0, 8.0),
-        ],
-        Stroke::new(1.0, c),
-    );
+fn icon_tuner(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::SLIDERS_HORIZONTAL, 14.0, c, on);
 }
 
-fn icon_loops(g: &Painter, r: Rect, c: Color32) {
-    // Speech-bubble-like loop (Apple Loops browser).
-    let p = r.center() + vec2(0.0, -1.0);
-    g.circle_stroke(p, 6.5, stroke(c));
-    g.add(Shape::line(
-        vec![
-            p + vec2(-4.0, 5.0),
-            p + vec2(-6.5, 8.5),
-            p + vec2(-1.0, 6.3),
-        ],
-        stroke(c),
-    ));
+fn icon_metronome(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::METRONOME, 15.0, c, on);
 }
 
-fn icon_browsers(g: &Painter, r: Rect, c: Color32) {
-    let p = r.center();
-    let back = Rect::from_center_size(p + vec2(2.5, -2.0), vec2(11.0, 9.0));
-    let front = Rect::from_center_size(p + vec2(-2.0, 2.5), vec2(11.0, 9.0));
-    g.rect_stroke(back, 1.5, stroke(c), StrokeKind::Middle);
-    g.rect_filled(front, 1.5, BAR_BG);
-    g.rect_stroke(front, 1.5, stroke(c), StrokeKind::Middle);
+fn icon_list_editors(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::LIST_BULLETS, 15.0, c, on);
+}
+
+fn icon_note_pad(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::NOTE_BLANK, 15.0, c, on);
+}
+
+fn icon_loops(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::REPEAT, 15.0, c, on);
+}
+
+fn icon_browsers(g: &Painter, r: Rect, c: Color32, on: bool) {
+    crate::icons::paint(g, r, crate::icons::FOLDER_OPEN, 15.0, c, on);
 }
 
 // ---------------------------------------------------------------- widgets
@@ -395,46 +181,57 @@ fn segmented(
     items: &[(IconFn, bool)],
     quality: crate::liquid_glass::GlassQuality,
 ) -> Option<usize> {
-    let seg = vec2(30.0, 26.0);
+    let seg = vec2(30.0, 24.0);
+    let pad_x = 4.0;
     let full = Rect::from_min_size(
-        pos2(left, cy - seg.y / 2.0),
-        vec2(seg.x * items.len() as f32, seg.y),
+        pos2(left, cy - 14.0),
+        vec2(pad_x * 2.0 + seg.x * items.len() as f32, 28.0),
     );
     crate::liquid_glass::paint_glass_pill(
         ui,
         full,
-        13.0,
+        14.0,
         quality,
         false,
-        Some(Color32::from_rgba_unmultiplied(42, 42, 46, 199)),
-        Some(Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+        None,
+        None,
     );
     let mut hit = None;
     for (i, (draw, on)) in items.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(left + i as f32 * seg.x, full.top()), seg);
+        let r = Rect::from_min_size(
+            pos2(full.left() + pad_x + i as f32 * seg.x, cy - seg.y / 2.0),
+            seg,
+        );
+        let cr = CornerRadius {
+            nw: if i == 0 { 10 } else { 3 },
+            sw: if i == 0 { 10 } else { 3 },
+            ne: if i + 1 == items.len() { 10 } else { 3 },
+            se: if i + 1 == items.len() { 10 } else { 3 },
+        };
+        let resp = ui.interact(
+            r,
+            egui::Id::unique(("control_bar_hover", key, i)),
+            Sense::click(),
+        );
+        tip(&resp, &format!("{key}{i}"));
         if *on {
-            let cr = CornerRadius {
-                nw: if i == 0 { 12 } else { 3 },
-                sw: if i == 0 { 12 } else { 3 },
-                ne: if i + 1 == items.len() { 12 } else { 3 },
-                se: if i + 1 == items.len() { 12 } else { 3 },
-            };
-            g.rect_filled(r.shrink(1.5), cr, Color32::from_rgb(0x3a, 0x7b, 0xd5));
-        } else {
-            let resp = ui.interact(
-                r,
-                egui::Id::unique(("control_bar_hover", key, i)),
-                Sense::hover(),
+            g.rect_filled(
+                r.shrink(1.0),
+                cr,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 36),
             );
-            if resp.hovered() {
-                let cr = CornerRadius {
-                    nw: if i == 0 { 12 } else { 0 },
-                    sw: if i == 0 { 12 } else { 0 },
-                    ne: if i + 1 == items.len() { 12 } else { 0 },
-                    se: if i + 1 == items.len() { 12 } else { 0 },
-                };
-                g.rect_filled(r.shrink(1.0), cr, Color32::from_white_alpha(15));
-            }
+            g.rect_stroke(
+                r.shrink(1.0),
+                cr,
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+                StrokeKind::Inside,
+            );
+        } else if resp.hovered() {
+            g.rect_filled(
+                r.shrink(1.0),
+                cr,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+            );
         }
         if i > 0 {
             g.line_segment(
@@ -442,11 +239,16 @@ fn segmented(
                     pos2(r.left(), r.top() + 4.0),
                     pos2(r.left(), r.bottom() - 4.0),
                 ],
-                Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 15)),
             );
         }
-        draw(g, r, if *on { Color32::WHITE } else { ICON });
-        if clicked(ui, r, &format!("{key}{i}")) {
+        let icon_col = if *on {
+            Color32::from_rgb(0xf5, 0xf5, 0xf7)
+        } else {
+            Color32::from_rgb(0x8e, 0x8e, 0x93)
+        };
+        draw(g, r, icon_col, *on);
+        if resp.clicked() {
             hit = Some(i);
         }
     }
@@ -477,7 +279,7 @@ fn tbutton(
     } else if resp.hovered() {
         g.rect_filled(r, 6.0, Color32::from_white_alpha(16));
     }
-    draw(g, r, icon);
+    draw(g, r, icon, active_bg.is_some());
     resp.clicked()
 }
 
@@ -564,7 +366,7 @@ fn lcd(
     crate::liquid_glass::paint_glass_pill(
         ui,
         rect,
-        14.0,
+        10.0,
         quality,
         true,
         Some(pal.bg),
@@ -606,21 +408,30 @@ fn lcd(
     } else {
         // Mode: Bar · Beat · Div · Tick
         let (bar, beat, div, tick) = p.bbdt(p.position_beats);
-        let bar_text = format!("{bar:3}   {beat}   {div}   {tick:03}");
-        g.text(
-            pos2(x0 + 12.0, top + 1.0),
-            Align2::LEFT_TOP,
-            bar_text,
-            FontId::monospace(18.0),
-            pal.text,
-        );
-        g.text(
-            pos2(x0 + 14.0, bot + 2.0),
-            Align2::LEFT_TOP,
-            "BAR       BEAT   DIV    TICK",
-            FontId::proportional(8.5),
-            pal.dim,
-        );
+        let cols = [
+            (format!("{bar}"), "BAR"),
+            (format!("{beat}"), "BEAT"),
+            (format!("{div}"), "DIV"),
+            (format!("{tick}"), "TICK"),
+        ];
+        let col_w = time_rect.width() / 4.0;
+        for (i, (val, label)) in cols.iter().enumerate() {
+            let cx = time_rect.left() + (i as f32 + 0.5) * col_w;
+            g.text(
+                pos2(cx, top + 1.0),
+                Align2::CENTER_TOP,
+                val,
+                FontId::monospace(17.0),
+                pal.text,
+            );
+            g.text(
+                pos2(cx, bot + 2.0),
+                Align2::CENTER_TOP,
+                *label,
+                FontId::proportional(8.5),
+                pal.dim,
+            );
+        }
     }
 
     // Divider line 1
@@ -730,16 +541,34 @@ fn lcd(
     let ci_r = Rect::from_center_size(pos2(x0 + 430.0, rect.center().y), vec2(36.0, 24.0));
     let ci_resp = ui.interact(ci_r, egui::Id::unique(("lcd", "ci")), Sense::click());
     if p.count_in {
-        g.rect_filled(ci_r, 4.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
+        g.rect_filled(
+            ci_r,
+            4.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 36),
+        );
+        g.rect_stroke(
+            ci_r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+            StrokeKind::Inside,
+        );
     } else if ci_resp.hovered() {
-        g.rect_filled(ci_r, 4.0, Color32::from_white_alpha(15));
+        g.rect_filled(
+            ci_r,
+            4.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+        );
     }
     g.text(
         ci_r.center(),
         Align2::CENTER_CENTER,
         "1234",
         FontId::proportional(11.0),
-        if p.count_in { Color32::WHITE } else { pal.mid },
+        if p.count_in {
+            Color32::from_rgb(0xf5, 0xf5, 0xf7)
+        } else {
+            pal.mid
+        },
     );
     if ci_resp.clicked() {
         p.count_in = !p.count_in;
@@ -748,11 +577,34 @@ fn lcd(
     let met_r = Rect::from_center_size(pos2(x0 + 472.0, rect.center().y), vec2(34.0, 24.0));
     let met_resp = ui.interact(met_r, egui::Id::unique(("lcd", "met")), Sense::click());
     if p.metronome {
-        g.rect_filled(met_r, 4.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
+        g.rect_filled(
+            met_r,
+            4.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 36),
+        );
+        g.rect_stroke(
+            met_r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+            StrokeKind::Inside,
+        );
     } else if met_resp.hovered() {
-        g.rect_filled(met_r, 4.0, Color32::from_white_alpha(15));
+        g.rect_filled(
+            met_r,
+            4.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+        );
     }
-    icon_metronome(g, met_r, if p.metronome { Color32::WHITE } else { pal.mid });
+    icon_metronome(
+        g,
+        met_r,
+        if p.metronome {
+            Color32::from_rgb(0xf5, 0xf5, 0xf7)
+        } else {
+            pal.mid
+        },
+        p.metronome,
+    );
     if met_resp.clicked() {
         p.metronome = !p.metronome;
     }
@@ -762,7 +614,7 @@ fn lcd(
     if tun_resp.hovered() {
         g.rect_filled(tun_r, 4.0, Color32::from_white_alpha(15));
     }
-    icon_tuner(g, tun_r, pal.dim);
+    icon_tuner(g, tun_r, pal.dim, false);
 }
 
 /// Level (0..1) for a peak amplitude: -60 dB at the left end, +6 dB at the right end.
@@ -773,87 +625,64 @@ fn meter_frac(peak: f32) -> f32 {
     ((20.0 * peak.log10() + 60.0) / 66.0).clamp(0.0, 1.0)
 }
 
-/// Master volume as in Logic Pro: a dark pill holding two thin stereo meter bars (green, yellow
-/// above -6 dB, red above 0 dB) with a translucent round knob sliding over them.
+/// Master volume: compact 72px neutral charcoal pill track (#141416), subtle cool-grey fill (#6E7178),
+/// small speaker icon, and a clean 11px matte silver-grey thumb (#C8CACF).
 pub(crate) fn master_volume(
     ui: &Ui,
     g: &Painter,
     p: &mut Project,
     rect: Rect,
-    peaks: Option<(f32, f32)>,
+    _peaks: Option<(f32, f32)>,
     id: egui::Id,
-    quality: crate::liquid_glass::GlassQuality,
+    _quality: crate::liquid_glass::GlassQuality,
 ) {
-    const RAD: f32 = 10.0;
-    let travel = (rect.left() + RAD + 1.0, rect.right() - RAD - 1.0);
-    let resp = ui.interact(rect.expand2(vec2(4.0, 4.0)), id, Sense::click_and_drag());
+    let cy = rect.center().y;
+    // Small speaker icon on the left (14px, #9A9CA2)
+    let spk_r = Rect::from_center_size(pos2(rect.left() + 7.0, cy), vec2(14.0, 14.0));
+    crate::icons::paint_regular(g, spk_r, crate::icons::SPEAKER_HIGH, 14.0, Color32::from_rgb(0x9a, 0x9c, 0xa2));
+
+    // Compact 68px neutral charcoal pill track (#141416)
+    let track_left = rect.left() + 16.0;
+    let track = Rect::from_min_size(pos2(track_left, cy - 4.5), vec2(68.0, 9.0));
+    let resp = ui.interact(track.expand2(vec2(6.0, 8.0)), id, Sense::click_and_drag());
+    let travel = (track.left() + 5.5, track.right() - 5.5);
     if let Some(pt) = resp.interact_pointer_pos() {
         p.master_vol = ((pt.x - travel.0) / (travel.1 - travel.0)).clamp(0.0, 1.0);
     }
 
-    // Pill with a soft inner edge.
-    let r = rect.height() / 2.0;
-    crate::liquid_glass::paint_glass_pill(
-        ui,
-        rect,
-        r,
-        quality,
-        true,
-        Some(Color32::from_rgba_premultiplied(16, 18, 25, 230)),
-        Some(Color32::from_rgba_premultiplied(37, 42, 55, 180)),
+    // Track background
+    g.rect_filled(track, 4.5, Color32::from_rgb(0x14, 0x14, 0x16));
+    g.rect_stroke(
+        track,
+        4.5,
+        Stroke::new(1.0, Color32::from_rgb(0x26, 0x26, 0x2a)),
+        StrokeKind::Inside,
     );
 
-    // Two stereo meter bars.
-    let inner = Rect::from_min_max(
-        pos2(rect.left() + 9.0, rect.top() + 5.0),
-        pos2(rect.right() - 9.0, rect.bottom() - 5.0),
-    );
-    let bar_h = ((inner.height() - 2.0) / 2.0).floor().max(3.0);
-    let green = Color32::from_rgb(0x10, 0xb9, 0x81);
-    let yellow = Color32::from_rgb(0xf5, 0x9e, 0x0b);
-    let red = Color32::from_rgb(0xef, 0x44, 0x44);
-    let (l, rr) = peaks.unwrap_or((0.0, 0.0));
-    for (i, peak) in [l, rr].into_iter().enumerate() {
-        let y = inner.top() + i as f32 * (bar_h + 2.0);
-        let bar = Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), bar_h));
-        g.rect_filled(bar, 2.0, Color32::from_gray(0x13));
-        let f = meter_frac(peak);
-        for (lo, hi, col) in [
-            (0.0f32, 0.82f32, green),
-            (0.82, 0.91, yellow),
-            (0.91, 1.0, red),
-        ] {
-            let x1 = bar.left() + bar.width() * lo;
-            let x2 = bar.left() + bar.width() * hi.min(f);
-            if x2 > x1 {
-                let seg = Rect::from_min_max(pos2(x1, bar.top()), pos2(x2, bar.bottom()));
-                g.rect_filled(seg, 1.5, col);
-                // Light centre line gives the bar its soft round look.
-                let mid = seg.center().y;
-                g.line_segment(
-                    [pos2(seg.left(), mid), pos2(seg.right(), mid)],
-                    Stroke::new(1.0, col.lerp_to_gamma(Color32::WHITE, 0.35)),
-                );
-            }
-        }
+    // Subtle cool-grey fill (#6E7178)
+    let thumb_x = travel.0 + (travel.1 - travel.0) * p.master_vol;
+    if thumb_x > track.left() + 4.0 {
+        let fill_rect = Rect::from_min_max(track.min, pos2(thumb_x, track.max.y));
+        g.rect_filled(
+            fill_rect,
+            CornerRadius {
+                nw: 4,
+                sw: 4,
+                ne: 0,
+                se: 0,
+            },
+            Color32::from_rgb(0x6e, 0x71, 0x78),
+        );
     }
 
-    // Translucent glassy knob.
-    let c = pos2(
-        travel.0 + (travel.1 - travel.0) * p.master_vol,
-        rect.center().y,
-    );
-    g.circle_filled(c + vec2(0.0, 1.5), RAD + 1.0, Color32::from_black_alpha(90));
-    g.circle_filled(c, RAD, Color32::from_rgba_premultiplied(200, 210, 225, 220));
+    // Clean 11px matte silver-grey thumb (#C8CACF)
+    let thumb_c = pos2(thumb_x, cy);
+    g.circle_filled(thumb_c + vec2(0.0, 1.0), 5.5, Color32::from_black_alpha(100));
+    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xc8, 0xca, 0xcf));
     g.circle_stroke(
-        c,
-        RAD,
-        Stroke::new(1.2, Color32::from_rgba_premultiplied(240, 245, 255, 240)),
-    );
-    g.circle_stroke(
-        c + vec2(-1.5, -1.5),
-        RAD - 3.5,
-        Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 120)),
+        thumb_c,
+        5.5,
+        Stroke::new(1.0, Color32::from_rgb(0xe0, 0xe2, 0xe6)),
     );
 }
 
@@ -900,7 +729,7 @@ pub fn control_bar(
     g.rect_filled(bar, 0.0, BAR_BG);
     g.line_segment(
         [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
     );
     let cy = bar.center().y;
 
@@ -955,91 +784,210 @@ pub fn control_bar(
     let lcd_rect = Rect::from_center_size(pos2(lcd_center_x(bar), cy), vec2(lcd_w, 42.0));
     lcd(ui, &g, p, s, lcd_rect, s.glass_quality);
 
-    // Center Transport Pill capsule (soft translucent dark charcoal with specular top hairline)
+    // Center Transport Pill capsule: |<, <<, >>, ⏹, ▶, ●, ↻
+    let transport_w = 204.0;
     let transport_capsule = Rect::from_min_max(
-        pos2(lcd_rect.left() - 216.0, cy - 15.0),
-        pos2(lcd_rect.left() - 6.0, cy + 15.0),
+        pos2(lcd_rect.left() - transport_w - 8.0, cy - 14.0),
+        pos2(lcd_rect.left() - 8.0, cy + 14.0),
     );
     crate::liquid_glass::paint_glass_pill(
         ui,
         transport_capsule,
-        13.0,
+        14.0,
         s.glass_quality,
         false,
-        Some(Color32::from_rgba_unmultiplied(42, 42, 46, 199)),
-        Some(Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+        None,
+        None,
     );
 
-    let tx = |dx: f32| pos2(lcd_rect.left() + dx, cy);
-    if tbutton(ui, &g, tx(-198.0), "rew", icon_rewind, None, ICON) {
-        let bar = p.beats_to_bar(p.position_beats);
-        let back = if bar.fract() < 1e-6 {
-            bar - 1.0
-        } else {
-            bar.floor()
+    let btn_w = 28.0;
+    let pad_x = 4.0;
+    for i in 0..7 {
+        let r = Rect::from_min_size(
+            pos2(transport_capsule.left() + pad_x + i as f32 * btn_w, cy - 12.0),
+            vec2(btn_w, 24.0),
+        );
+        let cr = CornerRadius {
+            nw: if i == 0 { 10 } else { 3 },
+            sw: if i == 0 { 10 } else { 3 },
+            ne: if i == 6 { 10 } else { 3 },
+            se: if i == 6 { 10 } else { 3 },
         };
-        p.position_beats = p.bar_to_beats(back.max(0.0));
-    }
-    if tbutton(ui, &g, tx(-170.0), "ffw", icon_forward, None, ICON) {
-        p.position_beats = p.next_bar_start(p.position_beats);
-    }
-    if tbutton(ui, &g, tx(-142.0), "start", icon_to_start, None, ICON) {
-        p.position_beats = 0.0;
-    }
-    let play_icon: IconFn = icon_play;
-    let play_bg = p.playing.then_some(PLAY_GREEN);
-    if tbutton(
-        ui,
-        &g,
-        tx(-108.0),
-        "play",
-        play_icon,
-        play_bg,
-        if p.playing { Color32::WHITE } else { ICON },
-    ) {
-        p.playing = !p.playing;
-    }
-    // Record: red dot
-    let rec_r = Rect::from_center_size(tx(-76.0), vec2(30.0, 24.0));
-    if p.recording {
-        g.rect_filled(rec_r, 5.0, REC_BUTTON_ON);
-        g.rect_stroke(rec_r, 5.0, Stroke::new(1.0, REC_RED), StrokeKind::Inside);
-    }
-    g.circle_filled(
-        rec_r.center(),
-        6.0,
-        if p.recording { Color32::WHITE } else { REC_RED },
-    );
-    if clicked(ui, rec_r, "rec") {
-        p.recording = !p.recording;
-    }
-    // Capture Recording
-    let cap_r = Rect::from_center_size(tx(-48.0), vec2(30.0, 24.0));
-    g.circle_stroke(
-        cap_r.center(),
-        7.0,
-        Stroke::new(1.4, Color32::from_rgb(0xe8, 0x6a, 0x3a)),
-    );
-    g.circle_filled(cap_r.center(), 4.2, REC_RED);
-    if clicked(ui, cap_r, "capture") {
-        s.capture_cmd = true;
-    }
-    let cyc_bg = p.cycle.then_some(CYCLE_YELLOW);
-    if tbutton(
-        ui,
-        &g,
-        tx(-18.0),
-        "cycle",
-        icon_cycle,
-        cyc_bg,
-        if p.cycle { Color32::WHITE } else { ICON },
-    ) {
-        p.cycle = !p.cycle;
+        if i > 0 {
+            g.line_segment(
+                [
+                    pos2(r.left(), r.top() + 4.0),
+                    pos2(r.left(), r.bottom() - 4.0),
+                ],
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 15)),
+            );
+        }
+        match i {
+            // 0: |< (Go to Beginning)
+            0 => {
+                let resp =
+                    ui.interact(r, egui::Id::unique(("transport", "start")), Sense::click());
+                tip(&resp, "start");
+                if resp.hovered() {
+                    g.rect_filled(
+                        r.shrink(1.0),
+                        cr,
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                    );
+                }
+                icon_to_start(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
+                if resp.clicked() {
+                    p.position_beats = 0.0;
+                }
+            }
+            // 1: << (Rewind)
+            1 => {
+                let resp = ui.interact(r, egui::Id::unique(("transport", "rew")), Sense::click());
+                tip(&resp, "rew");
+                if resp.hovered() {
+                    g.rect_filled(
+                        r.shrink(1.0),
+                        cr,
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                    );
+                }
+                icon_rewind(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
+                if resp.clicked() {
+                    let bar = p.beats_to_bar(p.position_beats);
+                    let back = if bar.fract() < 1e-6 {
+                        bar - 1.0
+                    } else {
+                        bar.floor()
+                    };
+                    p.position_beats = p.bar_to_beats(back.max(0.0));
+                }
+            }
+            // 2: >> (Fast Forward)
+            2 => {
+                let resp = ui.interact(r, egui::Id::unique(("transport", "ffw")), Sense::click());
+                tip(&resp, "ffw");
+                if resp.hovered() {
+                    g.rect_filled(
+                        r.shrink(1.0),
+                        cr,
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                    );
+                }
+                icon_forward(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
+                if resp.clicked() {
+                    p.position_beats = p.next_bar_start(p.position_beats);
+                }
+            }
+            // 3: ⏹ (Stop)
+            3 => {
+                let resp =
+                    ui.interact(r, egui::Id::unique(("transport", "stop")), Sense::click());
+                tip(&resp, "stop");
+                if resp.hovered() {
+                    g.rect_filled(
+                        r.shrink(1.0),
+                        cr,
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                    );
+                }
+                icon_stop(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
+                if resp.clicked() {
+                    if p.playing {
+                        p.playing = false;
+                    } else {
+                        p.position_beats = 0.0;
+                    }
+                }
+            }
+            // 4: ▶ (Play, #30D158 when active)
+            4 => {
+                let resp =
+                    ui.interact(r, egui::Id::unique(("transport", "play")), Sense::click());
+                tip(&resp, "play");
+                if p.playing {
+                    g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0x30, 0xd1, 0x58));
+                    g.rect_stroke(
+                        r.shrink(1.0),
+                        cr,
+                        Stroke::new(1.0, Color32::from_rgb(0x50, 0xe1, 0x78)),
+                        StrokeKind::Inside,
+                    );
+                    icon_play(&g, r, Color32::WHITE);
+                } else {
+                    if resp.hovered() {
+                        g.rect_filled(
+                            r.shrink(1.0),
+                            cr,
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                        );
+                    }
+                    icon_play(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
+                }
+                if resp.clicked() {
+                    p.playing = !p.playing;
+                }
+            }
+            // 5: ● (Record, #FF453A when active)
+            5 => {
+                let resp = ui.interact(r, egui::Id::unique(("transport", "rec")), Sense::click());
+                tip(&resp, "rec");
+                if p.recording {
+                    g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0xff, 0x45, 0x3a));
+                    g.rect_stroke(
+                        r.shrink(1.0),
+                        cr,
+                        Stroke::new(1.0, Color32::from_rgb(0xff, 0x65, 0x5a)),
+                        StrokeKind::Inside,
+                    );
+                    icon_record(&g, r, Color32::WHITE);
+                } else {
+                    if resp.hovered() {
+                        g.rect_filled(
+                            r.shrink(1.0),
+                            cr,
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                        );
+                    }
+                    icon_record(&g, r, Color32::from_rgb(0xff, 0x45, 0x3a));
+                }
+                if resp.clicked() {
+                    p.recording = !p.recording;
+                }
+            }
+            // 6: ↻ (Cycle, #FFD60A when active)
+            _ => {
+                let resp =
+                    ui.interact(r, egui::Id::unique(("transport", "cycle")), Sense::click());
+                tip(&resp, "cycle");
+                if p.cycle {
+                    g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0xff, 0xd6, 0x0a));
+                    g.rect_stroke(
+                        r.shrink(1.0),
+                        cr,
+                        Stroke::new(1.0, Color32::from_rgb(0xff, 0xe6, 0x3a)),
+                        StrokeKind::Inside,
+                    );
+                    icon_cycle(&g, r, Color32::from_rgb(0x11, 0x11, 0x13), true);
+                } else {
+                    if resp.hovered() {
+                        g.rect_filled(
+                            r.shrink(1.0),
+                            cr,
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                        );
+                    }
+                    icon_cycle(&g, r, if resp.hovered() { Color32::WHITE } else { ICON }, false);
+                }
+                if resp.clicked() {
+                    p.cycle = !p.cycle;
+                }
+            }
+        }
     }
 
     // Right of LCD: master volume, then List Editors / Note Pads / Loop Browser / Browsers.
     let rx = |dx: f32| pos2(lcd_rect.right() + dx, cy);
-    let (vol_left, vol_w) = volume_span(rx(10.0).x, bar.right() - 128.0);
+    let (vol_left, vol_w) = volume_span(rx(10.0).x, bar.right() - 136.0);
     if vol_w > 0.0 {
         let vol = Rect::from_min_size(pos2(vol_left, cy - 11.0), vec2(vol_w, 22.0));
         master_volume(
@@ -1054,39 +1002,30 @@ pub fn control_bar(
     }
 
     // Right panel toggles floating glass pill (zero MCP badges)
-    let right_rect = Rect::from_min_max(
-        pos2(bar.right() - 116.0, cy - 14.0),
-        pos2(bar.right() - 106.0 + 3.0 * 27.5 + 14.0, cy + 14.0),
-    );
-    crate::liquid_glass::paint_glass_pill(
+    let right_items = [
+        (icon_list_editors as IconFn, s.show_lists),
+        (icon_note_pad, s.show_notes),
+        (icon_loops, s.browser.open == Some(Tab::Loops)),
+        (icon_browsers, s.browser.open == Some(Tab::Files)),
+    ];
+    let pad_x = 4.0;
+    let seg_w = 30.0;
+    let right_w = pad_x * 2.0 + seg_w * right_items.len() as f32;
+    let right_left = bar.right() - right_w - 12.0;
+    match segmented(
         ui,
-        right_rect,
-        13.0,
+        &g,
+        right_left,
+        cy,
+        "right_panels",
+        &right_items,
         s.glass_quality,
-        false,
-        Some(Color32::from_rgba_unmultiplied(42, 42, 46, 199)),
-        Some(Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
-    );
-
-    let right: [IconFn; 4] = [icon_list_editors, icon_note_pad, icon_loops, icon_browsers];
-    for (i, draw) in right.iter().enumerate() {
-        let c = pos2(bar.right() - 106.0 + i as f32 * 27.5, cy);
-        let shown = match i {
-            0 => s.show_lists,
-            1 => s.show_notes,
-            2 => s.browser.open == Some(Tab::Loops),
-            _ => s.browser.open == Some(Tab::Files),
-        };
-        let on = shown.then_some(Color32::from_rgb(0x3a, 0x7b, 0xd5));
-        let color = if on.is_some() { Color32::WHITE } else { ICON };
-        if tbutton(ui, &g, c, &format!("right{i}"), *draw, on, color) {
-            match i {
-                0 => s.show_lists = !s.show_lists,
-                1 => s.show_notes = !s.show_notes,
-                2 => s.browser.toggle(Tab::Loops),
-                _ => s.browser.toggle(Tab::Files),
-            }
-        }
+    ) {
+        Some(0) => s.show_lists = !s.show_lists,
+        Some(1) => s.show_notes = !s.show_notes,
+        Some(2) => s.browser.toggle(Tab::Loops),
+        Some(3) => s.browser.toggle(Tab::Files),
+        _ => {}
     }
 }
 
@@ -1094,10 +1033,10 @@ pub fn control_bar(
 /// moved right of the metronome (which ends at `after`) and narrowed so it never reaches the
 /// icons at the right edge. Width 0 = no room at all, leave it out.
 fn volume_span(after: f32, right: f32) -> (f32, f32) {
-    const WIDTH: f32 = 140.0;
+    const WIDTH: f32 = 84.0;
     const MIN_WIDTH: f32 = 60.0;
-    let icons_left = right - 120.0;
-    let left = (right - 188.0 - WIDTH).max(after + 14.0);
+    let icons_left = right - 136.0;
+    let left = (right - 148.0 - WIDTH).max(after + 14.0);
     let width = WIDTH.min(icons_left - 8.0 - left);
     if width < MIN_WIDTH {
         (left, 0.0)
@@ -1135,11 +1074,11 @@ mod tests {
     #[test]
     fn the_volume_never_covers_the_metronome_or_the_icons() {
         // Wide bar: the usual place and width.
-        assert_eq!(volume_span(1200.0, 2000.0), (2000.0 - 328.0, 140.0));
+        assert_eq!(volume_span(1200.0, 2000.0), (2000.0 - 148.0 - 84.0, 84.0));
         // Narrow bar: after the metronome, narrowed before the icons.
         let (left, width) = volume_span(1300.0, 1470.0);
         assert!(left >= 1300.0 + 14.0);
-        assert!(left + width <= 1470.0 - 120.0 - 8.0 + 1e-3);
+        assert!(left + width <= 1470.0 - 136.0 - 8.0 + 1e-3);
         assert!(width >= 60.0 || width == 0.0);
         // No room: left out.
         assert_eq!(volume_span(1400.0, 1470.0).1, 0.0);

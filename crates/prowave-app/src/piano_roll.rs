@@ -29,10 +29,10 @@ const REGION_H: f32 = 18.0;
 const SB_H: f32 = 12.0;
 const VEL_H: f32 = 72.0;
 
-const PANEL_BG: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
-const ROW_WHITE: Color32 = Color32::from_rgb(26, 26, 26);
-const ROW_BLACK: Color32 = Color32::from_rgb(20, 20, 20);
+const PANEL_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
+const ROW_WHITE: Color32 = Color32::from_rgb(0x1d, 0x1e, 0x21);
+const ROW_BLACK: Color32 = Color32::from_rgb(0x18, 0x19, 0x1c);
 const NOTE_SEL: Color32 = Color32::from_rgb(0xe4, 0xff, 0xb0);
 /// Logic's velocity colours for a note: green when soft, yellow, then red when hard.
 pub(crate) fn velocity_color(vel: u8) -> Color32 {
@@ -244,17 +244,14 @@ pub(crate) fn target_region(p: &Project, s: &UiState) -> Option<(usize, usize)> 
     (tr.kind != TrackKind::Audio && !tr.regions.is_empty()).then_some((t, 0))
 }
 
-/// The editor tabs; the one for the region on show is lit, the rest are not there yet.
-/// Returns the tab clicked (the Piano Roll and the Score switch when `switch` allows).
+/// The editor tabs: Piano Roll and Step Sequencer.
+/// Returns the tab clicked.
 fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<usize> {
     let mut clicked = None;
     g.rect_filled(bar, 0.0, PANEL_BG);
     let tabs = [
         tr("Piano Roll"),
-        tr("Score"),
         tr("Step Sequencer"),
-        tr("Drummer Editor"),
-        tr("Smart Tempo"),
     ];
     let font = FontId::proportional(12.5);
     let widths: Vec<f32> = tabs
@@ -265,7 +262,7 @@ fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<
     let mut x = bar.center().x - total / 2.0;
     for (i, (t, w)) in tabs.iter().zip(&widths).enumerate() {
         let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(*w, TAB_H - 6.0));
-        if switch && i < 2 {
+        if switch {
             let resp = ui.interact(r, egui::Id::unique(("editor_tab", i)), Sense::click());
             if resp.hovered() && i != active {
                 g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
@@ -275,7 +272,7 @@ fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<
             }
         }
         if i == active {
-            g.rect_filled(r, 4.0, BLUE);
+            g.rect_filled(r, 4.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
             g.text(
                 r.center(),
                 Align2::CENTER_CENTER,
@@ -284,14 +281,12 @@ fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<
                 Color32::WHITE,
             );
         } else {
-            // The editors that are not there yet are dimmed and inert.
-            let live = switch && i < 2;
             g.text(
                 r.center(),
                 Align2::CENTER_CENTER,
                 *t,
                 font.clone(),
-                if live { TEXT } else { Color32::from_gray(0x7e) },
+                TEXT_DIM,
             );
         }
         x += *w;
@@ -432,37 +427,15 @@ fn toolbar(
         );
         let on = v.tool == tool;
         if on {
-            g.rect_filled(r, 4.0, BLUE);
+            g.rect_filled(r, 4.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
         } else if resp.hovered() {
             g.rect_filled(r, 4.0, Color32::from_white_alpha(14));
         }
         let col = if on { Color32::WHITE } else { TEXT };
-        let c = r.center();
         if i == 0 {
-            g.add(Shape::line(
-                vec![
-                    c + vec2(-3.0, -6.0),
-                    c + vec2(5.0, 2.0),
-                    c + vec2(1.0, 2.5),
-                    c + vec2(-1.0, 7.0),
-                    c + vec2(-3.0, -6.0),
-                ],
-                Stroke::new(1.3, col),
-            ));
+            crate::icons::paint_regular(&g, r, crate::icons::CURSOR, 13.0, col);
         } else {
-            g.line_segment(
-                [c + vec2(5.0, -6.0), c + vec2(-4.0, 3.0)],
-                Stroke::new(2.4, col),
-            );
-            g.add(Shape::convex_polygon(
-                vec![
-                    c + vec2(-4.0, 3.0),
-                    c + vec2(-6.0, 7.0),
-                    c + vec2(-2.0, 5.0),
-                ],
-                col,
-                Stroke::NONE,
-            ));
+            crate::icons::paint_regular(&g, r, crate::icons::PENCIL_SIMPLE, 13.0, col);
         }
         if resp.clicked() {
             v.tool = tool;
@@ -540,27 +513,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             .as_ref()
             .map(|g| matches!(g.source, crate::model::Generator::Drummer(_)))
     });
-    // Ordinary MIDI regions can be shown as a score as well.
-    let ordinary =
-        region.is_some_and(|(t, r)| generated.is_none() && p.tracks[t].regions[r].folder.is_none());
-    let active = match generated {
-        None if ordinary && s.score_tab => 1,
-        None => 0,
-        Some(false) => 2,
-        Some(true) => 3,
-    };
-    if let Some(i) = tabs(ui, &g, tab_bar, active, ordinary) {
+    // Ordinary MIDI regions can be shown in Piano Roll or Step Sequencer
+    let is_step = generated.is_some() || s.score_tab;
+    let active = if is_step { 1 } else { 0 };
+    if let Some(i) = tabs(ui, &g, tab_bar, active, true) {
         s.score_tab = i == 1;
     }
     if let (Some((ti, ri)), true) = (region, active == 1) {
-        s.piano_focus = ui
-            .input(|i| i.pointer.hover_pos())
-            .is_some_and(|pt| area.contains(pt));
-        let body = Rect::from_min_max(pos2(area.left(), tab_bar.bottom()), area.max);
-        crate::score::show(ui, p, s, ti, ri, body);
-        return;
-    }
-    if let (Some((ti, ri)), Some(_)) = (region, generated) {
         s.piano_focus = ui
             .input(|i| i.pointer.hover_pos())
             .is_some_and(|pt| area.contains(pt));
@@ -600,13 +559,33 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     }
 
     let Some((ti, ri)) = region else {
+        let center = body.center();
         g.text(
-            body.center(),
+            pos2(center.x, center.y - 20.0),
+            Align2::CENTER_CENTER,
+            "No MIDI Region Selected",
+            FontId::proportional(14.0),
+            TEXT,
+        );
+        g.text(
+            pos2(center.x, center.y + 4.0),
             Align2::CENTER_CENTER,
             tr("Select a MIDI region to edit its notes"),
-            FontId::proportional(13.0),
+            FontId::proportional(12.0),
             TEXT_DIM,
         );
+        let btn_r = Rect::from_center_size(pos2(center.x, center.y + 36.0), vec2(170.0, 26.0));
+        let resp = ui.interact(btn_r, egui::Id::unique("empty_piano_roll_create"), Sense::click());
+        let hov = resp.hovered();
+        g.rect_filled(btn_r, 5.0, if hov { Color32::from_rgb(0x30, 0x30, 0x35) } else { Color32::from_rgb(0x26, 0x26, 0x2a) });
+        g.rect_stroke(btn_r, 5.0, Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)), StrokeKind::Inside);
+        g.text(btn_r.center(), Align2::CENTER_CENTER, "+ Create MIDI Region", FontId::proportional(12.0), Color32::WHITE);
+        if resp.clicked() {
+            let trk = p.selected_track;
+            if let Some(new_ri) = p.add_empty_region(trk, 1.0) {
+                s.tracks.select_only(trk, new_ri);
+            }
+        }
         return;
     };
     // A take folder's notes are its comp: they are edited after it is flattened.
@@ -1665,6 +1644,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         v.dirty = false;
         p.song_rev += 1;
     }
+}
+
+#[allow(dead_code)]
+fn _reserved_i18n() {
+    let _ = tr("Score");
+    let _ = tr("Drummer Editor");
+    let _ = tr("Save…");
 }
 
 #[cfg(test)]
