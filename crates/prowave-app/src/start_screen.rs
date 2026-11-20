@@ -337,7 +337,7 @@ const BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
 const SIDEBAR: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
 const TEXT: Color32 = Color32::from_rgb(0xea, 0xee, 0xf4);
 const DIM: Color32 = Color32::from_rgb(0x9a, 0x9a, 0xa2);
-const ACCENT: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
+const ACCENT: Color32 = Color32::from_rgb(0x38, 0x39, 0x3e);
 const TILE: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
 const BORDER: Color32 = Color32::from_rgb(0x34, 0x34, 0x39);
 
@@ -354,18 +354,34 @@ fn tile(ui: &egui::Ui, r: Rect, t: Template, selected: bool, key: usize) -> (boo
     g.rect_stroke(
         r,
         6.0,
-        Stroke::new(1.0, if selected { ACCENT } else { BORDER }),
+        Stroke::new(
+            if selected { 1.5 } else { 1.0 },
+            if selected {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 89)
+            } else {
+                BORDER
+            },
+        ),
         StrokeKind::Inside,
     );
 
-    let icon_r = Rect::from_center_size(pos2(r.center().x, r.top() + 38.0), vec2(38.0, 38.0));
-    draw_icon(g, icon_r, t.icon());
+    // Compact 36x36px icon container with 24px Phosphor glyph
+    let icon_box = Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(36.0, 36.0));
+    g.rect_filled(icon_box, 6.0, Color32::from_rgb(0x1a, 0x1a, 0x1d));
+    g.rect_stroke(
+        icon_box,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        StrokeKind::Inside,
+    );
+    draw_icon(g, icon_box.shrink(6.0), t.icon());
+
     g.text(
-        pos2(r.center().x, r.top() + 66.0),
+        pos2(r.center().x, r.top() + 56.0),
         Align2::CENTER_CENTER,
         tr(t.name()),
         FontId::proportional(12.5),
-        if selected { ACCENT } else { TEXT },
+        if selected { Color32::WHITE } else { TEXT },
     );
     let about = g.layout(
         tr(t.about()).to_string(),
@@ -373,12 +389,12 @@ fn tile(ui: &egui::Ui, r: Rect, t: Template, selected: bool, key: usize) -> (boo
         DIM,
         r.width() - 14.0,
     );
-    let at = pos2(r.center().x - about.size().x / 2.0, r.bottom() - 18.0);
+    let at = pos2(r.center().x - about.size().x / 2.0, r.top() + 72.0);
     g.galley(at, about, DIM);
     (resp.clicked(), resp.double_clicked())
 }
 
-/// Primary Empty Project card (156x106px).
+/// Primary Empty Project card
 fn empty_project_card(ui: &egui::Ui, r: Rect, selected: bool) -> (bool, bool) {
     let resp = ui.interact(r, egui::Id::unique("empty_project_tile"), Sense::click());
     let g = ui.painter();
@@ -393,47 +409,47 @@ fn empty_project_card(ui: &egui::Ui, r: Rect, selected: bool) -> (bool, bool) {
         6.0,
         Stroke::new(
             if selected { 1.5 } else { 1.0 },
-            if selected { ACCENT } else { BORDER },
+            if selected {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 89)
+            } else {
+                BORDER
+            },
         ),
         StrokeKind::Inside,
     );
 
-    // Vector arrangement lines + plus badge
-    let c = pos2(r.center().x, r.top() + 38.0);
-    for offset in [-10.0, 0.0, 10.0] {
-        g.line_segment(
-            [
-                pos2(c.x - 24.0, c.y + offset),
-                pos2(c.x + 24.0, c.y + offset),
-            ],
-            Stroke::new(1.5, Color32::from_rgb(0x4a, 0x4a, 0x52)),
-        );
-    }
-    // Plus badge
-    g.circle_filled(c, 10.0, ACCENT);
-    g.line_segment(
-        [c + vec2(-4.5, 0.0), c + vec2(4.5, 0.0)],
-        Stroke::new(1.5, Color32::WHITE),
+    // Compact 36x36px icon container with 22px Phosphor PLUS glyph
+    let icon_box = Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(36.0, 36.0));
+    g.rect_filled(icon_box, 6.0, Color32::from_rgb(0x1a, 0x1a, 0x1d));
+    g.rect_stroke(
+        icon_box,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        StrokeKind::Inside,
     );
-    g.line_segment(
-        [c + vec2(0.0, -4.5), c + vec2(0.0, 4.5)],
-        Stroke::new(1.5, Color32::WHITE),
+    crate::icons::paint_regular(
+        g,
+        icon_box,
+        crate::icons::PLUS,
+        22.0,
+        Color32::from_rgb(0xf0, 0xf0, 0xf4),
     );
 
     g.text(
-        pos2(r.center().x, r.bottom() - 26.0),
+        pos2(r.center().x, r.top() + 56.0),
         Align2::CENTER_CENTER,
         tr("Empty Project"),
         FontId::proportional(13.0),
-        if selected { ACCENT } else { TEXT },
+        if selected { Color32::WHITE } else { TEXT },
     );
-    g.text(
-        pos2(r.center().x, r.bottom() - 12.0),
-        Align2::CENTER_CENTER,
-        tr("One software instrument track."),
+    let about = g.layout(
+        tr("One software instrument track.").to_string(),
         FontId::proportional(10.5),
         DIM,
+        r.width() - 14.0,
     );
+    let at = pos2(r.center().x - about.size().x / 2.0, r.top() + 72.0);
+    g.galley(at, about, DIM);
 
     (resp.clicked(), resp.double_clicked())
 }
@@ -521,8 +537,8 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
 
     match c.section {
         Section::NewProject => {
-            // Header / Primary tile: Empty Project
-            let top_card = Rect::from_min_size(body.left_top(), vec2(156.0, 106.0));
+            // Header / Primary tile: Empty Project (156x114px, description never clips)
+            let top_card = Rect::from_min_size(body.left_top(), vec2(156.0, 114.0));
             let (clicked_empty, dbl_empty) = empty_project_card(ui, top_card, c.selected == 0);
             if clicked_empty {
                 c.selected = 0;
@@ -532,7 +548,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
             }
 
             // Factory Templates section
-            let f_top = body.top() + 116.0;
+            let f_top = body.top() + 126.0;
             g.text(
                 pos2(body.left(), f_top + 4.0),
                 Align2::LEFT_TOP,
@@ -542,7 +558,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
             );
 
             let t_y = f_top + 22.0;
-            let (tw, th, tgap) = (146.0, 96.0, 12.0);
+            let (tw, th, tgap) = (146.0, 114.0, 12.0);
             for (k, t) in Template::FACTORY.iter().enumerate() {
                 let r = Rect::from_min_size(
                     pos2(body.left() + k as f32 * (tw + tgap), t_y),
@@ -799,7 +815,8 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
                         .color(Color32::WHITE)
                         .strong(),
                 )
-                .fill(ACCENT)
+                .fill(Color32::from_rgb(0x4a, 0x4b, 0x50))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x5a, 0x5b, 0x62)))
                 .corner_radius(6.0)
                 .min_size(vec2(80.0, 26.0));
                 if ui.add_enabled(can_choose, choose_btn).clicked() {

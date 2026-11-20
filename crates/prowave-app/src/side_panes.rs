@@ -26,6 +26,7 @@ const TOOLBAR: &[&str] = &[
 
 /// The Toolbar under the control bar (Logic: View > Show Toolbar).
 pub fn toolbar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
+    ui.spacing_mut().button_padding = egui::vec2(4.0, 3.0);
     ui.horizontal_centered(|ui| {
         ui.add_space(8.0);
         for label in TOOLBAR {

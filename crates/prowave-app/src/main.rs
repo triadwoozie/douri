@@ -1302,16 +1302,20 @@ impl App {
                 self.import(&path, ctx);
             }
         }
-        top_bar(ui, &mut self.project, &mut self.ui);
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new())
-            .show(ui, |ui| start_screen::show(ui, &mut self.ui));
         if self.ui.show_onboarding {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(crate::theme::CHROME_BG))
+                .show(ui, |_ui| {});
             onboarding::show(
                 ctx,
                 &mut self.ui.show_onboarding,
                 &mut self.ui.simplified_mode,
             );
+        } else {
+            top_bar(ui, &mut self.project, &mut self.ui);
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new())
+                .show(ui, |ui| start_screen::show(ui, &mut self.ui));
         }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
@@ -1364,7 +1368,7 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
-        if self.ui.chooser.is_some() {
+        if self.ui.chooser.is_some() || self.ui.show_onboarding {
             self.chooser_ui(ui, &ctx);
             return;
         }
@@ -1472,9 +1476,9 @@ impl eframe::App for App {
         if s.show_library {
             egui::Panel::left("library")
                 .resizable(true)
-                .min_size(200.0)
-                .max_size(460.0)
-                .default_size(250.0)
+                .min_size(240.0)
+                .max_size(480.0)
+                .default_size(300.0)
                 .frame(egui::Frame::new())
                 .show(ui, |ui| library::show(ui, p, s));
         }
@@ -2101,9 +2105,10 @@ fn main() -> eframe::Result {
     }
     // Measuring runs leave the user's settings (recent projects, size) alone.
     let measuring = bench_out.is_some() || shots_dir.is_some() || shot_out.is_some();
+    let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
     let first_run_flag = flag("--first-run");
     let no_chooser_flag = flag("--no-chooser")
-        || measuring
+        || (measuring && scene != "chooser" && scene != "welcome" && scene != "chooser-details")
         || std::env::var("CI").is_ok()
         || std::env::var("HEADLESS").is_ok();
     // Release builds: on a crash, write a report to the temp folder instead of a raw panic.
@@ -2412,6 +2417,7 @@ fn main() -> eframe::Result {
             let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
             if scene == "welcome" || first_run_flag {
                 app.ui.show_onboarding = true;
+                app.ui.chooser = Some(start_screen::Chooser::default());
             }
             if scene == "chooser" {
                 app.ui.chooser = Some(start_screen::Chooser::default());

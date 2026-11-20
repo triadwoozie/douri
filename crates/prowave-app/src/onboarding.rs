@@ -42,34 +42,55 @@ pub fn show(ctx: &egui::Context, open: &mut bool, simplified_mode: &mut bool) ->
     if !*open {
         return None;
     }
-    let mut close = false;
     let mut chosen_mode = None;
     let full = ctx.input(|i| i.content_rect());
-    // Subtle backdrop dim
+
+    // Dim background behind modal
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
-        egui::Id::unique("onboarding_dim"),
+        egui::Id::unique("onboarding_dim_layer"),
     ));
-    painter.rect_filled(full, 0.0, Color32::from_black_alpha(150));
+    painter.rect_filled(full, 0.0, Color32::from_black_alpha(160));
 
-    let window_w = 640.0f32.min(full.width() - 32.0);
-    let window_h = 380.0f32.min(full.height() - 32.0);
+    let modal_w = 520.0f32.min(full.width() - 32.0);
+    let modal_h = 310.0f32.min(full.height() - 32.0);
 
-    crate::liquid_glass::glass_window(crate::i18n::tr("Welcome to Dōri"))
-        .open(open)
+    let frame = egui::Frame::new()
+        .fill(Color32::from_rgb(0x26, 0x26, 0x29))
+        .corner_radius(12.0)
+        .stroke(Stroke::new(
+            1.0,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 31),
+        ))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(120),
+        })
+        .inner_margin(egui::Margin {
+            left: 20,
+            right: 20,
+            top: 18,
+            bottom: 12,
+        });
+
+    egui::Window::new("onboarding_welcome_dialog")
+        .title_bar(false)
+        .frame(frame)
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-        .fixed_size(vec2(window_w, window_h))
+        .fixed_size(vec2(modal_w, modal_h))
+        .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            ui.add_space(8.0);
             ui.horizontal(|ui| {
-                // Left Column: App Icon
+                // Left Column: Dōri vinyl icon at full brightness (88x88, r = 18px)
                 ui.allocate_ui_with_layout(
-                    vec2(130.0, 240.0),
+                    vec2(88.0, 200.0),
                     egui::Layout::top_down(egui::Align::Center),
                     |ui| {
-                        ui.add_space(16.0);
+                        ui.add_space(4.0);
                         if let Ok(icon) = eframe::icon_data::from_png_bytes(crate::APP_ICON_PNG) {
                             let color_image = egui::ColorImage::from_rgba_unmultiplied(
                                 [icon.width as usize, icon.height as usize],
@@ -80,101 +101,119 @@ pub fn show(ctx: &egui::Context, open: &mut bool, simplified_mode: &mut bool) ->
                                 color_image,
                                 egui::TextureOptions::LINEAR,
                             );
-                            ui.add(Image::new(&texture).max_width(112.0).max_height(112.0).corner_radius(22.0));
+                            ui.add(
+                                Image::new(&texture)
+                                    .fit_to_exact_size(vec2(88.0, 88.0))
+                                    .tint(Color32::WHITE)
+                                    .corner_radius(18.0),
+                            );
                         }
                     },
                 );
 
-                ui.add_space(12.0);
+                ui.add_space(16.0);
 
-                // Right Column: Text & Modes description
+                // Right Column: Bold header & concise prose
                 ui.vertical(|ui| {
                     ui.label(
                         egui::RichText::new(crate::i18n::tr("Welcome to Dōri"))
-                            .font(FontId::proportional(22.0))
+                            .font(FontId::proportional(20.0))
                             .strong()
-                            .color(Color32::from_rgb(0xea, 0xee, 0xf4)),
+                            .color(Color32::from_rgb(0xf5, 0xf5, 0xf7)),
                     );
-                    ui.add_space(10.0);
+                    ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new(
                             "Dōri gives you two interface modes tailored for your production style:",
                         )
-                        .font(FontId::proportional(12.5))
+                        .font(FontId::proportional(12.0))
                         .color(Color32::from_rgb(0xaa, 0xaa, 0xb0)),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
 
                     // Complete Mode bullet
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(
                             egui::RichText::new(format!("• {}:", crate::i18n::tr("Complete Mode")))
-                                .font(FontId::proportional(12.5))
+                                .font(FontId::proportional(11.5))
                                 .strong()
-                                .color(Color32::from_rgb(0x3a, 0x7b, 0xd5)),
+                                .color(Color32::from_rgb(0xea, 0xee, 0xf4)),
                         );
                         ui.label(
                             egui::RichText::new(
-                                "Enables the full set of professional tools, advanced routing, full Mixer slots, and MCP server options.",
+                                "Enables full pro tools, advanced routing, mixer slots, and MCP server options.",
                             )
-                            .font(FontId::proportional(12.0))
-                            .color(Color32::from_rgb(0xcc, 0xcc, 0xd2)),
+                            .font(FontId::proportional(11.0))
+                            .color(Color32::from_rgb(0xba, 0xba, 0xc2)),
+                        );
+                    });
+                    ui.add_space(4.0);
+
+                    // Simplified Mode bullet
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("• {}:", crate::i18n::tr("Simplified Mode")))
+                                .font(FontId::proportional(11.5))
+                                .strong()
+                                .color(Color32::from_rgb(0xea, 0xee, 0xf4)),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Streamlines tools, inspector panels, and menus across the app for core music production.",
+                            )
+                            .font(FontId::proportional(11.0))
+                            .color(Color32::from_rgb(0xba, 0xba, 0xc2)),
                         );
                     });
                     ui.add_space(6.0);
 
-                    // Simplified Mode bullet
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("• {}:", crate::i18n::tr("Simplified Mode")))
-                                .font(FontId::proportional(12.5))
-                                .strong()
-                                .color(Color32::from_rgb(0x2e, 0xbd, 0x6b)),
-                        );
-                        ui.label(
-                            egui::RichText::new(
-                                "Streamlines tools, inspector panels, and menus across the app for focused core music production.",
-                            )
-                            .font(FontId::proportional(12.0))
-                            .color(Color32::from_rgb(0xcc, 0xcc, 0xd2)),
-                        );
-                    });
-                    ui.add_space(10.0);
-
                     ui.label(
-                        egui::RichText::new("You can switch between modes at any time in Settings → Advanced.")
-                            .font(FontId::proportional(11.0))
-                            .color(Color32::from_rgb(0x88, 0x88, 0x90)),
+                        egui::RichText::new(
+                            "You can switch between modes at any time in Settings → Advanced.",
+                        )
+                        .font(FontId::proportional(10.5))
+                        .color(Color32::from_rgb(0x82, 0x82, 0x8a)),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
 
-                    if ui.link(crate::i18n::tr("Learn More…")).clicked() {
+                    // Neutral Learn More… pill (#3A3A3E)
+                    let learn_btn = egui::Button::new(
+                        egui::RichText::new(crate::i18n::tr("Learn More…"))
+                            .font(FontId::proportional(11.0))
+                            .color(Color32::from_rgb(0xd6, 0xd6, 0xdc)),
+                    )
+                    .fill(Color32::from_rgb(0x3a, 0x3a, 0x3e))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x48, 0x48, 0x4e)))
+                    .corner_radius(4.0)
+                    .min_size(vec2(86.0, 22.0));
+                    if ui.add(learn_btn).clicked() {
                         ctx.open_url(egui::OpenUrl::new_tab("https://github.com/triadwoozie/douri"));
                     }
                 });
             });
 
-            ui.add_space(12.0);
-            ui.separator();
             ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
 
-            // Bottom Footer
+            // Footer buttons: Simplified Mode & Complete Mode
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let complete_btn = egui::Button::new(
                     egui::RichText::new(crate::i18n::tr("Complete Mode"))
-                        .font(FontId::proportional(13.0))
+                        .font(FontId::proportional(12.5))
                         .strong()
                         .color(Color32::WHITE),
                 )
-                .fill(Color32::from_rgb(0x3a, 0x7b, 0xd5))
+                .fill(Color32::from_rgb(0x45, 0x45, 0x49))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x56, 0x56, 0x5c)))
                 .corner_radius(6.0)
-                .min_size(vec2(130.0, 30.0));
+                .min_size(vec2(130.0, 28.0));
 
                 if ui.add(complete_btn).clicked() {
                     *simplified_mode = false;
                     save_simplified_mode(false);
                     mark_onboarding_completed();
-                    close = true;
+                    *open = false;
                     chosen_mode = Some(false);
                 }
 
@@ -182,27 +221,24 @@ pub fn show(ctx: &egui::Context, open: &mut bool, simplified_mode: &mut bool) ->
 
                 let simplified_btn = egui::Button::new(
                     egui::RichText::new(crate::i18n::tr("Simplified Mode"))
-                        .font(FontId::proportional(13.0))
-                        .color(Color32::from_rgb(0xea, 0xee, 0xf4)),
+                        .font(FontId::proportional(12.5))
+                        .strong()
+                        .color(Color32::WHITE),
                 )
-                .fill(Color32::from_rgb(0x26, 0x26, 0x2a))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)))
+                .fill(Color32::from_rgb(0x45, 0x45, 0x49))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x56, 0x56, 0x5c)))
                 .corner_radius(6.0)
-                .min_size(vec2(130.0, 30.0));
+                .min_size(vec2(130.0, 28.0));
 
                 if ui.add(simplified_btn).clicked() {
                     *simplified_mode = true;
                     save_simplified_mode(true);
                     mark_onboarding_completed();
-                    close = true;
+                    *open = false;
                     chosen_mode = Some(true);
                 }
             });
         });
-
-    if close {
-        *open = false;
-    }
 
     chosen_mode
 }

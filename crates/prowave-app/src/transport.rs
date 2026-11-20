@@ -641,9 +641,9 @@ pub(crate) fn master_volume(
     let spk_r = Rect::from_center_size(pos2(rect.left() + 7.0, cy), vec2(14.0, 14.0));
     crate::icons::paint_regular(g, spk_r, crate::icons::SPEAKER_HIGH, 14.0, Color32::from_rgb(0x9a, 0x9c, 0xa2));
 
-    // Compact 68px neutral charcoal pill track (#141416)
-    let track_left = rect.left() + 16.0;
-    let track = Rect::from_min_size(pos2(track_left, cy - 4.5), vec2(68.0, 9.0));
+    // 104px neutral charcoal pill track (#141416) with 8px gap after speaker icon
+    let track_left = rect.left() + 14.0 + 8.0;
+    let track = Rect::from_min_size(pos2(track_left, cy - 4.5), vec2(104.0, 9.0));
     let resp = ui.interact(track.expand2(vec2(6.0, 8.0)), id, Sense::click_and_drag());
     let travel = (track.left() + 5.5, track.right() - 5.5);
     if let Some(pt) = resp.interact_pointer_pos() {
@@ -1029,12 +1029,12 @@ pub fn control_bar(
     }
 }
 
-/// Master volume slider: its usual place and width (140 points, 188 from the right edge),
+/// Master volume slider: its usual place and width (126 points, right of LCD and left of right panel toggles),
 /// moved right of the metronome (which ends at `after`) and narrowed so it never reaches the
 /// icons at the right edge. Width 0 = no room at all, leave it out.
 fn volume_span(after: f32, right: f32) -> (f32, f32) {
-    const WIDTH: f32 = 84.0;
-    const MIN_WIDTH: f32 = 60.0;
+    const WIDTH: f32 = 126.0;
+    const MIN_WIDTH: f32 = 80.0;
     let icons_left = right - 136.0;
     let left = (right - 148.0 - WIDTH).max(after + 14.0);
     let width = WIDTH.min(icons_left - 8.0 - left);
@@ -1074,12 +1074,12 @@ mod tests {
     #[test]
     fn the_volume_never_covers_the_metronome_or_the_icons() {
         // Wide bar: the usual place and width.
-        assert_eq!(volume_span(1200.0, 2000.0), (2000.0 - 148.0 - 84.0, 84.0));
+        assert_eq!(volume_span(1200.0, 2000.0), (2000.0 - 148.0 - 126.0, 126.0));
         // Narrow bar: after the metronome, narrowed before the icons.
-        let (left, width) = volume_span(1300.0, 1470.0);
+        let (left, width) = volume_span(1300.0, 1500.0);
         assert!(left >= 1300.0 + 14.0);
-        assert!(left + width <= 1470.0 - 136.0 - 8.0 + 1e-3);
-        assert!(width >= 60.0 || width == 0.0);
+        assert!(left + width <= 1500.0 - 136.0 - 8.0 + 1e-3);
+        assert!(width >= 80.0 || width == 0.0);
         // No room: left out.
         assert_eq!(volume_span(1400.0, 1470.0).1, 0.0);
     }

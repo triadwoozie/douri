@@ -300,7 +300,7 @@ pub fn draw_icon(g: &Painter, r: Rect, kind: IconKind) {
         IconKind::Aux | IconKind::Vca => crate::icons::FADERS,
         IconKind::Folder => crate::icons::FOLDER_OPEN,
     };
-    let sz = (r.width().min(r.height())).clamp(10.0, 18.0);
+    let sz = (r.width().min(r.height())).clamp(10.0, 24.0);
     crate::icons::paint_fill(g, r, glyph, sz, Color32::WHITE);
 }
 

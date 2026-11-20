@@ -2644,7 +2644,7 @@ fn folder_buttons(ui: &Ui, g: &Painter, p: &mut Project, i: usize, x: f32, y: f3
     }
 }
 
-const SLIDER_W: f32 = 72.0;
+const SLIDER_W: f32 = 76.0;
 const SLIDER_H: f32 = 14.0;
 
 /// Where 0 dB sits on a track header's volume slider (Logic puts unity about two thirds up).
@@ -2683,9 +2683,9 @@ fn volume_slider(
     peaks: (f32, f32),
     silenced: bool,
 ) {
-    // Volume slider with embedded green level meter
+    // Volume slider with embedded green level meter (right-aligned, 10px margin)
     let sl = Rect::from_min_size(
-        pos2(hdr.right() - 86.0, hdr.center().y - SLIDER_H / 2.0),
+        pos2(hdr.right() - 10.0 - SLIDER_W, hdr.center().y - SLIDER_H / 2.0),
         vec2(SLIDER_W, SLIDER_H),
     );
     let travel = (sl.left() + SLIDER_H / 2.0, sl.right() - SLIDER_H / 2.0);
@@ -2865,7 +2865,7 @@ fn header(
             Stroke::new(1.0, STACK_COLOR),
         );
     }
-    let badge_size = 36.0f32.min(h - 10.0).max(24.0);
+    let badge_size = 24.0f32;
     let badge_r = Rect::from_center_size(
         pos2(
             content_x + if folder { 14.0 } else { 0.0 } + badge_size / 2.0,
@@ -2874,18 +2874,18 @@ fn header(
         vec2(badge_size, badge_size),
     );
     if show_icon {
-        g.rect_filled(badge_r, 6.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+        g.rect_filled(badge_r, 5.0, Color32::from_rgb(0x18, 0x18, 0x1a));
         g.rect_stroke(
             badge_r,
-            6.0,
+            5.0,
             Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             egui::StrokeKind::Inside,
         );
-        draw_icon(g, badge_r.shrink(4.0), track_icon(&p.tracks[i]));
+        draw_icon(g, badge_r.shrink(4.5), track_icon(&p.tracks[i]));
     }
 
     let name_x = if show_icon {
-        badge_r.right() + 10.0
+        badge_r.right() + 8.0
     } else {
         content_x + if folder { 14.0 } else { 0.0 }
     };
@@ -3926,7 +3926,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
 
     // ---- headers
     let gh = ui.painter_at(headers);
-    gh.rect_filled(headers, 0.0, Color32::from_gray(0x3a));
+    gh.rect_filled(headers, 0.0, Color32::from_rgb(0x18, 0x19, 0x1b));
     for (i, &(top, row_h)) in rows.iter().enumerate() {
         if row_h <= 0.0 {
             continue;
@@ -3970,6 +3970,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         let shown = v.shot_menu == Some((i, None));
         crate::widgets::context_menu_shown(&resp, shown, |ui| track_items(ui, &info, &mut picked));
     }
+    // Crisp 1.5px divider separating headers column and the void below from the timeline
+    gh.line_segment(
+        [pos2(headers.right(), headers.top()), pos2(headers.right(), headers.bottom())],
+        Stroke::new(1.5, Color32::from_rgb(0x10, 0x11, 0x13)),
+    );
     if let Some(action) = picked {
         apply_ctx(action, p, s, lanes.width());
     }

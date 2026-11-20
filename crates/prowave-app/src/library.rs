@@ -14,8 +14,8 @@ use crate::UiState;
 use egui::{pos2, vec2, Align2, Color32, FontId, Painter, Rect, Sense, Shape, Stroke, Ui};
 
 const PANEL_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
-const ROW_H: f32 = 24.0;
-const SEL_BG: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
+const ROW_H: f32 = 22.0;
+const SEL_BG: Color32 = Color32::from_rgb(0x34, 0x35, 0x39);
 
 pub struct Category {
     pub name: &'static str,
@@ -318,7 +318,7 @@ pub struct LibraryView {
 impl Default for LibraryView {
     fn default() -> Self {
         Self {
-            category: None,
+            category: Some(1),
             search: String::new(),
             loaded: None,
             saved: None,
@@ -458,12 +458,6 @@ fn list_row(
     let resp = ui.interact(r, id(key), Sense::click());
     if selected {
         g.rect_filled(r, 4.0, SEL_BG);
-        g.rect_stroke(
-            r,
-            4.0,
-            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x7b, 0xd5)),
-            egui::StrokeKind::Inside,
-        );
     } else if resp.hovered() {
         g.rect_filled(r, 4.0, Color32::from_rgb(0x26, 0x26, 0x2a));
     }
@@ -489,13 +483,14 @@ fn list_row(
     );
     if chevron {
         let c = pos2(r.right() - 9.0, r.center().y);
+        let chevron_color = if selected { Color32::WHITE } else { TEXT_DIM };
         g.add(Shape::line(
             vec![
                 c + vec2(-2.0, -4.0),
                 c + vec2(2.0, 0.0),
                 c + vec2(-2.0, 4.0),
             ],
-            stroke(TEXT_DIM),
+            Stroke::new(1.0, chevron_color),
         ));
     }
     resp
@@ -930,59 +925,62 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             let (ci, pi) = hits[i];
             load_patch(p, v, ci, pi);
         }
-    } else if let Some(ci) = v.category {
-        let mut items = vec!["‹ All Categories".to_string()];
-        let patch_items: Vec<String> = CATEGORIES[ci]
-            .patches
-            .iter()
-            .map(|n| n.to_string())
-            .collect();
-        items.extend(patch_items);
-
-        let mut badges = vec![SoundBadge::Audio];
-        let patch_badges: Vec<SoundBadge> = CATEGORIES[ci]
-            .patches
-            .iter()
-            .map(|pname| badge_for_patch(pname, CATEGORIES[ci].name))
-            .collect();
-        badges.extend(patch_badges);
-
-        let sel = v.loaded.filter(|(c, _)| *c == ci).map(|(_, pi)| pi + 1);
-        if let Some(clicked_idx) = column(
-            ui,
-            &g,
-            cols,
-            1,
-            &mut v.scroll_right,
-            &items,
-            sel,
-            false,
-            Some(&badges),
-        ) {
-            if clicked_idx == 0 {
-                v.category = None;
-            } else {
-                load_patch(p, v, ci, clicked_idx - 1);
-            }
-        }
     } else {
-        let items: Vec<String> = CATEGORIES
+        // Restore Logic Pro's side-by-side two-column Miller browser
+        let left_w = 135.0f32.min(cols.width() * 0.5);
+        let left_rect = Rect::from_min_size(cols.min, vec2(left_w, cols.height()));
+        let right_rect = Rect::from_min_max(pos2(left_rect.right() + 1.0, cols.top()), cols.max);
+
+        // Vertical divider between columns
+        g.line_segment(
+            [pos2(left_rect.right(), cols.top()), pos2(left_rect.right(), cols.bottom())],
+            Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2e)),
+        );
+
+        // Left Column (Categories)
+        let cat_items: Vec<String> = CATEGORIES
             .iter()
             .map(|c| tr(c.name).to_string())
             .collect();
         if let Some(ci) = column(
             ui,
             &g,
-            cols,
+            left_rect,
             0,
             &mut v.scroll_left,
-            &items,
-            None,
+            &cat_items,
+            v.category,
             true,
             None,
         ) {
             v.category = Some(ci);
             v.scroll_right = 0.0;
+        }
+
+        // Right Column (Patches for the selected category)
+        let sel_cat = v.category.unwrap_or(1);
+        if sel_cat < CATEGORIES.len() {
+            let patches = CATEGORIES[sel_cat].patches;
+            let patch_items: Vec<String> = patches.iter().map(|n| n.to_string()).collect();
+            let patch_badges: Vec<SoundBadge> = patches
+                .iter()
+                .map(|pname| badge_for_patch(pname, CATEGORIES[sel_cat].name))
+                .collect();
+            let sel_patch = v.loaded.filter(|(c, _)| *c == sel_cat).map(|(_, pi)| pi);
+
+            if let Some(pi) = column(
+                ui,
+                &g,
+                right_rect,
+                1,
+                &mut v.scroll_right,
+                &patch_items,
+                sel_patch,
+                false,
+                Some(&patch_badges),
+            ) {
+                load_patch(p, v, sel_cat, pi);
+            }
         }
     }
 
