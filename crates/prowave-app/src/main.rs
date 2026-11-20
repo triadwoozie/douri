@@ -1304,18 +1304,31 @@ impl App {
         }
         if self.ui.show_onboarding {
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(crate::theme::CHROME_BG))
+                .frame(egui::Frame::new().fill(crate::theme::CARD_BG))
                 .show(ui, |_ui| {});
-            onboarding::show(
+            if let Some(_mode) = onboarding::show(
                 ctx,
                 &mut self.ui.show_onboarding,
                 &mut self.ui.simplified_mode,
-            );
+            ) {
+                // When Welcome dialog is completed, transition viewport to Chooser
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(840.0, 540.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(840.0, 540.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title("Choose a Project".into()));
+            }
         } else {
             top_bar(ui, &mut self.project, &mut self.ui);
             egui::CentralPanel::default()
                 .frame(egui::Frame::new())
                 .show(ui, |ui| start_screen::show(ui, &mut self.ui));
+            // If chooser was dismissed / template chosen, open and maximize main DAW
+            if self.ui.chooser.is_none() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(800.0, 520.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1600.0, 980.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+            }
         }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
@@ -2046,6 +2059,12 @@ fn print_help() {
     println!("A .prowave path opens that project; other paths are imported as audio files.");
 }
 
+fn is_project_path(a: &std::ffi::OsStr) -> bool {
+    std::path::Path::new(a)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(prowave_project::EXTENSION))
+}
+
 fn main() -> eframe::Result {
     // The Plugin Manager reads each plug-in library in a copy of this program, so a plug-in
     // that crashes or hangs does not take the app with it: print what is in it and go.
@@ -2119,18 +2138,26 @@ fn main() -> eframe::Result {
     init_logging();
     i18n::init();
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
+    let has_project_arg = all_args.iter().any(|a| is_project_path(a.as_os_str()));
+    let start_in_dialog = !has_project_arg && !no_chooser_flag;
+    let (init_size, init_min_size, init_maximized, init_resizable, init_title) =
+        if start_in_dialog {
+            if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
+                ([520.0, 310.0], [520.0, 310.0], false, false, "Welcome to Dōri")
+            } else {
+                ([840.0, 540.0], [840.0, 540.0], false, false, "Choose a Project")
+            }
+        } else {
+            ([1600.0, 980.0], [800.0, 520.0], true, true, "Dōri")
+        };
+
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([1600.0, 980.0])
-        // Smaller than this the panels have no room left, even scaled down.
-        .with_min_inner_size([800.0, 520.0])
-        // Fill the screen, as Logic does; on a small screen 1600 x 980 would not fit.
-        .with_maximized(true)
-        // Just the app name, on every system: no project name or view in the title bar.
-        .with_title("Dōri")
-        // Window class: lets Linux desktops match the window to its .desktop entry and icon.
+        .with_inner_size(init_size)
+        .with_min_inner_size(init_min_size)
+        .with_maximized(init_maximized)
+        .with_resizable(init_resizable)
+        .with_title(init_title)
         .with_app_id(window_app_id())
-        // Windows and Linux: no title bar from the system; the menu bar row has the window
-        // buttons (see window_chrome.rs).
         .with_decorations(!window_chrome::CUSTOM);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);

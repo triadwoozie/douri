@@ -463,16 +463,21 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     ui.allocate_rect(full, Sense::hover());
     let g = ui.painter().clone();
 
-    // Centered modal window: ~840x540px
-    let modal_w = 840.0f32.min(full.width() - 32.0);
-    let modal_h = 540.0f32.min(full.height() - 32.0);
-    let area = Rect::from_center_size(full.center(), vec2(modal_w, modal_h));
-
-    // Outer dim
-    g.rect_filled(full, 0.0, Color32::from_black_alpha(160));
+    // Standalone dialog window (<= 900x600) fills the frame; otherwise centers as a modal over the DAW
+    let standalone = full.width() <= 920.0 && full.height() <= 620.0;
+    let area = if standalone {
+        full
+    } else {
+        let modal_w = 840.0f32.min(full.width() - 32.0);
+        let modal_h = 540.0f32.min(full.height() - 32.0);
+        g.rect_filled(full, 0.0, Color32::from_black_alpha(160));
+        Rect::from_center_size(full.center(), vec2(modal_w, modal_h))
+    };
     // Modal card
-    g.rect_filled(area, 8.0, BG);
-    g.rect_stroke(area, 8.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+    g.rect_filled(area, if standalone { 0.0 } else { 8.0 }, BG);
+    if !standalone {
+        g.rect_stroke(area, 8.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+    }
 
     // Sidebar: width 165px
     let side_w = 165.0f32;
@@ -844,6 +849,9 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
 
     if cancel {
         s.chooser = None;
+        if !s.has_path {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         return;
     }
     s.chooser = Some(c.clone());
