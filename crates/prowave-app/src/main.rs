@@ -211,6 +211,8 @@ pub struct UiState {
     pub show_midi_fx: bool,
     /// The Project Settings window, with the tab it shows.
     pub settings_tab: Option<project_settings::SettingsTab>,
+    /// Global application and project preferences matching Logic Pro settings.
+    pub app_settings: project_settings::AppSettings,
     /// A Track menu window (rename, colour, icon, header), when one is open.
     pub track_dialog: Option<track_dialogs::TrackDialog>,
     /// Logic's Create New Track dialog (the + above the track headers).
@@ -477,6 +479,7 @@ impl UiState {
             show_about: false,
             show_onboarding: false,
             simplified_mode: false,
+            app_settings: project_settings::AppSettings::load(),
             chooser_details: start_screen::ChooserDetails::default(),
             shot_top_menu: None,
             vocal: vocal::VocalState::default(),
