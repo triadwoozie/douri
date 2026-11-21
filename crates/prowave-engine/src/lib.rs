@@ -77,8 +77,8 @@ pub use crate::convolver::{
 };
 pub use crate::core::{
     dsp_load, AudioClip, CaptureSink, ClipEdit, Command, ControlEvent, EngineCore, EngineState,
-    FadeCurve, Garbage, MidiOutEvent, NoteEvent, Shared, Song, StateReader, TrackMix, MASTER_TRACK,
-    MAX_TRACKS,
+    FadeCurve, Garbage, LiveMidiEvent, MidiOutEvent, NoteEvent, Shared, Song, StateReader,
+    TrackMix, MASTER_TRACK, MAX_TRACKS,
 };
 pub use crate::disk::{
     ring_blocks_for, AudioError, AudioFile, DiskThread, FileSpan, RING_BLOCKS, RING_BLOCKS_MAX,

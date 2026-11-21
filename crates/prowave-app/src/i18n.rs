@@ -333,6 +333,7 @@ pub(crate) mod tests {
     /// Texts that are the same in every language and need no translation line.
     const UNTRANSLATED: &[&str] = &[
         "MIDI",
+        "MIDI Device",
         "EQ",
         "Dōri",
         "Dōri Project",

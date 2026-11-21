@@ -53,6 +53,8 @@ pub struct EngineSync {
     patches: Vec<SynthPatch>,
     /// The SoundFont each track was last given (`None`: its synth patch), by track.
     soundfonts: Vec<Option<SoundFontUse>>,
+    /// SoundFonts being loaded off the UI thread, by track.
+    soundfont_jobs: std::collections::HashMap<usize, SoundFontJob>,
     /// The Drum Machine each track was last given, by track (`None`: none).
     drum_kits: Vec<Option<DrumsUse>>,
     /// Drum machines being built off the UI thread, by track.
@@ -111,6 +113,14 @@ fn ir_key(insert: &Insert) -> Vec<u32> {
 
 /// The key of the master bus in the Space Designer jobs (no track has this number).
 const MASTER_KEY: usize = usize::MAX;
+
+/// A SoundFont being loaded on a background thread.
+struct SoundFontJob {
+    sf: SoundFontUse,
+    rx: Option<std::sync::mpsc::Receiver<Result<Box<SfPlayer>, String>>>,
+    ready: Option<Box<SfPlayer>>,
+    failed: bool,
+}
 
 /// A Drum Machine being built on a background thread.
 struct DrumJob {
@@ -644,6 +654,7 @@ impl EngineSync {
             mixes: Vec::new(),
             patches: Vec::new(),
             soundfonts: Vec::new(),
+            soundfont_jobs: std::collections::HashMap::new(),
             drum_kits: Vec::new(),
             drum_jobs: std::collections::HashMap::new(),
             samplers: Vec::new(),
@@ -901,17 +912,70 @@ impl EngineSync {
                     .map(|p| Box::new(SfPlayer::plugin(p, sample_rate)))
             } else if let Some(dials) = want_piano {
                 Some(Box::new(SfPlayer::electric_piano(dials, sample_rate)))
-            } else {
-                match want {
-                    Some(sf) => match soundfont_player(sf, sample_rate) {
+            } else if let Some(sf) = want {
+                if crate::soundfonts::loaded(&sf.path).is_some() {
+                    // Warm cache: SoundFontBank already in memory, instant (<0.2 ms)
+                    match soundfont_player(sf, sample_rate) {
                         Ok(player) => Some(player),
                         Err(e) => {
                             tracing::warn!("SoundFont of track {}: {e}", t.name);
                             None
                         }
-                    },
-                    None => None,
+                    }
+                } else {
+                    // Cold load: offload file decoding to background worker thread
+                    if !self.soundfont_jobs.get(&i).is_some_and(|j| &j.sf == sf) {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let sf_clone = sf.clone();
+                        let spawned = std::thread::Builder::new()
+                            .name("soundfont-load".into())
+                            .spawn(move || {
+                                let loaded = soundfont_player(&sf_clone, sample_rate);
+                                let _ = tx.send(loaded);
+                            });
+                        self.soundfont_jobs.insert(
+                            i,
+                            SoundFontJob {
+                                sf: sf.clone(),
+                                rx: spawned.is_ok().then_some(rx),
+                                ready: None,
+                                failed: spawned.is_err(),
+                            },
+                        );
+                    }
+                    if let Some(job) = self.soundfont_jobs.get_mut(&i) {
+                        if let Some(rx) = &job.rx {
+                            match rx.try_recv() {
+                                Ok(Ok(player)) => {
+                                    job.ready = Some(player);
+                                    job.rx = None;
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::warn!("SoundFont of track {}: {e}", t.name);
+                                    job.rx = None;
+                                    job.failed = true;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                    self.retry = true;
+                                    continue;
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    job.rx = None;
+                                    job.failed = true;
+                                }
+                            }
+                        }
+                        if job.ready.is_none() && !job.failed {
+                            self.retry = true;
+                            continue;
+                        }
+                        job.ready.take()
+                    } else {
+                        None
+                    }
                 }
+            } else {
+                None
             };
             if !self.send(Command::SetTrackSoundFont {
                 track: i as u16,
@@ -1481,6 +1545,30 @@ impl EngineSync {
     /// The MIDI Time Code the engine sends (once).
     pub fn take_mtc_out(&mut self) -> Option<rtrb::Consumer<prowave_engine::MtcMessage>> {
         self.engine.take_mtc_out()
+    }
+
+    /// Takes the lock-free live MIDI producer to connect OS input callbacks directly to the engine.
+    pub fn take_live_midi_producer(
+        &mut self,
+    ) -> Option<rtrb::Producer<prowave_engine::LiveMidiEvent>> {
+        self.engine.take_live_midi_producer()
+    }
+
+    /// The active armed track atomic slot.
+    pub fn armed_track(&self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        self.engine.armed_track()
+    }
+
+    /// Sets the active armed track atomically and dispatches AllNotesOff to the previous track
+    /// slot so switching instruments mid-performance never hangs sustained notes.
+    pub fn set_armed_track(&mut self, track: usize) {
+        let prev = self
+            .engine
+            .armed_track()
+            .swap(track, std::sync::atomic::Ordering::Relaxed);
+        if prev != track && prev < prowave_engine::MAX_TRACKS {
+            let _ = self.send(Command::AllNotesOff { track: prev as u16 });
+        }
     }
 
     /// Whether a command was rejected (queue full) and is waiting to be retried.

@@ -16,8 +16,38 @@ use crate::synth::{kit_voice, leslie_hz, osc, Kit, Svf, SynthPatch, VoiceKind, D
 use crate::tempo_map::{SmpteRate, TempoMap};
 use crate::triple::{triple_buffer, Reader, Writer};
 use rtrb::{Consumer, Producer};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// A live MIDI event arriving from an external MIDI controller via a lock-free queue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveMidiEvent {
+    NoteOn {
+        pitch: u8,
+        vel: u8,
+        track: Option<u16>,
+    },
+    NoteOff {
+        pitch: u8,
+        track: Option<u16>,
+    },
+    Control {
+        number: u8,
+        value: u8,
+        track: Option<u16>,
+    },
+    PitchBend {
+        value: u16,
+        track: Option<u16>,
+    },
+    ChannelPressure {
+        value: u8,
+        track: Option<u16>,
+    },
+    AllNotesOff {
+        track: u16,
+    },
+}
 
 /// Tracks the engine mixes (Logic: 1000 tracks per project).
 pub const MAX_TRACKS: usize = 1024;
@@ -440,6 +470,11 @@ pub enum Command {
         pitch: u8,
         track: u16,
     },
+    /// Immediately releases all active/sounding voices on `track` (or CC 123 All Notes Off)
+    /// to prevent stuck or hanging notes when switching instruments.
+    AllNotesOff {
+        track: u16,
+    },
     /// Makes `track` play an external instrument: its notes go out as [`MidiOutEvent`]s
     /// instead of sounding in the engine.
     SetTrackExternal {
@@ -548,6 +583,9 @@ impl Command {
                 | Self::SetPdc { .. }
                 | Self::SetAutomation(_)
                 | Self::SetInput(_)
+                | Self::SetTrackSoundFont { .. }
+                | Self::SetPlugins { .. }
+                | Self::SetMasterPlugins(_)
         )
     }
 
@@ -832,6 +870,8 @@ pub struct EngineCore {
     rx: Consumer<Command>,
     trash: Producer<Garbage>,
     shared: Arc<Shared>,
+    live_midi_rx: Option<Consumer<LiveMidiEvent>>,
+    armed_track: Arc<AtomicUsize>,
     /// What the UI was last shown; the meters fall back from it.
     shown: EngineState,
     state: Writer<EngineState>,
@@ -1002,6 +1042,8 @@ impl EngineCore {
             rx,
             trash,
             shared,
+            live_midi_rx: None,
+            armed_track: Arc::new(AtomicUsize::new(0)),
             shown: EngineState::default(),
             state,
             state_reader: Some(StateReader(reader)),
@@ -1753,28 +1795,12 @@ impl EngineCore {
                 }
                 Command::NoteOff { pitch } => self.live_note_off(pitch, None),
                 Command::NoteOffTrack { pitch, track } => self.live_note_off(pitch, Some(track)),
+                Command::AllNotesOff { track } => self.all_notes_off(Some(track)),
                 Command::LiveControl {
                     track,
                     number,
                     value,
-                } => {
-                    if self
-                        .track_external
-                        .get(track as usize)
-                        .copied()
-                        .unwrap_or(false)
-                    {
-                        // The pitch bend is event number 128 on the timeline too.
-                        self.send_control(ControlEvent {
-                            beat: 0.0,
-                            track,
-                            number,
-                            value,
-                        });
-                    } else if let Some(Some(player)) = self.sf.get_mut(track as usize) {
-                        player.control(number, value);
-                    }
-                }
+                } => self.live_control(track, number, value),
                 Command::SetTrackExternal { track, external } => {
                     if let Some(slot) = self.track_external.get_mut(track as usize) {
                         let was = std::mem::replace(slot, external);
@@ -2119,6 +2145,107 @@ impl EngineCore {
         }
     }
 
+    /// Immediately silences all active or sustained notes on `track` (or all tracks if None)
+    /// without allocations, releasing active synth voices and SoundFont players.
+    pub fn all_notes_off(&mut self, track: Option<u16>) {
+        let mut i = 0;
+        while i < self.ext_notes.len() {
+            let e = self.ext_notes[i];
+            if track.is_none_or(|t| e.track == t) {
+                self.ext_notes.swap_remove(i);
+                self.send_midi(e.track, false, e.pitch, 0);
+            } else {
+                i += 1;
+            }
+        }
+        for v in self
+            .voices
+            .iter_mut()
+            .filter(|v| v.active && track.is_none_or(|t| v.track == t))
+        {
+            v.releasing = true;
+        }
+        for n in self
+            .sf_notes
+            .iter_mut()
+            .filter(|n| n.active && track.is_none_or(|t| n.track == t))
+        {
+            n.released = true;
+        }
+        if let Some(t) = track {
+            if let Some(Some(player)) = self.sf.get_mut(t as usize) {
+                player.all_notes_off();
+            }
+        } else {
+            for player in self.sf.iter_mut().flatten() {
+                player.all_notes_off();
+            }
+        }
+    }
+
+    pub fn live_control(&mut self, track: u16, number: u8, value: u16) {
+        if self
+            .track_external
+            .get(track as usize)
+            .copied()
+            .unwrap_or(false)
+        {
+            // The pitch bend is event number 128 on the timeline too.
+            self.send_control(ControlEvent {
+                beat: 0.0,
+                track,
+                number,
+                value,
+            });
+        } else if let Some(Some(player)) = self.sf.get_mut(track as usize) {
+            player.control(number, value);
+        }
+    }
+
+    pub fn set_live_midi(&mut self, rx: Consumer<LiveMidiEvent>, armed: Arc<AtomicUsize>) {
+        self.live_midi_rx = Some(rx);
+        self.armed_track = armed;
+    }
+
+    fn drain_live_midi(&mut self) {
+        let Some(mut rx) = self.live_midi_rx.take() else {
+            return;
+        };
+        let armed = self.armed_track.load(Ordering::Relaxed) as u16;
+        while let Ok(ev) = rx.pop() {
+            match ev {
+                LiveMidiEvent::NoteOn { pitch, vel, track } => {
+                    let t = track.unwrap_or(armed);
+                    self.live_note_on(pitch.min(127), vel.clamp(1, 127), t);
+                }
+                LiveMidiEvent::NoteOff { pitch, track } => {
+                    let t = track.unwrap_or(armed);
+                    self.live_note_off(pitch, Some(t));
+                }
+                LiveMidiEvent::Control {
+                    number,
+                    value,
+                    track,
+                } => {
+                    let t = track.unwrap_or(armed);
+                    self.live_control(t, number, u16::from(value));
+                }
+                LiveMidiEvent::PitchBend { value, track } => {
+                    let t = track.unwrap_or(armed);
+                    self.live_control(t, crate::soundfont::PITCH_BEND_CONTROL, value);
+                }
+                LiveMidiEvent::ChannelPressure { value, track } => {
+                    let t = track.unwrap_or(armed);
+                    self.live_control(t, 0xD0, u16::from(value));
+                }
+                LiveMidiEvent::AllNotesOff { track } => {
+                    self.all_notes_off(Some(track));
+                }
+            }
+        }
+        self.live_midi_rx = Some(rx);
+    }
+
     /// Starts a SoundFont note on `track`, which has a player. A note that finds no free slot
     /// is not played.
     fn sf_note_on(&mut self, track: u16, pitch: u8, vel: u8, end_beat: f64, live: bool) {
@@ -2191,6 +2318,7 @@ impl EngineCore {
     /// Render interleaved stereo (`out.len() == frames * 2`).
     pub fn process(&mut self, out: &mut [f32]) {
         flush_denormals();
+        self.drain_live_midi();
         self.drain_commands();
         let frame_secs = 1.0 / self.sr as f64;
         let (mut pk_l, mut pk_r) = (0f32, 0f32);

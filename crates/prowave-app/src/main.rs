@@ -229,6 +229,8 @@ pub struct UiState {
     pub audio_buffer_range: Option<(u32, u32)>,
     /// The Audio tab was shown last frame, so its lists are read once per opening.
     pub audio_tab_open: bool,
+    /// Currently connected USB / hardware MIDI device name, for Settings > Audio.
+    pub active_midi_device: Option<String>,
     /// Project Settings > MIDI: send MIDI panic on the next frame.
     pub midi_panic: bool,
     /// Event list > SysEx…: the message being typed, while its window is open.
@@ -414,6 +416,7 @@ impl UiState {
             audio_devices: Vec::new(),
             audio_buffer_range: None,
             audio_tab_open: false,
+            active_midi_device: None,
             midi_panic: false,
             sysex_entry: None,
             transform: transform_ui::TransformView::default(),
@@ -596,6 +599,11 @@ impl App {
         self.midi_out = None;
         let mut sync = engine_sync::EngineSync::new(engine, &self.project);
         self.midi_out = start_midi_out(&mut sync);
+        if let Some(midi) = self.midi.as_mut() {
+            if let Some(tx) = sync.take_live_midi_producer() {
+                midi.attach_live_ring(tx, sync.armed_track());
+            }
+        }
         // Dropping the old engine stops its stream.
         let _ = self.sync.replace(sync);
         // The monitoring feed of an open input went to the old engine: the input is opened again.
@@ -1268,21 +1276,38 @@ impl App {
     /// MIDI keyboard notes: play them on the selected instrument and, while recording, put
     /// them into the new region.
     fn play_and_record_midi(&mut self, ctx: &egui::Context) {
-        let mut input = Vec::new();
+        let mut hw_input = Vec::new();
         if let Some(midi) = self.midi.as_mut() {
-            midi.poll(&mut input);
+            midi.poll(&mut hw_input);
         }
         // The computer keyboard, when Musical Typing is on, makes the same live notes.
         self.ui.typing.read_keys(ctx);
-        input.extend(self.ui.typing.take());
+        let typing_input = self.ui.typing.take();
+        let mut input = hw_input.clone();
+        input.extend(typing_input.clone());
         let p = &mut self.project;
         let s = &mut self.ui;
         let track = s.rec.target().map_or(p.selected_track, |(t, _)| t);
+        if let Some(sync) = self.sync.as_mut() {
+            sync.set_armed_track(track);
+        }
+        s.active_midi_device = self
+            .midi
+            .as_ref()
+            .and_then(|m| m.active_port().map(str::to_string));
         let plays = p
             .tracks
             .get(track)
             .is_some_and(|t| t.kind != model::TrackKind::Audio);
-        for note in &input {
+
+        // Hardware MIDI has already been pushed lock-free to the audio engine callback.
+        // Musical Typing (keyboard keys) and fallback auditioning route here.
+        let aud_input = if self.midi.as_ref().and_then(|m| m.active_port()).is_some() {
+            typing_input
+        } else {
+            input.clone()
+        };
+        for note in &aud_input {
             if !plays {
                 break;
             }
@@ -2585,6 +2610,13 @@ fn main() -> eframe::Result {
                 plugins: plugins::PluginHost::default(),
                 autosave: autosave::Autosave::default(),
             };
+            if let Some(sync) = app.sync.as_mut() {
+                if let Some(midi) = app.midi.as_mut() {
+                    if let Some(tx) = sync.take_live_midi_producer() {
+                        midi.attach_live_ring(tx, sync.armed_track());
+                    }
+                }
+            }
             if !measuring {
                 app.ui.update_auto = updater::auto_enabled();
                 app.updater.check_at_startup();

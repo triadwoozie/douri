@@ -4,11 +4,13 @@
 
 use crate::recorder::LiveNote;
 use midir::{MidiInput, MidiInputConnection};
+use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// How often to look for a MIDI keyboard while none is connected.
-const RESCAN: Duration = Duration::from_secs(3);
+const RESCAN: Duration = Duration::from_millis(300);
 
 pub struct MidiIn {
     connection: Option<MidiInputConnection<()>>,
@@ -21,6 +23,9 @@ pub struct MidiIn {
     tx: SyncSender<LiveNote>,
     rx: Receiver<LiveNote>,
     last_try: Option<Instant>,
+    live_midi_tx: Option<Arc<Mutex<rtrb::Producer<prowave_engine::LiveMidiEvent>>>>,
+    armed_track: Option<Arc<AtomicUsize>>,
+    hotplug_rx: Receiver<()>,
 }
 
 /// Which of the ports to open: the one the project asks for if it is there, else the first
@@ -79,10 +84,81 @@ pub fn parse(msg: &[u8]) -> Option<LiveNote> {
     }
 }
 
+/// Translates raw incoming MIDI bytes directly into a [`prowave_engine::LiveMidiEvent`].
+pub fn parse_live_midi(msg: &[u8]) -> Option<prowave_engine::LiveMidiEvent> {
+    let status = *msg.first()?;
+    match status & 0xf0 {
+        0xe0 => {
+            let [_, lsb, msb, ..] = *msg else { return None };
+            (lsb <= 127 && msb <= 127).then_some(prowave_engine::LiveMidiEvent::PitchBend {
+                value: u16::from(lsb) | (u16::from(msb) << 7),
+                track: None,
+            })
+        }
+        0xd0 => {
+            let [_, val, ..] = *msg else { return None };
+            (val <= 127).then_some(prowave_engine::LiveMidiEvent::ChannelPressure {
+                value: val,
+                track: None,
+            })
+        }
+        _ => {
+            let [_, p1, p2, ..] = *msg else { return None };
+            if p1 > 127 {
+                return None;
+            }
+            match status & 0xf0 {
+                0xb0 => {
+                    if p1 == 123 {
+                        Some(prowave_engine::LiveMidiEvent::AllNotesOff { track: 0 })
+                    } else {
+                        Some(prowave_engine::LiveMidiEvent::Control {
+                            number: p1,
+                            value: p2.min(127),
+                            track: None,
+                        })
+                    }
+                }
+                0x90 if p2 > 0 => Some(prowave_engine::LiveMidiEvent::NoteOn {
+                    pitch: p1,
+                    vel: p2.min(127),
+                    track: None,
+                }),
+                0x90 | 0x80 => Some(prowave_engine::LiveMidiEvent::NoteOff {
+                    pitch: p1,
+                    track: None,
+                }),
+                _ => None,
+            }
+        }
+    }
+}
+
 impl MidiIn {
     pub fn new() -> Self {
         // Bounded: a device that floods the port cannot fill the memory.
         let (tx, rx) = sync_channel(4096);
+        let (hotplug_tx, hotplug_rx) = std::sync::mpsc::channel();
+        // Background watcher: poll midir ports every 300ms, only signaling when ports change.
+        let _ = std::thread::Builder::new()
+            .name("midi-hotplug-watcher".into())
+            .spawn(move || {
+                let mut last_ports = Vec::new();
+                loop {
+                    std::thread::sleep(Duration::from_millis(300));
+                    if let Ok(input) = MidiInput::new("douri-midi-scan") {
+                        let ports: Vec<String> = input
+                            .ports()
+                            .iter()
+                            .map(|p| input.port_name(p).unwrap_or_default())
+                            .collect();
+                        if ports != last_ports {
+                            last_ports = ports;
+                            let _ = hotplug_tx.send(());
+                        }
+                    }
+                }
+            });
         let mut midi = Self {
             connection: None,
             port: None,
@@ -91,9 +167,31 @@ impl MidiIn {
             tx,
             rx,
             last_try: None,
+            live_midi_tx: None,
+            armed_track: None,
+            hotplug_rx,
         };
         midi.connect();
         midi
+    }
+
+    /// Attaches the lock-free real-time audio callback ring buffer and atomic armed track.
+    pub fn attach_live_ring(
+        &mut self,
+        tx: rtrb::Producer<prowave_engine::LiveMidiEvent>,
+        armed_track: Arc<AtomicUsize>,
+    ) {
+        self.live_midi_tx = Some(Arc::new(Mutex::new(tx)));
+        self.armed_track = Some(armed_track);
+        if self.connection.is_some() {
+            self.connection = None;
+            self.connect();
+        }
+    }
+
+    /// The name of the connected MIDI device, if any.
+    pub fn active_port(&self) -> Option<&str> {
+        self.port.as_deref()
     }
 
     /// Keeps away from the port named `name` (or stops doing so with `None`): a connection to
@@ -141,10 +239,26 @@ impl MidiIn {
         };
         let (port, name) = (&ports[index], names[index].clone());
         let tx = self.tx.clone();
+        let live_tx = self.live_midi_tx.clone();
+        let armed = self.armed_track.clone();
         match input.connect(
             port,
             "prowave-in",
             move |_stamp, msg, _| {
+                // Direct zero-latency lock-free bypass into real-time audio callback ring buffer
+                if let Some(mut ev) = parse_live_midi(msg) {
+                    if let prowave_engine::LiveMidiEvent::AllNotesOff { ref mut track } = ev {
+                        *track = armed
+                            .as_ref()
+                            .map_or(0, |a| a.load(std::sync::atomic::Ordering::Relaxed) as u16);
+                    }
+                    if let Some(prod) = &live_tx {
+                        if let Ok(mut p) = prod.lock() {
+                            let _ = p.push(ev);
+                        }
+                    }
+                }
+                // Forward to UI recorder for region recording
                 if let Some(note) = parse(msg) {
                     let _ = tx.try_send(note);
                 }
@@ -162,7 +276,13 @@ impl MidiIn {
 
     /// Appends the notes played since the last call to `out`.
     pub fn poll(&mut self, out: &mut Vec<LiveNote>) {
-        if self.connection.is_none() && self.last_try.is_none_or(|t| t.elapsed() >= RESCAN) {
+        let mut force_reconnect = false;
+        while let Ok(()) = self.hotplug_rx.try_recv() {
+            force_reconnect = true;
+        }
+        if force_reconnect
+            || (self.connection.is_none() && self.last_try.is_none_or(|t| t.elapsed() >= RESCAN))
+        {
             self.connect();
         }
         while let Ok(note) = self.rx.try_recv() {
@@ -243,5 +363,51 @@ mod tests {
         assert_eq!(pick_port(&names, Some("Keys B"), Some("Keys B")), Some(1));
         assert_eq!(pick_port(&names, None, Some("Keys A")), Some(2));
         assert_eq!(pick_port(&[], Some("Keys A"), None), None);
+    }
+
+    #[test]
+    fn parse_live_midi_maps_messages() {
+        use prowave_engine::LiveMidiEvent;
+        assert_eq!(
+            parse_live_midi(&[0x90, 60, 100]),
+            Some(LiveMidiEvent::NoteOn {
+                pitch: 60,
+                vel: 100,
+                track: None
+            })
+        );
+        assert_eq!(
+            parse_live_midi(&[0x80, 60, 64]),
+            Some(LiveMidiEvent::NoteOff {
+                pitch: 60,
+                track: None
+            })
+        );
+        assert_eq!(
+            parse_live_midi(&[0x90, 60, 0]),
+            Some(LiveMidiEvent::NoteOff {
+                pitch: 60,
+                track: None
+            })
+        );
+        assert_eq!(
+            parse_live_midi(&[0xB0, 123, 0]),
+            Some(LiveMidiEvent::AllNotesOff { track: 0 })
+        );
+        assert_eq!(
+            parse_live_midi(&[0xB0, 1, 90]),
+            Some(LiveMidiEvent::Control {
+                number: 1,
+                value: 90,
+                track: None
+            })
+        );
+        assert_eq!(
+            parse_live_midi(&[0xE0, 0, 64]),
+            Some(LiveMidiEvent::PitchBend {
+                value: 8192,
+                track: None
+            })
+        );
     }
 }

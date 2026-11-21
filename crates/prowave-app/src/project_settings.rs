@@ -245,9 +245,66 @@ fn audio(ui: &mut egui::Ui, s: &mut crate::UiState) {
 
             row_label(ui, tr("I/O Buffer Size"));
             ui.horizontal(|ui| {
-                let effective = prefs.buffer.or(info.as_ref().and_then(|i| i.buffer_frames));
-                buffer_popup(ui, &prefs, s.audio_buffer_range, effective, &mut request);
+                let effective = prefs
+                    .buffer
+                    .or(info.as_ref().and_then(|i| i.buffer_frames))
+                    .unwrap_or(256);
+                for &quantum in &[128u32, 256u32, 512u32] {
+                    let selected = effective == quantum;
+                    let (fill, stroke, text_color) = if selected {
+                        (
+                            egui::Color32::from_rgb(0xF2, 0xF3, 0xF5),
+                            egui::Stroke::NONE,
+                            egui::Color32::from_rgb(0x11, 0x12, 0x15),
+                        )
+                    } else {
+                        (
+                            egui::Color32::from_rgb(0x22, 0x24, 0x29),
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(0x36, 0x39, 0x42)),
+                            egui::Color32::from_rgb(0xE6, 0xE8, 0xEC),
+                        )
+                    };
+                    let label = egui::RichText::new(format!("{quantum}"))
+                        .color(text_color)
+                        .strong();
+                    let btn = egui::Button::new(label)
+                        .fill(fill)
+                        .stroke(stroke)
+                        .corner_radius(egui::CornerRadius::same(6));
+                    if ui.add(btn).clicked() {
+                        request = Some(prefs.with_buffer(Some(quantum)));
+                    }
+                }
+                buffer_popup(
+                    ui,
+                    &prefs,
+                    s.audio_buffer_range,
+                    Some(effective),
+                    &mut request,
+                );
                 ui.label(tr("Samples"));
+            });
+            ui.end_row();
+
+            row_label(ui, tr("MIDI Device"));
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(crate::icons::PIANO_KEYS)
+                        .family(egui::FontFamily::Name("phosphor".into()))
+                        .color(egui::Color32::from_rgb(0x9E, 0xA2, 0xAC)),
+                );
+                if let Some(dev) = s.active_midi_device.as_deref() {
+                    ui.label(
+                        egui::RichText::new(format!("{dev} (Connected)"))
+                            .color(egui::Color32::from_rgb(0x4E, 0xDE, 0x90))
+                            .strong(),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new("No MIDI device connected (Auto-discovering)")
+                            .color(egui::Color32::from_rgb(0x9E, 0xA2, 0xAC)),
+                    );
+                }
             });
             ui.end_row();
 

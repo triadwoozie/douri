@@ -256,6 +256,8 @@ pub struct Engine {
     commands: CommandQueue,
     shared: Arc<Shared>,
     state: StateReader,
+    live_midi_tx: Option<Producer<crate::core::LiveMidiEvent>>,
+    armed_track: Arc<std::sync::atomic::AtomicUsize>,
     midi_out: Option<rtrb::Consumer<MidiOutEvent>>,
     mtc_out: Option<rtrb::Consumer<MtcMessage>>,
     clock_out: Option<rtrb::Consumer<crate::clock::ClockMessage>>,
@@ -410,10 +412,14 @@ impl Engine {
     fn start_wasapi(buffer_frames: Option<u32>) -> Result<Self, EngineError> {
         let (tx, rx) = RingBuffer::<Command>::new(1024);
         let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
+        let (live_tx, live_rx) = RingBuffer::<crate::core::LiveMidiEvent>::new(2048);
+        let armed_track = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let armed_rt = armed_track.clone();
         let shared = Arc::new(Shared::new());
         let shared_rt = shared.clone();
         let make = move |sample_rate: u32, channels: usize| {
             let mut core = EngineCore::new(sample_rate, rx, gtx, shared_rt.clone());
+            core.set_live_midi(live_rx, armed_rt);
             let readers = core.take_readers();
             (
                 Renderer::new(core, shared_rt, channels, sample_rate),
@@ -439,6 +445,8 @@ impl Engine {
             },
             shared,
             state,
+            live_midi_tx: Some(live_tx),
+            armed_track,
             midi_out: readers.midi,
             mtc_out: readers.mtc,
             clock_out: readers.clock,
@@ -521,8 +529,11 @@ impl Engine {
 
         let (tx, rx) = RingBuffer::<Command>::new(1024);
         let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
+        let (live_tx, live_rx) = RingBuffer::<crate::core::LiveMidiEvent>::new(2048);
+        let armed_track = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let shared = Arc::new(Shared::new());
         let mut core = EngineCore::new(sample_rate, rx, gtx, shared.clone());
+        core.set_live_midi(live_rx, armed_track.clone());
         let readers = core.take_readers();
         let state = readers
             .state
@@ -551,6 +562,8 @@ impl Engine {
             },
             shared,
             state,
+            live_midi_tx: Some(live_tx),
+            armed_track,
             midi_out: readers.midi,
             mtc_out: readers.mtc,
             clock_out: readers.clock,
@@ -590,6 +603,18 @@ impl Engine {
     /// project's clock port. `None` after the first call.
     pub fn take_clock_out(&mut self) -> Option<rtrb::Consumer<crate::clock::ClockMessage>> {
         self.clock_out.take()
+    }
+
+    /// The lock-free live MIDI producer for OS input callbacks, once. `None` after the first call.
+    pub fn take_live_midi_producer(
+        &mut self,
+    ) -> Option<rtrb::Producer<crate::core::LiveMidiEvent>> {
+        self.live_midi_tx.take()
+    }
+
+    /// The active armed track / instrument slot index (atomic routing).
+    pub fn armed_track(&self) -> Arc<std::sync::atomic::AtomicUsize> {
+        self.armed_track.clone()
     }
 
     pub fn shared(&self) -> &Shared {
