@@ -1185,6 +1185,7 @@ dependencies = [
  "prowave-plugin-host",
  "prowave-project",
  "prowave-sfz",
+ "prowave-vcs",
  "prowave-vocal",
  "rfd",
  "rhai",
@@ -3682,6 +3683,17 @@ name = "prowave-vamp"
 version = "0.3.0"
 dependencies = [
  "libloading 0.8.9",
+]
+
+[[package]]
+name = "prowave-vcs"
+version = "0.3.0"
+dependencies = [
+ "prowave-project",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "zip",
 ]
 
 [[package]]

@@ -629,6 +629,7 @@ mod tests {
     /// its document made) and the part on the writing thread. Printed, not judged: run with
     /// `-- --nocapture`.
     #[test]
+    #[ignore = "slow integration test; run with --full or --ignored"]
     fn timing_of_a_recovery_copy() {
         let root = tempfile::tempdir().unwrap();
         for (name, project) in [

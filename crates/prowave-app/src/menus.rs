@@ -22,6 +22,7 @@ const FILE: &[&str] = &[
     "Save",
     "Save As…",
     "Save A Copy As…",
+    "Quick Checkpoint",
     "Save as Template…",
     "Revert to",
     "-",
@@ -396,6 +397,7 @@ const VIEW: &[&str] = &[
     "Show Inspector",
     "Show Performers",
     "Show Project Notes",
+    "Show Git Version Control",
     "Show Movie",
     "Show Media Browser",
     "-",
@@ -501,6 +503,7 @@ pub(crate) const CHECKABLE: &[&str] = &[
     "Show List Editors",
     "Show Quick Help",
     "Show Project Notes",
+    "Show Git Version Control",
     "Show Media Browser",
     "Check for Updates Automatically",
     "Show Toolbar",
@@ -848,6 +851,10 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show Library"
         | "Show Inspector"
         | "Show List Editors"
+        | "Show Git Version Control"
+        | "Quick Checkpoint"
+        | "Project Alternatives…"
+        | "Alternatives"
         | "Check for Updates…"
         | "Check for Updates Automatically"
         | "Show Welcome Screen"
@@ -935,6 +942,10 @@ const ALWAYS: &[&str] = &[
     "Capture Recording",
     "Show Toolbar",
     "Show Project Notes",
+    "Show Git Version Control",
+    "Quick Checkpoint",
+    "Project Alternatives…",
+    "Alternatives",
     "Show Media Browser",
     "Show Piano Roll",
     "Show Mixer",
@@ -1116,6 +1127,7 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Quick Help" => s.show_quick_help,
         "Show Toolbar" => s.show_toolbar,
         "Show Project Notes" => s.show_notes,
+        "Show Git Version Control" => s.show_git,
         "Show Media Browser" => s.browser.open == Some(crate::file_browser::Tab::Files),
         "Check for Updates Automatically" => s.update_auto,
         "Show Tempo Track" => s.tracks.show_tempo,
@@ -1193,6 +1205,9 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Show Quick Help" | "Quick Help" => s.show_quick_help = !s.show_quick_help,
         "Show Toolbar" => s.show_toolbar = !s.show_toolbar,
         "Show Project Notes" => s.show_notes = !s.show_notes,
+        "Show Git Version Control" => s.show_git = !s.show_git,
+        "Quick Checkpoint" => s.git_trigger_checkpoint = true,
+        "Project Alternatives…" | "Alternatives" => s.show_git = true,
         "Show Media Browser" => s.browser.toggle(crate::file_browser::Tab::Files),
         "Capture Recording" => s.capture_cmd = true,
         "Check for Updates…" => s.update_check = true,
@@ -1918,7 +1933,13 @@ mod tests {
                 content(p) == content(&Project::demo()),
                 p.tracks.len(),
                 (p.position_beats, p.recording, p.playing, p.cycle),
-                (s.show_mixer, s.show_library, s.show_inspector, s.show_lists),
+                (
+                    s.show_mixer,
+                    s.show_library,
+                    s.show_inspector,
+                    s.show_lists,
+                    s.show_git
+                ),
                 (
                     s.update_check,
                     s.update_auto,
@@ -1951,6 +1972,7 @@ mod tests {
                         s.import_audio_cmd,
                         s.export_xml_cmd,
                         s.open_band_cmd,
+                        s.git_trigger_checkpoint,
                     ),
                 ),
                 (

@@ -134,6 +134,32 @@ fn wasm_steps() -> Vec<Step<'static>> {
         .collect()
 }
 
+fn miri_steps() -> Vec<Step<'static>> {
+    let unsafe_crates: Vec<&str> = MIRI_CRATES
+        .iter()
+        .copied()
+        .filter(|c| crate_exists(c) && has_unsafe(c))
+        .collect();
+    if unsafe_crates.is_empty() {
+        println!("xtask: no `unsafe` code in {MIRI_CRATES:?}; miri skipped");
+        return Vec::new();
+    }
+    let mut steps = Vec::new();
+    for c in unsafe_crates {
+        steps.push(Step {
+            name: "miri",
+            program: "cargo",
+            args: vec!["+nightly", "miri", "test", "-p", c, "--lib", "triple"],
+            env: if cfg!(windows) {
+                vec![("MIRIFLAGS", "-Zmiri-disable-stacked-borrows")]
+            } else {
+                Vec::new()
+            },
+        });
+    }
+    steps
+}
+
 fn rt_step() -> Step<'static> {
     // Tests named `*does_not_allocate` wrap `process()` in `assert_no_alloc` (debug only).
     step(
@@ -149,7 +175,69 @@ fn rt_step() -> Step<'static> {
     )
 }
 
-fn check() -> bool {
+fn test_step() -> Step<'static> {
+    if tool_available("cargo", &["nextest", "--version"]) {
+        step(
+            "test",
+            "cargo",
+            &["nextest", "run", "--workspace", "--lib", "--bins"],
+        )
+    } else {
+        step(
+            "test",
+            "cargo",
+            &[
+                "test",
+                "--workspace",
+                "--lib",
+                "--bins",
+                "--",
+                "--nocapture",
+            ],
+        )
+    }
+}
+
+fn heavy_test_step() -> Step<'static> {
+    if tool_available("cargo", &["nextest", "--version"]) {
+        step(
+            "heavy-tests",
+            "cargo",
+            &[
+                "nextest",
+                "run",
+                "--workspace",
+                "--run-ignored",
+                "ignored-only",
+            ],
+        )
+    } else {
+        step(
+            "heavy-tests",
+            "cargo",
+            &["test", "--workspace", "--", "--ignored", "--nocapture"],
+        )
+    }
+}
+
+fn test_crate(c: &str) -> bool {
+    let s = if tool_available("cargo", &["nextest", "--version"]) {
+        step(
+            "test-crate",
+            "cargo",
+            &["nextest", "run", "-p", c, "--lib", "--bins"],
+        )
+    } else {
+        step(
+            "test-crate",
+            "cargo",
+            &["test", "-p", c, "--lib", "--bins", "--", "--nocapture"],
+        )
+    };
+    run(&s)
+}
+
+fn check(full: bool) -> bool {
     let mut steps = vec![
         step("fmt", "cargo", &["fmt", "--all", "--check"]),
         step(
@@ -164,78 +252,58 @@ fn check() -> bool {
                 "warnings",
             ],
         ),
-        step(
-            "test",
-            "cargo",
-            &["test", "--workspace", "--", "--nocapture"],
-        ),
+        test_step(),
         rt_step(),
     ];
 
-    let unsafe_crates: Vec<&str> = MIRI_CRATES
-        .iter()
-        .copied()
-        .filter(|c| crate_exists(c) && has_unsafe(c))
-        .collect();
-    if unsafe_crates.is_empty() {
-        println!("xtask: no `unsafe` code in {MIRI_CRATES:?}; miri skipped");
-    } else {
-        // Miri needs nightly; `rustup +nightly component add miri`. It runs the lock-free
-        // triple buffer's tests (the engine's other `unsafe` is Windows FFI, which miri cannot
-        // run). On Windows the Stacked Borrows check trips over the test harness's own
-        // allocator on every test, so it is turned off there; data races are still checked.
-        for c in unsafe_crates {
-            steps.push(Step {
-                name: "miri",
-                program: "cargo",
-                args: vec!["+nightly", "miri", "test", "-p", c, "--lib", "triple"],
-                env: if cfg!(windows) {
-                    vec![("MIRIFLAGS", "-Zmiri-disable-stacked-borrows")]
-                } else {
-                    Vec::new()
-                },
-            });
+    if full {
+        println!("xtask: running full verification suite (--full)");
+        steps.push(heavy_test_step());
+        steps.extend(miri_steps());
+
+        if tool_available("cargo", &["deny", "--version"]) {
+            steps.push(step(
+                "deny",
+                "cargo",
+                &["deny", "check", "advisories", "bans", "licenses", "sources"],
+            ));
+        } else {
+            println!("xtask: cargo-deny not installed; advisory/license check skipped");
         }
-    }
 
-    if tool_available("cargo", &["deny", "--version"]) {
-        steps.push(step(
-            "deny",
-            "cargo",
-            &["deny", "check", "advisories", "bans", "licenses", "sources"],
-        ));
-    } else {
-        println!("xtask: cargo-deny not installed; advisory/license check skipped");
-    }
+        steps.extend(wasm_steps());
 
-    steps.extend(wasm_steps());
-
-    if crate_exists("prowave-dsp") {
-        steps.push(step(
-            "preset_compat",
-            "cargo",
-            &[
-                "test",
-                "-p",
-                "prowave-dsp",
-                "--test",
+        if crate_exists("prowave-dsp") {
+            steps.push(step(
                 "preset_compat",
-                "--",
-                "--nocapture",
-            ],
-        ));
+                "cargo",
+                &[
+                    "test",
+                    "-p",
+                    "prowave-dsp",
+                    "--test",
+                    "preset_compat",
+                    "--",
+                    "--nocapture",
+                ],
+            ));
+        } else {
+            println!("xtask: prowave-dsp not created yet; preset_compat skipped");
+        }
+        if crate_exists("prowave-wasm") {
+            steps.push(Step {
+                name: "wasm-pack",
+                program: "wasm-pack",
+                args: vec!["test", "--node", "crates/prowave-wasm"],
+                env: Vec::new(),
+            });
+        } else {
+            println!("xtask: prowave-wasm not created yet; wasm-pack test skipped");
+        }
     } else {
-        println!("xtask: prowave-dsp not created yet; preset_compat skipped");
-    }
-    if crate_exists("prowave-wasm") {
-        steps.push(Step {
-            name: "wasm-pack",
-            program: "wasm-pack",
-            args: vec!["test", "--node", "crates/prowave-wasm"],
-            env: Vec::new(),
-        });
-    } else {
-        println!("xtask: prowave-wasm not created yet; wasm-pack test skipped");
+        println!(
+            "xtask: fast daily gates (use --full for miri, wasm, cargo-deny, and heavy tests)"
+        );
     }
 
     let mut failed = Vec::new();
@@ -254,11 +322,31 @@ fn check() -> bool {
 }
 
 fn main() -> ExitCode {
-    let task = std::env::args().nth(1).unwrap_or_default();
+    let mut args = std::env::args().skip(1);
+    let task = args.next().unwrap_or_default();
     let ok = match task.as_str() {
-        "check" => check(),
-        "wasm-check" => wasm_steps().iter().all(run),
+        "check" => {
+            let full = args.any(|a| a == "--full" || a == "-f");
+            check(full)
+        }
+        "miri" => {
+            let steps = miri_steps();
+            if steps.is_empty() {
+                true
+            } else {
+                steps.iter().all(run)
+            }
+        }
+        "wasm" | "wasm-check" => wasm_steps().iter().all(run),
         "rt-check" => run(&rt_step()),
+        "test-crate" => {
+            if let Some(crate_name) = args.next() {
+                test_crate(&crate_name)
+            } else {
+                eprintln!("usage: cargo xtask test-crate <crate_name>");
+                false
+            }
+        }
         "bench" => bench::bench(&root()),
         "status" => match status::run(&root()) {
             Ok(()) => true,
@@ -268,7 +356,7 @@ fn main() -> ExitCode {
             }
         },
         _ => {
-            eprintln!("usage: cargo xtask <check|wasm-check|rt-check|bench|status>");
+            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status>");
             false
         }
     };

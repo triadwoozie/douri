@@ -51,6 +51,7 @@ prowave-garageband-import = { version = "0.3.0", path = "../prowave-garageband-i
 prowave-ladspa = { version = "0.3.0", path = "../prowave-ladspa" }
 prowave-plugin-host = { version = "0.3.0", path = "../prowave-plugin-host" }
 prowave-project = { version = "0.3.0", path = "../prowave-project" }
+prowave-vcs = { version = "0.3.0", path = "../prowave-vcs" }
 prowave-sfz = { version = "0.3.0", path = "../prowave-sfz" }
 prowave-exs = { version = "0.3.0", path = "../prowave-exs" }
 image = { version = "0.25.10", default-features = false, features = ["png"] }

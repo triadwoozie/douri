@@ -420,6 +420,7 @@ mod tests {
     /// Every Library patch, played over the demo song's notes on one track: no sample and no
     /// peak meter may go NaN or infinite (a GitHub report: Mellow Grand's meter stuck at inf).
     #[test]
+    #[ignore = "slow integration test; run with --full or --ignored"]
     fn every_library_patch_plays_finite_audio() {
         let mut bad = Vec::new();
         for cat in CATEGORIES {

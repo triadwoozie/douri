@@ -35,6 +35,7 @@ mod file_commands;
 mod flex_edit;
 mod fx_ui;
 mod garageband;
+mod git_panel;
 mod graphics;
 mod groove;
 mod group_editor;
@@ -164,6 +165,14 @@ pub struct UiState {
     /// List Editors (the Event list on the right).
     pub show_lists: bool,
     pub lists: event_list::ListView,
+    /// Git Version Control & Project Alternatives panel.
+    pub show_git: bool,
+    pub git_worker: Option<prowave_vcs::VcsWorker>,
+    pub git_commit_input: String,
+    pub git_branch_input: String,
+    pub git_creating_branch: bool,
+    pub git_revert_confirm: bool,
+    pub git_trigger_checkpoint: bool,
     /// The MIDI recording in progress.
     pub rec: recorder::Recorder,
     /// The audio recording in progress, and the open audio input.
@@ -356,6 +365,13 @@ impl UiState {
             lcd_smpte: false,
             show_lists: false,
             lists: event_list::ListView::default(),
+            show_git: false,
+            git_worker: None,
+            git_commit_input: String::new(),
+            git_branch_input: String::new(),
+            git_creating_branch: false,
+            git_revert_confirm: false,
+            git_trigger_checkpoint: false,
             rec: recorder::Recorder::default(),
             audio_rec: audio_rec::AudioRecorder::default(),
             capture_cmd: false,
@@ -1630,6 +1646,7 @@ impl eframe::App for App {
                 }
             }
         }
+        git_panel::update(&mut self.ui, &self.project, self.path.as_deref());
         let p = &mut self.project;
         let s = &mut self.ui;
 
@@ -1673,6 +1690,15 @@ impl eframe::App for App {
                 .exact_size(event_list::WIDTH)
                 .frame(egui::Frame::new())
                 .show(ui, |ui| event_list::show(ui, p, s));
+        }
+        if s.show_git {
+            egui::Panel::right("git_panel")
+                .resizable(true)
+                .min_size(280.0)
+                .max_size(500.0)
+                .default_size(git_panel::WIDTH)
+                .frame(egui::Frame::new())
+                .show(ui, |ui| git_panel::show(ui, p, s, self.path.as_deref()));
         }
         if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks

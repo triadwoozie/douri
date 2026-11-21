@@ -311,6 +311,12 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
         Scope::Regions,
     ),
     ("Snap to Grid", cmd(Key::G), Scope::Regions),
+    (
+        "Show Git Version Control",
+        cmd_shift(Key::G),
+        Scope::Transport,
+    ),
+    ("Quick Checkpoint", ctrl_alt(Key::S), Scope::Transport),
     // Edit > Cut/Insert Time. Control-Command-X comes from the system as Cut (see `handle`).
     (
         "Cut Section Between Locators",
