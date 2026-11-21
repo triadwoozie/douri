@@ -294,6 +294,14 @@ impl Chooser {
     }
 }
 
+/// Dynamically calculates the Project Chooser viewport size based on monitor dimensions.
+pub fn chooser_viewport_size(mon: Option<egui::Vec2>) -> egui::Vec2 {
+    let m = mon.unwrap_or(egui::vec2(1600.0, 960.0));
+    let w = (m.x * 0.62).clamp(780.0, 1180.0);
+    let h = (m.y * 0.68).clamp(520.0, 780.0);
+    egui::vec2(w, h)
+}
+
 /// What the highlighted item does when chosen.
 fn choice(c: &Chooser, recent: &[PathBuf]) -> Option<Choice> {
     match c.section {
@@ -475,9 +483,19 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     };
     // Modal card
     g.rect_filled(area, if standalone { 0.0 } else { 8.0 }, BG);
-    if !standalone {
-        g.rect_stroke(area, 8.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
-    }
+    g.rect_stroke(
+        area,
+        if standalone { 0.0 } else { 8.0 },
+        Stroke::new(
+            1.0,
+            if standalone {
+                Color32::from_rgb(0x2e, 0x31, 0x38)
+            } else {
+                BORDER
+            },
+        ),
+        StrokeKind::Inside,
+    );
 
     // Sidebar: width 170px
     let side_w = 170.0f32;
@@ -543,12 +561,70 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
 
     let recent: Vec<PathBuf> = s.recent.paths().to_vec();
     let mut chosen = None;
+    let mut cancel = false;
+
+    // Top drag handles for standalone borderless window
+    if standalone {
+        let side_drag_rect = Rect::from_min_size(side.left_top(), vec2(side.width(), 48.0));
+        let s_drag = ui.interact(
+            side_drag_rect,
+            egui::Id::unique("chooser_side_drag"),
+            Sense::drag(),
+        );
+        if s_drag.drag_started() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+        let top_drag_rect = Rect::from_min_size(main.left_top(), vec2(main.width() - 40.0, 40.0));
+        let t_drag = ui.interact(
+            top_drag_rect,
+            egui::Id::unique("chooser_top_drag"),
+            Sense::drag(),
+        );
+        if t_drag.drag_started() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+    }
+
+    // Top-right clean close 'x' button
+    let close_r = Rect::from_center_size(
+        pos2(area.right() - 16.0, area.top() + 16.0),
+        vec2(20.0, 20.0),
+    );
+    let close_resp = ui.interact(close_r, egui::Id::unique("chooser_close_x"), Sense::click());
+    if close_resp.hovered() {
+        g.circle_filled(close_r.center(), 10.0, Color32::from_white_alpha(20));
+    }
+    let stroke_color = if close_resp.hovered() {
+        Color32::WHITE
+    } else {
+        Color32::from_rgb(0x9a, 0x9a, 0xa2)
+    };
+    let x_stroke = Stroke::new(1.2, stroke_color);
+    g.line_segment(
+        [
+            close_r.center() + vec2(-4.0, -4.0),
+            close_r.center() + vec2(4.0, 4.0),
+        ],
+        x_stroke,
+    );
+    g.line_segment(
+        [
+            close_r.center() + vec2(4.0, -4.0),
+            close_r.center() + vec2(-4.0, 4.0),
+        ],
+        x_stroke,
+    );
+    if close_resp.clicked() {
+        cancel = true;
+    }
 
     match c.section {
         Section::NewProject => {
-            let tw = ((body.width() - 3.0 * 14.0) / 4.0).clamp(146.0, 180.0);
-            let th = 114.0f32;
+            let cols = if body.width() >= 640.0 { 4 } else { 2 };
             let tgap = 14.0f32;
+            let tw =
+                ((body.width() - (cols as f32 - 1.0) * tgap) / cols as f32).clamp(146.0, 190.0);
+            let th = 114.0f32;
 
             // Header / Primary tile: Empty Project
             let top_card = Rect::from_min_size(body.left_top(), vec2(tw, th));
@@ -572,8 +648,13 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
 
             let t_y = f_top + 22.0;
             for (k, t) in Template::FACTORY.iter().enumerate() {
+                let col = k % cols;
+                let row = k / cols;
                 let r = Rect::from_min_size(
-                    pos2(body.left() + k as f32 * (tw + tgap), t_y),
+                    pos2(
+                        body.left() + col as f32 * (tw + tgap),
+                        t_y + row as f32 * (th + tgap),
+                    ),
                     vec2(tw, th),
                 );
                 let (clicked, double) = tile(ui, r, *t, c.selected == k + 1, k + 1);
@@ -586,7 +667,8 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
             }
 
             // Collapsible Details section
-            let d_top = t_y + th + 14.0;
+            let num_rows = (Template::FACTORY.len() + cols - 1) / cols;
+            let d_top = t_y + num_rows as f32 * th + (num_rows as f32 - 1.0).max(0.0) * tgap + 14.0;
             let d_rect =
                 Rect::from_min_max(pos2(body.left(), d_top), pos2(body.right(), body.bottom()));
             let d_resp = ui.interact(
@@ -817,7 +899,6 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         SIDEBAR,
     );
 
-    let mut cancel = false;
     let footer_ui = footer.shrink2(vec2(20.0, 10.0));
     ui.scope_builder(egui::UiBuilder::new().max_rect(footer_ui), |ui| {
         ui.horizontal_centered(|ui| {

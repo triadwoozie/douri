@@ -1378,16 +1378,36 @@ impl App {
                 self.import(&path, ctx);
             }
         }
+
+        // On first frame where monitor_size is known, adapt viewport dynamically to monitor
+        let init_adjust_id = egui::Id::unique("douri_initial_viewport_adjusted");
+        if ctx.data(|d| d.get_temp::<bool>(init_adjust_id)).is_none() {
+            if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
+                if self.ui.show_onboarding {
+                    let s = onboarding::welcome_viewport_size(Some(mon));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
+                } else if self.ui.chooser.is_some() {
+                    let s = start_screen::chooser_viewport_size(Some(mon));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
+                }
+                ctx.data_mut(|d| d.insert_temp(init_adjust_id, true));
+            }
+        }
+
         if self.ui.show_onboarding {
             egui::CentralPanel::default()
                 .frame(
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(0x20, 0x22, 0x26))
+                        .fill(egui::Color32::from_rgb(0x1e, 0x1f, 0x23))
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgb(0x2e, 0x31, 0x38),
+                        ))
                         .inner_margin(egui::Margin {
-                            left: 20,
-                            right: 20,
-                            top: 18,
-                            bottom: 14,
+                            left: 18,
+                            right: 18,
+                            top: 14,
+                            bottom: 12,
                         }),
                 )
                 .show(ui, |ui| {
@@ -1397,25 +1417,14 @@ impl App {
                         &mut self.ui.simplified_mode,
                     ) {
                         // When Welcome dialog is completed, transition viewport to Chooser
-                        let (target_w, target_h) =
-                            if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
-                                if mon.x < 1100.0 || mon.y < 750.0 {
-                                    let s = (mon * 0.85).max(egui::vec2(760.0, 540.0));
-                                    (s.x, s.y)
-                                } else {
-                                    (960.0, 660.0)
-                                }
-                            } else {
-                                (960.0, 660.0)
-                            };
+                        let s = start_screen::chooser_viewport_size(
+                            ctx.input(|i| i.viewport().monitor_size),
+                        );
                         ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
                         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                            760.0, 540.0,
+                            760.0, 520.0,
                         )));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                            target_w, target_h,
-                        )));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Title(
                             "Choose a Project".into(),
                         ));
@@ -1437,7 +1446,9 @@ impl App {
             }
         }
         self.show_save_prompt(ctx);
-        window_chrome::resize_edges(ctx);
+        if !self.ui.show_onboarding {
+            window_chrome::resize_edges(ctx);
+        }
     }
 
     pub fn transition_to_daw(&self, ctx: &egui::Context) {
@@ -1445,7 +1456,10 @@ impl App {
             .input(|i| i.viewport().monitor_size)
             .unwrap_or(egui::vec2(1600.0, 960.0));
         ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+        #[cfg(target_os = "macos")]
         ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+        #[cfg(not(target_os = "macos"))]
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
             800.0, 520.0,
         )));
@@ -1461,20 +1475,6 @@ impl eframe::App for App {
         let _frame_time = bench::frame_timer();
         self.ui.has_path = self.path.is_some();
         let dt = ctx.input(|i| i.stable_dt) as f64;
-
-        if self.ui.chooser.is_some() || self.ui.show_onboarding {
-            // Keep native 100% zoom (self.ui.ui_scale) without shrinking by DESIGN_WIDTH (1480px)
-            if (self.ui.ui_scale - ctx.zoom_factor()).abs() > 0.001 {
-                ctx.set_zoom_factor(self.ui.ui_scale);
-            }
-            self.chooser_ui(ui, &ctx);
-            return;
-        }
-        ui_scale::apply(&ctx, self.ui.ui_scale);
-        tracks_area::poll_normalize(&ctx, &mut self.project, &mut self.ui);
-        smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
-        flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
-        groove::poll(&ctx, &mut self.project, &mut self.ui);
 
         if let Some(probe) = self.bench.as_mut() {
             if probe.frame(&ctx) {
@@ -1507,10 +1507,20 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
+
         if self.ui.chooser.is_some() || self.ui.show_onboarding {
+            // Keep native 100% zoom (self.ui.ui_scale) without shrinking by DESIGN_WIDTH (1480px)
+            if (self.ui.ui_scale - ctx.zoom_factor()).abs() > 0.001 {
+                ctx.set_zoom_factor(self.ui.ui_scale);
+            }
             self.chooser_ui(ui, &ctx);
             return;
         }
+        ui_scale::apply(&ctx, self.ui.ui_scale);
+        tracks_area::poll_normalize(&ctx, &mut self.project, &mut self.ui);
+        smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
+        flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
+        groove::poll(&ctx, &mut self.project, &mut self.ui);
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.project.playing = !self.project.playing;
         }
@@ -2283,8 +2293,8 @@ fn main() -> eframe::Result {
     {
         if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
             (
-                [620.0, 360.0],
-                [520.0, 310.0],
+                [560.0, 280.0],
+                [460.0, 240.0],
                 false,
                 true,
                 "Welcome to Dōri",
@@ -2292,7 +2302,7 @@ fn main() -> eframe::Result {
         } else {
             (
                 [960.0, 660.0],
-                [760.0, 540.0],
+                [760.0, 520.0],
                 false,
                 true,
                 "Choose a Project",
@@ -2309,7 +2319,7 @@ fn main() -> eframe::Result {
         .with_resizable(init_resizable)
         .with_title(init_title)
         .with_app_id(window_app_id())
-        .with_decorations(true);
+        .with_decorations(cfg!(target_os = "macos"));
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);
     // setting one here would swap it for the bare logo once the app is running. An empty
