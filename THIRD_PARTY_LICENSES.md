@@ -20,6 +20,11 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: MIT License / Apache License 2.0
 - **Description**: Offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 metering.
 
+- **Project**: OpenUtau ([stakira/OpenUtau](https://github.com/stakira/OpenUtau))
+- **Authors**: stakira and OpenUtau contributors
+- **License**: MIT License
+- **Description**: Open-source singing voice synthesis platform, phonemizer, and vocal synthesis architecture references.
+
 - **Project**: Ardour ([Ardour](https://github.com/Ardour/ardour))
 - **Authors**: Ardour contributors
 - **License**: GNU General Public License v2.0 or later (GPL-2.0-or-later)

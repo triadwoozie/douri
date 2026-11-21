@@ -30,12 +30,13 @@ pub enum SettingsTab {
     Audio,
     Midi,
     Appearance,
+    Keymap,
     McpServer,
     Advanced,
 }
 
 impl SettingsTab {
-    pub const ALL: [SettingsTab; 10] = [
+    pub const ALL: [SettingsTab; 11] = [
         Self::General,
         Self::Synchronization,
         Self::Metronome,
@@ -44,6 +45,7 @@ impl SettingsTab {
         Self::Audio,
         Self::Midi,
         Self::Appearance,
+        Self::Keymap,
         Self::McpServer,
         Self::Advanced,
     ];
@@ -59,6 +61,11 @@ impl SettingsTab {
             "Audio…" => Self::Audio,
             "MIDI…" => Self::Midi,
             "Appearance…" => Self::Appearance,
+            "Keymap / Shortcuts…"
+            | "Logic-style Key Commands…"
+            | "Key Commands…"
+            | "Keymap…"
+            | "Shortcuts…" => Self::Keymap,
             "MCP Server…" => Self::McpServer,
             "Advanced…" => Self::Advanced,
             _ => return None,
@@ -75,7 +82,8 @@ impl SettingsTab {
             Self::Audio => tr("Audio"),
             Self::Midi => tr("MIDI"),
             Self::Appearance => tr("Appearance"),
-            Self::McpServer => tr("MCP Server"),
+            Self::Keymap => "Key Commands",
+            Self::McpServer => "MCP Server",
             Self::Advanced => tr("Advanced"),
         }
         .to_string()
@@ -116,6 +124,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 SettingsTab::Audio => audio(ui, s),
                 SettingsTab::Midi => midi(ui, p, &mut s.midi_panic),
                 SettingsTab::Appearance => appearance(ui, s),
+                SettingsTab::Keymap => keymap_settings(ui, s),
                 SettingsTab::McpServer => mcp_settings(ui, s),
                 SettingsTab::Advanced => advanced(ui, s),
             }
@@ -540,6 +549,108 @@ fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
         if ui.button(tr("Show Welcome Screen…")).clicked() {
             s.show_onboarding = true;
         }
+    });
+}
+
+fn keymap_settings(ui: &mut egui::Ui, s: &mut UiState) {
+    ui.vertical(|ui| {
+        ui.heading("Keymap & Keyboard Shortcuts");
+        ui.add_space(4.0);
+        ui.label("Select keymap profile and configure primary modifier mapping (Ctrl vs Cmd).");
+        ui.add_space(10.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Active Profile:");
+            for prof in crate::key_commands::KeymapProfile::ALL {
+                let active = s.keymap_prefs.profile == prof;
+                let btn = if active {
+                    egui::Button::new(
+                        egui::RichText::new(prof.title())
+                            .color(egui::Color32::from_rgb(0x11, 0x12, 0x15))
+                            .strong(),
+                    )
+                    .fill(egui::Color32::from_rgb(0xf2, 0xf3, 0xf5))
+                } else {
+                    egui::Button::new(
+                        egui::RichText::new(prof.title())
+                            .color(egui::Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                    )
+                    .fill(egui::Color32::from_rgb(0x22, 0x24, 0x29))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x36, 0x39, 0x42)))
+                }
+                .corner_radius(egui::CornerRadius::same(6));
+
+                if ui.add(btn).clicked() {
+                    s.keymap_prefs.profile = prof;
+                    s.keymap_prefs.save();
+                }
+            }
+        });
+
+        ui.add_space(8.0);
+        let mut mac_kb = s.keymap_prefs.mac_keyboard;
+        if ui
+            .checkbox(&mut mac_kb, "Mac Keyboard Layout (Use Cmd)")
+            .on_hover_text(
+                "When enabled, displays and matches primary shortcuts with Apple Cmd/Opt modifiers instead of Ctrl/Alt.",
+            )
+            .changed()
+        {
+            s.keymap_prefs.mac_keyboard = mac_kb;
+            s.keymap_prefs.save();
+        }
+
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.label(
+            egui::RichText::new(format!(
+                "Current Profile: {}",
+                s.keymap_prefs.profile.title()
+            ))
+            .strong(),
+        );
+        ui.add_space(4.0);
+
+        egui::ScrollArea::vertical()
+            .max_height(280.0)
+            .id_salt("keymap_table_scroll")
+            .show(ui, |ui| {
+                egui::Grid::new("keymap_table_grid")
+                    .striped(true)
+                    .spacing([24.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("Command").strong());
+                        ui.label(egui::RichText::new("Shortcut").strong());
+                        ui.label(egui::RichText::new("Scope").strong());
+                        ui.end_row();
+
+                        let mac_kb = s.keymap_prefs.mac_keyboard;
+                        let commands = match s.keymap_prefs.profile {
+                            crate::key_commands::KeymapProfile::Dori => {
+                                crate::key_commands::COMMANDS
+                            }
+                            crate::key_commands::KeymapProfile::Reaper => {
+                                crate::key_commands::REAPER_COMMANDS
+                            }
+                        };
+
+                        for (cmd, combo, scope) in commands {
+                            ui.label(*cmd);
+                            ui.label(
+                                egui::RichText::new(combo.format(mac_kb))
+                                    .color(egui::Color32::from_rgb(0xf2, 0xf3, 0xf5))
+                                    .monospace(),
+                            );
+                            ui.label(match scope {
+                                crate::key_commands::Scope::Transport => "Global / Transport",
+                                crate::key_commands::Scope::Regions => "Tracks / Regions",
+                            });
+                            ui.end_row();
+                        }
+                    });
+            });
     });
 }
 

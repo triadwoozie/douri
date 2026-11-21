@@ -73,6 +73,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Audio…",
             "MIDI…",
             "Appearance…",
+            "Logic-style Key Commands…",
             "MCP Server…",
             "Advanced…",
             "Plug-In Manager…",
@@ -436,6 +437,7 @@ const VIEW: &[&str] = &[
 ];
 const SETTINGS: &[&str] = &[
     "Appearance…",
+    "Logic-style Key Commands…",
     "MCP Server…",
     "Advanced…",
     "Plug-In Manager…",
@@ -592,53 +594,109 @@ pub fn bar_fill(light: bool) -> Color32 {
 
 /// Logic's default key commands for the entries this app implements.
 pub(crate) fn shortcut(label: &str) -> Option<KeyboardShortcut> {
+    shortcut_with_profile(label, crate::key_commands::active_profile())
+}
+
+/// Profile-aware shortcut resolution.
+pub(crate) fn shortcut_with_profile(
+    label: &str,
+    profile: crate::key_commands::KeymapProfile,
+) -> Option<KeyboardShortcut> {
     if let Some(cmd) = FileCmd::from_menu(label) {
         return cmd.shortcut();
     }
-    match label {
-        "Undo" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)),
-        "Redo" => {
-            return Some(KeyboardShortcut::new(
-                Modifiers::COMMAND | Modifiers::SHIFT,
-                Key::Z,
-            ))
+    match profile {
+        crate::key_commands::KeymapProfile::Reaper => match label {
+            "Undo" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)),
+            "Redo" => {
+                return Some(KeyboardShortcut::new(
+                    Modifiers::COMMAND | Modifiers::SHIFT,
+                    Key::Z,
+                ))
+            }
+            "Delete" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete)),
+            "Snap to Grid" => return Some(KeyboardShortcut::new(Modifiers::ALT, Key::S)),
+            "Split at Playhead" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::S)),
+            "New Tracks…" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::T)),
+            "Show Mixer" => return Some(KeyboardShortcut::new(Modifiers::ALT, Key::M)),
+            "Create Marker" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::M)),
+            "Record" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::R)),
+            "Show Automation" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::V)),
+            "Bigger Interface" => {
+                return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals))
+            }
+            "Smaller Interface" => {
+                return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus))
+            }
+            "Actual Interface Size" => {
+                return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0))
+            }
+            "Open Piano Roll" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4)),
+            _ => {
+                return crate::key_commands::combo_of_profile(
+                    label,
+                    profile,
+                    crate::key_commands::is_mac_keyboard(),
+                )
+                .map(|c| c.shortcut())
+            }
+        },
+        crate::key_commands::KeymapProfile::Dori => {
+            match label {
+                "Undo" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)),
+                "Redo" => {
+                    return Some(KeyboardShortcut::new(
+                        Modifiers::COMMAND | Modifiers::SHIFT,
+                        Key::Z,
+                    ))
+                }
+                "Delete" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete)),
+                "Snap to Grid" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::G)),
+                "Split at Playhead" => {
+                    return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::T))
+                }
+                _ => {}
+            }
+            let interface_key = match label {
+                "Bigger Interface" => Some(Key::Equals),
+                "Smaller Interface" => Some(Key::Minus),
+                "Actual Interface Size" => Some(Key::Num0),
+                _ => None,
+            };
+            if let Some(key) = interface_key {
+                return Some(KeyboardShortcut::new(Modifiers::COMMAND, key));
+            }
+            if label == "Open Piano Roll" {
+                return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4));
+            }
+            if label == "Record / Mix Mode" {
+                return Some(KeyboardShortcut::new(
+                    Modifiers::COMMAND | Modifiers::SHIFT,
+                    Key::L,
+                ));
+            }
+            let key = match label {
+                "Show Library" => Key::Y,
+                "Show Inspector" => Key::I,
+                "Show List Editors" => Key::D,
+                "Show Mixer" => Key::X,
+                "Show Piano Roll" => Key::P,
+                // Logic's key command for Musical Typing.
+                "Show Musical Typing" => {
+                    return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K));
+                }
+                _ => {
+                    return crate::key_commands::combo_of_profile(
+                        label,
+                        profile,
+                        crate::key_commands::is_mac_keyboard(),
+                    )
+                    .map(|c| c.shortcut())
+                }
+            };
+            Some(KeyboardShortcut::new(Modifiers::NONE, key))
         }
-        "Delete" => return Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete)),
-        "Snap to Grid" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::G)),
-        "Split at Playhead" => return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::T)),
-        _ => {}
     }
-    let interface_key = match label {
-        "Bigger Interface" => Some(Key::Equals),
-        "Smaller Interface" => Some(Key::Minus),
-        "Actual Interface Size" => Some(Key::Num0),
-        _ => None,
-    };
-    if let Some(key) = interface_key {
-        return Some(KeyboardShortcut::new(Modifiers::COMMAND, key));
-    }
-    if label == "Open Piano Roll" {
-        return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4));
-    }
-    if label == "Record / Mix Mode" {
-        return Some(KeyboardShortcut::new(
-            Modifiers::COMMAND | Modifiers::SHIFT,
-            Key::L,
-        ));
-    }
-    let key = match label {
-        "Show Library" => Key::Y,
-        "Show Inspector" => Key::I,
-        "Show List Editors" => Key::D,
-        "Show Mixer" => Key::X,
-        "Show Piano Roll" => Key::P,
-        // Logic's key command for Musical Typing.
-        "Show Musical Typing" => {
-            return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K));
-        }
-        _ => return crate::key_commands::combo_of(label).map(|c| c.shortcut()),
-    };
-    Some(KeyboardShortcut::new(Modifiers::NONE, key))
 }
 
 /// Whether track `t` has a Space Designer or has room for one.
@@ -1684,7 +1742,10 @@ fn menu_width(ui: &egui::Ui, labels: &[String]) -> f32 {
     for it in labels.iter().filter(|l| *l != "-") {
         title = title.max(width(tr(it)));
         if let Some(k) = shortcut(it) {
-            key = key.max(width(&ui.ctx().format_shortcut(&k)));
+            key = key.max(width(&crate::key_commands::format_shortcut(
+                &k,
+                crate::key_commands::is_mac_keyboard(),
+            )));
         }
         if submenu(it).is_some() || it == "Open Recent" {
             key = key.max(8.0);
@@ -1839,7 +1900,9 @@ fn entries(ui: &mut egui::Ui, items: &[&str], p: &mut Project, s: &mut crate::Ui
             }
             continue;
         }
-        let key = shortcut(it).map(|k| ui.ctx().format_shortcut(&k));
+        let key = shortcut(it).map(|k| {
+            crate::key_commands::format_shortcut(&k, crate::key_commands::is_mac_keyboard())
+        });
         let (on, check) = (enabled(it, p, s), checked(it, p, s));
         if row(ui, tr(it), on, check, key, false, look).clicked() {
             apply(it, p, s);

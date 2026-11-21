@@ -221,6 +221,8 @@ pub struct UiState {
     pub audio_info: Option<engine_sync::AudioInfo>,
     /// The output device and buffer size the user chose (remembered in `audio.txt`).
     pub audio_prefs: audio_prefs::AudioPrefs,
+    /// The keymap profile and keyboard layout preferences (remembered in `keymap.txt`).
+    pub keymap_prefs: key_commands::KeymapPrefs,
     /// A new output choice from Project Settings > Audio, carried out by `App` after the window.
     pub audio_request: Option<audio_prefs::AudioPrefs>,
     /// The output devices and the buffer sizes the chosen device takes, read when the Audio
@@ -412,6 +414,7 @@ impl UiState {
             stack_dialog: Default::default(),
             audio_info: None,
             audio_prefs: audio_prefs::AudioPrefs::default(),
+            keymap_prefs: key_commands::KeymapPrefs::default(),
             audio_request: None,
             audio_devices: Vec::new(),
             audio_buffer_range: None,
@@ -1602,12 +1605,26 @@ impl eframe::App for App {
             return;
         }
         ui_scale::apply(&ctx, self.ui.ui_scale);
+        key_commands::begin_frame(&ctx);
+        key_commands::set_active_prefs(self.ui.keymap_prefs.clone());
         tracks_area::poll_normalize(&ctx, &mut self.project, &mut self.ui);
         smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
         flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
         groove::poll(&ctx, &mut self.project, &mut self.ui);
-        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.project.playing = !self.project.playing;
+        if !ctx.egui_wants_keyboard_input() {
+            if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                self.project.playing = !self.project.playing;
+            } else if self.ui.keymap_prefs.profile == key_commands::KeymapProfile::Reaper {
+                if ctx.input(|i| {
+                    !i.modifiers.command
+                        && !i.modifiers.ctrl
+                        && !i.modifiers.shift
+                        && !i.modifiers.alt
+                        && i.key_pressed(egui::Key::Enter)
+                }) {
+                    self.project.playing = !self.project.playing;
+                }
+            }
         }
         if let Some(menu) = self.native_menu.as_mut() {
             menu.update(&ctx, &mut self.project, &mut self.ui);
@@ -1616,6 +1633,7 @@ impl eframe::App for App {
             self.ui.file_cmd = Some(cmd);
         }
         menus::handle_keys(&ctx, &mut self.project, &mut self.ui);
+        key_commands::handle(&ctx, &mut self.project, &mut self.ui);
         let dropped: Vec<std::path::PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -1972,6 +1990,7 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
                 ui.label("• yuribeats/prowave");
                 ui.label("• storytold/soundcraft");
                 ui.label("• Ardour");
+                ui.label("• OpenUtau by stakira and contributors (MIT License)");
                 ui.add_space(8.0);
                 ui.label("Icons & Artwork:");
                 ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
@@ -2549,6 +2568,8 @@ fn main() -> eframe::Result {
             let mut audio_error = None;
             let mut midi_out = None;
             let prefs = audio_prefs::AudioPrefs::load();
+            let keymap_prefs = key_commands::KeymapPrefs::load();
+            key_commands::set_active_prefs(keymap_prefs.clone());
             let sync = match open_output(&prefs) {
                 Ok((e, fell_back)) => {
                     if fell_back {
@@ -2586,6 +2607,7 @@ fn main() -> eframe::Result {
                 project,
                 ui: UiState {
                     audio_prefs: prefs,
+                    keymap_prefs,
                     ..UiState::new()
                 },
                 sync,

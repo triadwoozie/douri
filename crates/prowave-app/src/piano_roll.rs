@@ -350,10 +350,10 @@ fn toolbar(
             act.delete = true;
             ui.close();
         }
-        let sc = ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(
-            egui::Modifiers::COMMAND,
-            Key::A,
-        ));
+        let sc = crate::key_commands::format_shortcut(
+            &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, Key::A),
+            crate::key_commands::is_mac_keyboard(),
+        );
         if ui
             .add(egui::Button::new(tr("Select All")).shortcut_text(sc))
             .clicked()

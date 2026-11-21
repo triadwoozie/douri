@@ -20,6 +20,204 @@
 use crate::model::Project;
 use crate::UiState;
 use egui::{Event, Key, Modifiers};
+use std::cell::RefCell;
+use std::path::PathBuf;
+
+/// Keymap configuration profile.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum KeymapProfile {
+    #[default]
+    Dori,
+    Reaper,
+}
+
+impl KeymapProfile {
+    pub const ALL: [KeymapProfile; 2] = [KeymapProfile::Dori, KeymapProfile::Reaper];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Dori => "Dōri (Default)",
+            Self::Reaper => "REAPER",
+        }
+    }
+}
+
+/// User keymap and platform modifier preferences.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct KeymapPrefs {
+    pub profile: KeymapProfile,
+    pub mac_keyboard: bool,
+}
+
+impl Default for KeymapPrefs {
+    fn default() -> Self {
+        Self {
+            profile: KeymapProfile::Dori,
+            mac_keyboard: cfg!(target_os = "macos"),
+        }
+    }
+}
+
+impl KeymapPrefs {
+    pub fn load() -> Self {
+        let text = file()
+            .and_then(|f| std::fs::read_to_string(f).ok())
+            .unwrap_or_default();
+        Self::parse(&text)
+    }
+
+    pub fn save(&self) {
+        let Some(file) = file() else { return };
+        let result = file
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(&file, self.to_text()));
+        if let Err(e) = result {
+            tracing::warn!("could not save keymap preferences: {e}");
+        }
+    }
+
+    pub fn parse(text: &str) -> Self {
+        let mut prefs = Self::default();
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(val) = line.strip_prefix("profile=") {
+                match val.to_lowercase().as_str() {
+                    "reaper" => prefs.profile = KeymapProfile::Reaper,
+                    _ => prefs.profile = KeymapProfile::Dori,
+                }
+            } else if let Some(val) = line.strip_prefix("mac_keyboard=") {
+                prefs.mac_keyboard = val.eq_ignore_ascii_case("true");
+            }
+        }
+        prefs
+    }
+
+    pub fn to_text(&self) -> String {
+        let prof = match self.profile {
+            KeymapProfile::Dori => "dori",
+            KeymapProfile::Reaper => "reaper",
+        };
+        format!("profile={prof}\nmac_keyboard={}\n", self.mac_keyboard)
+    }
+}
+
+fn file() -> Option<PathBuf> {
+    Some(crate::recent_files::config_dir()?.join("keymap.txt"))
+}
+
+thread_local! {
+    static ACTIVE_PREFS: RefCell<KeymapPrefs> = RefCell::new(KeymapPrefs::default());
+}
+
+pub fn active_profile() -> KeymapProfile {
+    ACTIVE_PREFS.with(|p| p.borrow().profile)
+}
+
+pub fn is_mac_keyboard() -> bool {
+    ACTIVE_PREFS.with(|p| p.borrow().mac_keyboard)
+}
+
+pub fn set_active_prefs(prefs: KeymapPrefs) {
+    ACTIVE_PREFS.with(|p| *p.borrow_mut() = prefs);
+}
+
+pub fn format_shortcut(shortcut: &egui::KeyboardShortcut, mac_keyboard: bool) -> String {
+    let mut parts = Vec::new();
+    let m = shortcut.modifiers;
+    if mac_keyboard {
+        if m.ctrl {
+            parts.push("Ctrl");
+        }
+        if m.alt {
+            parts.push("Opt");
+        }
+        if m.shift {
+            parts.push("Shift");
+        }
+        if m.command || m.mac_cmd {
+            parts.push("Cmd");
+        }
+    } else {
+        if m.command || m.ctrl {
+            parts.push("Ctrl");
+        }
+        if m.alt {
+            parts.push("Alt");
+        }
+        if m.shift {
+            parts.push("Shift");
+        }
+    }
+    parts.push(key_name(shortcut.logical_key));
+    parts.join("+")
+}
+
+pub fn key_name(key: Key) -> &'static str {
+    match key {
+        Key::Space => "Space",
+        Key::Enter => "Enter",
+        Key::Backspace => "Backspace",
+        Key::Delete => "Delete",
+        Key::Home => "Home",
+        Key::End => "End",
+        Key::PageUp => "PageUp",
+        Key::PageDown => "PageDown",
+        Key::ArrowUp => "Up",
+        Key::ArrowDown => "Down",
+        Key::ArrowLeft => "Left",
+        Key::ArrowRight => "Right",
+        Key::Escape => "Esc",
+        Key::Tab => "Tab",
+        Key::Num0 => "0",
+        Key::Num1 => "1",
+        Key::Num2 => "2",
+        Key::Num3 => "3",
+        Key::Num4 => "4",
+        Key::Num5 => "5",
+        Key::Num6 => "6",
+        Key::Num7 => "7",
+        Key::Num8 => "8",
+        Key::Num9 => "9",
+        Key::A => "A",
+        Key::B => "B",
+        Key::C => "C",
+        Key::D => "D",
+        Key::E => "E",
+        Key::F => "F",
+        Key::G => "G",
+        Key::H => "H",
+        Key::I => "I",
+        Key::J => "J",
+        Key::K => "K",
+        Key::L => "L",
+        Key::M => "M",
+        Key::N => "N",
+        Key::O => "O",
+        Key::P => "P",
+        Key::Q => "Q",
+        Key::R => "R",
+        Key::S => "S",
+        Key::T => "T",
+        Key::U => "U",
+        Key::V => "V",
+        Key::W => "W",
+        Key::X => "X",
+        Key::Y => "Y",
+        Key::Z => "Z",
+        Key::Plus | Key::Equals => "=",
+        Key::Minus => "-",
+        Key::Comma => ",",
+        Key::Period => ".",
+        Key::Slash => "/",
+        Key::Backslash => "\\",
+        Key::Quote => "'",
+        Key::Semicolon => ";",
+        Key::OpenBracket => "[",
+        Key::CloseBracket => "]",
+        _ => "Key",
+    }
+}
 
 /// A key with exactly these modifiers held.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -114,13 +312,47 @@ const fn alt_cmd(key: Key) -> Combo {
 }
 
 impl Combo {
-    /// Whether `m` are this combination's modifiers and no others. On macOS Control and
-    /// Command are two keys; elsewhere Control is the command key and stands for both.
-    fn held(self, m: Modifiers) -> bool {
-        if !self.exists() {
+    /// Formatted string representation for UI and tooltips.
+    pub(crate) fn format(self, mac_keyboard: bool) -> String {
+        let mut parts = Vec::new();
+        if mac_keyboard {
+            if self.ctrl {
+                parts.push("Ctrl");
+            }
+            if self.alt {
+                parts.push("Opt");
+            }
+            if self.shift {
+                parts.push("Shift");
+            }
+            if self.cmd {
+                parts.push("Cmd");
+            }
+        } else {
+            if self.cmd || self.ctrl {
+                parts.push("Ctrl");
+            }
+            if self.alt {
+                parts.push("Alt");
+            }
+            if self.shift {
+                parts.push("Shift");
+            }
+        }
+        parts.push(key_name(self.key));
+        parts.join("+")
+    }
+
+    /// Whether `m` are this combination's modifiers and no others.
+    pub(crate) fn held(self, m: Modifiers) -> bool {
+        self.held_with_layout(m, is_mac_keyboard())
+    }
+
+    pub(crate) fn held_with_layout(self, m: Modifiers, mac_keyboard: bool) -> bool {
+        if !self.exists_with_layout(mac_keyboard) {
             return false;
         }
-        let keys = if cfg!(target_os = "macos") {
+        let keys = if mac_keyboard {
             let cmd_down = m.mac_cmd || (m.command && !m.ctrl);
             cmd_down == self.cmd && m.ctrl == self.ctrl
         } else if m.command != m.ctrl {
@@ -134,7 +366,11 @@ impl Combo {
 
     /// Whether this key can be pressed here: Control-Command combinations exist on macOS only.
     pub(crate) fn exists(self) -> bool {
-        cfg!(target_os = "macos") || !(self.ctrl && self.cmd)
+        self.exists_with_layout(is_mac_keyboard())
+    }
+
+    pub(crate) fn exists_with_layout(self, mac_keyboard: bool) -> bool {
+        mac_keyboard || !(self.ctrl && self.cmd)
     }
 
     /// As the menus print it.
@@ -158,15 +394,15 @@ impl Combo {
 
 /// Which keys a command belongs to.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Scope {
+pub(crate) enum Scope {
     /// Works wherever the pointer is.
     Transport,
     /// The Tracks area's regions and selection: not while the pointer is over the Piano Roll.
     Regions,
 }
 
-/// Every key command: the menu entry it runs, its key, and where it works.
-const COMMANDS: &[(&str, Combo, Scope)] = &[
+/// Every key command in Dōri default preset (Logic Pro aligned): the menu entry it runs, its key, and where it works.
+pub(crate) const COMMANDS: &[(&str, Combo, Scope)] = &[
     ("Go to Beginning", plain(Key::Enter), Scope::Transport),
     ("Stop", plain(Key::Num0), Scope::Transport),
     ("Rewind", plain(Key::Comma), Scope::Transport),
@@ -317,7 +553,6 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
         Scope::Transport,
     ),
     ("Quick Snapshot", ctrl_alt(Key::S), Scope::Transport),
-    // Edit > Cut/Insert Time. Control-Command-X comes from the system as Cut (see `handle`).
     (
         "Cut Section Between Locators",
         ctrl_cmd(Key::X),
@@ -333,16 +568,12 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
         ctrl_cmd(Key::R),
         Scope::Regions,
     ),
-    // The Mac's delete key comes as Backspace; the forward delete key as Delete.
     ("Delete Track", cmd(Key::Backspace), Scope::Regions),
     ("Delete Track", cmd(Key::Delete), Scope::Regions),
     ("New Tracks…", alt_cmd(Key::N), Scope::Transport),
     ("Show Global Tracks", plain(Key::G), Scope::Regions),
     ("Show Hidden Tracks", plain(Key::H), Scope::Regions),
     ("Hide Track", ctrl(Key::H), Scope::Regions),
-    // Logic's Toggle Track Mute and Toggle Track Solo (Logic 10.1 U.S. preset: M and S, listed
-    // there as Toggle Channel Strip Mute and Solo). Logic has no default key to record-enable
-    // a track, and none is given here.
     ("Toggle Track Mute", plain(Key::M), Scope::Regions),
     ("Toggle Track Solo", plain(Key::S), Scope::Regions),
     (
@@ -357,7 +588,6 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
         Scope::Regions,
     ),
     ("Create Track Stack…", cmd_shift(Key::D), Scope::Regions),
-    // Logic's Name Track.
     ("Rename Track", shift(Key::Enter), Scope::Regions),
     ("Show Editor", plain(Key::E), Scope::Regions),
     ("Regions in Place…", ctrl(Key::B), Scope::Regions),
@@ -367,6 +597,66 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
         alt_cmd(Key::F),
         Scope::Regions,
     ),
+];
+
+/// REAPER-style key command mapping preset.
+pub(crate) const REAPER_COMMANDS: &[(&str, Combo, Scope)] = &[
+    ("Go to Beginning", plain(Key::W), Scope::Transport),
+    ("Go to Beginning", plain(Key::Home), Scope::Transport),
+    ("Stop", plain(Key::Num0), Scope::Transport),
+    ("Rewind", plain(Key::Comma), Scope::Transport),
+    ("Forward", plain(Key::Period), Scope::Transport),
+    ("Fast Rewind", shift(Key::Comma), Scope::Transport),
+    ("Fast Forward", shift(Key::Period), Scope::Transport),
+    ("Record", cmd(Key::R), Scope::Transport),
+    ("Cycle Mode", plain(Key::C), Scope::Transport),
+    ("Play from Selection", shift(Key::Space), Scope::Transport),
+    ("Create Marker", plain(Key::M), Scope::Transport),
+    ("Go to Next Marker", alt(Key::Period), Scope::Transport),
+    ("Go to Previous Marker", alt(Key::Comma), Scope::Transport),
+    ("Select All", cmd(Key::A), Scope::Regions),
+    ("Copy", cmd(Key::C), Scope::Regions),
+    ("Cut", cmd(Key::X), Scope::Regions),
+    ("Paste", cmd(Key::V), Scope::Regions),
+    ("Split at Playhead", plain(Key::S), Scope::Regions),
+    ("Join", cmd(Key::J), Scope::Regions),
+    ("Mute On/Off", alt(Key::M), Scope::Regions),
+    ("Loop On/Off", plain(Key::L), Scope::Regions),
+    ("Nudge Left", alt(Key::ArrowLeft), Scope::Regions),
+    ("Nudge Right", alt(Key::ArrowRight), Scope::Regions),
+    ("Repeat…", cmd_shift(Key::R), Scope::Regions),
+    ("Rename Regions", shift(Key::N), Scope::Regions),
+    ("Quantize Selected Events", plain(Key::Q), Scope::Regions),
+    ("Select Next Region", plain(Key::ArrowRight), Scope::Regions),
+    (
+        "Select Previous Region",
+        plain(Key::ArrowLeft),
+        Scope::Regions,
+    ),
+    ("Select Next Track", plain(Key::ArrowDown), Scope::Regions),
+    ("Select Previous Track", plain(Key::ArrowUp), Scope::Regions),
+    ("Zoom Horizontal In", cmd(Key::ArrowRight), Scope::Regions),
+    ("Zoom Horizontal Out", cmd(Key::ArrowLeft), Scope::Regions),
+    ("Zoom Vertical In", cmd(Key::ArrowDown), Scope::Regions),
+    ("Zoom Vertical Out", cmd(Key::ArrowUp), Scope::Regions),
+    ("Snap to Grid", alt(Key::S), Scope::Regions),
+    ("Delete Track", cmd(Key::Delete), Scope::Regions),
+    ("Delete Track", cmd(Key::Backspace), Scope::Regions),
+    ("New Tracks…", cmd(Key::T), Scope::Transport),
+    ("Show Mixer", alt(Key::M), Scope::Transport),
+    ("Show Global Tracks", plain(Key::G), Scope::Regions),
+    ("Show Hidden Tracks", plain(Key::H), Scope::Regions),
+    ("Show Colors", alt(Key::C), Scope::Regions),
+    ("Create Track Stack…", cmd_shift(Key::G), Scope::Regions),
+    ("Create Track Stack…", alt_cmd(Key::G), Scope::Regions),
+    ("Rename Track", shift(Key::Enter), Scope::Regions),
+    ("Show Editor", plain(Key::E), Scope::Regions),
+    (
+        "Open Collaborate Window",
+        cmd_shift(Key::G),
+        Scope::Transport,
+    ),
+    ("Quick Snapshot", ctrl_alt(Key::S), Scope::Transport),
 ];
 
 /// Commands that run again while their key is held down.
@@ -391,40 +681,51 @@ const REPEATING: &[&str] = &[
     "Zoom Vertical Out",
 ];
 
-/// The key of a menu entry, if it has one here.
+/// The key of a menu entry, if it has one in the active profile.
 pub(crate) fn combo_of(label: &str) -> Option<Combo> {
-    COMMANDS
-        .iter()
-        .position(|(l, _, _)| *l == label)
-        .filter(|&i| !shadowed(i, cfg!(target_os = "macos")))
-        .map(|i| COMMANDS[i].1)
-        .filter(|c| c.exists())
+    combo_of_profile(label, active_profile(), is_mac_keyboard())
 }
 
-/// Whether command `i` has no key of its own: off macOS (`mac` false) Control and Command are
-/// one key, so a command whose key reads the same as an earlier command's there loses it (the
-/// earlier one is what the key runs, see `handle`). On macOS no command loses its key.
-fn shadowed(i: usize, mac: bool) -> bool {
+/// The key of a menu entry in a specific profile.
+pub(crate) fn combo_of_profile(
+    label: &str,
+    profile: KeymapProfile,
+    mac_keyboard: bool,
+) -> Option<Combo> {
+    let table = match profile {
+        KeymapProfile::Dori => COMMANDS,
+        KeymapProfile::Reaper => REAPER_COMMANDS,
+    };
+    table
+        .iter()
+        .position(|(l, _, _)| *l == label)
+        .filter(|&i| !shadowed_in(table, i, mac_keyboard))
+        .map(|i| table[i].1)
+        .filter(|c| c.exists_with_layout(mac_keyboard))
+}
+
+pub(crate) fn shadowed_in(table: &[(&str, Combo, Scope)], i: usize, mac: bool) -> bool {
     if mac {
         return false;
     }
-    let (label, c, _) = COMMANDS[i];
-    // Control and Command together do not exist there at all (`Combo::exists`).
+    let (label, c, _) = table[i];
     let there = |o: Combo| !(o.ctrl && o.cmd);
     let off_mac = |o: Combo| (o.key, o.shift, o.alt, o.cmd || o.ctrl);
     there(c)
-        && COMMANDS[..i]
+        && table[..i]
             .iter()
             .any(|&(l, o, _)| l != label && there(o) && off_mac(o) == off_mac(c))
+}
+
+fn shadowed(i: usize, mac: bool) -> bool {
+    shadowed_in(COMMANDS, i, mac)
 }
 
 fn typing_id() -> egui::Id {
     egui::Id::unique("key_commands_typing")
 }
 
-/// Called before the panels: notes whether a text field has the keyboard now. The Return that
-/// ends a rename takes the keyboard away from the field in the same frame, and must not be
-/// Go to Beginning as well.
+/// Called before the panels: notes whether a text field has the keyboard now.
 pub fn begin_frame(ctx: &egui::Context) {
     let typing = ctx.egui_wants_keyboard_input();
     ctx.data_mut(|d| d.insert_temp(typing_id(), typing));
@@ -435,8 +736,7 @@ pub(crate) fn bounce_dialog_open(s: &UiState) -> bool {
     s.bouncing
 }
 
-/// Takes this frame's key commands out of the input and runs them. Called after the panels,
-/// so a key an editor used first (a range selected on an automation lane, say) is left to it.
+/// Takes this frame's key commands out of the input and runs them.
 pub fn handle(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
     if ctx.egui_wants_keyboard_input()
         || ctx.data(|d| d.get_temp::<bool>(typing_id()).unwrap_or(false))
@@ -448,15 +748,72 @@ pub fn handle(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
     {
         return;
     }
-    // While the Solo tool holds a region, no key edits regions or tracks (the hold names a
-    // region by its number).
+    let mac_kb = s.keymap_prefs.mac_keyboard;
+    let profile = s.keymap_prefs.profile;
+    let commands = match profile {
+        KeymapProfile::Dori => COMMANDS,
+        KeymapProfile::Reaper => REAPER_COMMANDS,
+    };
     let regions_ok = !s.piano_focus && !s.tracks.solo_holding();
     let clip_ok = regions_ok;
     let mut run: Vec<&'static str> = Vec::new();
+    let mut reaper_split = false;
+    let mut reaper_toggle_auto = false;
+    let mut reaper_mixer = false;
+
     ctx.input_mut(|i| {
         let section_cut = regions_ok
-            && combo_of("Cut Section Between Locators").is_some_and(|c| c.held(i.modifiers));
+            && combo_of("Cut Section Between Locators")
+                .is_some_and(|c| c.held_with_layout(i.modifiers, mac_kb));
+
         i.events.retain(|e| {
+            if profile == KeymapProfile::Reaper {
+                if let Event::Key {
+                    key: Key::S,
+                    pressed: true,
+                    modifiers,
+                    repeat: false,
+                    ..
+                } = e
+                {
+                    if !modifiers.command
+                        && !modifiers.ctrl
+                        && !modifiers.shift
+                        && !modifiers.alt
+                        && regions_ok
+                    {
+                        reaper_split = true;
+                        return false;
+                    }
+                }
+                if let Event::Key {
+                    key: Key::V,
+                    pressed: true,
+                    modifiers,
+                    repeat: false,
+                    ..
+                } = e
+                {
+                    if !modifiers.command && !modifiers.ctrl && !modifiers.shift && !modifiers.alt {
+                        reaper_toggle_auto = true;
+                        return false;
+                    }
+                }
+                if let Event::Key {
+                    key: Key::M,
+                    pressed: true,
+                    modifiers,
+                    repeat: false,
+                    ..
+                } = e
+                {
+                    if modifiers.alt && !modifiers.command && !modifiers.ctrl && !modifiers.shift {
+                        reaper_mixer = true;
+                        return false;
+                    }
+                }
+            }
+
             let label = match e {
                 Event::Key {
                     key,
@@ -464,16 +821,13 @@ pub fn handle(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                     repeat,
                     modifiers,
                     ..
-                } => COMMANDS
+                } => commands
                     .iter()
-                    .find(|(_, c, _)| c.key == *key && c.held(*modifiers))
+                    .find(|(_, c, _)| c.key == *key && c.held_with_layout(*modifiers, mac_kb))
                     .filter(|(_, _, scope)| *scope == Scope::Transport || regions_ok)
                     .filter(|(l, _, _)| !matches!(*l, "Copy" | "Cut" | "Paste") || clip_ok)
-                    // Return over the Piano Roll begins a lyric there.
                     .filter(|(l, _, _)| *l != "Go to Beginning" || regions_ok)
                     .map(|(l, _, _)| (*l, *repeat)),
-                // Command-C, -X and -V come from the system as these, and so does
-                // Control-Command-X (Cut Section Between Locators).
                 Event::Cut if section_cut => Some(("Cut Section Between Locators", false)),
                 Event::Copy if clip_ok => Some(("Copy", false)),
                 Event::Cut if clip_ok => Some(("Cut", false)),
@@ -491,12 +845,26 @@ pub fn handle(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
             }
         });
     });
+
+    if reaper_split {
+        crate::menus::apply("Split at Playhead", p, s);
+    }
+    if reaper_toggle_auto {
+        s.mixer.auto_editor.track = if s.mixer.auto_editor.track.is_some() {
+            None
+        } else {
+            Some(p.selected_track)
+        };
+    }
+    if reaper_mixer {
+        crate::menus::apply("Show Mixer", p, s);
+    }
+
     for label in run {
         if !crate::menus::enabled(label, p, s) {
             continue;
         }
         if matches!(label, "Copy" | "Cut") {
-            // The system sends Command-V on only when its clipboard holds text.
             let names: Vec<String> = s
                 .tracks
                 .selection()
@@ -569,6 +937,28 @@ mod tests {
                 panic!("{label} has the key of {what}");
             }
         }
+    }
+
+    #[test]
+    fn reaper_keymap_profile_and_mac_keyboard() {
+        let prefs = KeymapPrefs {
+            profile: KeymapProfile::Reaper,
+            mac_keyboard: false,
+        };
+        let text = prefs.to_text();
+        assert!(text.contains("profile=reaper"));
+        assert!(text.contains("mac_keyboard=false"));
+        let parsed = KeymapPrefs::parse(&text);
+        assert_eq!(parsed.profile, KeymapProfile::Reaper);
+        assert!(!parsed.mac_keyboard);
+
+        let s_combo = combo_of_profile("Split at Playhead", KeymapProfile::Reaper, false).unwrap();
+        assert_eq!(s_combo.key, Key::S);
+        assert_eq!(s_combo.format(false), "S");
+
+        let zoom_in = combo_of_profile("Zoom Horizontal In", KeymapProfile::Reaper, false).unwrap();
+        assert_eq!(zoom_in.format(false), "Ctrl+Right");
+        assert_eq!(zoom_in.format(true), "Cmd+Right");
     }
     use crate::model::{Note, Region, RegionParams, TrackKind};
     use crate::ui_test::Harness;

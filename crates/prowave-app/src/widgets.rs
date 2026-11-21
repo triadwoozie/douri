@@ -158,7 +158,12 @@ pub fn undo_items(
     pick: &mut Option<crate::undo::UndoCmd>,
 ) {
     use egui::{Key, KeyboardShortcut, Modifiers};
-    let key = |m, k| ui.ctx().format_shortcut(&KeyboardShortcut::new(m, k));
+    let key = |m, k| {
+        crate::key_commands::format_shortcut(
+            &KeyboardShortcut::new(m, k),
+            crate::key_commands::is_mac_keyboard(),
+        )
+    };
     let (undo_key, redo_key) = (
         key(Modifiers::COMMAND, Key::Z),
         key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z),

@@ -97,7 +97,10 @@ pub(crate) fn item(
         b = b.selected(on);
     }
     if let Some(c) = crate::key_commands::combo_of(label) {
-        b = b.shortcut_text(ui.ctx().format_shortcut(&c.shortcut()));
+        b = b.shortcut_text(crate::key_commands::format_shortcut(
+            &c.shortcut(),
+            crate::key_commands::is_mac_keyboard(),
+        ));
     }
     let clicked = ui
         .add_enabled(enabled_v(label, p, v).unwrap_or(false), b)

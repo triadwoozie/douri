@@ -1032,8 +1032,11 @@ fn draw_zoom_icon(g: &Painter, at: Pos2, c: Color32, vertical: bool) {
     ));
 }
 
-fn shortcut(ui: &Ui, mods: Modifiers, key: Key) -> String {
-    ui.ctx().format_shortcut(&KeyboardShortcut::new(mods, key))
+fn shortcut(_ui: &Ui, mods: Modifiers, key: Key) -> String {
+    crate::key_commands::format_shortcut(
+        &KeyboardShortcut::new(mods, key),
+        crate::key_commands::is_mac_keyboard(),
+    )
 }
 
 // ------------------------------------------------------------------ toolbar
@@ -1727,9 +1730,10 @@ fn region_items(
             picked,
         );
     }
-    let repeat_key = ui
-        .ctx()
-        .format_shortcut(&egui::KeyboardShortcut::new(Modifiers::COMMAND, Key::R));
+    let repeat_key = crate::key_commands::format_shortcut(
+        &egui::KeyboardShortcut::new(Modifiers::COMMAND, Key::R),
+        crate::key_commands::is_mac_keyboard(),
+    );
     pick(
         ui,
         tr("Repeat Region"),
