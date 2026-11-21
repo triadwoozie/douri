@@ -374,7 +374,7 @@ const MIX: &[&str] = &[
 const COLLABORATE: &[&str] = &[
     "Enable Collaborate",
     "-",
-    "Toggle Collaborate Sidebar",
+    "Open Collaborate Window",
     "Save Version…",
     "Quick Snapshot",
     "New Alternative…",
@@ -413,7 +413,7 @@ const VIEW: &[&str] = &[
     "Show Inspector",
     "Show Performers",
     "Show Project Notes",
-    "Toggle Collaborate Sidebar",
+    "Open Collaborate Window",
     "Show Movie",
     "Show Media Browser",
     "-",
@@ -521,7 +521,7 @@ pub(crate) const CHECKABLE: &[&str] = &[
     "Show Quick Help",
     "Show Project Notes",
     "Enable Collaborate",
-    "Toggle Collaborate Sidebar",
+    "Open Collaborate Window",
     "Show Media Browser",
     "Check for Updates Automatically",
     "Show Toolbar",
@@ -870,7 +870,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show Inspector"
         | "Show List Editors"
         | "Enable Collaborate"
-        | "Toggle Collaborate Sidebar"
+        | "Open Collaborate Window"
         | "Save Version…"
         | "Quick Snapshot"
         | "New Alternative…"
@@ -968,7 +968,7 @@ const ALWAYS: &[&str] = &[
     "Show Toolbar",
     "Show Project Notes",
     "Enable Collaborate",
-    "Toggle Collaborate Sidebar",
+    "Open Collaborate Window",
     "Save Version…",
     "Quick Snapshot",
     "New Alternative…",
@@ -1160,7 +1160,7 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Toolbar" => s.show_toolbar,
         "Show Project Notes" => s.show_notes,
         "Enable Collaborate" => s.collaborate_enabled,
-        "Toggle Collaborate Sidebar" => s.show_collaborate,
+        "Open Collaborate Window" => s.show_collaborate,
         "Show Media Browser" => s.browser.open == Some(crate::file_browser::Tab::Files),
         "Check for Updates Automatically" => s.update_auto,
         "Show Tempo Track" => s.tracks.show_tempo,
@@ -1239,7 +1239,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Show Toolbar" => s.show_toolbar = !s.show_toolbar,
         "Show Project Notes" => s.show_notes = !s.show_notes,
         "Enable Collaborate" => s.collaborate_enabled = !s.collaborate_enabled,
-        "Toggle Collaborate Sidebar" => s.show_collaborate = !s.show_collaborate,
+        "Open Collaborate Window" => s.show_collaborate = !s.show_collaborate,
         "Save Version…" => {
             s.show_collaborate = true;
             s.collaborate_enabled = true;

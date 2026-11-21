@@ -312,7 +312,7 @@ const COMMANDS: &[(&str, Combo, Scope)] = &[
     ),
     ("Snap to Grid", cmd(Key::G), Scope::Regions),
     (
-        "Toggle Collaborate Sidebar",
+        "Open Collaborate Window",
         cmd_shift(Key::G),
         Scope::Transport,
     ),

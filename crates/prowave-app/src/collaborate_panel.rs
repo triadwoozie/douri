@@ -1,18 +1,19 @@
-//! Native Collaborate Version History & Project Alternatives panel for Dōri.
+//! Native Collaborate Version History & Project Alternatives standalone window for Dōri.
 //!
-//! Provides a right-side DAW sidebar for tracking project version history, managing project
-//! alternatives, composing snapshots, inspecting musical edits against the active version,
-//! managing Studio Links (GitHub/GitLab remote URLs), and restoring versions cleanly via
+//! Provides a dedicated, spacious secondary OS window for tracking project version history,
+//! managing project alternatives, composing snapshots, inspecting musical edits against the active
+//! version, managing Studio Links (GitHub/GitLab remote URLs), and restoring versions cleanly via
 //! background thread execution.
 
 use crate::i18n::tr;
 use crate::model::Project;
 use crate::UiState;
-use egui::{vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui};
-use prowave_vcs::{MusicalChange, VcsTask};
+use egui::{
+    vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui, Vec2, ViewportBuilder,
+    ViewportCommand, ViewportId,
+};
+use prowave_vcs::{MusicalChange, VcsTask, VcsUiState};
 use std::path::{Path, PathBuf};
-
-pub const WIDTH: f32 = 340.0;
 
 fn format_relative_time(timestamp: i64) -> String {
     if timestamp == 0 {
@@ -33,6 +34,46 @@ fn format_relative_time(timestamp: i64) -> String {
         return format!("{}h ago", diff / 3600);
     }
     format!("{}d ago", diff / 86400)
+}
+
+fn collaborate_viewport_size(monitor: Option<Vec2>) -> Vec2 {
+    let mon = monitor.unwrap_or(vec2(1920.0, 1080.0));
+    let w = (mon.x * 0.58).clamp(760.0, 1120.0);
+    let h = (mon.y * 0.68).clamp(520.0, 760.0);
+    vec2(w, h)
+}
+
+fn primary_btn(label: &str) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(label.to_string())
+            .color(Color32::from_rgb(0x11, 0x12, 0x15))
+            .size(12.5)
+            .strong(),
+    )
+    .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
+    .corner_radius(CornerRadius::same(6))
+}
+
+fn secondary_btn(label: &str) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(label.to_string())
+            .color(Color32::from_rgb(0xe6, 0xe8, 0xec))
+            .size(12.0),
+    )
+    .fill(Color32::from_rgb(0x22, 0x24, 0x29))
+    .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
+    .corner_radius(CornerRadius::same(6))
+}
+
+fn compact_secondary_btn(label: &str) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(label.to_string())
+            .color(Color32::from_rgb(0xe6, 0xe8, 0xec))
+            .size(11.0),
+    )
+    .fill(Color32::from_rgb(0x22, 0x24, 0x29))
+    .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
+    .corner_radius(CornerRadius::same(6))
 }
 
 /// Polls background Collaborate worker events when Collaborate is enabled.
@@ -97,107 +138,152 @@ pub fn quick_snapshot(s: &mut UiState, p: &Project, project_path: Option<&Path>)
     }
 }
 
-pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, project_path: Option<&Path>) {
+/// Dedicated secondary viewport window for Collaborate & Version History.
+pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path: Option<&Path>) {
     update(s, p, project_path);
 
-    let panel_bg = Color32::from_rgb(0x1a, 0x1b, 0x1e);
-    let card_bg = Color32::from_rgb(0x20, 0x22, 0x26);
-    let border_color = Color32::from_rgb(0x2e, 0x31, 0x38);
-    let border_stroke = Stroke::new(1.0, border_color);
+    if !s.show_collaborate {
+        return;
+    }
 
-    egui::Frame::new()
-        .fill(panel_bg)
-        .stroke(border_stroke)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            // Header Row
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(phosphor_egui::regular::USERS)
-                        .size(17.0)
-                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
-                );
-                ui.add_space(4.0);
-                ui.strong(
-                    RichText::new(tr("Collaborate"))
-                        .size(14.5)
-                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
-                );
+    let size = collaborate_viewport_size(ctx.input(|i| i.viewport().monitor_size));
+    let viewport_id = ViewportId::from_hash_of("douri_collaborate_window");
+    let builder = ViewportBuilder::default()
+        .with_inner_size(size)
+        .with_min_inner_size(vec2(760.0, 520.0))
+        .with_resizable(true)
+        .with_decorations(false)
+        .with_transparent(true)
+        .with_has_shadow(false)
+        .with_title("Collaborate");
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add(egui::Button::new(RichText::new("×").size(16.0)).frame(false))
-                        .clicked()
-                    {
-                        s.show_collaborate = false;
-                    }
+    ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
+        let mut visuals = ctx.global_style().visuals.clone();
+        visuals.window_shadow = egui::epaint::Shadow::NONE;
+        visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        ctx.set_visuals(visuals);
 
-                    ui.checkbox(&mut s.collaborate_enabled, tr("Enable Collaborate"));
-                });
+        if ctx.input(|i| i.viewport().close_requested()) {
+            s.show_collaborate = false;
+        }
+
+        let panel_bg = Color32::from_rgb(0x1a, 0x1b, 0x1e);
+        let card_bg = Color32::from_rgb(0x20, 0x22, 0x26);
+        let border_color = Color32::from_rgb(0x2e, 0x31, 0x38);
+        let border_stroke = Stroke::new(1.0, border_color);
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::NONE
+                    .fill(Color32::TRANSPARENT)
+                    .inner_margin(egui::Margin::ZERO),
+            )
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .corner_radius(12.0)
+                    .fill(panel_bg)
+                    .stroke(border_stroke)
+                    .inner_margin(16.0)
+                    .show(ui, |ui| {
+                        render_window_chrome(ui, s);
+
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+
+                        if !s.collaborate_enabled {
+                            render_paused(ui, s, card_bg, border_stroke);
+                            return;
+                        }
+
+                        let is_repo = s
+                            .collaborate_worker
+                            .as_ref()
+                            .is_some_and(|w| w.latest_state.is_repo);
+
+                        if !is_repo {
+                            render_uninitialized(ui, s, card_bg, border_stroke);
+                        } else {
+                            render_active(ui, p, s, project_path, card_bg, border_stroke);
+                        }
+                    });
             });
+    });
+}
 
-            ui.add_space(8.0);
-            ui.separator();
-            ui.add_space(8.0);
+fn render_window_chrome(ui: &mut Ui, s: &mut UiState) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(phosphor_egui::regular::USERS)
+                .size(18.0)
+                .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+        );
+        ui.add_space(4.0);
+        ui.strong(
+            RichText::new(tr("Collaborate"))
+                .size(15.0)
+                .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+        );
 
-            if !s.collaborate_enabled {
-                render_paused(ui, s, card_bg, border_stroke);
-                return;
-            }
+        ui.add_space(16.0);
+        ui.checkbox(&mut s.collaborate_enabled, tr("Enable Collaborate"));
 
-            let is_repo = s
-                .collaborate_worker
-                .as_ref()
-                .is_some_and(|w| w.latest_state.is_repo);
+        // Draggable window header region
+        let drag_w = (ui.available_width() - 32.0).max(40.0);
+        let (_, drag_resp) = ui.allocate_exact_size(vec2(drag_w, 24.0), Sense::drag());
+        if drag_resp.drag_started() {
+            ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+        }
 
-            if !is_repo {
-                render_uninitialized(ui, s, card_bg, border_stroke);
-            } else {
-                render_initialized(ui, p, s, project_path, card_bg, border_stroke);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let close_btn = egui::Button::new(
+                RichText::new("×")
+                    .size(18.0)
+                    .color(Color32::from_rgb(0x9a, 0x9a, 0xa2)),
+            )
+            .frame(false);
+
+            if ui.add(close_btn).on_hover_text("Close Window").clicked() {
+                s.show_collaborate = false;
             }
         });
+    });
 }
 
 fn render_paused(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: Stroke) {
-    ui.add_space(16.0);
+    ui.add_space(40.0);
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(16.0)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     RichText::new(phosphor_egui::regular::PAUSE_CIRCLE)
-                        .size(32.0)
+                        .size(40.0)
                         .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                 );
-                ui.add_space(8.0);
+                ui.add_space(12.0);
                 ui.strong(
                     RichText::new(tr("Collaborate Paused"))
-                        .size(13.5)
-                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                        .size(15.0)
+                        .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
                 );
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr(
                         "Collaborate & version history is paused to save CPU and disk I/O.",
                     ))
-                    .size(11.5)
+                    .size(12.5)
                     .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                 );
-                ui.add_space(12.0);
+                ui.add_space(16.0);
 
-                let enable_btn = egui::Button::new(
-                    RichText::new(tr("Enable Collaborate"))
-                        .color(Color32::from_rgb(0x11, 0x12, 0x15))
-                        .size(12.0)
-                        .strong(),
-                )
-                .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
-                .corner_radius(CornerRadius::same(6));
-
-                if ui.add_sized(vec2(180.0, 30.0), enable_btn).clicked() {
+                if ui
+                    .add_sized(vec2(200.0, 32.0), primary_btn(&tr("Enable Collaborate")))
+                    .clicked()
+                {
                     s.collaborate_enabled = true;
                 }
             });
@@ -205,45 +291,42 @@ fn render_paused(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: 
 }
 
 fn render_uninitialized(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: Stroke) {
-    ui.add_space(20.0);
+    ui.add_space(40.0);
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(16.0)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     RichText::new(phosphor_egui::regular::USERS)
-                        .size(36.0)
+                        .size(44.0)
                         .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                 );
-                ui.add_space(10.0);
+                ui.add_space(12.0);
                 ui.strong(
                     RichText::new(tr("Project History"))
-                        .size(14.5)
-                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                        .size(16.0)
+                        .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
                 );
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 ui.label(
                     RichText::new(tr(
                         "Keep track of all edits, manage project alternatives, and collaborate with your studio team.",
                     ))
-                    .size(11.5)
+                    .size(12.5)
                     .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                 );
-                ui.add_space(16.0);
+                ui.add_space(20.0);
 
-                let init_btn = egui::Button::new(
-                    RichText::new(tr("Enable Project History"))
-                        .color(Color32::from_rgb(0x11, 0x12, 0x15))
-                        .size(12.5)
-                        .strong(),
-                )
-                .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
-                .corner_radius(CornerRadius::same(6));
-
-                if ui.add_sized(vec2(200.0, 32.0), init_btn).clicked() {
+                if ui
+                    .add_sized(
+                        vec2(220.0, 34.0),
+                        primary_btn(&tr("Enable Project History")),
+                    )
+                    .clicked()
+                {
                     if let Some(ref worker) = s.collaborate_worker {
                         worker.send(VcsTask::Init);
                     }
@@ -252,7 +335,7 @@ fn render_uninitialized(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_s
         });
 }
 
-fn render_initialized(
+fn render_active(
     ui: &mut Ui,
     p: &mut Project,
     s: &mut UiState,
@@ -268,7 +351,6 @@ fn render_initialized(
 
     // Notice or Error Banner
     if let Some(ref err) = latest_state.error_msg {
-        ui.add_space(4.0);
         egui::Frame::new()
             .fill(Color32::from_rgb(0x3d, 0x18, 0x18))
             .stroke(Stroke::new(1.0, Color32::from_rgb(0xff, 0x45, 0x3a)))
@@ -281,9 +363,8 @@ fn render_initialized(
                         .color(Color32::from_rgb(0xff, 0x80, 0x80)),
                 );
             });
-        ui.add_space(4.0);
+        ui.add_space(8.0);
     } else if let Some(ref notice) = latest_state.notice_msg {
-        ui.add_space(4.0);
         egui::Frame::new()
             .fill(Color32::from_rgb(0x1a, 0x2e, 0x22))
             .stroke(Stroke::new(1.0, Color32::from_rgb(0x30, 0xd1, 0x58)))
@@ -296,10 +377,57 @@ fn render_initialized(
                         .color(Color32::from_rgb(0x80, 0xe6, 0xa0)),
                 );
             });
-        ui.add_space(4.0);
+        ui.add_space(8.0);
     }
 
-    // Status Indicator & Refresh
+    let total_w = ui.available_width();
+    let gap = 16.0;
+    let left_w = ((total_w - gap) * 0.42).clamp(310.0, 480.0);
+    let right_w = total_w - gap - left_w;
+
+    ui.horizontal_top(|ui| {
+        // Left Column (~42%)
+        ui.vertical(|ui| {
+            ui.set_width(left_w);
+            render_left_column(
+                ui,
+                p,
+                s,
+                project_path,
+                &latest_state,
+                card_bg,
+                border_stroke,
+            );
+        });
+
+        ui.add_space(gap);
+
+        // Right Column (~58%)
+        ui.vertical(|ui| {
+            ui.set_width(right_w);
+            render_right_column(
+                ui,
+                p,
+                s,
+                project_path,
+                &latest_state,
+                card_bg,
+                border_stroke,
+            );
+        });
+    });
+}
+
+fn render_left_column(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    project_path: Option<&Path>,
+    latest_state: &VcsUiState,
+    card_bg: Color32,
+    border_stroke: Stroke,
+) {
+    // Alternatives & Status Header
     ui.horizontal(|ui| {
         let (dot_color, status_text) =
             if latest_state.status.is_clean && latest_state.changes.is_empty() {
@@ -314,7 +442,7 @@ fn render_initialized(
         ui.label(RichText::new("●").size(10.0).color(dot_color));
         ui.label(
             RichText::new(status_text)
-                .size(11.5)
+                .size(12.0)
                 .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
         );
 
@@ -341,22 +469,22 @@ fn render_initialized(
         });
     });
 
-    ui.add_space(4.0);
+    ui.add_space(6.0);
 
-    // Alternative Dropdown
+    // Alternative Selector
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(tr("Alternative:"))
                 .size(12.0)
                 .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
         );
-        egui::ComboBox::from_id_salt("collaborate_alt_selector")
+        egui::ComboBox::from_id_salt("collaborate_alt_selector_window")
             .selected_text(
                 RichText::new(&latest_state.current_branch)
                     .size(12.0)
                     .strong(),
             )
-            .width(170.0)
+            .width(180.0)
             .show_ui(ui, |ui| {
                 for branch in &latest_state.branches {
                     let is_current = branch.name == latest_state.current_branch;
@@ -398,12 +526,7 @@ fn render_initialized(
                         egui::TextEdit::singleline(&mut s.collaborate_alt_input)
                             .desired_width(140.0),
                     );
-                    let create_btn = egui::Button::new(RichText::new(tr("Create")).size(11.5))
-                        .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-                        .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-                        .corner_radius(CornerRadius::same(6));
-
-                    if ui.add(create_btn).clicked() {
+                    if ui.add(compact_secondary_btn(&tr("Create"))).clicked() {
                         let name = s.collaborate_alt_input.trim().to_string();
                         if !name.is_empty() {
                             if let Some(ref worker) = s.collaborate_worker {
@@ -419,87 +542,28 @@ fn render_initialized(
             });
     }
 
-    // Inline "New Alternative from Version"
-    if let Some(from_rev) = s.collaborate_branch_from_rev.clone() {
-        ui.add_space(4.0);
-        egui::Frame::new()
-            .fill(card_bg)
-            .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(8.0)
-            .show(ui, |ui| {
-                let short_rev = &from_rev[..7.min(from_rev.len())];
-                ui.label(
-                    RichText::new(format!(
-                        "{}: {short_rev}",
-                        tr("New Alternative from Version")
-                    ))
-                    .size(11.0)
-                    .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
-                );
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut s.collaborate_alt_input)
-                            .hint_text(tr("Alternative name…"))
-                            .desired_width(130.0),
-                    );
-                    let create_btn = egui::Button::new(RichText::new(tr("Create")).size(11.5))
-                        .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-                        .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-                        .corner_radius(CornerRadius::same(6));
+    ui.add_space(8.0);
 
-                    if ui.add(create_btn).clicked() {
-                        let name = s.collaborate_alt_input.trim().to_string();
-                        if !name.is_empty() {
-                            if let Some(ref worker) = s.collaborate_worker {
-                                worker.send(VcsTask::CreateBranchFrom {
-                                    name,
-                                    from_rev: from_rev.clone(),
-                                });
-                            }
-                            s.collaborate_branch_from_rev = None;
-                        }
-                    }
-                    if ui.button(tr("Cancel")).clicked() {
-                        s.collaborate_branch_from_rev = None;
-                    }
-                });
-            });
-    }
-
-    ui.add_space(6.0);
-
-    // Action Row (Get Updates, Share Updates, Studio Link…)
+    // Sync Action Row
     ui.horizontal(|ui| {
-        let sec_btn = |text: &'static str| {
-            egui::Button::new(
-                RichText::new(tr(text))
-                    .size(11.5)
-                    .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
-            )
-            .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-            .corner_radius(CornerRadius::same(6))
-        };
-
-        if ui.add(sec_btn("Get Updates")).clicked() {
+        if ui.add(secondary_btn(&tr("Get Updates"))).clicked() {
             if let Some(ref worker) = s.collaborate_worker {
                 worker.send(VcsTask::Pull);
             }
         }
 
-        if ui.add(sec_btn("Share Updates")).clicked() {
+        if ui.add(secondary_btn(&tr("Share Updates"))).clicked() {
             if let Some(ref worker) = s.collaborate_worker {
                 worker.send(VcsTask::Push);
             }
         }
 
-        if ui.add(sec_btn("Studio Link…")).clicked() {
+        if ui.add(secondary_btn(&tr("Studio Link…"))).clicked() {
             s.collaborate_showing_link_modal = !s.collaborate_showing_link_modal;
         }
     });
 
-    // Studio Link Inline Form
+    // Inline Studio Link Form
     if s.collaborate_showing_link_modal {
         ui.add_space(4.0);
         egui::Frame::new()
@@ -543,17 +607,11 @@ fn render_initialized(
 
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    let save_link_btn = egui::Button::new(
-                        RichText::new(tr("Save Link"))
-                            .color(Color32::from_rgb(0x11, 0x12, 0x15))
-                            .size(11.5)
-                            .strong(),
-                    )
-                    .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
-                    .corner_radius(CornerRadius::same(6));
-
                     let valid = norm_res.is_ok();
-                    if ui.add_enabled(valid, save_link_btn).clicked() {
+                    if ui
+                        .add_enabled(valid, primary_btn(&tr("Save Link")))
+                        .clicked()
+                    {
                         if let Ok(url) = norm_res {
                             if let Some(ref worker) = s.collaborate_worker {
                                 worker.send(VcsTask::SetRemote { url });
@@ -569,22 +627,22 @@ fn render_initialized(
             });
     }
 
-    ui.add_space(8.0);
+    ui.add_space(10.0);
     ui.separator();
-    ui.add_space(8.0);
+    ui.add_space(10.0);
 
-    // Snapshot Composer
+    // Save Version Card
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
         .corner_radius(CornerRadius::same(8))
-        .inner_margin(10.0)
+        .inner_margin(12.0)
         .show(ui, |ui| {
             ui.label(
                 RichText::new(tr("Save Version"))
-                    .size(12.0)
+                    .size(12.5)
                     .strong()
-                    .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                    .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
             );
             ui.add_space(4.0);
 
@@ -596,17 +654,11 @@ fn render_initialized(
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                let save_btn = egui::Button::new(
-                    RichText::new(tr("Save Version"))
-                        .color(Color32::from_rgb(0x11, 0x12, 0x15))
-                        .size(12.0)
-                        .strong(),
-                )
-                .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
-                .corner_radius(CornerRadius::same(6));
-
                 let has_msg = !s.collaborate_note_input.trim().is_empty();
-                if ui.add_enabled(has_msg, save_btn).clicked() {
+                if ui
+                    .add_enabled(has_msg, primary_btn(&tr("Save Version")))
+                    .clicked()
+                {
                     let msg = s.collaborate_note_input.trim().to_string();
                     if let Some(ref worker) = s.collaborate_worker {
                         worker.send(VcsTask::Commit {
@@ -620,17 +672,8 @@ fn render_initialized(
                     }
                 }
 
-                let quick_btn = egui::Button::new(
-                    RichText::new(tr("Quick Snapshot"))
-                        .size(12.0)
-                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
-                )
-                .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-                .corner_radius(CornerRadius::same(6));
-
                 if ui
-                    .add(quick_btn)
+                    .add(secondary_btn(&tr("Quick Snapshot")))
                     .on_hover_text("Ctrl+Alt+S / Cmd+Alt+S")
                     .clicked()
                 {
@@ -640,14 +683,16 @@ fn render_initialized(
         });
 
     ui.add_space(10.0);
+    ui.separator();
+    ui.add_space(10.0);
 
-    // Recent Edits List
+    // Recent Edits Panel
     let num_changes = latest_state.changes.len();
     ui.horizontal(|ui| {
         ui.strong(
             RichText::new(format!("{} ({num_changes})", tr("Recent Edits")))
                 .size(12.5)
-                .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
         );
 
         if num_changes > 0 {
@@ -699,81 +744,156 @@ fn render_initialized(
             .corner_radius(CornerRadius::same(6))
             .inner_margin(8.0)
             .show(ui, |ui| {
-                for change in latest_state.changes.iter().take(8) {
-                    let (indicator, color) = match change {
-                        MusicalChange::TrackAdded { .. } => {
-                            ("+", Color32::from_rgb(0x30, 0xd1, 0x58))
+                egui::ScrollArea::vertical()
+                    .max_height(140.0)
+                    .show(ui, |ui| {
+                        for change in &latest_state.changes {
+                            let (indicator, color) = match change {
+                                MusicalChange::TrackAdded { .. } => {
+                                    ("+", Color32::from_rgb(0x30, 0xd1, 0x58))
+                                }
+                                MusicalChange::TrackRemoved { .. } => {
+                                    ("-", Color32::from_rgb(0xff, 0x45, 0x3a))
+                                }
+                                MusicalChange::RegionModified { .. } => {
+                                    ("~", Color32::from_rgb(0x3a, 0x7b, 0xd5))
+                                }
+                                MusicalChange::TempoChanged { .. } => {
+                                    ("~", Color32::from_rgb(0xff, 0xd6, 0x0a))
+                                }
+                                MusicalChange::MixerChanged { .. } => {
+                                    ("~", Color32::from_rgb(0x8b, 0x5c, 0xf6))
+                                }
+                            };
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(indicator).size(12.0).strong().color(color));
+                                ui.label(
+                                    RichText::new(change.description())
+                                        .size(11.5)
+                                        .color(Color32::from_rgb(0xdd, 0xdd, 0xe0)),
+                                );
+                            });
                         }
-                        MusicalChange::TrackRemoved { .. } => {
-                            ("-", Color32::from_rgb(0xff, 0x45, 0x3a))
-                        }
-                        MusicalChange::RegionModified { .. } => {
-                            ("~", Color32::from_rgb(0x3a, 0x7b, 0xd5))
-                        }
-                        MusicalChange::TempoChanged { .. } => {
-                            ("~", Color32::from_rgb(0xff, 0xd6, 0x0a))
-                        }
-                        MusicalChange::MixerChanged { .. } => {
-                            ("~", Color32::from_rgb(0x8b, 0x5c, 0xf6))
-                        }
-                    };
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(indicator).size(12.0).strong().color(color));
-                        ui.label(
-                            RichText::new(change.description())
-                                .size(11.5)
-                                .color(Color32::from_rgb(0xdd, 0xdd, 0xe0)),
-                        );
                     });
-                }
-                if num_changes > 8 {
-                    ui.label(
-                        RichText::new(format!("+ {} more changes…", num_changes - 8))
-                            .size(11.0)
-                            .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
-                    );
-                }
             });
     }
+}
 
-    ui.add_space(10.0);
-    ui.separator();
-    ui.add_space(8.0);
-
-    // Version History Timeline
+fn render_right_column(
+    ui: &mut Ui,
+    _p: &mut Project,
+    s: &mut UiState,
+    _project_path: Option<&Path>,
+    latest_state: &VcsUiState,
+    card_bg: Color32,
+    border_stroke: Stroke,
+) {
     let commits = &latest_state.commits;
     ui.strong(
         RichText::new(format!("{} ({})", tr("Version History"), commits.len()))
-            .size(12.5)
-            .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+            .size(13.0)
+            .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
     );
-    ui.add_space(4.0);
+    ui.add_space(6.0);
+
+    // Inline "New Alternative from Version"
+    if let Some(from_rev) = s.collaborate_branch_from_rev.clone() {
+        egui::Frame::new()
+            .fill(card_bg)
+            .stroke(border_stroke)
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(8.0)
+            .show(ui, |ui| {
+                let short_rev = &from_rev[..7.min(from_rev.len())];
+                ui.label(
+                    RichText::new(format!(
+                        "{}: {short_rev}",
+                        tr("New Alternative from Version")
+                    ))
+                    .size(11.0)
+                    .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                );
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut s.collaborate_alt_input)
+                            .hint_text(tr("Alternative name…"))
+                            .desired_width(180.0),
+                    );
+                    if ui.add(primary_btn(&tr("Create Alternative"))).clicked() {
+                        let name = s.collaborate_alt_input.trim().to_string();
+                        if !name.is_empty() {
+                            if let Some(ref worker) = s.collaborate_worker {
+                                worker.send(VcsTask::CreateBranchFrom {
+                                    name,
+                                    from_rev: from_rev.clone(),
+                                });
+                            }
+                            s.collaborate_branch_from_rev = None;
+                        }
+                    }
+                    if ui.button(tr("Cancel")).clicked() {
+                        s.collaborate_branch_from_rev = None;
+                    }
+                });
+            });
+        ui.add_space(8.0);
+    }
 
     if commits.is_empty() {
         ui.label(
             RichText::new(tr("No versions saved yet."))
-                .size(11.5)
+                .size(12.0)
                 .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
         );
     } else {
         egui::ScrollArea::vertical()
-            .max_height(280.0)
+            .auto_shrink([false, false])
             .show(ui, |ui| {
                 for commit in commits {
                     egui::Frame::new()
                         .fill(card_bg)
                         .stroke(border_stroke)
                         .corner_radius(CornerRadius::same(6))
-                        .inner_margin(8.0)
+                        .inner_margin(10.0)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.label(
                                     RichText::new(&commit.message)
-                                        .size(12.0)
+                                        .size(12.5)
                                         .strong()
-                                        .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                                        .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+                                );
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui
+                                            .add(compact_secondary_btn(&tr(
+                                                "New Alternative from Here",
+                                            )))
+                                            .clicked()
+                                        {
+                                            s.collaborate_branch_from_rev =
+                                                Some(commit.hash.clone());
+                                            s.collaborate_alt_input.clear();
+                                        }
+
+                                        if ui
+                                            .add(compact_secondary_btn(&tr("Open Version")))
+                                            .clicked()
+                                        {
+                                            if let Some(ref worker) = s.collaborate_worker {
+                                                worker.send(VcsTask::Checkout {
+                                                    target: commit.hash.clone(),
+                                                });
+                                            }
+                                        }
+                                    },
                                 );
                             });
+
+                            ui.add_space(2.0);
+
                             ui.horizontal(|ui| {
                                 ui.label(
                                     RichText::new(&commit.short_hash)
@@ -786,45 +906,9 @@ fn render_initialized(
                                         .size(10.5)
                                         .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                                 );
-
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new(tr("Open Version")).size(10.5),
-                                                )
-                                                .frame(false),
-                                            )
-                                            .clicked()
-                                        {
-                                            if let Some(ref worker) = s.collaborate_worker {
-                                                worker.send(VcsTask::Checkout {
-                                                    target: commit.hash.clone(),
-                                                });
-                                            }
-                                        }
-
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new(tr("New Alternative from Here"))
-                                                        .size(10.5),
-                                                )
-                                                .frame(false),
-                                            )
-                                            .clicked()
-                                        {
-                                            s.collaborate_branch_from_rev =
-                                                Some(commit.hash.clone());
-                                            s.collaborate_alt_input.clear();
-                                        }
-                                    },
-                                );
                             });
                         });
-                    ui.add_space(3.0);
+                    ui.add_space(4.0);
                 }
             });
     }

@@ -393,7 +393,7 @@ pub(crate) mod tests {
         "Cannot use that file: {}",
         "Collaborate",
         "Enable Collaborate",
-        "Toggle Collaborate Sidebar",
+        "Open Collaborate Window",
         "Save Version…",
         "Save Version",
         "Quick Snapshot",

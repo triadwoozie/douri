@@ -1677,7 +1677,7 @@ impl eframe::App for App {
                 }
             }
         }
-        collaborate_panel::update(&mut self.ui, &self.project, self.path.as_deref());
+        collaborate_panel::show(&ctx, &mut self.project, &mut self.ui, self.path.as_deref());
         let p = &mut self.project;
         let s = &mut self.ui;
 
@@ -1722,17 +1722,7 @@ impl eframe::App for App {
                 .frame(egui::Frame::new())
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
-        if s.show_collaborate {
-            egui::Panel::right("collaborate_panel")
-                .resizable(true)
-                .min_size(280.0)
-                .max_size(500.0)
-                .default_size(collaborate_panel::WIDTH)
-                .frame(egui::Frame::new())
-                .show(ui, |ui| {
-                    collaborate_panel::show(ui, p, s, self.path.as_deref())
-                });
-        }
+
         if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
