@@ -1408,14 +1408,14 @@ impl App {
                             } else {
                                 (960.0, 660.0)
                             };
-                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                            target_w, target_h,
-                        )));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
                         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
                             760.0, 540.0,
                         )));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                            target_w, target_h,
+                        )));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Title(
                             "Choose a Project".into(),
                         ));
@@ -2284,9 +2284,9 @@ fn main() -> eframe::Result {
         if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
             (
                 [620.0, 360.0],
-                [620.0, 360.0],
+                [520.0, 310.0],
                 false,
-                false,
+                true,
                 "Welcome to Dōri",
             )
         } else {
@@ -2294,7 +2294,7 @@ fn main() -> eframe::Result {
                 [960.0, 660.0],
                 [760.0, 540.0],
                 false,
-                false,
+                true,
                 "Choose a Project",
             )
         }
