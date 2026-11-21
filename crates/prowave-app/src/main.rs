@@ -1407,9 +1407,19 @@ impl App {
             }
         }
 
+        // Eliminate rectangular shadow & panel bleeding in borderless dialog mode
+        let mut visuals = ctx.global_style().visuals.clone();
+        visuals.window_shadow = egui::epaint::Shadow::NONE;
+        visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        ctx.set_visuals(visuals);
+
+        let dialog_frame = egui::Frame::NONE
+            .fill(egui::Color32::TRANSPARENT)
+            .inner_margin(egui::Margin::ZERO);
+
         if self.ui.show_onboarding {
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE)
+                .frame(dialog_frame)
                 .show(ui, |ui| {
                     egui::Frame::new()
                         .corner_radius(12.0)
@@ -1452,7 +1462,7 @@ impl App {
                 });
         } else {
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE)
+                .frame(dialog_frame)
                 .show(ui, |ui| start_screen::show(ui, &mut self.ui));
             // If chooser was dismissed / template chosen, open and maximize main DAW
             if self.ui.chooser.is_none() {
@@ -1471,6 +1481,10 @@ impl App {
         }
     }
 
+    pub fn project_selected(&self) -> bool {
+        self.ui.chooser.is_none() && !self.ui.show_onboarding
+    }
+
     pub fn transition_to_daw(&self, ctx: &egui::Context) {
         let mon_size = ctx
             .input(|i| i.viewport().monitor_size)
@@ -1486,10 +1500,19 @@ impl App {
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+        crate::theme::apply(ctx);
     }
 }
 
 impl eframe::App for App {
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        if !self.project_selected() {
+            [0.0, 0.0, 0.0, 0.0]
+        } else {
+            visuals.panel_fill.to_normalized_gamma_f32()
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let _frame_time = bench::frame_timer();
@@ -2395,6 +2418,7 @@ fn main() -> eframe::Result {
         .with_app_id(window_app_id())
         .with_decorations(cfg!(target_os = "macos"))
         .with_transparent(true)
+        .with_has_shadow(!start_in_dialog)
         .with_position(center_pos);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);

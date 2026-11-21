@@ -68,11 +68,21 @@ pub fn show(ctx: &egui::Context, open: &mut bool, simplified_mode: &mut bool) ->
         .with_resizable(false)
         .with_decorations(false)
         .with_transparent(true)
+        .with_has_shadow(false)
         .with_title("Welcome to Dōri");
 
     ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
+        let mut visuals = ctx.global_style().visuals.clone();
+        visuals.window_shadow = egui::epaint::Shadow::NONE;
+        visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        ctx.set_visuals(visuals);
+
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
+            .frame(
+                egui::Frame::NONE
+                    .fill(Color32::TRANSPARENT)
+                    .inner_margin(egui::Margin::ZERO),
+            )
             .show(ctx, |ui| {
                 egui::Frame::new()
                     .corner_radius(12.0)
