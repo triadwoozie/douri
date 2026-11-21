@@ -546,8 +546,12 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
 
     match c.section {
         Section::NewProject => {
-            // Header / Primary tile: Empty Project (156x114px, description never clips)
-            let top_card = Rect::from_min_size(body.left_top(), vec2(156.0, 114.0));
+            let tw = ((body.width() - 3.0 * 14.0) / 4.0).clamp(146.0, 180.0);
+            let th = 114.0f32;
+            let tgap = 14.0f32;
+
+            // Header / Primary tile: Empty Project
+            let top_card = Rect::from_min_size(body.left_top(), vec2(tw, th));
             let (clicked_empty, dbl_empty) = empty_project_card(ui, top_card, c.selected == 0);
             if clicked_empty {
                 c.selected = 0;
@@ -557,7 +561,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
             }
 
             // Factory Templates section
-            let f_top = body.top() + 126.0;
+            let f_top = body.top() + th + 12.0;
             g.text(
                 pos2(body.left(), f_top + 4.0),
                 Align2::LEFT_TOP,
@@ -567,7 +571,6 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
             );
 
             let t_y = f_top + 22.0;
-            let (tw, th, tgap) = (146.0, 114.0, 12.0);
             for (k, t) in Template::FACTORY.iter().enumerate() {
                 let r = Rect::from_min_size(
                     pos2(body.left() + k as f32 * (tw + tgap), t_y),
@@ -828,8 +831,19 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
                         .color(Color32::WHITE)
                         .strong(),
                 )
-                .fill(Color32::from_rgb(0x4a, 0x4b, 0x50))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x5a, 0x5b, 0x62)))
+                .fill(if can_choose {
+                    Color32::from_rgb(0x0a, 0x84, 0xff)
+                } else {
+                    Color32::from_rgb(0x32, 0x33, 0x38)
+                })
+                .stroke(Stroke::new(
+                    1.0,
+                    if can_choose {
+                        Color32::from_rgb(0x20, 0x90, 0xff)
+                    } else {
+                        Color32::from_rgb(0x40, 0x41, 0x46)
+                    },
+                ))
                 .corner_radius(6.0)
                 .min_size(vec2(80.0, 26.0));
                 if ui.add_enabled(can_choose, choose_btn).clicked() {

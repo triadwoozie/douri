@@ -3233,11 +3233,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     };
     let chord_h = if s.tracks.show_chords { 26.0 } else { 0.0 };
     let tracks_y = ruler_y + RULER_H + marker_h + signature_h + tempo_h + chord_h;
+    let header_w = if area.width() < 1180.0 { 280.0 } else { 340.0 };
     let headers = Rect::from_min_max(
         pos2(area.left(), tracks_y),
-        pos2(area.left() + HEADER_W, area.bottom()),
+        pos2(area.left() + header_w, area.bottom()),
     );
-    let full_lanes = Rect::from_min_max(pos2(area.left() + HEADER_W, tracks_y), area.max);
+    let full_lanes = Rect::from_min_max(pos2(area.left() + header_w, tracks_y), area.max);
     let (loops_area, splitter_r, lanes) = if s.tracks.show_live_loops {
         let max_w = (full_lanes.width() - 250.0).max(180.0);
         let split_w = s.tracks.live_loops_split.clamp(180.0, max_w);
@@ -4321,7 +4322,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         if y + row_h < headers.top() || y > headers.bottom() {
             continue;
         }
-        let hdr = Rect::from_min_size(pos2(headers.left(), y), vec2(HEADER_W, row_h));
+        let hdr = Rect::from_min_size(pos2(headers.left(), y), vec2(headers.width(), row_h));
         let peaks = meters.tracks.get(i).copied().unwrap_or((0.0, 0.0));
         let silenced = silenced_by_solo(p, i);
         let state = HeaderState {

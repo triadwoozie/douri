@@ -1380,41 +1380,78 @@ impl App {
         }
         if self.ui.show_onboarding {
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(crate::theme::CARD_BG))
-                .show(ui, |_ui| {});
-            if let Some(_mode) = onboarding::show(
-                ctx,
-                &mut self.ui.show_onboarding,
-                &mut self.ui.simplified_mode,
-            ) {
-                // When Welcome dialog is completed, transition viewport to Chooser
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(760.0, 560.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                    760.0, 560.0,
-                )));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title("Choose a Project".into()));
-            }
+                .frame(
+                    egui::Frame::new()
+                        .fill(egui::Color32::from_rgb(0x20, 0x22, 0x26))
+                        .inner_margin(egui::Margin {
+                            left: 20,
+                            right: 20,
+                            top: 18,
+                            bottom: 14,
+                        }),
+                )
+                .show(ui, |ui| {
+                    if let Some(_mode) = onboarding::show_panel(
+                        ui,
+                        &mut self.ui.show_onboarding,
+                        &mut self.ui.simplified_mode,
+                    ) {
+                        // When Welcome dialog is completed, transition viewport to Chooser
+                        let (target_w, target_h) =
+                            if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
+                                if mon.x < 1100.0 || mon.y < 750.0 {
+                                    let s = (mon * 0.85).max(egui::vec2(760.0, 540.0));
+                                    (s.x, s.y)
+                                } else {
+                                    (960.0, 660.0)
+                                }
+                            } else {
+                                (960.0, 660.0)
+                            };
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                            target_w, target_h,
+                        )));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+                            760.0, 540.0,
+                        )));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                            "Choose a Project".into(),
+                        ));
+                    }
+                });
         } else {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| start_screen::show(ui, &mut self.ui));
             // If chooser was dismissed / template chosen, open and maximize main DAW
             if self.ui.chooser.is_none() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                    800.0, 520.0,
-                )));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1440.0, 900.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+                self.transition_to_daw(ctx);
             }
         }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
+            if self.ui.chooser.is_none() {
+                self.transition_to_daw(ctx);
+            }
         }
         self.show_save_prompt(ctx);
         window_chrome::resize_edges(ctx);
+    }
+
+    pub fn transition_to_daw(&self, ctx: &egui::Context) {
+        let mon_size = ctx
+            .input(|i| i.viewport().monitor_size)
+            .unwrap_or(egui::vec2(1600.0, 960.0));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+            800.0, 520.0,
+        )));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
     }
 }
 
@@ -1424,6 +1461,15 @@ impl eframe::App for App {
         let _frame_time = bench::frame_timer();
         self.ui.has_path = self.path.is_some();
         let dt = ctx.input(|i| i.stable_dt) as f64;
+
+        if self.ui.chooser.is_some() || self.ui.show_onboarding {
+            // Keep native 100% zoom (self.ui.ui_scale) without shrinking by DESIGN_WIDTH (1480px)
+            if (self.ui.ui_scale - ctx.zoom_factor()).abs() > 0.001 {
+                ctx.set_zoom_factor(self.ui.ui_scale);
+            }
+            self.chooser_ui(ui, &ctx);
+            return;
+        }
         ui_scale::apply(&ctx, self.ui.ui_scale);
         tracks_area::poll_normalize(&ctx, &mut self.project, &mut self.ui);
         smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
@@ -2237,16 +2283,16 @@ fn main() -> eframe::Result {
     {
         if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
             (
-                [520.0, 310.0],
-                [520.0, 310.0],
+                [620.0, 360.0],
+                [620.0, 360.0],
                 false,
                 false,
                 "Welcome to Dōri",
             )
         } else {
             (
-                [760.0, 560.0],
-                [760.0, 560.0],
+                [960.0, 660.0],
+                [760.0, 540.0],
                 false,
                 false,
                 "Choose a Project",
@@ -2263,7 +2309,7 @@ fn main() -> eframe::Result {
         .with_resizable(init_resizable)
         .with_title(init_title)
         .with_app_id(window_app_id())
-        .with_decorations(!window_chrome::CUSTOM);
+        .with_decorations(true);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);
     // setting one here would swap it for the bare logo once the app is running. An empty
