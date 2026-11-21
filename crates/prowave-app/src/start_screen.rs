@@ -481,36 +481,26 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         g.rect_filled(full, 0.0, Color32::from_black_alpha(160));
         Rect::from_center_size(full.center(), vec2(modal_w, modal_h))
     };
-    // Modal card
-    g.rect_filled(area, if standalone { 0.0 } else { 8.0 }, BG);
+    // Modal card with 12px rounded corners and 1px #2E3138 border
+    let cr = 12.0;
+    g.rect_filled(area, cr, BG);
     g.rect_stroke(
         area,
-        if standalone { 0.0 } else { 8.0 },
-        Stroke::new(
-            1.0,
-            if standalone {
-                Color32::from_rgb(0x2e, 0x31, 0x38)
-            } else {
-                BORDER
-            },
-        ),
+        cr,
+        Stroke::new(1.0, Color32::from_rgb(46, 49, 56)),
         StrokeKind::Inside,
     );
 
-    // Sidebar: width 170px
+    // Sidebar: width 170px with rounded left corners matching dialog card
     let side_w = 170.0f32;
     let side = Rect::from_min_size(area.min, vec2(side_w, area.height()));
     g.rect_filled(
         side,
-        if standalone {
-            egui::CornerRadius::ZERO
-        } else {
-            egui::CornerRadius {
-                nw: 8,
-                ne: 0,
-                sw: 8,
-                se: 0,
-            }
+        egui::CornerRadius {
+            nw: 12,
+            ne: 0,
+            sw: 12,
+            se: 0,
         },
         SIDEBAR,
     );
@@ -886,17 +876,20 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     let footer_bg = Rect::from_min_max(pos2(side.right(), area.bottom() - footer_h), area.max);
     g.rect_filled(
         footer_bg,
-        if standalone {
-            egui::CornerRadius::ZERO
-        } else {
-            egui::CornerRadius {
-                nw: 0,
-                ne: 0,
-                sw: 0,
-                se: 8,
-            }
+        egui::CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 0,
+            se: 12,
         },
         SIDEBAR,
+    );
+    // Ensure the 1px #2E3138 outer border is crisp over all edges
+    g.rect_stroke(
+        area,
+        12.0,
+        Stroke::new(1.0, Color32::from_rgb(46, 49, 56)),
+        StrokeKind::Inside,
     );
 
     let footer_ui = footer.shrink2(vec2(20.0, 10.0));
@@ -909,18 +902,22 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
                 let can_choose = choice(&c, &recent).is_some();
                 let choose_btn = egui::Button::new(
                     egui::RichText::new(tr("Choose"))
-                        .color(Color32::WHITE)
+                        .color(if can_choose {
+                            Color32::from_rgb(0x11, 0x12, 0x15)
+                        } else {
+                            Color32::from_rgb(0x80, 0x82, 0x8a)
+                        })
                         .strong(),
                 )
                 .fill(if can_choose {
-                    Color32::from_rgb(0x0a, 0x84, 0xff)
+                    Color32::from_rgb(0xf2, 0xf3, 0xf5)
                 } else {
                     Color32::from_rgb(0x32, 0x33, 0x38)
                 })
                 .stroke(Stroke::new(
                     1.0,
                     if can_choose {
-                        Color32::from_rgb(0x20, 0x90, 0xff)
+                        Color32::from_rgb(0xe0, 0xe2, 0xe8)
                     } else {
                         Color32::from_rgb(0x40, 0x41, 0x46)
                     },

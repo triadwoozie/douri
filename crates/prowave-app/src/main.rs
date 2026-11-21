@@ -1379,56 +1379,60 @@ impl App {
             }
         }
 
-        // On first frame where monitor_size is known, adapt viewport dynamically to monitor
-        let init_adjust_id = egui::Id::unique("douri_initial_viewport_adjusted");
-        if ctx.data(|d| d.get_temp::<bool>(init_adjust_id)).is_none() {
-            if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
-                if self.ui.show_onboarding {
-                    let s = onboarding::welcome_viewport_size(Some(mon));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
-                } else if self.ui.chooser.is_some() {
-                    let s = start_screen::chooser_viewport_size(Some(mon));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
+        // Keep track of active monitor dimensions for centering and startup sizing
+        if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
+            if let Some(cfg) = crate::recent_files::config_dir() {
+                let path = cfg.join("display.txt");
+                let cur = std::fs::read_to_string(&path).unwrap_or_default();
+                let target = format!("{} {}", mon.x, mon.y);
+                if cur.trim() != target {
+                    let _ = std::fs::write(path, target);
                 }
-                ctx.data_mut(|d| d.insert_temp(init_adjust_id, true));
             }
         }
 
         if self.ui.show_onboarding {
             egui::CentralPanel::default()
-                .frame(
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
                     egui::Frame::new()
+                        .corner_radius(12.0)
                         .fill(egui::Color32::from_rgb(0x1e, 0x1f, 0x23))
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            egui::Color32::from_rgb(0x2e, 0x31, 0x38),
-                        ))
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 49, 56)))
                         .inner_margin(egui::Margin {
                             left: 18,
                             right: 18,
                             top: 14,
                             bottom: 12,
-                        }),
-                )
-                .show(ui, |ui| {
-                    if let Some(_mode) = onboarding::show_panel(
-                        ui,
-                        &mut self.ui.show_onboarding,
-                        &mut self.ui.simplified_mode,
-                    ) {
-                        // When Welcome dialog is completed, transition viewport to Chooser
-                        let s = start_screen::chooser_viewport_size(
-                            ctx.input(|i| i.viewport().monitor_size),
-                        );
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                            760.0, 520.0,
-                        )));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                            "Choose a Project".into(),
-                        ));
-                    }
+                        })
+                        .show(ui, |ui| {
+                            if let Some(_mode) = onboarding::show_panel(
+                                ui,
+                                &mut self.ui.show_onboarding,
+                                &mut self.ui.simplified_mode,
+                            ) {
+                                // When Welcome dialog is completed, transition viewport to Chooser
+                                let mon = ctx.input(|i| i.viewport().monitor_size);
+                                let s = start_screen::chooser_viewport_size(mon);
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
+                                    egui::vec2(760.0, 520.0),
+                                ));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
+                                if let Some(m) = mon {
+                                    let center_pos = egui::pos2(
+                                        ((m.x - s.x) / 2.0).max(0.0),
+                                        ((m.y - s.y) / 2.0).max(0.0),
+                                    );
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                                        center_pos,
+                                    ));
+                                }
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                                    "Choose a Project".into(),
+                                ));
+                            }
+                        });
                 });
         } else {
             egui::CentralPanel::default()
@@ -1697,7 +1701,7 @@ impl eframe::App for App {
             }
         }
         egui::CentralPanel::default()
-            .frame(egui::Frame::new())
+            .frame(egui::Frame::new().fill(theme::CANVAS_BG).corner_radius(0.0))
             .show(ui, |ui| tracks_area::show(ui, p, s, &meters));
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
@@ -2214,6 +2218,48 @@ fn is_project_path(a: &std::ffi::OsStr) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case(prowave_project::EXTENSION))
 }
 
+fn detect_initial_monitor_size() -> egui::Vec2 {
+    // 1. Try reading saved monitor dimensions from config
+    if let Some(cfg) = crate::recent_files::config_dir() {
+        let path = cfg.join("display.txt");
+        if let Ok(s) = std::fs::read_to_string(path) {
+            let mut parts = s.split_whitespace();
+            if let (Some(w_str), Some(h_str)) = (parts.next(), parts.next()) {
+                if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
+                    if w >= 640.0 && h >= 480.0 {
+                        return egui::vec2(w, h);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. On Linux, check /sys/class/drm/*/modes
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let modes_file = entry.path().join("modes");
+                if let Ok(s) = std::fs::read_to_string(modes_file) {
+                    if let Some(first_line) = s.lines().next() {
+                        let mut parts = first_line.split('x');
+                        if let (Some(w_str), Some(h_str)) = (parts.next(), parts.next()) {
+                            if let (Ok(w), Ok(h)) = (w_str.parse::<f32>(), h_str.parse::<f32>()) {
+                                if w >= 640.0 && h >= 480.0 {
+                                    return egui::vec2(w, h);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback standard desktop resolution
+    egui::vec2(1920.0, 1080.0)
+}
+
 fn main() -> eframe::Result {
     // The Plugin Manager reads each plug-in library in a copy of this program, so a plug-in
     // that crashes or hangs does not take the app with it: print what is in it and go.
@@ -2289,28 +2335,30 @@ fn main() -> eframe::Result {
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
     let has_project_arg = all_args.iter().any(|a| is_project_path(a.as_os_str()));
     let start_in_dialog = !has_project_arg && !no_chooser_flag;
+    let mon = detect_initial_monitor_size();
     let (init_size, init_min_size, init_maximized, init_resizable, init_title) = if start_in_dialog
     {
         if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
-            (
-                [560.0, 280.0],
-                [460.0, 240.0],
-                false,
-                true,
-                "Welcome to Dōri",
-            )
+            let s = onboarding::welcome_viewport_size(Some(mon));
+            (s, egui::vec2(460.0, 240.0), false, true, "Welcome to Dōri")
         } else {
-            (
-                [960.0, 660.0],
-                [760.0, 520.0],
-                false,
-                true,
-                "Choose a Project",
-            )
+            let s = start_screen::chooser_viewport_size(Some(mon));
+            (s, egui::vec2(760.0, 520.0), false, true, "Choose a Project")
         }
     } else {
-        ([1600.0, 980.0], [800.0, 520.0], true, true, "Dōri")
+        (
+            egui::vec2(1600.0, 980.0),
+            egui::vec2(800.0, 520.0),
+            true,
+            true,
+            "Dōri",
+        )
     };
+
+    let center_pos = egui::pos2(
+        ((mon.x - init_size.x) / 2.0).max(0.0),
+        ((mon.y - init_size.y) / 2.0).max(0.0),
+    );
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size(init_size)
@@ -2319,7 +2367,9 @@ fn main() -> eframe::Result {
         .with_resizable(init_resizable)
         .with_title(init_title)
         .with_app_id(window_app_id())
-        .with_decorations(cfg!(target_os = "macos"));
+        .with_decorations(cfg!(target_os = "macos"))
+        .with_transparent(true)
+        .with_position(center_pos);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);
     // setting one here would swap it for the bare logo once the app is running. An empty

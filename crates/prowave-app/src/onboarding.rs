@@ -67,23 +67,26 @@ pub fn show(ctx: &egui::Context, open: &mut bool, simplified_mode: &mut bool) ->
         .with_min_inner_size(size)
         .with_resizable(false)
         .with_decorations(false)
+        .with_transparent(true)
         .with_title("Welcome to Dōri");
 
     ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
         egui::CentralPanel::default()
-            .frame(
+            .frame(egui::Frame::NONE)
+            .show(ctx, |ui| {
                 egui::Frame::new()
+                    .corner_radius(12.0)
                     .fill(Color32::from_rgb(0x1e, 0x1f, 0x23))
-                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38)))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(46, 49, 56)))
                     .inner_margin(egui::Margin {
                         left: 18,
                         right: 18,
                         top: 14,
                         bottom: 12,
-                    }),
-            )
-            .show(ctx, |ui| {
-                chosen = render_welcome_content(ui, open, simplified_mode);
+                    })
+                    .show(ui, |ui| {
+                        chosen = render_welcome_content(ui, open, simplified_mode);
+                    });
             });
     });
     chosen
