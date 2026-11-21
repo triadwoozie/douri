@@ -87,11 +87,23 @@ pub fn update(s: &mut UiState, p: &Project, project_path: Option<&Path>) {
         return;
     }
 
-    // Ensure worker is initialized
-    if s.collaborate_worker.is_none() {
-        let repo_dir = project_path
-            .and_then(|p| p.parent())
-            .unwrap_or_else(|| Path::new("."));
+    let Some(proj_path) = project_path else {
+        s.collaborate_worker = None;
+        return;
+    };
+
+    let repo_dir = proj_path.parent().unwrap_or(proj_path);
+    if prowave_vcs::is_daw_source_dir(repo_dir) {
+        s.collaborate_worker = None;
+        return;
+    }
+
+    // Ensure worker is initialized for current project directory
+    if let Some(ref worker) = s.collaborate_worker {
+        if worker.repo_dir != repo_dir {
+            s.collaborate_worker = Some(prowave_vcs::VcsWorker::new(repo_dir.to_path_buf()));
+        }
+    } else {
         s.collaborate_worker = Some(prowave_vcs::VcsWorker::new(repo_dir.to_path_buf()));
     }
 
@@ -124,16 +136,23 @@ pub fn quick_snapshot(s: &mut UiState, p: &Project, project_path: Option<&Path>)
         return;
     }
 
+    let Some(proj_path) = project_path else {
+        s.status = Some(tr("Save project to disk before taking snapshots").to_string());
+        return;
+    };
+
+    let repo_dir = proj_path.parent().unwrap_or(proj_path);
+    if prowave_vcs::is_daw_source_dir(repo_dir) {
+        return;
+    }
+
     if s.collaborate_worker.is_none() {
-        let repo_dir = project_path
-            .and_then(|p| p.parent())
-            .unwrap_or_else(|| Path::new("."));
         s.collaborate_worker = Some(prowave_vcs::VcsWorker::new(repo_dir.to_path_buf()));
     }
 
     if let Some(ref worker) = s.collaborate_worker {
         let current_doc = Some(crate::file_commands::content(p));
-        let project_file_rel = project_path.and_then(|p| p.file_name()).map(PathBuf::from);
+        let project_file_rel = proj_path.file_name().map(PathBuf::from);
 
         worker.send(VcsTask::QuickCheckpoint {
             current_doc,
@@ -201,6 +220,11 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
 
                         if !s.collaborate_enabled {
                             render_paused(ui, s, card_bg, border_stroke);
+                            return;
+                        }
+
+                        if project_path.is_none() {
+                            render_unsaved_project(ui, s, card_bg, border_stroke);
                             return;
                         }
 
@@ -293,6 +317,46 @@ fn render_paused(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: 
                     .clicked()
                 {
                     s.collaborate_enabled = true;
+                }
+            });
+        });
+}
+
+fn render_unsaved_project(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: Stroke) {
+    ui.add_space(40.0);
+    egui::Frame::new()
+        .fill(card_bg)
+        .stroke(border_stroke)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(24.0)
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new(phosphor_egui::regular::FLOPPY_DISK)
+                        .size(44.0)
+                        .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                );
+                ui.add_space(12.0);
+                ui.strong(
+                    RichText::new(tr("Save Project First"))
+                        .size(16.0)
+                        .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(tr(
+                        "Please save your project to disk to enable Collaborate, track version history, and connect a Studio Link.",
+                    ))
+                    .size(12.5)
+                    .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                );
+                ui.add_space(20.0);
+
+                if ui
+                    .add_sized(vec2(200.0, 34.0), primary_btn(&tr("Save Project…")))
+                    .clicked()
+                {
+                    s.file_cmd = Some(crate::file_commands::FileCmd::SaveAs);
                 }
             });
         });
@@ -650,6 +714,13 @@ fn render_left_column(
 
         if ui.add(secondary_btn(&tr("Studio Link…"))).clicked() {
             s.collaborate_showing_link_modal = !s.collaborate_showing_link_modal;
+            if s.collaborate_showing_link_modal {
+                if let Some(ref url) = latest_state.remote_url {
+                    s.collaborate_link_input = url.clone();
+                } else {
+                    s.collaborate_link_input.clear();
+                }
+            }
         }
     });
 
@@ -662,6 +733,23 @@ fn render_left_column(
             .corner_radius(CornerRadius::same(6))
             .inner_margin(8.0)
             .show(ui, |ui| {
+                if let Some(ref current_link) = latest_state.remote_url {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}: {current_link}", tr("Current Link")))
+                                .size(11.0)
+                                .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                        );
+                        if ui.add(compact_secondary_btn(&tr("Remove Link"))).clicked() {
+                            if let Some(ref worker) = s.collaborate_worker {
+                                worker.send(VcsTask::RemoveRemote);
+                            }
+                            s.collaborate_link_input.clear();
+                        }
+                    });
+                    ui.add_space(6.0);
+                }
+
                 ui.label(
                     RichText::new(tr("Studio Link (Online / GitHub):"))
                         .size(11.0)

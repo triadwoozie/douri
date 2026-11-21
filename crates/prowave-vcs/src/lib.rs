@@ -209,6 +209,21 @@ pub fn map_studio_error(raw: &str) -> String {
     }
 }
 
+/// Checks whether a given directory is part of the Dōri DAW source tree.
+/// Prevents the DAW's own source repository from being mistaken for a song project repository.
+pub fn is_daw_source_dir(dir: &Path) -> bool {
+    let mut curr = Some(dir);
+    while let Some(d) = curr {
+        if d.join("crates/prowave-app").exists()
+            || (d.join("Cargo.toml").exists() && d.join("xtask").exists())
+        {
+            return true;
+        }
+        curr = d.parent();
+    }
+    false
+}
+
 pub fn scaffold_gitignore(repo_path: &Path) -> std::io::Result<()> {
     let ignore_path = repo_path.join(".gitignore");
     let content = "\
@@ -489,6 +504,9 @@ impl GitRepo {
     pub fn set_remote_url(&self, _url: &str) -> Result<(), String> {
         Err("Collaborate is unsupported on wasm32".into())
     }
+    pub fn remove_remote(&self) -> Result<(), String> {
+        Err("Collaborate is unsupported on wasm32".into())
+    }
     pub fn cat_file(&self, _rev: &str, _file: &str) -> Result<Vec<u8>, String> {
         Err("Collaborate is unsupported on wasm32".into())
     }
@@ -528,6 +546,10 @@ impl GitRepo {
             path.to_path_buf()
         };
 
+        if is_daw_source_dir(&work_dir) {
+            return None;
+        }
+
         let mut cmd = Command::new("git");
         cmd.current_dir(&work_dir);
         cmd.args(["rev-parse", "--is-inside-work-tree"]);
@@ -551,6 +573,10 @@ impl GitRepo {
         } else {
             path.to_path_buf()
         };
+
+        if is_daw_source_dir(&work_dir) {
+            return Err("Cannot initialize Collaborate in the DAW application directory. Save your project in its own folder.".into());
+        }
 
         if !work_dir.exists() {
             std::fs::create_dir_all(&work_dir)
@@ -929,6 +955,19 @@ impl GitRepo {
         }
     }
 
+    pub fn remove_remote(&self) -> Result<(), String> {
+        let mut cmd = self.git_cmd();
+        cmd.args(["remote", "remove", "origin"]);
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Failed to remove studio link: {e}"))?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+        }
+    }
+
     pub fn cat_file(&self, rev: &str, file: &str) -> Result<Vec<u8>, String> {
         let spec = format!("{rev}:{file}");
         let mut cmd = self.git_cmd();
@@ -1001,6 +1040,7 @@ pub enum VcsTask {
     SetRemote {
         url: String,
     },
+    RemoveRemote,
 }
 
 pub enum VcsEvent {
@@ -1013,6 +1053,7 @@ pub enum VcsEvent {
 pub struct VcsWorker {
     task_tx: std::sync::mpsc::Sender<VcsTask>,
     event_rx: std::sync::mpsc::Receiver<VcsEvent>,
+    pub repo_dir: PathBuf,
     pub latest_state: VcsUiState,
 }
 
@@ -1021,14 +1062,15 @@ impl VcsWorker {
         let (task_tx, task_rx) = std::sync::mpsc::channel::<VcsTask>();
         let (event_tx, event_rx) = std::sync::mpsc::channel::<VcsEvent>();
 
+        let thread_repo_dir = repo_dir.clone();
         std::thread::Builder::new()
             .name("douri-collaborate-worker".into())
             .spawn(move || {
-                let mut repo = GitRepo::open(&repo_dir);
+                let mut repo = GitRepo::open(&thread_repo_dir);
 
                 while let Ok(task) = task_rx.recv() {
                     match task {
-                        VcsTask::Init => match GitRepo::init(&repo_dir) {
+                        VcsTask::Init => match GitRepo::init(&thread_repo_dir) {
                             Ok(r) => {
                                 repo = Some(r);
                                 let _ = event_tx
@@ -1044,7 +1086,7 @@ impl VcsWorker {
                             project_file_rel,
                         } => {
                             if repo.is_none() {
-                                repo = GitRepo::open(&repo_dir);
+                                repo = GitRepo::open(&thread_repo_dir);
                             }
                             Self::send_refresh(
                                 &repo,
@@ -1225,6 +1267,21 @@ impl VcsWorker {
                                 }
                             }
                         }
+                        VcsTask::RemoveRemote => {
+                            if let Some(ref r) = repo {
+                                match r.remove_remote() {
+                                    Ok(()) => {
+                                        let _ = event_tx
+                                            .send(VcsEvent::Notice("Studio link removed".into()));
+                                        Self::send_refresh(&repo, &event_tx, None, None);
+                                    }
+                                    Err(e) => {
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
+                                    }
+                                }
+                            }
+                        }
                         VcsTask::RevertUnsaved => {
                             if let Some(ref r) = repo {
                                 match r.reset_hard() {
@@ -1249,6 +1306,7 @@ impl VcsWorker {
         let worker = Self {
             task_tx,
             event_rx,
+            repo_dir: repo_dir.clone(),
             latest_state: VcsUiState::default(),
         };
         worker.send(VcsTask::Refresh {
@@ -1523,6 +1581,20 @@ mod tests {
             repo.remote_url().unwrap(),
             Some("https://github.com/producer/beat.git".into())
         );
+
+        // Test remote url removal
+        repo.remove_remote().expect("remove remote failed");
+        assert_eq!(repo.remote_url().unwrap(), None);
+    }
+
+    #[test]
+    fn test_is_daw_source_dir() {
+        let cwd = std::env::current_dir().unwrap();
+        // douri repository root or crates/prowave-vcs should be detected as DAW source dir
+        assert!(is_daw_source_dir(&cwd));
+
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!is_daw_source_dir(temp.path()));
     }
 
     #[test]

@@ -1271,6 +1271,15 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             s.show_collaborate = true;
             s.collaborate_enabled = true;
             s.collaborate_showing_link_modal = true;
+            if let Some(ref worker) = s.collaborate_worker {
+                if let Some(ref url) = worker.latest_state.remote_url {
+                    s.collaborate_link_input = url.clone();
+                } else {
+                    s.collaborate_link_input.clear();
+                }
+            } else {
+                s.collaborate_link_input.clear();
+            }
         }
         "Enable Project History" => {
             s.show_collaborate = true;
