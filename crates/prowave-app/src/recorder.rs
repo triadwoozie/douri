@@ -177,6 +177,7 @@ pub fn capture(rec: &mut Recorder, p: &mut Project) -> Option<(usize, usize)> {
                     len: MIN_LEN,
                     pitch,
                     vel,
+                    ..Default::default()
                 });
             }
             LiveNote::Off { pitch } => {
@@ -223,6 +224,7 @@ pub fn capture(rec: &mut Recorder, p: &mut Project) -> Option<(usize, usize)> {
         folder: None,
         generated: None,
         audio: None,
+        missing: None,
         params: RegionParams::default(),
     });
     let r = track.regions.len() - 1;
@@ -273,6 +275,7 @@ fn start(rec: &mut Recorder, p: &mut Project, pedal: u8) -> Outcome {
         folder: None,
         generated: None,
         audio: None,
+        missing: None,
         params: RegionParams::default(),
     });
     let r = p.tracks[t].regions.len() - 1;
@@ -332,6 +335,7 @@ fn record(rec: &mut Recorder, p: &mut Project, t: usize, r: usize, input: &[Live
                     len: MIN_LEN,
                     pitch,
                     vel,
+                    ..Default::default()
                 });
                 rec.open.insert(pitch, region.notes.len() - 1);
             }
@@ -717,6 +721,7 @@ mod tests {
             folder: None,
             generated: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
         });
         let mut rec = Recorder::default();

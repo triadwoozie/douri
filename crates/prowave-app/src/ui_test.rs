@@ -9,6 +9,8 @@ pub struct Harness {
     pub size: Vec2,
     /// The keys held down for the next frames (Shift, Option, Command…).
     pub modifiers: Modifiers,
+    /// The pointer's look the last frame asked for.
+    pub cursor: egui::CursorIcon,
 }
 
 impl Harness {
@@ -18,6 +20,7 @@ impl Harness {
             time: 0.0,
             size: Vec2::new(width, height),
             modifiers: Modifiers::NONE,
+            cursor: egui::CursorIcon::Default,
         }
     }
 
@@ -33,6 +36,7 @@ impl Harness {
             ..RawInput::default()
         };
         let mut out = self.ctx.run_ui(input, |u| ui(u));
+        self.cursor = out.platform_output.cursor_icon;
         // Nothing paints these frames, so the texture changes are not needed.
         out.textures_delta.clear();
     }

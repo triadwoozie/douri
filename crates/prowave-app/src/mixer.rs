@@ -21,6 +21,9 @@ use egui::{
 };
 use std::collections::HashMap;
 
+#[path = "hw_mixer.rs"]
+pub(crate) mod hw_mixer;
+
 const TOOLBAR_H: f32 = 30.0;
 /// The buses the Output menu lists (Logic's 256 are in the project; the menu shows the first).
 const MENU_BUSES: u16 = 32;

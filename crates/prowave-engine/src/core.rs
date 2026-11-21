@@ -344,6 +344,14 @@ pub enum Command {
     SetCapture(Option<CaptureSink>),
     /// The live input, for monitoring. Replaces the one before.
     SetInput(Option<Box<InputFeed>>),
+    /// A track's plug-ins (instrument and Audio FX); `None` takes them away. The ones
+    /// before come back as [`Garbage::Plugins`].
+    SetPlugins {
+        track: u16,
+        plugins: Option<Box<crate::plugin_track::PluginTrack>>,
+    },
+    /// The plug-in effects of the master bus (Stereo Out).
+    SetMasterPlugins(Option<Box<crate::plugin_track::PluginTrack>>),
     /// The tracks that hear their input now (the first `count` of `tracks`).
     SetMonitors {
         tracks: [MonitorTrack; MAX_MONITORS],
@@ -576,6 +584,8 @@ pub enum Garbage {
     SoundFont(Box<SfPlayer>),
     /// A finished bounce's capture sink, handed back to the UI thread to be dropped there.
     Capture(Box<CaptureSink>),
+    /// Plug-in tracks handed back to the UI thread.
+    Plugins(Box<crate::plugin_track::PluginTrack>),
 }
 
 /// What the engine shows the UI after each audio block: the playhead, the transport and the
@@ -667,6 +677,8 @@ pub struct Shared {
     pub underruns: AtomicU32,
     /// Highest DSP load (f32 bits, 1.0 = the whole callback budget) since the UI last read it.
     dsp_load_max: AtomicU32,
+    worker_load_max: AtomicU32,
+    pub heaviest: std::sync::atomic::AtomicU64,
 }
 
 impl Shared {
@@ -675,7 +687,34 @@ impl Shared {
             xruns: AtomicU32::new(0),
             underruns: AtomicU32::new(0),
             dsp_load_max: AtomicU32::new(0),
+            worker_load_max: AtomicU32::new(0),
+            heaviest: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    pub fn record_worker_load(&self, load: f32) {
+        self.worker_load_max
+            .fetch_max(load.max(0.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn take_worker_load(&self) -> f32 {
+        f32::from_bits(self.worker_load_max.swap(0, Ordering::Relaxed))
+    }
+
+    pub fn record_plugin_load(&self, track: u16, slot: u8, load: f32) {
+        let bits = u64::from(load.max(0.0).to_bits()) << 32;
+        let id = u64::from(track) << 8 | u64::from(slot);
+        self.heaviest.fetch_max(bits | id, Ordering::Relaxed);
+    }
+
+    pub fn take_heaviest_plugin(&self) -> Option<(u16, u8, f32)> {
+        let v = self.heaviest.swap(0, Ordering::Relaxed);
+        (v != 0).then(|| {
+            let load = f32::from_bits((v >> 32) as u32);
+            let track = (v >> 8) as u16;
+            let slot = (v & 0xff) as u8;
+            (track, slot, load)
+        })
     }
 
     /// Audio thread: report one callback's DSP load (see [`dsp_load`]). Lock- and alloc-free.
@@ -850,6 +889,12 @@ pub struct EngineCore {
     master_chain: Option<Box<Chain>>,
     /// Delay compensation per strip.
     pdc: Vec<Option<Box<Pdc>>>,
+    /// Plug-in tracks per strip.
+    pub plugins: Vec<Option<Box<crate::plugin_track::PluginTrack>>>,
+    /// Master plug-in track.
+    pub master_plugins: Option<Box<crate::plugin_track::PluginTrack>>,
+    pub plugin_tracks: Vec<u16>,
+    pub frame_i: usize,
     routes: Vec<Route>,
     /// Strips with effects or sends (processed in order), and Aux strips (processed after
     /// them, once the buses are full).
@@ -1002,6 +1047,10 @@ impl EngineCore {
             chains: (0..MAX_TRACKS).map(|_| None).collect(),
             master_chain: None,
             pdc: (0..MAX_TRACKS).map(|_| None).collect(),
+            plugins: (0..MAX_TRACKS).map(|_| None).collect(),
+            master_plugins: None,
+            plugin_tracks: Vec::with_capacity(MAX_TRACKS),
+            frame_i: 0,
             routes: vec![Route::default(); MAX_TRACKS],
             complex: Vec::with_capacity(MAX_TRACKS),
             aux: Vec::with_capacity(MAX_TRACKS),
@@ -1113,9 +1162,18 @@ impl EngineCore {
         });
     }
 
-    /// Sends a Note On or Off to the external instrument of `track`. Lost when the queue is
-    /// full (nobody is listening), never blocks.
+    /// Sends a Note On or Off to the external instrument of `track`, or to its plug-in
+    /// instrument at this frame. Lost when the queue is full (nobody is listening), never
+    /// blocks.
     fn send_midi(&mut self, track: u16, on: bool, pitch: u8, vel: u8) {
+        if let Some(Some(p)) = self.plugins.get_mut(track as usize) {
+            if p.has_instrument() {
+                let status = if on { 0x90 } else { 0x80 };
+                let at = self.frame_i as u32;
+                p.push_midi(at, status, pitch & 0x7f, vel & 0x7f);
+                return;
+            }
+        }
         let _ = self.midi_out.push(MidiOutEvent {
             track,
             on,
@@ -1124,6 +1182,17 @@ impl EngineCore {
             controller: false,
             value: 0,
         });
+    }
+
+    /// Whether `track`'s notes go out of the engine's own synth: to an external instrument
+    /// or to a plug-in instrument.
+    fn plays_elsewhere(&self, track: u16) -> bool {
+        let t = track as usize;
+        self.track_external.get(t).copied().unwrap_or(false)
+            || self
+                .plugins
+                .get(t)
+                .is_some_and(|p| p.as_ref().is_some_and(|p| p.has_instrument()))
     }
 
     /// A note for an external instrument starts.
@@ -1326,7 +1395,8 @@ impl EngineCore {
         self.complex.clear();
         self.aux.clear();
         for i in 0..MAX_TRACKS {
-            let has_chain = self.chains[i].as_ref().is_some_and(|c| !c.fx.is_empty());
+            let has_chain = self.chains[i].as_ref().is_some_and(|c| !c.fx.is_empty())
+                || self.plugins[i].as_ref().is_some_and(|p| p.has_effects());
             let has_pdc = self.pdc[i].as_ref().is_some_and(|p| !p.is_empty());
             let to_bus = self.routes[i].output > 0;
             self.strip_kind[i] = if self.routes[i].bus_in > 0 {
@@ -1408,6 +1478,11 @@ impl EngineCore {
         let (mut xl, mut xr) = (xl as f32, xr as f32);
         if let Some(chain) = self.chains[t].as_mut() {
             (xl, xr) = chain.process(xl, xr);
+        }
+        if let Some(p) = self.plugins[t].as_mut() {
+            if p.has_effects() {
+                (xl, xr) = p.through_effects(self.frame_i, xl, xr);
+            }
         }
         if let Some(pdc) = self.pdc[t].as_mut() {
             (xl, xr) = pdc.delay_before(xl, xr);
@@ -1888,18 +1963,31 @@ impl EngineCore {
                         .notes
                         .partition_point(|n| n.start_beat < self.beat);
                 }
+                Command::SetPlugins { track, plugins } => {
+                    let t = track as usize;
+                    if t < MAX_TRACKS {
+                        if let Some(old) = std::mem::replace(&mut self.plugins[t], plugins) {
+                            let _ = self.trash.push(Garbage::Plugins(old));
+                        }
+                        self.plugin_tracks.retain(|x| *x != track);
+                        if self.plugins[t].is_some() {
+                            self.plugin_tracks.push(track);
+                        }
+                        self.sort_strips();
+                    }
+                }
+                Command::SetMasterPlugins(plugins) => {
+                    if let Some(old) = std::mem::replace(&mut self.master_plugins, plugins) {
+                        let _ = self.trash.push(Garbage::Plugins(old));
+                    }
+                }
             }
         }
     }
 
     fn trigger(&mut self, n: NoteEvent) -> usize {
-        if self
-            .track_external
-            .get(n.track as usize)
-            .copied()
-            .unwrap_or(false)
-        {
-            // An external instrument makes its own sound.
+        if self.plays_elsewhere(n.track) {
+            // An external instrument or plug-in instrument makes its own sound.
             self.ext_note_on(n, false);
             return 0;
         }
@@ -1976,12 +2064,7 @@ impl EngineCore {
     }
 
     fn live_note_on(&mut self, pitch: u8, vel: u8, track: u16) {
-        if self
-            .track_external
-            .get(track as usize)
-            .copied()
-            .unwrap_or(false)
-        {
+        if self.plays_elsewhere(track) {
             self.ext_note_on(
                 NoteEvent {
                     start_beat: 0.0,
@@ -2118,6 +2201,15 @@ impl EngineCore {
         self.track_pk_r.fill(0.0);
         if let Some(feed) = self.input.as_mut() {
             feed.trim(self.monitor_count > 0);
+        }
+
+        self.frame_i = 0;
+        let block_frames = out.len() / 2;
+        for &track in &self.plugin_tracks {
+            let t = track as usize;
+            if let Some(p) = self.plugins[t].as_mut() {
+                p.begin_block(block_frames, false, 0);
+            }
         }
 
         for frame in out.as_chunks_mut::<2>().0 {
@@ -2335,8 +2427,27 @@ impl EngineCore {
                     }
                 }
             }
+            let transport_beat = if self.playing { self.beat } else { f64::NAN };
+            for &track in &self.plugin_tracks {
+                let t = track as usize;
+                if let Some(p) = self.plugins[t].as_mut() {
+                    if p.follows_transport() {
+                        p.set_beat(self.frame_i, transport_beat);
+                    }
+                    let (pl, pr) = p.instrument_frame(self.frame_i);
+                    if self.track_audible[t] {
+                        self.in_l[t] += pl as f64;
+                        self.in_r[t] += pr as f64;
+                        if !self.touched[t] {
+                            self.touched[t] = true;
+                            self.dirty.push(track);
+                        }
+                    }
+                }
+            }
             self.sf_render();
             let (ml, mr) = self.mix_strips();
+            self.frame_i += 1;
             l += ml;
             r += mr;
             if self.test_hz > 0.0 {
@@ -2434,6 +2545,12 @@ impl EngineCore {
                         };
                     }
                 }
+            }
+        }
+        for &track in &self.plugin_tracks {
+            let t = track as usize;
+            if let Some(p) = self.plugins[t].as_mut() {
+                p.end_block_engine(block_frames, self.sr, Some(&self.shared));
             }
         }
         let mut underruns = 0;

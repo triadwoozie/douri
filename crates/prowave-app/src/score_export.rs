@@ -294,6 +294,8 @@ mod tests {
             len,
             pitch,
             vel: 100,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }
     }
 
@@ -312,6 +314,7 @@ mod tests {
             folder: None,
             generated: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
         });
         project

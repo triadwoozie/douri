@@ -40,6 +40,8 @@ pub mod offline;
 mod output;
 pub mod pitch_tracker;
 pub mod plugin;
+pub mod plugin_track;
+pub mod prerender;
 pub mod pult_eq;
 mod routing;
 pub mod rt_alloc;
@@ -47,6 +49,7 @@ pub mod sample_file;
 pub mod sampler;
 mod sf2;
 mod soundfont;
+pub mod singer;
 pub mod spectral;
 mod synth;
 mod tempo_map;
@@ -112,13 +115,20 @@ pub use crate::output::{
 };
 pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
 pub use crate::plugin::{BlockEffect, PluginInstrument, PLUGIN_BLOCK};
+pub use crate::plugin_track::PluginTrack;
+pub use crate::prerender::{
+    plugin_host_delay, prerender_delay, PROCESS_BUFFER_LARGE, PROCESS_BUFFER_MEDIUM,
+    PROCESS_BUFFER_SMALL,
+};
 pub use crate::routing::{
     curve_shape, lane_value, send_gain, AutoLane, AutoPoint, AutoTarget, Route, SendSpec,
     MAX_AUTO_POINTS, MAX_BUSES, MAX_SENDS,
 };
+pub use crate::singer::{SingerClip, SingerPlayer, SingerRemote, SingerScore, SingerStatus};
 pub use crate::soundfont::{
     PresetInfo, SfPlayer, SoundFontBank, MAX_SOUNDFONT_BYTES, PITCH_BEND_CONTROL,
 };
+pub use crate::spectral::{spectrogram, Spectrogram};
 pub use crate::synth::{Kit, SynthPatch, VoiceKind, Wave};
 pub use crate::tempo_map::{
     MusicalPosition, SignatureEvent, Smpte, SmpteRate, TempoCurve, TempoEvent, TempoMap, MAX_BPM,

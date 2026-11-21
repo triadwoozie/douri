@@ -36,12 +36,16 @@ impl TrackKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Note {
     pub start: f32, // beats from region start
     pub len: f32,
     pub pitch: u8,
     pub vel: u8,
+    /// Muted in the Piano Roll (Logic: Mute tool, Control-M): drawn grey and not played.
+    pub mute: bool,
+    /// The word or syllable sung on this note, its lyric (see `lyrics.rs`).
+    pub lyric: crate::lyrics::Lyric,
 }
 
 /// One pass of a cycle recording.
@@ -105,10 +109,31 @@ pub struct Region {
     pub folder: Option<TakeFolder>,
     /// Set for audio regions backed by a file on disk.
     pub audio: Option<AudioRegion>,
+    /// Set for an audio region whose file could not be read when the project was opened.
+    pub missing: Option<MissingAudio>,
     /// Region inspector parameters (non-destructive, applied when the song is built).
     pub params: RegionParams,
     /// A Pattern or Drummer region: the settings its `notes` are made from.
     pub generated: Option<Generated>,
+}
+
+impl Region {
+    /// An audio region: one that plays a file, or one whose file is missing.
+    pub fn is_audio(&self) -> bool {
+        self.audio.is_some() || self.missing.is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MissingAudio {
+    pub source: std::path::PathBuf,
+    pub flex: Option<prowave_project::FlexDoc>,
+}
+
+impl MissingAudio {
+    pub fn shown(&self) -> String {
+        crate::project_io::shown_media(&self.source)
+    }
 }
 
 /// What makes the notes of a Pattern or Drummer region (see `pattern.rs`).
@@ -161,9 +186,18 @@ pub struct RegionParams {
     pub fade_out: f32,
     pub fade_curve: prowave_engine::FadeCurve,
     pub reverse: bool,
+    /// Audio regions: where in the file the region starts, in seconds.
+    pub offset_secs: f64,
     /// Crossfade with the audio region this one overlaps (Logic: Drag > X-Fade): it fades in
     /// over the overlap while the earlier region fades out, with the region's curve.
     pub crossfade: bool,
+    /// Loop length in quarter notes; 0 = no loop.
+    pub loop_beats: f32,
+    /// The region's own colour, or `None` for its track's colour.
+    pub color: Option<egui::Color32>,
+    /// Locked to SMPTE / timeline position (Logic: Lock SMPTE Position). Locked clips are protected
+    /// against split, marquee cuts, and cycle clear operations.
+    pub locked: bool,
 }
 
 /// Project Settings > Metronome: the click's level range in dB, and where it starts (the
@@ -750,6 +784,8 @@ pub struct Track {
     pub indent: u8,
     /// A `Folder` track whose tracks are hidden in the Tracks area.
     pub folded: bool,
+    /// Hidden in the Tracks area (Logic: the track header's Hide key, Control-H); it still plays.
+    pub hidden: bool,
     /// The `Vca` track (its index in the project) that moves this track's level, if any.
     pub vca: Option<usize>,
     /// External MIDI tracks: the MIDI output port (by name) and the channel, 1-16.
@@ -782,6 +818,12 @@ pub struct Track {
     /// that listens to the bus its children send their output to. Its children are the tracks
     /// indented under it, as in a folder stack.
     pub summing_stack: bool,
+    /// Vocal Top Line role and settings.
+    pub vocal: Option<crate::vocal::VocalRole>,
+    /// Plug-in instrument slot (AU / Singer).
+    pub au_instrument: Option<crate::plugins::PluginSlot>,
+    /// Plug-in effect slots.
+    pub au_effects: Vec<crate::plugins::PluginSlot>,
 }
 
 /// The Sampler on a track: where its sounds come from, and its dials (see
@@ -870,6 +912,7 @@ impl Track {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
@@ -884,6 +927,9 @@ impl Track {
             midi_bank: None,
             midi_fx: Vec::new(),
             summing_stack: false,
+            vocal: None,
+            au_instrument: None,
+            au_effects: Vec::new(),
         }
     }
 
@@ -1046,6 +1092,11 @@ pub struct Project {
     pub header_hidden: Vec<HeaderPart>,
     /// Global chord track chord blocks.
     pub chords: Vec<ChordBlock>,
+    /// Master track automation.
+    pub master_auto: Automation,
+    /// The region (track, region) the Solo tool is held on: the only one heard meanwhile
+    /// (`region_solo.rs`). Not saved.
+    pub region_solo: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1073,6 +1124,7 @@ fn demo_notes(seed: u32, bars: f32, lo: u8, hi: u8) -> Vec<Note> {
             len: len * 0.9,
             pitch,
             vel: 70 + (lcg(&mut s) % 50) as u8,
+            ..Default::default()
         });
         t += [0.5, 1.0, 0.25, 0.75][(lcg(&mut s) % 4) as usize];
     }
@@ -1108,6 +1160,7 @@ impl Project {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
@@ -1118,6 +1171,9 @@ impl Project {
             hosted_instrument: 0,
             icon: None,
             summing_stack: false,
+            vocal: None,
+            au_instrument: None,
+            au_effects: Vec::new(),
             midi_channel: 1,
             midi_program: None,
             midi_bank: None,
@@ -1168,6 +1224,7 @@ impl Project {
                 folder: None,
                 generated: None,
                 audio: None,
+                missing: None,
                 params: RegionParams::default(),
             }],
             params: TrackParams::default(),
@@ -1178,6 +1235,7 @@ impl Project {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             vca: None,
             midi_port: None,
             soundfont: None,
@@ -1188,6 +1246,9 @@ impl Project {
             hosted_instrument: 0,
             icon: None,
             summing_stack: false,
+            vocal: None,
+            au_instrument: None,
+            au_effects: Vec::new(),
             midi_channel: 1,
             midi_program: None,
             midi_bank: None,
@@ -1284,6 +1345,8 @@ impl Project {
             show_master_track: false,
             header_hidden: Vec::new(),
             chords: Vec::new(),
+            master_auto: Automation::default(),
+            region_solo: None,
             tempo_ramp: false,
             groove_onsets: Default::default(),
             groove_key: 0,
@@ -1473,6 +1536,57 @@ impl Project {
         }
     }
 
+    pub fn resize_region_start(&mut self, ti: usize, ri: usize, at: f64) -> bool {
+        let Some(r) = self.tracks.get(ti).and_then(|t| t.regions.get(ri)) else {
+            return false;
+        };
+        if r.folder.is_some() || r.generated.is_some() || r.params.reverse || r.params.locked {
+            return false;
+        }
+        let (start, end) = (self.region_start_beats(r), self.region_end_beats(r));
+        let audio = r.audio.is_some() || r.missing.is_some();
+        let map = self.tempo_map();
+        let earliest = if audio {
+            map.beat_at((map.seconds_at(start) - r.params.offset_secs).max(0.0))
+        } else {
+            0.0
+        };
+        let at = at.max(earliest).max(0.0).min(end - 1.0 / 64.0);
+        if (at - start).abs() < 1e-9 {
+            return false;
+        }
+        let rel = (at - start) as f32;
+        let secs = map.seconds_at(at) - map.seconds_at(start);
+        let new_bar = self.beats_to_bar(at) as f32 + 1.0;
+        let mut out = r.clone();
+        out.len_bars = (r.start_bar + r.len_bars - new_bar).max(1.0 / 64.0);
+        out.start_bar = new_bar;
+        out.notes = r
+            .notes
+            .iter()
+            .filter(|n| n.start >= rel)
+            .map(|n| Note {
+                start: n.start - rel,
+                ..n.clone()
+            })
+            .collect();
+        out.controls = r
+            .controls
+            .iter()
+            .filter(|c| c.start >= rel)
+            .map(|c| Control {
+                start: c.start - rel,
+                ..*c
+            })
+            .collect();
+        if audio {
+            out.params.offset_secs = (r.params.offset_secs + secs).max(0.0);
+        }
+        self.tracks[ti].regions[ri] = out;
+        self.song_rev += 1;
+        true
+    }
+
     /// Whether region `ri` of track `ti` can be cut at beat `at`.
     pub fn can_split_region(&self, ti: usize, ri: usize, at: f64) -> bool {
         let Some(r) = self.tracks.get(ti).and_then(|t| t.regions.get(ri)) else {
@@ -1484,6 +1598,13 @@ impl Project {
             && r.folder.is_none()
             && r.generated.is_none()
             && !r.params.reverse
+            && !r.params.locked
+    }
+
+    /// Seconds between two positions in quarter notes, through the tempo map.
+    pub fn seconds_between(&self, from: f64, to: f64) -> f64 {
+        let map = self.tempo_map();
+        map.seconds_at(to) - map.seconds_at(from)
     }
 
     /// Cuts region `ri` of track `ti` at `at` (quarter notes) into two.
@@ -1554,12 +1675,143 @@ impl Project {
             left.params.fade_out = 0.0;
             right.params.fade_in = 0.0;
             right.params.crossfade = false;
+            right.params.offset_secs = r.params.offset_secs + secs;
         }
+        left.params.loop_beats = 0.0;
         let regions = &mut self.tracks[ti].regions;
         regions[ri] = left;
         regions.insert(ri + 1, right);
         self.song_rev += 1;
         true
+    }
+
+    /// The Join tool: joins region `ri` of track `ti` with the next region on the track (see
+    /// [`Project::join_group`]). Returns whether they were joined.
+    pub fn join_regions(&mut self, ti: usize, ri: usize) -> bool {
+        let Some(t) = self.tracks.get(ti) else {
+            return false;
+        };
+        let Some(a) = t.regions.get(ri) else {
+            return false;
+        };
+        let a_start = self.region_start_beats(a);
+        // The region that starts next at or after this one's start.
+        let Some(bi) = t
+            .regions
+            .iter()
+            .enumerate()
+            .filter(|(j, r)| *j != ri && self.region_start_beats(r) >= a_start)
+            .min_by(|x, y| {
+                self.region_start_beats(x.1)
+                    .total_cmp(&self.region_start_beats(y.1))
+            })
+            .map(|(j, _)| j)
+        else {
+            return false;
+        };
+        self.join_group(ti, &[ri, bi]).is_some()
+    }
+
+    /// Whether regions `group` of track `ti` (two or more) can be joined into one: MIDI regions
+    /// always (each keeps its notes in place); audio regions only when, in start order, each is
+    /// the part of the same file that comes right after the one before (as a cut left them).
+    /// Take folders, Pattern and Drummer regions, and reversed audio are never joined.
+    pub fn can_join_group(&self, ti: usize, group: &[usize]) -> bool {
+        self.join_order(ti, group).is_some()
+    }
+
+    /// `group` in start order, if it can be joined (see [`Project::can_join_group`]).
+    fn join_order(&self, ti: usize, group: &[usize]) -> Option<Vec<usize>> {
+        let t = self.tracks.get(ti)?;
+        let mut order: Vec<usize> = group.to_vec();
+        order.sort_unstable();
+        order.dedup();
+        if order.len() < 2 || order.iter().any(|&r| r >= t.regions.len()) {
+            return None;
+        }
+        order.sort_by(|&x, &y| {
+            self.region_start_beats(&t.regions[x])
+                .total_cmp(&self.region_start_beats(&t.regions[y]))
+        });
+        let plain = |r: &Region| {
+            r.folder.is_none() && r.generated.is_none() && !r.params.reverse && r.missing.is_none()
+        };
+        if !order.iter().all(|&r| plain(&t.regions[r])) {
+            return None;
+        }
+        let audio = t.regions[order[0]].audio.is_some();
+        if order.iter().any(|&r| t.regions[r].audio.is_some() != audio) {
+            return None;
+        }
+        if audio {
+            for w in order.windows(2) {
+                let (a, b) = (&t.regions[w[0]], &t.regions[w[1]]);
+                let (Some(fa), Some(fb)) = (&a.audio, &b.audio) else {
+                    return None;
+                };
+                let (a_start, a_end) = (self.region_start_beats(a), self.region_end_beats(a));
+                let same_file =
+                    fa.file.path == fb.file.path && fa.flex.is_none() && fb.flex.is_none();
+                let touching = (self.region_start_beats(b) - a_end).abs() < 1e-3;
+                let continues = (b.params.offset_secs
+                    - (a.params.offset_secs + self.seconds_between(a_start, a_end)))
+                .abs()
+                    < 0.002;
+                if !(same_file && touching && continues) {
+                    return None;
+                }
+            }
+        }
+        Some(order)
+    }
+
+    /// Joins regions `group` of track `ti` into one region that spans them all, with the
+    /// earliest one's name and settings (see [`Project::can_join_group`] for what can be
+    /// joined). The joined region takes the place of the lowest index; returns its index.
+    pub fn join_group(&mut self, ti: usize, group: &[usize]) -> Option<usize> {
+        let order = self.join_order(ti, group)?;
+        let regions = &self.tracks[ti].regions;
+        let first = &regions[order[0]];
+        let base = self.region_start_beats(first);
+        let end = order
+            .iter()
+            .map(|&r| self.region_end_beats(&regions[r]))
+            .fold(f64::MIN, f64::max);
+        let mut joined = first.clone();
+        if first.audio.is_some() {
+            if let Some(&last) = order.last() {
+                joined.params.fade_out = regions[last].params.fade_out;
+            }
+        } else {
+            joined.notes.clear();
+            joined.controls.clear();
+            for &r in &order {
+                let reg = &regions[r];
+                let shift = (self.region_start_beats(reg) - base) as f32;
+                joined.notes.extend(reg.notes.iter().map(|n| Note {
+                    start: n.start + shift,
+                    ..*n
+                }));
+                joined.controls.extend(reg.controls.iter().map(|c| Control {
+                    start: c.start + shift,
+                    ..*c
+                }));
+            }
+            joined.notes.sort_by(|x, y| x.start.total_cmp(&y.start));
+            joined.controls.sort_by(|x, y| x.start.total_cmp(&y.start));
+        }
+        let end_bar = self.beats_to_bar(end) as f32 + 1.0;
+        joined.len_bars = end_bar - joined.start_bar;
+        let mut sorted = order;
+        sorted.sort_unstable();
+        let regions = &mut self.tracks[ti].regions;
+        for &r in sorted.iter().rev() {
+            regions.remove(r);
+        }
+        let at = sorted[0];
+        regions.insert(at, joined);
+        self.song_rev += 1;
+        Some(at)
     }
 
     /// The tempo and signature as the engine's tempo map.
@@ -1686,6 +1938,31 @@ impl Project {
     /// How long a region is, in quarter notes.
     pub fn region_len_beats(&self, r: &Region) -> f64 {
         self.region_end_beats(r) - self.region_start_beats(r)
+    }
+
+/// Most repeats one looped region plays (a guard against a tiny region looped for hours).
+pub const MAX_LOOP_REPEATS: usize = 4096;
+
+    pub fn region_loop_end_beats(&self, r: &Region) -> f64 {
+        self.region_end_beats(r) + f64::from(r.params.loop_beats.max(0.0))
+    }
+
+    /// The repeats of a looped region after its end (Logic: Loop), each as (start, how long it
+    /// plays) in quarter notes. Every repeat is the region again; the last one is cut where the
+    /// loop ends. Empty when the region does not loop.
+    pub fn loop_repeats(&self, r: &Region) -> Vec<(f64, f64)> {
+        let len = self.region_len_beats(r);
+        let stop = self.region_loop_end_beats(r);
+        let mut at = self.region_end_beats(r);
+        let mut out = Vec::new();
+        if len < 1.0 / 960.0 {
+            return out;
+        }
+        while at < stop - 1e-6 && out.len() < Self::MAX_LOOP_REPEATS {
+            out.push((at, (stop - at).min(len)));
+            at += len;
+        }
+        out
     }
 
     /// Length of one signature beat (in quarter notes) at the position `beats`: 1 in x/4, 0.5
@@ -1925,6 +2202,7 @@ impl Project {
             controls: Vec::new(),
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: Some(Generated::new(source)),
         });
@@ -1948,6 +2226,7 @@ impl Project {
             controls: Vec::new(),
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: None,
         });
@@ -2859,6 +3138,7 @@ mod tests {
                 folder: None,
                 generated: None,
                 audio: Some(test_audio()),
+                missing: None,
                 params: RegionParams::default(),
             });
         }

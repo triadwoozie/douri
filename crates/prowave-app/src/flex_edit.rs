@@ -47,6 +47,10 @@ impl FlexEdit {
         }
     }
 
+    pub fn target_offset(&self, offset: f64) -> f64 {
+        offset
+    }
+
     /// A number that changes with anything that changes the sound.
     pub fn fingerprint(&self) -> u64 {
         let mut h = 0xcbf2_9ce4_8422_2325u64;
@@ -653,6 +657,8 @@ fn midi_track_from(
                 len: (beats(n.end) - start).max(1.0 / 32.0),
                 pitch: n.pitch.round().clamp(0.0, 127.0) as u8,
                 vel: (40.0 + 87.0 * n.level.clamp(0.0, 1.0)).round() as u8,
+                mute: false,
+                lyric: crate::lyrics::Lyric::default(),
             }
         })
         .collect();
@@ -664,6 +670,7 @@ fn midi_track_from(
         controls: Vec::new(),
         folder: None,
         audio: None,
+        missing: None,
         params: crate::model::RegionParams::default(),
         generated: None,
     };
@@ -1213,4 +1220,19 @@ pub(crate) mod tests {
         assert!(q.tracks[t].regions.is_empty());
         settle(&mut p, &mut s);
     }
+}
+
+pub fn stretch_to(p: &mut Project, t: usize, r: usize, start: f64, end: f64) -> bool {
+    let Some(region) = p.tracks.get(t).and_then(|x| x.regions.get(r)) else {
+        return false;
+    };
+    if end <= start || region.audio.is_none() {
+        return false;
+    }
+    let start_bar = p.beats_to_bar(start) as f32 + 1.0;
+    let end_bar = p.beats_to_bar(end) as f32 + 1.0;
+    let region = &mut p.tracks[t].regions[r];
+    region.start_bar = start_bar;
+    region.len_bars = end_bar - start_bar;
+    true
 }

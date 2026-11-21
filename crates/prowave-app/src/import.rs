@@ -82,6 +82,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
             folder: None,
             generated: None,
             audio: Some(audio_region(file, ctx)),
+            missing: None,
             params: RegionParams::default(),
         }],
         params: TrackParams::default(),
@@ -92,6 +93,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         height: 1.0,
         indent: 0,
         folded: false,
+        hidden: false,
         vca: None,
         midi_port: None,
         soundfont: None,
@@ -105,6 +107,9 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         midi_program: None,
         midi_bank: None,
         midi_fx: Vec::new(),
+        vocal: None,
+        au_instrument: None,
+        au_effects: Vec::new(),
         summing_stack: false,
     });
     p.selected_track = p.tracks.len() - 1;

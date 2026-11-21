@@ -8,6 +8,36 @@ use crate::i18n::tr;
 use crate::model::{HeaderPart, Project};
 use crate::track_icons::{draw_icon, IconKind};
 use egui::{vec2, Color32, Sense, Stroke};
+use crate::hw::{self, Cap};
+
+pub(crate) fn dialog_key(
+    ui: &mut egui::Ui,
+    id: &str,
+    label: &str,
+    w: f32,
+    cap: Cap,
+    on: bool,
+    led: bool,
+) -> bool {
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
+    let g = ui.painter().clone();
+    hw::key(
+        ui,
+        &g,
+        rect,
+        egui::Id::unique(("track_dialog_key", id)),
+        cap,
+        on,
+        led.then_some(on),
+        hw::Legend::Text(label),
+    )
+    .0
+    .clicked()
+}
+
+pub(crate) fn key_w(label: &str) -> f32 {
+    (label.chars().count() as f32 * 8.0 + 36.0).max(72.0)
+}
 
 /// The colour swatches of Assign Track Color.
 pub const TRACK_COLORS: [Color32; 32] = [
@@ -53,10 +83,39 @@ pub const MAX_TRACK_NAME: usize = 64;
 /// A window of the Track menu, and the track it is about (by index).
 #[derive(Clone, Debug, PartialEq)]
 pub enum TrackDialog {
-    Rename { track: usize, name: String },
-    Color { track: usize },
-    Icon { track: usize },
+    Rename {
+        track: usize,
+        name: String,
+    },
+    Color {
+        track: usize,
+    },
+    Icon {
+        track: usize,
+    },
     Header,
+    /// Navigate > Go to Position (Slash): the position typed so far.
+    GoTo {
+        text: String,
+    },
+    /// Navigate > Go to Marker Number… (Option-Slash): the number typed so far
+    GoToMarker {
+        text: String,
+    },
+    /// Edit > Repeat… (Command-R): the number of copies typed so far and the adjustment.
+    Repeat {
+        copies: String,
+        adjust: crate::region_commands::RepeatAdjust,
+    },
+    /// Edit > Rename Regions (Shift-N): the name typed so far.
+    RenameRegions {
+        name: String,
+    },
+    /// Track > New Tracks…: the kind of track and how many.
+    NewTracks {
+        kind: crate::model::TrackKind,
+        count: u32,
+    },
 }
 
 /// The track a dialog is about, if it is about one.
@@ -66,7 +125,12 @@ impl TrackDialog {
             TrackDialog::Rename { track, .. }
             | TrackDialog::Color { track }
             | TrackDialog::Icon { track } => Some(*track),
-            TrackDialog::Header => None,
+            TrackDialog::Header
+            | TrackDialog::GoTo { .. }
+            | TrackDialog::GoToMarker { .. }
+            | TrackDialog::Repeat { .. }
+            | TrackDialog::RenameRegions { .. }
+            | TrackDialog::NewTracks { .. } => None,
         }
     }
 }
@@ -103,6 +167,29 @@ pub fn set_header_part(p: &mut Project, part: HeaderPart, shown: bool) {
     }
 }
 
+/// A position as Go to Position shows and reads it: bar and beat, from 1 (`5.3`).
+pub fn position_text(p: &Project, beats: f64) -> String {
+    let bar = p.beats_to_bar(beats.max(0.0)).floor();
+    let beat = ((beats - p.bar_to_beats(bar)) / p.beat_unit_at(beats)).floor();
+    format!("{}.{}", bar as i64 + 1, beat as i64 + 1)
+}
+
+pub fn parse_position(p: &Project, text: &str) -> Option<f64> {
+    let text = text.trim();
+    let (bar, beat) = match text.split_once([' ', ':']) {
+        Some((bar, beat)) => (bar.trim(), beat.trim()),
+        None => text.split_once('.').unwrap_or((text, "1")),
+    };
+    let bar: f64 = bar.parse().ok()?;
+    let beat: f64 = beat.parse().ok()?;
+    if !(bar >= 1.0 && beat >= 1.0 && bar.is_finite() && beat.is_finite()) {
+        return None;
+    }
+    let bar = bar.floor().min(f64::from(crate::model::MAX_SIG_BAR));
+    let start = p.bar_to_beats(bar - 1.0);
+    Some(start + (beat - 1.0) * p.beat_unit_at(start))
+}
+
 /// Draws the open window, if any, and applies what the user chose.
 pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     let Some(mut dialog) = s.track_dialog.take() else {
@@ -119,6 +206,11 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
         TrackDialog::Color { .. } => tr("Assign Track Color…"),
         TrackDialog::Icon { .. } => tr("Assign Track Icon…"),
         TrackDialog::Header => tr("Configure Track Header…"),
+        TrackDialog::GoTo { .. } => tr("Go to Position…"),
+        TrackDialog::GoToMarker { .. } => tr("Go to Marker Number…"),
+        TrackDialog::Repeat { .. } => tr("Repeat Regions"),
+        TrackDialog::RenameRegions { .. } => tr("Rename Regions"),
+        TrackDialog::NewTracks { .. } => tr("New Tracks…"),
     };
     egui::Window::new(title)
         .id(egui::Id::unique("track_dialog"))
@@ -129,18 +221,26 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
             match &mut dialog {
                 TrackDialog::Rename { track, name } => {
                     let track = *track;
-                    ui.add(egui::TextEdit::singleline(name).char_limit(MAX_TRACK_NAME));
+                    let field = ui.add(egui::TextEdit::singleline(name).char_limit(MAX_TRACK_NAME));
+                    let opened = egui::Id::unique("rename_track_opened");
+                    if !ui.data(|d| d.get_temp::<bool>(opened).unwrap_or(false)) {
+                        field.request_focus();
+                        ui.data_mut(|d| d.insert_temp(opened, true));
+                    }
+                    let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let ok = !name.trim().is_empty();
+                    let mut ok_clicked = false;
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(ok, egui::Button::new(tr("OK"))).clicked()
-                            && rename_track(p, track, name.as_str())
-                        {
-                            done = true;
+                        if ui.add_enabled(ok, egui::Button::new(tr("OK"))).clicked() {
+                            ok_clicked = true;
                         }
                         if ui.button(tr("Cancel")).clicked() {
                             done = true;
                         }
                     });
+                    if (ok_clicked || entered) && rename_track(p, track, name.as_str()) {
+                        done = true;
+                    }
                 }
                 TrackDialog::Color { track } => {
                     let track = *track;
@@ -200,11 +300,50 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                         }
                     }
                 }
+                TrackDialog::GoTo { text } => {
+                    ui.add(egui::TextEdit::singleline(text).char_limit(16));
+                    if let Some(pos) = parse_position(p, text) {
+                        if ui.button(tr("Go")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            p.position_beats = pos;
+                            done = true;
+                        }
+                    }
+                    if ui.button(tr("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        done = true;
+                    }
+                }
+                TrackDialog::GoToMarker { text } => {
+                    crate::marker_number::body(ui, p, text, &mut done)
+                }
+                TrackDialog::Repeat { copies, adjust } => {
+                    crate::region_commands::repeat_body(ui, p, s, copies, adjust, &mut done);
+                }
+                TrackDialog::RenameRegions { name } => {
+                    crate::region_commands::rename_body(ui, p, s, name, &mut done);
+                }
+                TrackDialog::NewTracks { kind, count } => {
+                    crate::track_commands::new_tracks_body(ui, p, s, kind, count, &mut done);
+                }
             }
         });
     if open && !done {
         s.track_dialog = Some(dialog);
+    } else {
+        forget_focus(ctx);
     }
+}
+
+fn forget_focus(ctx: &egui::Context) {
+    ctx.data_mut(|d| {
+        for id in [
+            egui::Id::unique("rename_track_opened"),
+            egui::Id::unique(("region_dialog_opened", "repeat")),
+            egui::Id::unique(("region_dialog_opened", "rename")),
+            egui::Id::unique("go_to_marker_number_opened"),
+        ] {
+            d.remove::<bool>(id);
+        }
+    });
 }
 
 /// The dialog a Track menu entry opens for the selected track, if it opens one.

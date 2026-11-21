@@ -25,6 +25,8 @@ pub enum FileCmd {
     OpenRecent,
     /// Starts a new project from a template (Project Chooser).
     NewFrom(Template),
+    /// Closes the window, which ends the program.
+    Quit,
 }
 
 impl FileCmd {
@@ -43,7 +45,8 @@ impl FileCmd {
             | FileCmd::SaveCopy
             | FileCmd::Revert
             | FileCmd::OpenRecent
-            | FileCmd::NewFrom(_) => return None,
+            | FileCmd::NewFrom(_)
+            | FileCmd::Quit => return None,
         };
         Some(KeyboardShortcut::new(modifiers, key))
     }
@@ -65,6 +68,10 @@ impl FileCmd {
 
 /// The file command whose key command was pressed this frame, if any (consumes the keys).
 pub fn pressed(ctx: &egui::Context) -> Option<FileCmd> {
+    // egui matches Command-N with Option held too; Option-Command-N is New Tracks.
+    if ctx.input(|i| i.modifiers.alt) {
+        return None;
+    }
     FileCmd::ALL.into_iter().find(|c| {
         c.shortcut()
             .is_some_and(|s| ctx.input_mut(|i| i.consume_shortcut(&s)))
@@ -118,7 +125,7 @@ fn reveal_command(path: &Path) -> std::process::Command {
 
 /// The answer to the "save changes?" prompt.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Answer {
+pub(crate) enum Answer {
     Save,
     DontSave,
     Cancel,
@@ -174,6 +181,10 @@ impl App {
                 }
             }
             FileCmd::Revert => self.revert(ctx),
+            FileCmd::Quit => {
+                self.autosave.quit_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 
@@ -215,6 +226,13 @@ impl App {
             return;
         };
         self.ui.ask_save = None;
+        self.answer_save_prompt(cmd, answer, ctx);
+    }
+
+    /// What the "save changes?" prompt was asked for goes ahead (after a save, or without
+    /// one) or is dropped.
+    pub(crate) fn answer_save_prompt(&mut self, cmd: FileCmd, answer: Answer, ctx: &egui::Context) {
+        self.autosave.dont_save = cmd == FileCmd::Quit && answer == Answer::DontSave;
         let proceed = match answer {
             Answer::Save => self.save(),
             Answer::DontSave => true,
@@ -360,6 +378,7 @@ impl App {
                 self.path = Some(path);
                 self.saved = content(&self.project);
                 self.ui.status = None;
+                self.drop_recovery_copy();
                 true
             }
             Err(e) => {
@@ -370,7 +389,7 @@ impl App {
     }
 
     /// Swaps in a whole new project and resets editor state that indexes into the old one.
-    fn replace(&mut self, mut p: Project, path: Option<PathBuf>) {
+    pub(crate) fn replace(&mut self, mut p: Project, path: Option<PathBuf>) {
         // A new song revision makes `EngineSync` rebuild and swap the engine's song.
         p.song_rev = self.project.song_rev.wrapping_add(1);
         self.project = p;
@@ -386,7 +405,7 @@ impl App {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[cfg(target_os = "windows")]
@@ -429,7 +448,7 @@ mod tests {
         assert_eq!(args, ["/home/me/Music"]);
     }
 
-    fn app() -> App {
+    pub(crate) fn app() -> App {
         let project = Project::demo();
         App {
             saved: content(&project),
@@ -455,6 +474,8 @@ mod tests {
             updater: crate::updater::Updater::new(),
             mcp_bridge: None,
             mcp_receiver: None,
+            plugins: crate::plugins::PluginHost::new(),
+            autosave: crate::autosave::Autosave::default(),
         }
     }
 

@@ -45,6 +45,91 @@ pub struct PluginRef {
     pub name: String,
 }
 
+/// One plug-in in a track's slot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PluginSlot {
+    pub id: String,
+    pub name: String,
+    pub state: Option<Vec<u8>>,
+    pub bypass: bool,
+    pub uid: u64,
+}
+
+impl PluginSlot {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            state: None,
+            bypass: false,
+            uid: new_uid(),
+        }
+    }
+}
+
+static UID_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+pub fn new_uid() -> u64 {
+    UID_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Settings bytes as a project stores them (hex), and back.
+pub fn encode_state(state: &Option<Vec<u8>>) -> String {
+    use std::fmt::Write;
+    state
+        .as_ref()
+        .map(|bytes| {
+            bytes.iter().fold(String::new(), |mut out, b| {
+                let _ = write!(out, "{b:02x}");
+                out
+            })
+        })
+        .unwrap_or_default()
+}
+
+pub fn decode_state(text: &str) -> Option<Vec<u8>> {
+    if !text.is_ascii() || !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len() / 2)
+        .map(|i| u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).ok())
+        .collect()
+}
+
+pub fn format_label(id: &str) -> &'static str {
+    if id.starts_with("vst3:") {
+        "VST3"
+    } else if id.starts_with("au:") || id.starts_with("aufx:") || id.starts_with("aumu:") {
+        "AU"
+    } else {
+        ""
+    }
+}
+
+#[derive(Default)]
+pub struct PluginHost {}
+
+impl PluginHost {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn open_effects_offline(
+        &mut self,
+        _p: &crate::model::Project,
+        _track: usize,
+        _rate: u32,
+        _block: usize,
+        _failed: &mut Vec<String>,
+    ) -> Vec<Box<dyn prowave_engine::BlockProcessor>> {
+        Vec::new()
+    }
+
+    pub fn states_into(&self, _copy: &mut crate::model::Project) {}
+
+    pub fn save_states(&mut self, _p: &mut crate::model::Project) {}
+}
+
 /// One control input of a plug-in.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ControlInfo {

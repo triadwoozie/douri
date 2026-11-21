@@ -252,6 +252,8 @@ mod tests {
             len,
             pitch,
             vel,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }
     }
 

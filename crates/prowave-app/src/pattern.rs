@@ -354,6 +354,7 @@ impl PatternParams {
                         len: len.min(len_beats - at_beat) as f32,
                         pitch: row.pitch,
                         vel: ((vel as f32 * fade).round() as u8).clamp(1, 127),
+                        ..Default::default()
                     });
                 }
             }
@@ -567,6 +568,7 @@ pub fn drummer_notes(p: &DrummerParams, bars: &[BarSpec]) -> Vec<Note> {
                     len: (h.len as f64).min(end - at).max(0.02) as f32,
                     pitch: h.pitch,
                     vel: h.vel.round().clamp(1.0, 127.0) as u8,
+                    ..Default::default()
                 });
             }
         }

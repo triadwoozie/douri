@@ -144,4 +144,150 @@ mod tests {
         // On the grid both are the same.
         assert_eq!(g.region_start(4.6, 2.0, beat), 5.0);
     }
+
+    // ---- in the Tracks area: Command-G, the Snap menu, drags and the Scissors
+
+    use crate::model::{Project, TrackKind};
+    use crate::tracks_area::TrackTool;
+    use crate::ui_test::Harness;
+    use crate::UiState;
+    use egui::{vec2, Key, Modifiers, PointerButton, Pos2, Rect};
+
+    /// Two instrument tracks; track 0 has "R" (two bars at bar 2), track 1 is empty.
+    fn rig() -> (Project, UiState) {
+        let mut p = Project::empty();
+        p.add_track(TrackKind::Instrument);
+        p.tracks[0].regions = vec![crate::arrange_select::tests::region("R", 2.0, 2.0)];
+        p.selected_track = 0;
+        (p, UiState::new())
+    }
+
+    fn frame(h: &mut Harness, p: &mut Project, s: &mut UiState, ev: Vec<egui::Event>) {
+        let meters = crate::mixer::Meters::default();
+        h.frame(ev, |ui| {
+            let ctx = ui.ctx().clone();
+            crate::key_commands::begin_frame(&ctx);
+            crate::menus::handle_keys(&ctx, p, s);
+            crate::tracks_area::show(ui, p, s, &meters);
+            crate::key_commands::handle(&ctx, p, s);
+        });
+    }
+
+    fn rect_of(h: &Harness) -> Rect {
+        h.ctx
+            .read_response(egui::Id::unique((
+                "tracks_area",
+                ("region", 0usize, 0usize),
+            )))
+            .expect("the region is on screen")
+            .rect
+    }
+
+    /// Drags region 0 of track 0 from 20 points into it by `dx` points; returns its start in
+    /// quarter notes after, and the drag as one undo step.
+    fn drag_by(h: &mut Harness, p: &mut Project, s: &mut UiState, dx: f32) -> f64 {
+        let mut history = crate::undo::History::new(p);
+        let meters = crate::mixer::Meters::default();
+        let from: Pos2 = rect_of(h).left_center() + vec2(20.0, 0.0);
+        let mut ui = |ui: &mut egui::Ui| crate::tracks_area::show(ui, p, s, &meters);
+        h.press(from, PointerButton::Primary, &mut ui);
+        h.move_to(from + vec2(10.0, 0.0), &mut ui);
+        h.move_to(from + vec2(10.0 + dx / 2.0, 0.0), &mut ui);
+        h.move_to(from + vec2(10.0 + dx, 0.0), &mut ui);
+        h.release(from + vec2(10.0 + dx, 0.0), PointerButton::Primary, &mut ui);
+        h.frame(vec![], &mut ui);
+        assert!(history.record(p), "the drag is one undo step");
+        let at = p.region_start_beats(&p.tracks[0].regions[0]);
+        assert!(history.undo(p) && !history.can_undo());
+        assert!(history.redo(p));
+        at
+    }
+
+    /// Off the grid: not within a hundredth of a quarter note of a sixteenth.
+    fn off_grid(b: f64) -> bool {
+        let q = b * 4.0;
+        (q - q.round()).abs() > 0.04
+    }
+
+    #[test]
+    fn command_g_turns_snap_to_grid_off_and_on_and_the_snap_menu_shows_it() {
+        let (mut p, mut s) = rig();
+        let (p, s, h) = (&mut p, &mut s, &mut Harness::new(1400.0, 600.0));
+        frame(h, p, s, vec![]);
+        assert!(s.tracks.grid.on && crate::menus::checked("Snap to Grid", p, s));
+        let c = crate::key_commands::combo_of("Snap to Grid").unwrap();
+        assert_eq!(
+            c.shortcut(),
+            egui::KeyboardShortcut::new(Modifiers::COMMAND, Key::G)
+        );
+        crate::arrange_select::tests::press(h, p, s, Key::G, Modifiers::COMMAND);
+        assert!(!s.tracks.grid.on && !crate::menus::checked("Snap to Grid", p, s));
+        crate::arrange_select::tests::press(h, p, s, Key::G, Modifiers::COMMAND);
+        assert!(s.tracks.grid.on);
+        // In the Edit menu's Snap submenu, with Relative (Logic's default) checked.
+        let edit = crate::menus::MENUS
+            .iter()
+            .find(|(m, _)| *m == "Edit")
+            .unwrap()
+            .1;
+        assert!(edit.contains(&"Snap"));
+        assert!(crate::menus::checked(
+            "Snap Regions to Relative Value",
+            p,
+            s
+        ));
+        crate::menus::apply("Snap Regions to Absolute Value", p, s);
+        assert!(!s.tracks.grid.relative);
+        assert!(crate::menus::checked(
+            "Snap Regions to Absolute Value",
+            p,
+            s
+        ));
+        // G alone is not the toggle.
+        crate::arrange_select::tests::press(h, p, s, Key::G, Modifiers::NONE);
+        assert!(s.tracks.grid.on);
+    }
+
+    #[test]
+    fn with_snap_off_a_drag_and_the_scissors_go_anywhere() {
+        let (mut p, mut s) = rig();
+        let (p, s, h) = (&mut p, &mut s, &mut Harness::new(1400.0, 600.0));
+        frame(h, p, s, vec![]);
+        frame(h, p, s, vec![]);
+        // On (Smart at 24 points a quarter note: beats): the drag lands on a beat.
+        let on = drag_by(h, p, s, 31.0);
+        assert_eq!(on, on.round(), "{on}");
+        assert!(on > 4.0);
+        // Off: wherever the pointer put it.
+        s.tracks.grid.on = false;
+        let off = drag_by(h, p, s, 31.0);
+        assert!(off_grid(off), "{off}");
+        // The Scissors cut where clicked, not on the grid.
+        s.tracks.tool = TrackTool::Scissors;
+        let start = p.region_start_beats(&p.tracks[0].regions[0]);
+        let at = rect_of(h).left_center() + vec2(29.0, 0.0);
+        h.time_passes(1.0);
+        let meters = crate::mixer::Meters::default();
+        h.click(at, |ui| crate::tracks_area::show(ui, p, s, &meters));
+        assert_eq!(p.tracks[0].regions.len(), 2, "cut");
+        let cut = p.region_start_beats(&p.tracks[0].regions[1]);
+        assert!(off_grid(cut - start) || off_grid(cut), "{cut}");
+        assert!((cut - start - 29.0 / 24.0).abs() < 0.1, "{cut}");
+    }
+
+    #[test]
+    fn a_dragged_off_grid_region_keeps_its_offset_unless_snapping_is_absolute() {
+        let (mut p, mut s) = rig();
+        let (p, s, h) = (&mut p, &mut s, &mut Harness::new(1400.0, 600.0));
+        // A quarter note is 24 points; the region starts 0.3 of one after beat 4.
+        p.tracks[0].regions[0].start_bar = 2.075;
+        frame(h, p, s, vec![]);
+        frame(h, p, s, vec![]);
+        let rel = drag_by(h, p, s, 48.0);
+        assert!(((rel - 0.3) - (rel - 0.3).round()).abs() < 1e-6, "{rel}");
+        assert!(rel > 5.0, "{rel}");
+        s.tracks.grid.relative = false;
+        let abs = drag_by(h, p, s, 48.0);
+        assert_eq!(abs, abs.round(), "{abs}");
+    }
 }

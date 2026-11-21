@@ -45,7 +45,7 @@ pub enum TrackKindDoc {
     ExternalMidi,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(default)]
 pub struct NoteDoc {
     /// Beats from the region start.
@@ -53,6 +53,36 @@ pub struct NoteDoc {
     pub len: f32,
     pub pitch: u8,
     pub vel: u8,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mute: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lyric: String,
+}
+
+/// A Vocal Top Line track's part: `score` or `output`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct VocalDoc {
+    pub role: String,
+    pub link: u64,
+    pub voice: String,
+    pub color: String,
+    pub language: String,
+    pub gender: f32,
+    pub breathiness: f32,
+    pub tension: f32,
+    pub voicing: f32,
+    pub velocity: f32,
+    pub vibrato_depth: f32,
+    pub vibrato_rate: f32,
+    pub transition_ms: f32,
+    pub place: String,
+    pub singer: String,
+    pub body_female: f32,
+    pub body_child: f32,
+    pub chimera_breathiness: f32,
+    pub brightness: f32,
+    pub ring: f32,
 }
 
 /// One take of a take folder.
@@ -119,9 +149,15 @@ pub struct RegionDoc {
     pub fade_out: f32,
     pub fade_curve: String,
     pub reverse: bool,
+    #[serde(default)]
+    pub offset_secs: f64,
     /// Crossfade with the audio region it overlaps (Drag: X-Fade): this region fades in over
     /// the overlap while the earlier one fades out.
     pub crossfade: bool,
+    #[serde(default)]
+    pub loop_beats: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u8; 3]>,
     /// A Pattern region: the steps that make its `notes`.
     pub pattern: Option<PatternDoc>,
     /// A Drummer region: the settings that make its `notes`.
@@ -328,6 +364,12 @@ pub struct TrackDoc {
     /// A hosted instrument plug-in (CLAP, VST3, Audio Unit).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hosted_instrument: Option<PluginDoc>,
+    /// Plug-in instrument slot (Audio Unit / VST3 / Singer).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub au_instrument: Option<PluginDoc>,
+    /// Plug-in audio effect slots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub au_effects: Vec<PluginDoc>,
     /// The icon the user picked (`IconKind::name`); absent or unknown names give the automatic one.
     pub icon: Option<String>,
     /// Audio tracks: the first input channel they record (0 is Input 1), and whether they
@@ -344,6 +386,10 @@ pub struct TrackDoc {
     /// The Groove Track, and the tracks that follow it.
     pub groove: bool,
     pub follow_groove: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocal: Option<VocalDoc>,
+    #[serde(default)]
+    pub hidden: bool,
     pub regions: Vec<RegionDoc>,
 }
 
@@ -542,6 +588,8 @@ impl Default for TrackDoc {
             epiano: None,
             drums: None,
             hosted_instrument: None,
+            au_instrument: None,
+            au_effects: Vec::new(),
             icon: None,
             input: 0,
             input_stereo: false,
@@ -550,6 +598,8 @@ impl Default for TrackDoc {
             midi_fx: Vec::new(),
             groove: false,
             follow_groove: false,
+            vocal: None,
+            hidden: false,
             regions: Vec::new(),
         }
     }
@@ -903,6 +953,7 @@ mod tests {
                             len: 1.0,
                             pitch: 60,
                             vel: 90,
+                            ..NoteDoc::default()
                         }],
                         quantize: Some(0.25),
                         ..RegionDoc::default()

@@ -88,15 +88,38 @@ pub fn marquee(notes: &[Note], beat0: f32, beat1: f32, pitch0: u8, pitch1: u8) -
         .collect()
 }
 
-/// Topmost note under (beat, pitch). The bool is true when the point is on the note's right
-/// edge (within `edge` beats), which starts a resize instead of a move.
-pub fn hit_note(notes: &[Note], beat: f32, pitch: u8, edge: f32) -> Option<(usize, bool)> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteHitZone {
+    Body,
+    LeftEdge,
+    RightEdge,
+}
+
+/// Identifies note under (beat, pitch) and whether the hit is near the left edge, right edge,
+/// or inside the note body.
+pub fn hit_note_edges(notes: &[Note], beat: f32, pitch: u8, edge: f32) -> Option<(usize, NoteHitZone)> {
     notes
         .iter()
         .enumerate()
         .rev()
         .find(|(_, n)| n.pitch == pitch && beat >= n.start && beat <= n.start + n.len)
-        .map(|(i, n)| (i, beat >= n.start + n.len - edge.min(n.len * 0.5)))
+        .map(|(i, n)| {
+            let margin = edge.min(n.len * 0.4);
+            let zone = if beat <= n.start + margin {
+                NoteHitZone::LeftEdge
+            } else if beat >= n.start + n.len - margin {
+                NoteHitZone::RightEdge
+            } else {
+                NoteHitZone::Body
+            };
+            (i, zone)
+        })
+}
+
+/// Topmost note under (beat, pitch). The bool is true when the point is on the note's right
+/// edge (within `edge` beats), which starts a resize instead of a move.
+pub fn hit_note(notes: &[Note], beat: f32, pitch: u8, edge: f32) -> Option<(usize, bool)> {
+    hit_note_edges(notes, beat, pitch, edge).map(|(i, zone)| (i, zone == NoteHitZone::RightEdge))
 }
 
 #[cfg(test)]
@@ -109,6 +132,8 @@ mod tests {
             len: 0.5,
             pitch,
             vel: 90,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }
     }
 
@@ -173,6 +198,8 @@ mod tests {
             len: 2.0,
             pitch: 60,
             vel: 100,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }];
         assert_eq!(hit_note(&notes, 1.5, 60, 0.2), Some((0, false)));
         assert_eq!(hit_note(&notes, 2.9, 60, 0.2), Some((0, true)));

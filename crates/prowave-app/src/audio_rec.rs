@@ -332,6 +332,7 @@ impl AudioRecorder {
                         folder: None,
                         generated: None,
                         audio: None,
+                        missing: None,
                         params: RegionParams::default(),
                     });
                     self.takes.push(Take {
@@ -521,6 +522,7 @@ mod tests {
             folder: None,
             generated: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
         });
         let rev = p.song_rev;

@@ -1,0 +1,16 @@
+[package]
+name = "prowave-vocal"
+version = "0.3.0"
+edition = "2021"
+description = "Pure-Rust OpenUtau & vocal synthesis engine for Dōri"
+license = "MIT OR GPL-3.0-or-later"
+
+[dependencies]
+encoding_rs = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+prowave-stretch = { path = "../prowave-stretch" }
+prowave-engine = { path = "../prowave-engine" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

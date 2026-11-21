@@ -368,7 +368,7 @@ fn section_header(
     open: bool,
     title: &str,
     name: &str,
-) -> bool {
+) -> egui::Response {
     let resp = ui.interact(r, id(("section", key)), Sense::click());
     g.rect_filled(r, 0.0, HEADER_BG);
     g.line_segment(
@@ -407,7 +407,7 @@ fn section_header(
         font,
         TEXT,
     );
-    resp.clicked()
+    resp
 }
 
 fn label(g: &Painter, panel_left: f32, y: f32, text: &str, enabled: bool) {
@@ -592,7 +592,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         p.tracks[t].regions[r].name.clone()
     });
     let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
-    if section_header(
+    let head = section_header(
         ui,
         &g,
         hdr,
@@ -600,8 +600,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         s.inspector.region_open,
         tr("Region:"),
         &region_name,
-    ) {
+    );
+    if head.clicked() {
         s.inspector.region_open = !s.inspector.region_open;
+    }
+    if sel.is_some() && head.double_clicked() {
+        crate::menus::apply("Rename Regions", p, s);
     }
     y += HEADER_H + 4.0;
     if s.inspector.region_open {
@@ -610,9 +614,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         });
         let has = sel.is_some();
         let midi = has && !is_audio;
-        let mut params = sel
+        let before = sel
             .map(|(t, r)| p.tracks[t].regions[r].params)
             .unwrap_or_default();
+        let mut params = before;
         let vx = left + VALUE_LEFT;
         let vw = w - VALUE_LEFT - 10.0;
 
@@ -621,8 +626,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             params.mute = !params.mute;
         }
         y += ROW_H;
-        label(&g, left, y, tr("Loop:"), false);
-        checkbox(ui, &g, pos2(vx, y), "region_loop", false, false);
+        label(&g, left, y, tr("Loop:"), has);
+        let looped = params.loop_beats > 0.0;
+        let loop_click = checkbox(ui, &g, pos2(vx, y), "region_loop", looped, has);
         y += ROW_H;
         label(&g, left, y, tr("Quantize:"), midi);
         let q_text = QUANTIZE
@@ -820,10 +826,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 y += ROW_H;
             }
         }
-        if let Some((t, r)) = sel {
-            if p.tracks[t].regions[r].params != params {
-                p.tracks[t].regions[r].params = params;
-                changed_song = true;
+        if let Some(primary) = sel {
+            changed_song |=
+                crate::region_commands::spread_params(p, &s.tracks, primary, before, params);
+            if loop_click {
+                changed_song |= crate::region_commands::set_loop(p, &s.tracks, !looped);
             }
         }
         y += 4.0;
@@ -841,7 +848,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         s.inspector.track_open,
         tr("Track:"),
         &track_name,
-    ) {
+    )
+    .clicked()
+    {
         s.inspector.track_open = !s.inspector.track_open;
     }
     y += HEADER_H + 4.0;

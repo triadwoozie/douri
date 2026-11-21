@@ -635,6 +635,7 @@ mod tests {
             controls: Vec::new(),
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: None,
         }
@@ -646,6 +647,8 @@ mod tests {
             len: 1.0,
             pitch,
             vel: 100,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }
     }
 

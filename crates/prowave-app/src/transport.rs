@@ -32,6 +32,42 @@ const LCD_REC_DIM: Color32 = Color32::from_rgb(84, 30, 28);
 /// The record button's background while recording.
 const REC_BUTTON_ON: Color32 = Color32::from_rgb(0xff, 0x45, 0x3a);
 
+/// Stop (0, the Stop key): stops the song. When it has stopped already, the playhead goes to
+/// the start of the project, or to the left locator while Cycle is on, as in Logic.
+pub(crate) fn stop(p: &mut Project) {
+    if p.playing {
+        p.playing = false;
+    } else if p.cycle {
+        p.position_beats = p.cycle_start;
+    } else {
+        p.position_beats = 0.0;
+    }
+}
+
+/// Bars that Fast Rewind and Fast Forward move by (Logic: eight).
+pub(crate) const FAST_BARS: u32 = 8;
+
+/// Rewind (Comma): back to the start of this bar, or of the one before when already there;
+/// `bars` times.
+pub(crate) fn rewind(p: &mut Project, bars: u32) {
+    for _ in 0..bars {
+        let bar = p.beats_to_bar(p.position_beats);
+        let back = if bar.fract() < 1e-6 {
+            bar - 1.0
+        } else {
+            bar.floor()
+        };
+        p.position_beats = p.bar_to_beats(back.max(0.0));
+    }
+}
+
+/// Forward (Period): on to the start of the next bar; `bars` times.
+pub(crate) fn forward(p: &mut Project, bars: u32) {
+    for _ in 0..bars {
+        p.position_beats = p.next_bar_start(p.position_beats);
+    }
+}
+
 /// The LCD's colours: normal or recording.
 struct LcdColors {
     bg: Color32,

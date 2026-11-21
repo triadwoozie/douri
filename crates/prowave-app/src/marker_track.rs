@@ -7,6 +7,7 @@
 //! - Right-click: colour, or Delete Marker.
 use crate::i18n::tr;
 use crate::model::{Project, MARKER_COLORS};
+use crate::theme;
 use crate::widgets::context_menu;
 use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Sense, Stroke, Ui};
 
@@ -23,8 +24,21 @@ enum Action {
     Delete(usize),
 }
 
+/// The id of the + key in the header (tests find it on screen with this).
+pub(crate) fn add_key_id() -> egui::Id {
+    egui::Id::unique("marker_track_add")
+}
+
+/// The id of marker `i` on screen.
+pub(crate) fn marker_id(i: usize) -> egui::Id {
+    egui::Id::unique(("marker", i))
+}
+
 /// Draws the Marker track's `header` and `lane` and handles its editing. `x_of` / `beat_of`
 /// convert between beats and screen x as in the Tracks area; `snap` snaps a position.
+/// `selected` is the selected marker. Returns whether a marker was selected now (the Tracks
+/// area then deselects its regions).
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     p: &mut Project,
@@ -33,7 +47,9 @@ pub fn show(
     x_of: impl Fn(f64) -> f32,
     beat_of: impl Fn(f32) -> f64,
     snap: &dyn Fn(f64) -> f64,
-) {
+    selected: &mut Option<usize>,
+) -> bool {
+    let mut picked = false;
     let rename_id = egui::Id::unique("marker_track_rename");
     let grab_id = egui::Id::unique("marker_track_grab");
 
@@ -53,12 +69,30 @@ pub fn show(
     );
     if let Some(i) = p.marker_at(p.position_beats) {
         gh.text(
-            pos2(header.right() - 10.0, header.center().y),
+            pos2(header.right() - 32.0, header.center().y),
             Align2::RIGHT_CENTER,
             &p.markers[i].name,
             FontId::proportional(11.0),
             Color32::from_gray(0xa8),
         );
+    }
+
+    // The + key (Logic's Marker track header): Create Marker at the playhead.
+    let add = Rect::from_center_size(
+        pos2(header.right() - 14.0, header.center().y),
+        vec2(20.0, 20.0),
+    );
+    let add_resp = ui.interact(add, add_key_id(), Sense::click());
+    gh.text(
+        add.center(),
+        Align2::CENTER_CENTER,
+        "+",
+        FontId::proportional(14.0),
+        Color32::from_gray(0xdc),
+    );
+    if add_resp.clicked() {
+        *selected = Some(crate::marker_edit::create(p, p.position_beats, true));
+        picked = true;
     }
 
     // ---- lane: double-click an empty spot to add a marker
@@ -68,6 +102,8 @@ pub fn show(
     if lane_resp.double_clicked() {
         if let Some(pt) = lane_resp.interact_pointer_pos() {
             let i = p.add_marker(snap(beat_of(pt.x)));
+            *selected = Some(i);
+            picked = true;
             ui.ctx()
                 .data_mut(|m| m.insert_temp(rename_id, (i, p.markers[i].name.clone())));
         }
@@ -92,8 +128,12 @@ pub fn show(
             egui::Id::unique(("marker", i)),
             Sense::click_and_drag(),
         );
-        if resp.clicked() {
-            p.position_beats = start;
+        if resp.clicked() || resp.drag_started() {
+            if resp.clicked() {
+                p.position_beats = start;
+            }
+            *selected = Some(i);
+            picked = true;
         }
         if resp.double_clicked() {
             action = Some(Action::Rename(i));
@@ -133,8 +173,11 @@ pub fn show(
         });
 
         let m = &p.markers[i];
-        let selected = p.marker_at(p.position_beats) == Some(i);
-        let fill = if selected {
+        let current = p.marker_at(p.position_beats) == Some(i);
+        let is_selected = *selected == Some(i);
+        let fill = if is_selected {
+            theme::ORANGE
+        } else if current {
             m.color
         } else {
             m.color.gamma_multiply(0.7)
@@ -155,7 +198,17 @@ pub fn show(
         }
     }
     if moved {
+        // Sorting may give the selected marker another index: follow it.
+        let held = selected
+            .and_then(|i| p.markers.get(i))
+            .map(|m| (m.beat, m.name.clone()));
         p.tidy_markers();
+        if let Some((beat, name)) = held {
+            *selected = p
+                .markers
+                .iter()
+                .position(|m| (m.beat - beat).abs() <= 1e-6 && m.name == name);
+        }
     }
 
     match action {
@@ -166,6 +219,7 @@ pub fn show(
         Some(Action::Color(i, c)) => p.markers[i].color = c,
         Some(Action::Delete(i)) => {
             p.markers.remove(i);
+            *selected = None;
         }
         None => {}
     }
@@ -175,7 +229,7 @@ pub fn show(
         let Some(m) = p.markers.get(i) else {
             ui.ctx()
                 .data_mut(|m| m.remove::<(usize, String)>(rename_id));
-            return;
+            return picked;
         };
         let x0 = x_of(m.beat).max(lane.left());
         let r = Rect::from_min_size(pos2(x0, lane.top() + 1.0), vec2(160.0, HEIGHT - 2.0));
@@ -222,4 +276,5 @@ pub fn show(
         [lane.left_bottom(), lane.right_bottom()],
         Stroke::new(1.0, Color32::from_gray(0x1a)),
     );
+    picked
 }

@@ -294,10 +294,11 @@ pub fn clear_copy(dir: &Path) {
 /// in no saved project file: closing without saving would delete the only copy.
 pub fn has_unsaved_recordings(p: &Project, dir: &Path) -> bool {
     let recordings = recordings_in(dir);
-    crate::project_io::to_doc(p)
-        .1
-        .iter()
-        .any(|m| m.source.starts_with(&recordings) && m.source.is_file())
+    crate::project_io::to_doc(p).1.iter().any(|m| {
+        m.source.starts_with(&recordings)
+            && m.source.is_file()
+            && crate::project_io::archived(&m.source).is_none()
+    })
 }
 
 /// A recovery copy found at start, to be offered.
@@ -672,13 +673,16 @@ mod tests {
         let (q, warnings) = open(&found[0], &ctx).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         let region = &q.tracks.last().unwrap().regions[0];
+        assert!(region.missing.is_none());
         assert_eq!(region.audio.as_ref().unwrap().file.path, take);
         assert!(take.starts_with(&dir));
 
         // The take is gone: the project still opens, and says which file is missing.
         std::fs::remove_file(&take).unwrap();
-        let (_q, warnings) = open(&found[0], &ctx).unwrap();
+        let (q, warnings) = open(&found[0], &ctx).unwrap();
         assert_eq!(warnings.len(), 1);
+        let region = &q.tracks.last().unwrap().regions[0];
+        assert_eq!(region.missing.as_ref().unwrap().source, take);
     }
 
     #[test]

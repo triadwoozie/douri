@@ -96,12 +96,6 @@ impl MidiIn {
         midi
     }
 
-    /// The name of the connected keyboard.
-    #[allow(dead_code)]
-    pub fn port_name(&self) -> Option<&str> {
-        self.port.as_deref()
-    }
-
     /// Keeps away from the port named `name` (or stops doing so with `None`): a connection to
     /// it is closed, and the keyboard is looked for on the other ports.
     pub fn avoid(&mut self, name: Option<&str>) {
@@ -133,7 +127,7 @@ impl MidiIn {
 
     fn connect(&mut self) {
         self.last_try = Some(Instant::now());
-        let Ok(input) = MidiInput::new("Dōri") else {
+        let Ok(input) = MidiInput::new(crate::APP_NAME) else {
             return;
         };
         let ports = input.ports();

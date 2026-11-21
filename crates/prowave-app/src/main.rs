@@ -6,19 +6,30 @@
 #[global_allocator]
 static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
+mod aaf;
 mod apple_loops;
+mod arrange_select;
+pub mod arrange_nav;
+pub mod arrange_zoom;
 mod audio_prefs;
 mod audio_rec;
 mod automation;
+mod automation_ui;
+mod autosave;
 mod bass808_ui;
 mod bench;
 mod bounce;
 mod clock_follow;
 mod clock_in;
+mod crash_log;
+pub mod cycle_area;
+mod drag_modes;
 mod drum_kit;
 mod drum_machine_ui;
 mod engine_sync;
 mod event_list;
+mod fade_curve;
+mod fade_tool;
 mod file_browser;
 mod file_commands;
 mod flex_edit;
@@ -29,14 +40,21 @@ mod groove;
 mod group_editor;
 mod groups;
 mod hosted_plugins;
+pub mod hw;
+pub mod hw_vocal;
 mod i18n;
 mod icons;
 mod import;
 mod inspector;
 mod ir_files;
+pub mod key_commands;
 mod library;
 pub mod liquid_glass;
+pub mod lyrics;
+pub mod lyrics_ui;
 mod marker_track;
+pub mod marker_edit;
+pub mod marker_number;
 mod marquee;
 pub mod mcp_server;
 mod menus;
@@ -57,6 +75,7 @@ mod onboarding;
 mod patches;
 mod pattern;
 mod piano_roll;
+mod piano_tools;
 mod pitch_editor;
 mod plugin_manager;
 mod plugin_picker;
@@ -66,41 +85,64 @@ mod project_settings;
 mod recent_files;
 mod recorder;
 mod recovery;
+mod region_colors;
+mod region_commands;
 mod region_edit;
+mod region_solo;
 mod sampler_load;
 mod score;
 mod score_export;
 mod scripter;
+mod section_edit;
+mod select_similar;
+mod shuffle_edit;
 mod side_panes;
 mod signature_track;
+pub mod singer;
 mod smart_tempo;
 mod snap_grid;
 pub mod sound_library;
 mod soundfonts;
 mod space_designer_ui;
+pub mod spectrogram_view;
 mod stack_dialog;
 mod start_screen;
 mod step_editor;
 mod sync_menu;
 mod sysex;
+mod take_pack;
 mod takes;
 mod tempo_track;
 mod theme;
+pub mod timeline_viewport;
 mod tooltips;
+mod track_commands;
 mod track_dialogs;
 mod track_icons;
+mod track_selection;
 mod tracks_area;
 mod transform;
 mod transform_ui;
 mod transport;
+pub mod ui_chrome;
 mod ui_scale;
 #[cfg(test)]
 mod ui_test;
 mod undo;
 mod undo_history;
 mod updater;
+pub mod vocal;
 mod widgets;
 mod window_chrome;
+
+pub const APP_NAME: &str = "Dōri";
+
+pub fn about_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+pub fn window_title() -> String {
+    APP_NAME.to_string()
+}
 
 use model::Project;
 
@@ -286,6 +328,20 @@ pub struct UiState {
     pub chooser_details: start_screen::ChooserDetails,
     /// Force a top-level menu open for verification screenshots.
     pub shot_top_menu: Option<String>,
+    /// Vocal Top Line window and background renders.
+    pub vocal: vocal::VocalState,
+    /// Singer instrument window and bounces.
+    pub singer: singer::SingerUi,
+    /// Missing audio files detected during project load or recovery.
+    pub missing_audio: Vec<String>,
+    /// What the Tracks area's track commands remember (`track_commands`).
+    pub arrange: track_commands::ArrangeView,
+    /// Spectrogram view of audio regions.
+    pub spectrogram: spectrogram_view::SpectrogramView,
+    /// Automation view state.
+    pub auto: automation::AutoView,
+    /// Window > Open Piano Roll: the Piano Roll in a window of its own.
+    pub piano_window: bool,
 }
 
 impl UiState {
@@ -390,6 +446,13 @@ impl UiState {
             simplified_mode: false,
             chooser_details: start_screen::ChooserDetails::default(),
             shot_top_menu: None,
+            vocal: vocal::VocalState::default(),
+            singer: singer::SingerUi::default(),
+            missing_audio: Vec::new(),
+            arrange: track_commands::ArrangeView::default(),
+            spectrogram: spectrogram_view::SpectrogramView::default(),
+            auto: automation::AutoView::default(),
+            piano_window: false,
         }
     }
 
@@ -455,9 +518,14 @@ struct App {
     /// MCP Server command bridge and receiver.
     mcp_bridge: Option<mcp_server::McpBridge>,
     mcp_receiver: Option<std::sync::mpsc::Receiver<mcp_server::McpCommand>>,
+    pub plugins: plugins::PluginHost,
+    pub autosave: autosave::Autosave,
 }
 
 impl App {
+    pub fn has_unsaved_changes(&self) -> bool {
+        crate::file_commands::content(&self.project) != self.saved
+    }
     /// Project Settings > Audio chose another output device or buffer size: the engine restarts
     /// on it. Playback stops and the playhead stays where it was; the MIDI sender and the audio
     /// input are started again on the new engine. Refused while recording or bouncing. If the
@@ -929,6 +997,7 @@ impl App {
             folder: None,
             generated: None,
             audio: Some(audio),
+            missing: None,
             params: crate::model::RegionParams::default(),
         });
         t.regions
@@ -1033,11 +1102,14 @@ mod file_name_tests {
                     len: 1.0,
                     pitch: 60,
                     vel: 100,
+                    mute: false,
+                    lyric: crate::lyrics::Lyric::default(),
                 }],
                 controls: Vec::new(),
                 folder: None,
                 generated: None,
                 audio: None,
+                missing: None,
                 params: RegionParams::default(),
             });
         }
@@ -2282,6 +2354,8 @@ fn main() -> eframe::Result {
                 updater: updater::Updater::new(),
                 mcp_bridge: Some(mcp_bridge),
                 mcp_receiver: Some(mcp_rx),
+                plugins: plugins::PluginHost::default(),
+                autosave: autosave::Autosave::default(),
             };
             if !measuring {
                 app.ui.update_auto = updater::auto_enabled();

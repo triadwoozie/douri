@@ -671,6 +671,7 @@ pub fn import(p: &mut Project, file: &MidiFile) -> usize {
                 len: (n.len as f64 / ppq).max(1.0 / 960.0) as f32,
                 pitch: n.pitch.min(127),
                 vel: n.vel.clamp(1, 127),
+                ..Default::default()
             })
             .collect();
         let controls: Vec<Control> = ft
@@ -695,6 +696,7 @@ pub fn import(p: &mut Project, file: &MidiFile) -> usize {
             controls,
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: None,
         });
@@ -1439,10 +1441,13 @@ mod tests {
                 len: 1.0,
                 pitch: 60,
                 vel: 100,
+                mute: false,
+                lyric: crate::lyrics::Lyric::default(),
             }],
             controls: Vec::new(),
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: None,
         });

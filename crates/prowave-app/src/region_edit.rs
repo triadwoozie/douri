@@ -349,33 +349,270 @@ fn split_region(p: &mut Project, t: usize, r: usize, at: f64) -> Option<usize> {
 
     let track = &mut p.tracks[t];
     track.regions[r] = left;
-    track.regions.push(right);
-    Some(track.regions.len() - 1)
+    track.regions.insert(r + 1, right);
+    Some(r + 1)
 }
 
 /// Split at Playhead: every selected region the playhead is inside of is cut. The right pieces
-/// become the selection.
+/// become the selection. Handles audio (including reversed), generated, and plain MIDI regions.
 pub(crate) fn split_at_playhead(p: &mut Project, v: &mut TracksView) {
     let at = p.position_beats;
-    let mut targets: Vec<(usize, usize)> = v
+    // Collect targets: regions where the playhead is inside. For audio (including reversed)
+    // and generated regions, use the richer local split_region; for others, use the Project method.
+    let all_targets: Vec<(usize, usize)> = v
         .selection()
         .into_iter()
-        .filter(|&(t, r)| can_split_at(p, t, r))
+        .filter(|&(t, r)| {
+            let Some(reg) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
+                return false;
+            };
+            if reg.params.locked || reg.folder.is_some() {
+                return false;
+            }
+            let (start, end) = (p.region_start_beats(reg), p.region_end_beats(reg));
+            at > start + 1e-6 && at < end - 1e-6
+        })
         .collect();
-    // Highest index first on each track: a cut appends its right piece, so lower indexes stay
-    // valid.
+    // Highest index first on each track so lower indexes stay valid after each insert.
+    let mut targets = all_targets;
     targets.sort_unstable();
     targets.reverse();
-    let mut made = Vec::new();
+    let mut made: Vec<(usize, usize)> = Vec::new();
     for (t, r) in targets {
-        if let Some(right) = split_region(p, t, r, at) {
-            made.push((t, right));
+        let reg = match p.tracks.get(t).and_then(|tr| tr.regions.get(r)) {
+            Some(reg) => reg,
+            None => continue,
+        };
+        let needs_local = reg.audio.is_some() || reg.generated.is_some() || reg.params.reverse;
+        let did_split = if needs_local {
+            split_region(p, t, r, at).is_some()
+        } else {
+            p.split_region(t, r, at)
+        };
+        if did_split {
+            for m in made.iter_mut().filter(|m| m.0 == t && m.1 > r) {
+                m.1 += 1;
+            }
+            made.push((t, r + 1));
         }
     }
     if !made.is_empty() {
         v.select_many(&made);
         p.song_rev += 1;
     }
+}
+
+/// The regions a command on `clicked` acts on: the whole selection when `clicked` is part of
+/// it (or there is no `clicked`: a key or a menu), else `clicked` alone, as in Logic.
+fn targets(v: &TracksView, clicked: Option<(usize, usize)>) -> Vec<(usize, usize)> {
+    match clicked {
+        Some((t, r)) if !v.is_selected(t, r) => vec![(t, r)],
+        _ => v.selection(),
+    }
+}
+
+/// The Scissors tool on region `clicked` at `at` (quarter notes): the region is cut there,
+/// and so is every other selected region `at` is inside of when the clicked one is selected
+/// (Logic: all selected regions are cut). With `equal` (Option held) the cuts go on after
+/// `at` in steps as long as the clicked region's first piece, so the pieces are equal. The
+/// pieces to the right of a cut are what gets selected. Returns whether anything was cut.
+pub(crate) fn scissors(
+    p: &mut Project,
+    v: &mut TracksView,
+    clicked: (usize, usize),
+    at: f64,
+    equal: bool,
+) -> bool {
+    let Some(start) = p
+        .tracks
+        .get(clicked.0)
+        .and_then(|t| t.regions.get(clicked.1))
+        .map(|r| p.region_start_beats(r))
+    else {
+        return false;
+    };
+    let step = at - start;
+    if step < 1e-6 {
+        return false;
+    }
+    let mut regions = targets(v, Some(clicked));
+    // Highest index first on each track: the cuts of one region leave the lower ones alone.
+    regions.sort_unstable();
+    regions.reverse();
+    let mut made: Vec<(usize, usize)> = Vec::new();
+    for (t, r) in regions {
+        let Some(reg) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
+            continue;
+        };
+        let end = p.region_end_beats(reg);
+        let mut cuts = vec![at];
+        if equal {
+            let mut next = at + step;
+            while next < end - 1e-6 {
+                cuts.push(next);
+                next += step;
+            }
+        }
+        // The last cut first: the piece left of it keeps the region's index.
+        let mut n = 0;
+        for &cut in cuts.iter().rev() {
+            if p.split_region(t, r, cut) {
+                n += 1;
+            }
+        }
+        if n > 0 {
+            for m in made.iter_mut().filter(|m| m.0 == t && m.1 > r) {
+                m.1 += n;
+            }
+            made.extend((1..=n).map(|k| (t, r + k)));
+        }
+    }
+    if made.is_empty() {
+        return false;
+    }
+    made.sort_unstable();
+    v.select_many(&made);
+    true
+}
+
+/// A drag of `group` by `delta` quarter notes, stopped where its earliest region reaches the
+/// start of the song: the regions keep their distances from each other, as in Logic.
+pub(crate) fn clamp_delta(group: &[(usize, usize, f64)], delta: f64) -> f64 {
+    let earliest = group.iter().map(|g| g.2).fold(f64::INFINITY, f64::min);
+    if earliest.is_finite() {
+        delta.max(-earliest)
+    } else {
+        delta
+    }
+}
+
+/// Where the earliest selected region starts, in quarter notes.
+pub(crate) fn selection_start(p: &Project, v: &TracksView) -> Option<f64> {
+    v.selection()
+        .into_iter()
+        .filter_map(|(t, r)| p.tracks.get(t)?.regions.get(r))
+        .map(|reg| p.region_start_beats(reg))
+        .min_by(f64::total_cmp)
+}
+
+/// Edit > Invert Selection (Shift-I): every region that was not selected, and none that was.
+pub(crate) fn invert_selection(p: &Project, v: &mut TracksView) {
+    let all: Vec<(usize, usize)> = p
+        .tracks
+        .iter()
+        .enumerate()
+        .flat_map(|(t, tr)| (0..tr.regions.len()).map(move |r| (t, r)))
+        .filter(|&(t, r)| !v.is_selected(t, r))
+        .collect();
+    v.select_many(&all);
+}
+
+/// Edit > Select All Following (Shift-F): the selected regions and every region that starts
+/// after the earliest of them; with `same_track` (Control-Shift-F) only on the tracks that
+/// have a selected region. The selected regions stay selected and the primary one stays so.
+pub(crate) fn select_following(p: &Project, v: &mut TracksView, same_track: bool) {
+    let Some(from) = selection_start(p, v) else {
+        return;
+    };
+    let was = v.selection();
+    let mut all: Vec<(usize, usize)> = v.selected.into_iter().collect();
+    for (t, track) in p.tracks.iter().enumerate() {
+        if same_track && !was.iter().any(|x| x.0 == t) {
+            continue;
+        }
+        for (r, reg) in track.regions.iter().enumerate() {
+            if was.contains(&(t, r)) || p.region_start_beats(reg) >= from - 1e-9 {
+                all.push((t, r));
+            }
+        }
+    }
+    v.select_many(&all);
+}
+
+/// Mute On/Off (Control-M, the Mute tool, Mute Region in the right-click menu): the clicked
+/// region, or the primary one, changes, and every other region the command acts on takes the
+/// same state. Returns whether a region changed.
+pub(crate) fn toggle_mute(
+    p: &mut Project,
+    v: &TracksView,
+    clicked: Option<(usize, usize)>,
+) -> bool {
+    let lead = clicked.or(v.selected);
+    let Some(now) = lead
+        .and_then(|(t, r)| p.tracks.get(t)?.regions.get(r))
+        .map(|reg| reg.params.mute)
+    else {
+        return false;
+    };
+    let targets: Vec<(usize, usize)> = if let Some(c) = clicked {
+        if v.is_selected(c.0, c.1) {
+            v.selection()
+        } else {
+            vec![c]
+        }
+    } else {
+        v.selection()
+    };
+    let mut changed = false;
+    for (t, r) in targets {
+        if let Some(reg) = p.tracks.get_mut(t).and_then(|tr| tr.regions.get_mut(r)) {
+            reg.params.mute = !now;
+            changed = true;
+        }
+    }
+    if changed {
+        p.song_rev += 1;
+    }
+    changed
+}
+
+/// How many more times a looped region plays when nothing in the project comes after it.
+const LOOP_REPEATS_ALONE: f64 = 7.0;
+
+/// Loop On/Off (L): with a looped region in the selection, no selected region loops any more;
+/// otherwise each one loops up to the next region on its track, or, with none there, up to
+/// the end of the last region of the project (Logic: up to the end of the project). A region
+/// with nothing after it anywhere plays [`LOOP_REPEATS_ALONE`] more times.
+pub(crate) fn toggle_loop(p: &mut Project, v: &TracksView) -> bool {
+    let sel: Vec<(usize, usize)> = v
+        .selection()
+        .into_iter()
+        .filter(|&(t, r)| p.tracks.get(t).is_some_and(|tr| r < tr.regions.len()))
+        .collect();
+    if sel.is_empty() {
+        return false;
+    }
+    let looped = sel
+        .iter()
+        .any(|&(t, r)| p.tracks[t].regions[r].params.loop_beats > 0.0);
+    let project_end = p
+        .tracks
+        .iter()
+        .flat_map(|t| t.regions.iter())
+        .map(|reg| p.region_end_beats(reg))
+        .fold(0.0, f64::max);
+    for &(t, r) in &sel {
+        let beats = if looped {
+            0.0
+        } else {
+            let reg = &p.tracks[t].regions[r];
+            let (end, len) = (p.region_end_beats(reg), p.region_len_beats(reg));
+            let next = p.tracks[t]
+                .regions
+                .iter()
+                .map(|o| p.region_start_beats(o))
+                .filter(|s| *s >= end - 1e-9)
+                .min_by(f64::total_cmp);
+            match next {
+                Some(next) => next - end,
+                None if project_end > end + 1e-9 => project_end - end,
+                None => len * LOOP_REPEATS_ALONE,
+            }
+        };
+        p.tracks[t].regions[r].params.loop_beats = beats as f32;
+    }
+    p.song_rev += 1;
+    true
 }
 
 /// Whether two regions' edges meet on the timeline: `b` starts where `a` ends.
@@ -651,6 +888,8 @@ mod tests {
             len,
             pitch: 60,
             vel: 90,
+            mute: false,
+            lyric: crate::lyrics::Lyric::NONE,
         }
     }
 

@@ -305,6 +305,8 @@ mod tests {
                 len: 0.25,
                 pitch: 40,
                 vel: 100,
+                mute: false,
+                lyric: crate::lyrics::Lyric::default(),
             })
             .collect();
         p.tracks[1].regions[0].notes = (0..8)
@@ -313,6 +315,8 @@ mod tests {
                 len: 0.25,
                 pitch: 60,
                 vel: 100,
+                mute: false,
+                lyric: crate::lyrics::Lyric::default(),
             })
             .collect();
         set_groove_track(&mut p, Some(0));

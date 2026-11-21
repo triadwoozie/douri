@@ -7,7 +7,8 @@
 //! added, moved and removed and the stretches between them are bent.
 use crate::i18n::{tr, trf};
 use crate::mixer::{db_to_frac, frac_to_db};
-use crate::model::{AutoMode, AutoPoint, AutoTarget, Automation, Project, Track};
+use crate::model::{AutoMode, AutoPoint, AutoTarget, Project, Track};
+pub use crate::model::Automation;
 use crate::UiState;
 use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Sense, Shape, Stroke, StrokeKind, Ui};
 use prowave_engine::curve_shape;
@@ -898,4 +899,13 @@ mod tests {
         h.frame(vec![], |ui| show(ui.ctx(), &mut p, &mut s));
         assert!(s.mixer.auto_editor.track.is_none());
     }
+}
+
+/// The state of the automation lanes in the Tracks area.
+#[derive(Clone, Debug, Default)]
+pub struct AutoView {
+    pub mode: bool,
+    pub draw: bool,
+    pub arm: bool,
+    pub with_regions: bool,
 }

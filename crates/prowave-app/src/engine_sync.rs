@@ -473,13 +473,14 @@ fn song_notes(p: &Project) -> Vec<NoteEvent> {
     p.tracks
         .iter()
         .enumerate()
-        .filter_map(|(ti, t)| Some((track_index(ti)?, t)))
-        .flat_map(|(track, t)| {
+        .filter_map(|(ti, t)| Some((ti, track_index(ti)?, t)))
+        .flat_map(|(ti, track, t)| {
             let mut notes: Vec<NoteEvent> = t
                 .regions
                 .iter()
-                .filter(|r| !r.params.mute)
-                .flat_map(|r| region_notes(t, r, p.region_start_beats(r), track))
+                .enumerate()
+                .filter(|(ri, r)| crate::region_solo::heard(p, ti, *ri, *r))
+                .flat_map(|(_, r)| region_notes(t, r, p.region_start_beats(r), track))
                 .collect();
             if let Some(g) = groove
                 .as_ref()
@@ -566,6 +567,14 @@ pub fn build_song(engine: &Engine, p: &Project) -> Song {
 /// `Engine` to stream). Used by the offline benchmark.
 pub fn offline_song(p: &Project) -> Song {
     Song::new(song_notes(p), track_mixes(p))
+}
+
+pub(crate) fn offline_setup(p: &Project, _sample_rate: u32) -> Vec<Command> {
+    vec![
+        Command::SetMasterGain { linear: 1.0 },
+        Command::SetSong(Box::new(offline_song(p))),
+        tempo_map(p),
+    ]
 }
 
 /// The project's Tempo track and time signature as an engine tempo map.
@@ -1572,6 +1581,7 @@ mod tests {
                 folder: None,
                 generated: None,
                 audio: None,
+                missing: None,
                 params: RegionParams::default(),
             }],
             params: TrackParams::default(),
@@ -1582,6 +1592,7 @@ mod tests {
             height: 1.0,
             indent: 0,
             folded: false,
+            hidden: false,
             icon: None,
             vca: None,
             midi_port: None,
@@ -1596,6 +1607,9 @@ mod tests {
             midi_program: None,
             midi_bank: None,
             midi_fx: Vec::new(),
+            vocal: None,
+            au_instrument: None,
+            au_effects: Vec::new(),
         }
     }
 
@@ -1605,6 +1619,8 @@ mod tests {
             len: 0.5,
             pitch,
             vel,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
         }
     }
 
@@ -1808,6 +1824,7 @@ mod tests {
                 ],
                 folder: None,
                 audio: None,
+                missing: None,
                 params: RegionParams::default(),
                 generated: None,
             });

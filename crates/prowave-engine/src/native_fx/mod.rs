@@ -28,22 +28,7 @@ mod level_curve;
 pub mod press;
 pub mod tune;
 
-pub trait BlockProcessor: Send {
-    fn midi(&mut self, _status: u8, _data1: u8, _data2: u8, _offset: u32) {}
-    fn process(&mut self, input: (&[f32], &[f32]), out: (&mut [f32], &mut [f32]));
-    fn latency_seconds(&self) -> f64 {
-        0.0
-    }
-    fn set_parameter(&mut self, _index: usize, _value: f32) {}
-    fn block_transport(&mut self, _t: &BlockTransport) {}
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct BlockTransport {
-    pub playing: bool,
-    pub beat: f64,
-    pub tempo: f64,
-}
+pub use crate::plugin_track::{BlockProcessor, BlockTransport};
 
 /// One parameter of a native effect.
 #[derive(Clone, Copy, Debug, PartialEq)]

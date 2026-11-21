@@ -1,0 +1,3190 @@
+{
+  "app": "Pro Wave",
+  "commit": "",
+  "errors": [
+    {
+      "meaning": "The line is not JSON.",
+      "name": "parse_error",
+      "number": -32700
+    },
+    {
+      "meaning": "The line is JSON but not a JSON-RPC 2.0 request.",
+      "name": "invalid_request",
+      "number": -32600
+    },
+    {
+      "meaning": "No method has that name (rpc.describe lists them).",
+      "name": "method_not_found",
+      "number": -32601
+    },
+    {
+      "meaning": "A parameter is missing, unknown, of the wrong type or out of range.",
+      "name": "invalid_params",
+      "number": -32602
+    },
+    {
+      "meaning": "The app failed while running the method (a bug).",
+      "name": "internal_error",
+      "number": -32603
+    },
+    {
+      "meaning": "The track, region, effect, marker or file named does not exist.",
+      "name": "not_found",
+      "number": -32000
+    },
+    {
+      "meaning": "The app cannot do this (here, or for this kind of thing).",
+      "name": "not_supported",
+      "number": -32001
+    },
+    {
+      "meaning": "The app tried and could not (the message says why).",
+      "name": "failed",
+      "number": -32002
+    },
+    {
+      "meaning": "The work did not finish in time.",
+      "name": "timeout",
+      "number": -32003
+    },
+    {
+      "meaning": "The app is doing something that must finish first.",
+      "name": "busy",
+      "number": -32004
+    },
+    {
+      "meaning": "The request line is longer than the limit.",
+      "name": "too_large",
+      "number": -32005
+    },
+    {
+      "meaning": "The project has unsaved changes and the call did not say what to do with them.",
+      "name": "unsaved_changes",
+      "number": -32006
+    },
+    {
+      "meaning": "A question is open in the app and must be answered first (ui.dialog, ui.dialog.answer).",
+      "name": "dialog_open",
+      "number": -32007
+    }
+  ],
+  "methods": [
+    {
+      "changes_project": false,
+      "group": "rpc",
+      "name": "rpc.describe",
+      "params": [
+        {
+          "description": "only this method",
+          "name": "method",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{protocol, app, version, commit, socket, methods: [{name, group, summary, changes_project, params: [{name, type, required, description, unit?, values?, min?, max?}], result}], errors: [{name, number, meaning}]}",
+      "summary": "Every method with its parameters and result, and the error codes."
+    },
+    {
+      "changes_project": false,
+      "group": "rpc",
+      "name": "rpc.version",
+      "params": [],
+      "result": "{app, version, commit, protocol, methods, socket, pid, headless, uptime_seconds}",
+      "summary": "The app's version and commit, and the protocol's version."
+    },
+    {
+      "changes_project": false,
+      "group": "rpc",
+      "name": "rpc.ping",
+      "params": [],
+      "result": "{pong: true}",
+      "summary": "Answers at once: a check that the app is there and its interface thread is running."
+    },
+    {
+      "changes_project": false,
+      "group": "rpc",
+      "name": "rpc.stats",
+      "params": [],
+      "result": "{handling: {requests, measured, mean_ms, median_ms, p95_ms, max_ms}, clients, subscribers, window_visible}",
+      "summary": "How long the app took over the last requests, and who is connected."
+    },
+    {
+      "changes_project": false,
+      "group": "rpc",
+      "name": "rpc.wait",
+      "params": [
+        {
+          "description": "frames to wait for (default 2)",
+          "max": 600.0,
+          "min": 1.0,
+          "name": "frames",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "answer after this long at the latest (default 5000)",
+          "max": 60000.0,
+          "min": 1.0,
+          "name": "timeout_ms",
+          "required": false,
+          "type": "number",
+          "unit": "milliseconds"
+        }
+      ],
+      "result": "{waited_ms}",
+      "summary": "Answers after the app has drawn some frames: the time a change needs to reach the engine, or a plug-in to open."
+    },
+    {
+      "changes_project": false,
+      "group": "state",
+      "name": "state.get",
+      "params": [
+        {
+          "description": "include each track's regions (default true)",
+          "name": "regions",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "include each MIDI region's notes (default true; false keeps a big project's answer small)",
+          "name": "notes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{project: {name, path, dirty, can_undo, can_redo}, transport, key, tuning_hz, tempo_changes, signatures, markers, tracks: [track.get], stereo_out, selection, busy, status, dialog}",
+      "summary": "The whole project and the state of the app in one object."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.get",
+      "params": [],
+      "result": "{name, path, dirty, can_undo, can_redo}",
+      "summary": "The project's name, file and whether it has unsaved changes."
+    },
+    {
+      "changes_project": true,
+      "group": "project",
+      "name": "project.new",
+      "params": [
+        {
+          "description": "what to do when the open project has unsaved changes: error (the default: refuse), save (save it to its file first) or discard (lose them)",
+          "name": "if_unsaved",
+          "required": false,
+          "type": "string",
+          "values": [
+            "error",
+            "save",
+            "discard"
+          ]
+        }
+      ],
+      "result": "the new project as project.get gives it",
+      "summary": "Replaces the open project with a new, empty one (File > New)."
+    },
+    {
+      "changes_project": true,
+      "group": "project",
+      "name": "project.close",
+      "params": [
+        {
+          "description": "what to do when the open project has unsaved changes: error (the default: refuse), save (save it to its file first) or discard (lose them)",
+          "name": "if_unsaved",
+          "required": false,
+          "type": "string",
+          "values": [
+            "error",
+            "save",
+            "discard"
+          ]
+        }
+      ],
+      "result": "the empty project as project.get gives it",
+      "summary": "Closes the project, which leaves a new, empty one (File > Close Project)."
+    },
+    {
+      "changes_project": true,
+      "group": "project",
+      "name": "project.open",
+      "params": [
+        {
+          "description": "the .prowave file: an absolute path, or one starting with ~/",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "what to do when the open project has unsaved changes: error (the default: refuse), save (save it to its file first) or discard (lose them)",
+          "name": "if_unsaved",
+          "required": false,
+          "type": "string",
+          "values": [
+            "error",
+            "save",
+            "discard"
+          ]
+        }
+      ],
+      "result": "project.get's fields, with missing_media (audio files that could not be read) and the dialog that lists them when there are any",
+      "summary": "Opens a .prowave file in place of the open project."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.save",
+      "params": [],
+      "result": "project.get's fields",
+      "summary": "Saves the project to its file (File > Save)."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.save_as",
+      "params": [
+        {
+          "description": "the file to write: an absolute path, or one starting with ~/ (.prowave is added when missing)",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "replace a file that is already there",
+          "name": "overwrite",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "project.get's fields",
+      "summary": "Saves the project to a new file, which becomes its file (File > Save As)."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.save_copy",
+      "params": [
+        {
+          "description": "the file to write",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "replace a file that is already there",
+          "name": "overwrite",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{copy, project}",
+      "summary": "Writes a copy of the project to another file; the project keeps its own file."
+    },
+    {
+      "changes_project": true,
+      "group": "project",
+      "name": "project.revert",
+      "params": [
+        {
+          "description": "must be true: the changes are lost",
+          "name": "discard_changes",
+          "required": true,
+          "type": "boolean"
+        }
+      ],
+      "result": "project.get's fields",
+      "summary": "Reloads the project from its file, losing every change since the last save."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.undo",
+      "params": [],
+      "result": "{done, can_undo, can_redo}; done is false when there was nothing to undo",
+      "summary": "Undoes the last step (Edit > Undo)."
+    },
+    {
+      "changes_project": false,
+      "group": "project",
+      "name": "project.redo",
+      "params": [],
+      "result": "{done, can_undo, can_redo}",
+      "summary": "Does the last undone step again (Edit > Redo)."
+    },
+    {
+      "changes_project": false,
+      "group": "transport",
+      "name": "transport.get",
+      "params": [],
+      "result": "{playing, recording, counting_in, playhead: {bar, position, beat, seconds}, tempo, signature, cycle: {on, start, end}, metronome, count_in}",
+      "summary": "Whether the song plays or records, where the playhead is, the cycle, the tempo and the click."
+    },
+    {
+      "changes_project": false,
+      "group": "transport",
+      "name": "transport.play",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the transport as transport.get gives it",
+      "summary": "Starts playing, from the playhead or from a place."
+    },
+    {
+      "changes_project": false,
+      "group": "transport",
+      "name": "transport.stop",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the transport; a place moves the playhead there after stopping",
+      "summary": "Stops playing and recording."
+    },
+    {
+      "changes_project": false,
+      "group": "transport",
+      "name": "transport.record",
+      "params": [
+        {
+          "description": "false stops the recording and leaves the song playing (default true)",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the transport, with armed_tracks and records_on (the selected track)",
+      "summary": "Starts recording, as the Record key does: audio on the armed audio tracks, else MIDI or audio on the selected track; with the count-in when it is on."
+    },
+    {
+      "changes_project": false,
+      "group": "transport",
+      "name": "transport.locate",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the transport",
+      "summary": "Moves the playhead."
+    },
+    {
+      "changes_project": true,
+      "group": "transport",
+      "name": "transport.cycle",
+      "params": [
+        {
+          "description": "cycle on or off",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the transport; the range runs from the start place to the end place (bar 1 to end_bar 9 loops bars 1 to 8)",
+      "summary": "Turns the cycle (loop) on or off and sets its range."
+    },
+    {
+      "changes_project": true,
+      "group": "transport",
+      "name": "transport.tempo",
+      "params": [
+        {
+          "description": "the new tempo",
+          "max": 990.0,
+          "min": 5.0,
+          "name": "bpm",
+          "required": false,
+          "type": "number",
+          "unit": "bpm"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "{bpm, at, tempo_changes}",
+      "summary": "Reads or sets the tempo in effect at the playhead (or at a place), as dragging the tempo in the control bar does."
+    },
+    {
+      "changes_project": true,
+      "group": "transport",
+      "name": "transport.signature",
+      "params": [
+        {
+          "description": "beats in a bar",
+          "max": 99.0,
+          "min": 1.0,
+          "name": "numerator",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "the note that is one beat: 1, 2, 4, 8, 16, 32 or 64",
+          "max": 64.0,
+          "min": 1.0,
+          "name": "denominator",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "the first bar with this signature (default 1: the song's own)",
+          "max": 9999.0,
+          "min": 1.0,
+          "name": "from_bar",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "result": "{signatures: [{bar, numerator, denominator}]}",
+      "summary": "Reads the time signatures, or sets the signature from a bar on."
+    },
+    {
+      "changes_project": true,
+      "group": "transport",
+      "name": "transport.metronome",
+      "params": [
+        {
+          "description": "click on or off",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "its level",
+          "max": 0.0,
+          "min": -60.0,
+          "name": "volume_db",
+          "required": false,
+          "type": "number",
+          "unit": "dB"
+        },
+        {
+          "description": "the first beat of each bar clicks higher",
+          "name": "accent",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{on, volume_db, accent}",
+      "summary": "Reads or sets the click."
+    },
+    {
+      "changes_project": true,
+      "group": "transport",
+      "name": "transport.count_in",
+      "params": [
+        {
+          "description": "count-in on or off",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "how many bars",
+          "max": 4.0,
+          "min": 1.0,
+          "name": "bars",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "result": "{on, bars}",
+      "summary": "Reads or sets the count-in before recording."
+    },
+    {
+      "changes_project": true,
+      "group": "batch",
+      "name": "batch",
+      "params": [
+        {
+          "description": "the calls: [{\"method\": \"...\", \"params\": {...}}, ...]",
+          "name": "calls",
+          "required": true,
+          "type": "array"
+        },
+        {
+          "description": "when a call fails, put the project back as it was before the batch (default false: what the earlier calls did stays)",
+          "name": "rollback",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{results: [each call's result], count}; on a failure the error has failed_index (0-based), failed_method, results so far and rolled_back",
+      "summary": "Runs several calls in order as one Undo step. Stops at the first that fails."
+    },
+    {
+      "changes_project": false,
+      "group": "track",
+      "name": "track.list",
+      "params": [],
+      "result": "{tracks: [track.get without regions]}",
+      "summary": "The tracks in order, without their regions."
+    },
+    {
+      "changes_project": false,
+      "group": "track",
+      "name": "track.get",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "include the notes of its MIDI regions (default true)",
+          "name": "notes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{id, number, name, kind, selected, mute, solo, arm, monitor, volume_db, pan, color, output, input?, instrument?, effects: [{ref, id, name, format, bypass, values?}], sends, indent, vca?, group?, automation: [{param, points}], regions: [region.get]}",
+      "summary": "One track: its strip settings, instrument, effects, sends, automation lanes and regions."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.add",
+      "params": [
+        {
+          "description": "the kind of track (default instrument)",
+          "name": "kind",
+          "required": false,
+          "type": "string",
+          "values": [
+            "instrument",
+            "audio",
+            "drummer",
+            "aux",
+            "vca",
+            "external_midi"
+          ]
+        },
+        {
+          "description": "its name (default: the app's, such as \"Inst 2\")",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "for an instrument track: the instrument to load, an id or name from plugin.list",
+          "name": "instrument",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "the new track as track.get gives it",
+      "summary": "Adds a track at the end of the list and selects it (Track > New ... Track)."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.remove",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        }
+      ],
+      "result": "{removed, name, tracks}",
+      "summary": "Removes a track with its regions (Track > Delete Track). A folder is released instead: its tracks stay."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.rename",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the new name",
+          "name": "name",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "result": "{id, name}",
+      "summary": "Renames a track."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.move",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "its new number in the list, from 1",
+          "max": 1024.0,
+          "min": 1.0,
+          "name": "to",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "result": "{id, number, order: [ids]}; the app has no gesture for this, so it is done here with the project's own renumbering; folder and VCA tracks cannot be moved",
+      "summary": "Puts a track at another place in the list."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.set",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "mute (a folder mutes its tracks)",
+          "name": "mute",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "solo",
+          "name": "solo",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "record arm (R)",
+          "name": "arm",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "input monitoring (I), audio tracks",
+          "name": "monitor",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "the fader",
+          "max": 6.0,
+          "min": -60.0,
+          "name": "volume_db",
+          "required": false,
+          "type": "number",
+          "unit": "dB"
+        },
+        {
+          "description": "the pan knob, -1 left to 1 right",
+          "max": 1.0,
+          "min": -1.0,
+          "name": "pan",
+          "required": false,
+          "type": "number"
+        },
+        {
+          "description": "audio tracks: \"mono:N\" or \"stereo:N\", N the first input channel from 1",
+          "name": "input",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "\"stereo_out\" or \"bus:1\" to \"bus:8\"",
+          "name": "output",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "the VCA track that moves this track's level (id, name or number), or \"none\"",
+          "name": "vca",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "a new name",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "the track as track.list gives it",
+      "summary": "Sets a track's strip: mute, solo, record arm, monitoring, level, pan, input, output, VCA, name."
+    },
+    {
+      "changes_project": true,
+      "group": "track",
+      "name": "track.send",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the bus",
+          "max": 8.0,
+          "min": 1.0,
+          "name": "bus",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "description": "the send knob, 0 to 1",
+          "max": 1.0,
+          "min": 0.0,
+          "name": "level",
+          "required": false,
+          "type": "number"
+        },
+        {
+          "description": "send before the fader",
+          "name": "pre_fader",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "take the send away",
+          "name": "remove",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the track as track.list gives it; a bus gets its Aux strip when it has none",
+      "summary": "Adds, changes or removes a send from a track to a bus."
+    },
+    {
+      "changes_project": false,
+      "group": "plugin",
+      "name": "plugin.list",
+      "params": [
+        {
+          "description": "only instruments or only effects",
+          "name": "kind",
+          "required": false,
+          "type": "string",
+          "values": [
+            "instrument",
+            "effect"
+          ]
+        },
+        {
+          "description": "only those whose name, maker or id contains this text",
+          "name": "search",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{count, plugins: [{id, name, maker, kind, format: built-in|AU|VST3, vst3_id?, turned_off_after_crash?}]}",
+      "summary": "The instruments and effects that can be loaded: the app's own, and the Audio Units and VST3s on this Mac."
+    },
+    {
+      "changes_project": true,
+      "group": "instrument",
+      "name": "instrument.set",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the instrument: an id or name from plugin.list",
+          "name": "id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "instead of id: the path of a SoundFont (.sf2) file",
+          "name": "soundfont",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "with soundfont: the preset's bank (128 for drum kits)",
+          "max": 16383.0,
+          "min": 0.0,
+          "name": "bank",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "with soundfont: the preset's program",
+          "max": 127.0,
+          "min": 0.0,
+          "name": "program",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "also open the instrument's window on the Mac's screen (default false)",
+          "name": "open_window",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, instrument: {ref, id, name, format, bypass}}",
+      "summary": "Loads an instrument on an instrument track, in place of the one it has."
+    },
+    {
+      "changes_project": true,
+      "group": "instrument",
+      "name": "instrument.remove",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        }
+      ],
+      "result": "{track, removed}",
+      "summary": "Takes the instrument off a track."
+    },
+    {
+      "changes_project": true,
+      "group": "effect",
+      "name": "effect.add",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the effect: an id or name from plugin.list (\"builtin:Compressor\", \"Channel EQ\", an Audio Unit's id ...)",
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "also open the effect's window (default false)",
+          "name": "open_window",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, effect: {ref, id, name, format, bypass}, effects}",
+      "summary": "Adds an effect at the end of a strip's effects (a track's, or the Stereo Out's)."
+    },
+    {
+      "changes_project": true,
+      "group": "effect",
+      "name": "effect.remove",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "result": "{track, removed, effects}",
+      "summary": "Removes an effect from a strip; its automation goes with it."
+    },
+    {
+      "changes_project": true,
+      "group": "effect",
+      "name": "effect.bypass",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "true bypasses, false turns it on (default: the other state)",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, effect}",
+      "summary": "Bypasses an effect or turns it back on."
+    },
+    {
+      "changes_project": true,
+      "group": "effect",
+      "name": "effect.move",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "slots to move: negative is earlier in the chain",
+          "max": 64.0,
+          "min": -64.0,
+          "name": "by",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "result": "{track, effect, effects}",
+      "summary": "Moves an effect up or down among the strip's effects of its kind."
+    },
+    {
+      "changes_project": false,
+      "group": "plugin",
+      "name": "plugin.params",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, devices: [{device: mixer|insert:N|plugin:<uid>, name, running, params: [{param, name, min, max, value, text, unit?, stepped?, choices?}]}]}; with effect or instrument, only that device",
+      "summary": "Every parameter of a strip, by device: the mixer (volume, pan, mute, sends), each built-in effect, the instrument and each plug-in, with its range and value now."
+    },
+    {
+      "changes_project": false,
+      "group": "param",
+      "name": "param.get",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the parameter: its key from plugin.params (\"volume\", \"pan\", \"mute\", \"send:0\", \"fx:0:3\", \"plugin:1:42\") or its name",
+          "name": "param",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{param, name, min, max, value, text, unit?, device, automation_points}",
+      "summary": "One parameter's value now, in its own units."
+    },
+    {
+      "changes_project": true,
+      "group": "param",
+      "name": "param.set",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the parameter: its key from plugin.params (\"volume\", \"pan\", \"mute\", \"send:0\", \"fx:0:3\", \"plugin:1:42\") or its name",
+          "name": "param",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the new value in the parameter's own units (plugin.params gives its range; dB for volume, -1..1 for pan, 0 or 1 for mute)",
+          "name": "value",
+          "required": true,
+          "type": "number"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the parameter as param.get gives it, with `set`; a parameter that has automation is overridden by the move, as in the app",
+      "summary": "Sets a parameter, as a hand on its control does: the fader, pan, mute, a send, a built-in or native effect's knob, or a running Audio Unit's or VST3's parameter."
+    },
+    {
+      "changes_project": false,
+      "group": "preset",
+      "name": "preset.list",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{plugin, presets: [{number, name}], current}",
+      "summary": "The presets of a plug-in: an Audio Unit's factory presets, or a native effect's."
+    },
+    {
+      "changes_project": true,
+      "group": "preset",
+      "name": "preset.load",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "the preset's name",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "or its number from preset.list",
+          "name": "number",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "result": "{loaded: {number, name}}",
+      "summary": "Loads one of a plug-in's presets."
+    },
+    {
+      "changes_project": false,
+      "group": "plugin",
+      "name": "plugin.window",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "true opens (the default), false closes",
+          "name": "open",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{plugin|effect, open}",
+      "summary": "Opens or closes the window of an instrument or effect."
+    },
+    {
+      "changes_project": false,
+      "group": "automation",
+      "name": "automation.get",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "only this parameter (key or name)",
+          "name": "param",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, lanes: [{param, name, unit, min, max, points: [{at: {bar, position, beat, seconds}, value, curve}]}]}; values are in the parameter's own units",
+      "summary": "The automation of a strip: one parameter's breakpoints, or every lane that has any."
+    },
+    {
+      "changes_project": true,
+      "group": "automation",
+      "name": "automation.set",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the parameter: its key from plugin.params (\"volume\", \"pan\", \"mute\", \"send:0\", \"fx:0:3\", \"plugin:1:42\") or its name",
+          "name": "param",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the breakpoints: [{\"bar\": 1, \"value\": -6}, ...]; each has a place (bar, position, seconds or beat) and a value in the parameter's own units; a point at a place that has one replaces its value",
+          "name": "points",
+          "required": true,
+          "type": "array"
+        },
+        {
+          "description": "empty the lane first (default false: the points are added to it)",
+          "name": "replace",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, lane}",
+      "summary": "Writes automation breakpoints for a parameter of a strip."
+    },
+    {
+      "changes_project": true,
+      "group": "automation",
+      "name": "automation.clear",
+      "params": [
+        {
+          "description": "the channel strip: a track's id, name or number, or \"master\" for the Stereo Out",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the lane to empty (key or name)",
+          "name": "param",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: every lane of the strip",
+          "name": "all",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "an effect of the strip: \"insert:1\" (a built-in effect by its slot, from 1), \"plugin:<uid>\" (as state.get gives it) or its name",
+          "name": "effect",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "true: the track's instrument instead of an effect",
+          "name": "instrument",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, cleared}",
+      "summary": "Empties one automation lane of a strip, or all of them."
+    },
+    {
+      "changes_project": false,
+      "group": "midi",
+      "name": "midi.note",
+      "params": [
+        {
+          "description": "the track (default: the selected one)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "the MIDI note, 60 is middle C",
+          "max": 127.0,
+          "min": 0.0,
+          "name": "pitch",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "description": "how hard (default 100)",
+          "max": 127.0,
+          "min": 1.0,
+          "name": "velocity",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "true starts the note (the default), false ends it",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{pitch, on, audio_running}; every note started must be ended",
+      "summary": "Plays a note on a track's instrument now, as a key of the Piano Roll's keyboard does (it is heard, not recorded into a region)."
+    },
+    {
+      "changes_project": false,
+      "group": "midi",
+      "name": "midi.panic",
+      "params": [],
+      "result": "{sent}",
+      "summary": "Ends every sounding note (Record > Send All Notes Off)."
+    },
+    {
+      "changes_project": false,
+      "group": "region",
+      "name": "region.get",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "include a MIDI region's notes (default true)",
+          "name": "notes",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{id, track, name, kind: midi|audio|pattern|drummer, start_bar, length_bars, start_beat, length_beats, start_seconds, mute, loop_beats, and for MIDI: transpose, velocity_offset, quantize_beats, note_count, take_folder, notes: [{pitch, start, length, velocity, mute?, lyric?}]; for audio: audio: {file, file_seconds, sample_rate, channels, flex, offset_seconds, gain_db, fade_in_beats, fade_out_beats, reverse}}",
+      "summary": "One region: where it is, how long, and its notes or its audio file."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.create",
+      "params": [
+        {
+          "description": "the track: id, name or number",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "its length in bars (default: as long as its notes, in whole bars; 4 bars when empty)",
+          "max": 100000.0,
+          "min": 0.0,
+          "name": "length_bars",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "or its length in quarter notes",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "length_beats",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "its name (default: the track's)",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "the notes: [{\"pitch\": 60, \"start\": 0, \"length\": 1, \"velocity\": 100, \"lyric\": \"la\"}, ...]; start and length in quarter notes from the region's start; velocity (default 100), lyric and mute may be left out",
+          "name": "notes",
+          "required": false,
+          "type": "array"
+        },
+        {
+          "description": "select it, so the editors show it (default true)",
+          "name": "select",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the new region as region.get gives it, without its notes",
+      "summary": "Makes a MIDI region on a track, empty or with notes."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.notes.set",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the notes: [{\"pitch\": 60, \"start\": 0, \"length\": 1, \"velocity\": 100, \"lyric\": \"la\"}, ...]; start and length in quarter notes from the region's start; velocity (default 100), lyric and mute may be left out",
+          "name": "notes",
+          "required": true,
+          "type": "array"
+        },
+        {
+          "description": "lengthen the region to the bar that holds the last note (default true)",
+          "name": "grow",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the region, with grown",
+      "summary": "Replaces all the notes of a MIDI region."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.notes.add",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the notes: [{\"pitch\": 60, \"start\": 0, \"length\": 1, \"velocity\": 100, \"lyric\": \"la\"}, ...]; start and length in quarter notes from the region's start; velocity (default 100), lyric and mute may be left out",
+          "name": "notes",
+          "required": true,
+          "type": "array"
+        },
+        {
+          "description": "lengthen the region to the bar that holds the last note (default true)",
+          "name": "grow",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the region, with grown",
+      "summary": "Adds notes to a MIDI region, keeping the ones it has."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.move",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "the track to move it to (default: it stays on its track)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "audio: crossfade with a region it lands on",
+          "name": "crossfade",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the region where it is now",
+      "summary": "Moves a region in time and/or to another track, as dragging it does (its automation goes along when the app is set to move it with regions)."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.copy",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "the track the copy goes on (default: the region's own)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "audio: crossfade with a region it lands on",
+          "name": "crossfade",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the copy",
+      "summary": "Copies a region to another place and/or track, as Option-dragging it does."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.resize",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the new length in bars",
+          "max": 100000.0,
+          "min": 0.0,
+          "name": "length_bars",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "or in quarter notes",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "length_beats",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "the region",
+      "summary": "Changes a region's length, as dragging its right edge does."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.split",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "{left, right}",
+      "summary": "Cuts a region in two at a place (the Scissors tool)."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.join",
+      "params": [
+        {
+          "description": "the regions to join: ids or names",
+          "name": "regions",
+          "required": true,
+          "type": "array"
+        }
+      ],
+      "result": "the joined region",
+      "summary": "Joins regions of one track into one (Edit > Join)."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.loop",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "how many times it plays again after the first",
+          "max": 4096.0,
+          "min": 0.0,
+          "name": "repeats",
+          "required": false,
+          "type": "number"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "true: no loop",
+          "name": "off",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the region; loop_beats is how long the loop runs after the region's end",
+      "summary": "Loops a region: it plays again and again after its end."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.set",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "its name",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "muted regions do not play",
+          "name": "mute",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "how long the loop runs after the region's end; 0 is no loop",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "loop_beats",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "MIDI: semitones",
+          "max": 96.0,
+          "min": -96.0,
+          "name": "transpose",
+          "required": false,
+          "type": "integer",
+          "unit": "semitones"
+        },
+        {
+          "description": "MIDI: added to every note's velocity",
+          "max": 99.0,
+          "min": -99.0,
+          "name": "velocity_offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "MIDI: playback quantize grid in quarter notes (0.25 is a sixteenth); 0 is off",
+          "max": 16.0,
+          "min": 0.0,
+          "name": "quantize_beats",
+          "required": false,
+          "type": "number"
+        },
+        {
+          "description": "audio: region gain",
+          "max": 24.0,
+          "min": -96.0,
+          "name": "gain_db",
+          "required": false,
+          "type": "number",
+          "unit": "dB"
+        },
+        {
+          "description": "audio: fade in",
+          "max": 1000000.0,
+          "min": 0.0,
+          "name": "fade_in_beats",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "audio: fade out",
+          "max": 1000000.0,
+          "min": 0.0,
+          "name": "fade_out_beats",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "audio: play it backwards",
+          "name": "reverse",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the region",
+      "summary": "Sets a region's name, mute and Region Inspector values."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.delete",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "result": "{deleted, name}",
+      "summary": "Deletes a region."
+    },
+    {
+      "changes_project": true,
+      "group": "region",
+      "name": "region.fit_to_grid",
+      "params": [
+        {
+          "description": "the region: its id (\"r12\") or its name when only one region has it",
+          "name": "region",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "result": "{region, fitting, status}; the work runs in the background (event import.fitted)",
+      "summary": "Fits an audio region to the grid where it is (Region menu > Flex Time > Fit to Grid). It sets the project's tempo when it is the project's only audio."
+    },
+    {
+      "changes_project": true,
+      "group": "import",
+      "name": "import.audio",
+      "params": [
+        {
+          "description": "the audio file (WAV, AIFF, FLAC, MP3, CAF): an absolute path, or one starting with ~/",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "an audio track to put it on (default: a new audio track named after the file)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "Fit to Grid: the project's first audio gives it its tempo, later files are stretched to it; either way onto the grid (default: the app's File > Import > Fit to Grid on Drop setting)",
+          "name": "fit_to_grid",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the new region, with fit_to_grid and fitting; without a place it goes at the bar under the playhead",
+      "summary": "Imports an audio file with the app's own import: a new audio track (or a track that is there) gets the file as a region at the bar of the place given."
+    },
+    {
+      "changes_project": true,
+      "group": "import",
+      "name": "import.midi",
+      "params": [
+        {
+          "description": "the .mid file",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "{tracks_made, tracks}; a place puts the file's start there (default: the start of the song)",
+      "summary": "Imports a MIDI file: each of its tracks becomes a new track with one region."
+    },
+    {
+      "changes_project": false,
+      "group": "export",
+      "name": "export.midi",
+      "params": [
+        {
+          "description": "the .mid file to write",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "only this region (default: every MIDI region)",
+          "name": "region",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "replace a file that is already there",
+          "name": "overwrite",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{path, whole_project}",
+      "summary": "Writes the project's MIDI, or one region's, to a MIDI file."
+    },
+    {
+      "changes_project": false,
+      "group": "marker",
+      "name": "marker.list",
+      "params": [],
+      "result": "{markers: [{number, name, at, color}]}",
+      "summary": "The markers, in song order."
+    },
+    {
+      "changes_project": true,
+      "group": "marker",
+      "name": "marker.add",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "its name (default \"Marker N\")",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{marker: its number, markers}",
+      "summary": "Adds a marker at a place (default: the playhead)."
+    },
+    {
+      "changes_project": true,
+      "group": "marker",
+      "name": "marker.set",
+      "params": [
+        {
+          "description": "the marker: its number (from 1, in song order) or its name",
+          "name": "marker",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "a new name",
+          "name": "name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "{markers}",
+      "summary": "Renames a marker and/or moves it."
+    },
+    {
+      "changes_project": true,
+      "group": "marker",
+      "name": "marker.delete",
+      "params": [
+        {
+          "description": "the marker: its number or its name",
+          "name": "marker",
+          "required": true,
+          "type": "any"
+        }
+      ],
+      "result": "{deleted, markers}",
+      "summary": "Deletes a marker."
+    },
+    {
+      "changes_project": false,
+      "group": "tempo",
+      "name": "tempo.list",
+      "params": [],
+      "result": "{tempo_changes: [{at, bpm, ramp}], signatures: [{bar, numerator, denominator}]}",
+      "summary": "The Tempo track's points and the Signature track's changes."
+    },
+    {
+      "changes_project": true,
+      "group": "tempo",
+      "name": "tempo.add",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "the tempo from there on",
+          "max": 990.0,
+          "min": 5.0,
+          "name": "bpm",
+          "required": true,
+          "type": "number",
+          "unit": "bpm"
+        },
+        {
+          "description": "this point ramps to the next one (a tempo curve)",
+          "name": "ramp",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{tempo_changes}",
+      "summary": "Adds a tempo change at a place (or replaces the one there)."
+    },
+    {
+      "changes_project": true,
+      "group": "tempo",
+      "name": "tempo.remove",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        }
+      ],
+      "result": "{tempo_changes}",
+      "summary": "Removes the tempo change at a place."
+    },
+    {
+      "changes_project": true,
+      "group": "signature",
+      "name": "signature.remove",
+      "params": [
+        {
+          "description": "the bar the change starts at (not 1)",
+          "max": 9999.0,
+          "min": 2.0,
+          "name": "bar",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "result": "{signatures}",
+      "summary": "Removes the signature change that starts at a bar (transport.signature adds one)."
+    },
+    {
+      "changes_project": false,
+      "group": "menu",
+      "name": "menu.list",
+      "params": [
+        {
+          "description": "only this menu (File, Edit, Track, Navigate, Record, Mix, View, Window, Help)",
+          "name": "menu",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{entries: [{id, title, menu, submenu?, enabled, checked?, opens_system_window?, use_instead?}], open_recent: [paths]}; an id is the entry's English title",
+      "summary": "Every menu command the app shows, with whether it can be chosen now."
+    },
+    {
+      "changes_project": false,
+      "group": "menu",
+      "name": "menu.invoke",
+      "params": [
+        {
+          "description": "the entry's id from menu.list (its English title; the trailing … may be left out)",
+          "name": "id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "also choose an entry that opens a system file window (the app then waits for a person)",
+          "name": "allow_system_window",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{invoked, checked?}; changes made by the entry get their Undo step within half a second, as menu clicks do",
+      "summary": "Chooses a menu command, as a click on it does."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.dialog",
+      "params": [],
+      "result": "{dialog: null | {id: save_changes|revert|missing_audio|recover, text, buttons, detail}}",
+      "summary": "The question the app is asking in a modal window, if any."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.dialog.answer",
+      "params": [
+        {
+          "description": "one of the buttons ui.dialog lists (save, dont_save, cancel, revert, ok, recover, discard)",
+          "name": "button",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "for save on a project that has no file yet: the .prowave file to save to",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{answered, button, dialog: the next open question or null}",
+      "summary": "Answers the open question, as a click on one of its buttons does."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.windows",
+      "params": [],
+      "result": "{windows: [{id, open}], bottom_panel, project_chooser}",
+      "summary": "The app's panels and windows and which are open."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.window",
+      "params": [
+        {
+          "description": "which one",
+          "name": "id",
+          "required": true,
+          "type": "string",
+          "values": [
+            "mixer",
+            "piano_roll",
+            "score",
+            "channel_rack",
+            "pitch_editor",
+            "piano_roll_window",
+            "inspector",
+            "list_editors",
+            "toolbar",
+            "notes",
+            "tips",
+            "midi_monitor",
+            "midi_fx",
+            "free_plugins",
+            "project_settings",
+            "tempo_track",
+            "marker_track",
+            "signature_track",
+            "master_track",
+            "automation"
+          ]
+        },
+        {
+          "description": "true to open (the default), false to close",
+          "name": "open",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "for project_settings: the tab to show",
+          "name": "tab",
+          "required": false,
+          "type": "string",
+          "values": [
+            "general",
+            "synchronization",
+            "metronome",
+            "recording",
+            "tuning",
+            "audio",
+            "midi"
+          ]
+        }
+      ],
+      "result": "{id, open}",
+      "summary": "Opens or closes a panel or window of the app."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.view",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "zoom out to show every region (Navigate > Zoom to Fit)",
+          "name": "fit",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "width of one bar",
+          "max": 600.0,
+          "min": 6.0,
+          "name": "bar_width",
+          "required": false,
+          "type": "number",
+          "unit": "points"
+        },
+        {
+          "description": "height of a track",
+          "max": 400.0,
+          "min": 20.0,
+          "name": "track_height",
+          "required": false,
+          "type": "number",
+          "unit": "points"
+        },
+        {
+          "description": "scroll with the playhead while playing (Catch)",
+          "name": "follow_playhead",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{bar_width, track_height, first_bar, follow_playhead, lanes_width}; a start place scrolls there, a start and an end zoom to that range",
+      "summary": "Zooms and scrolls the Tracks area."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.select",
+      "params": [
+        {
+          "description": "the track to select: id, name or number",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "the regions to select (ids or names); the first is the one the Inspector and the editors show",
+          "name": "regions",
+          "required": false,
+          "type": "array"
+        },
+        {
+          "description": "select every region (Edit > Select All)",
+          "name": "all_regions",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "select no region",
+          "name": "none",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{track, regions}",
+      "summary": "Selects a track and/or regions, as clicks in the Tracks area do."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.status",
+      "params": [
+        {
+          "description": "empty the status line after reading it",
+          "name": "clear",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{status, cpu_load, playback_load, overloads, audio_running}",
+      "summary": "The app's status line (import errors, engine warnings) and the load meters."
+    },
+    {
+      "changes_project": false,
+      "group": "ui",
+      "name": "ui.screenshot",
+      "params": [
+        {
+          "description": "where to write the .png (default: a numbered file in the session's folder, which is deleted when the app quits)",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "size of the picture relative to the window's pixels (default 0.5)",
+          "max": 1.0,
+          "min": 0.05,
+          "name": "scale",
+          "required": false,
+          "type": "number"
+        },
+        {
+          "description": "which window (default main)",
+          "name": "window",
+          "required": false,
+          "type": "string",
+          "values": [
+            "main",
+            "piano_roll_window"
+          ]
+        }
+      ],
+      "result": "{path, width, height, window}; plug-in windows are the plug-ins' own and are not in the picture",
+      "summary": "Saves a picture of the app's window as a PNG, also while the app is in the background."
+    },
+    {
+      "changes_project": false,
+      "group": "audio",
+      "name": "audio.get",
+      "params": [],
+      "result": "{running, output, sample_rate, buffer_frames, buffer_choices, process_buffer_frames, low_latency, software_monitoring, round_trip_ms, output_device, input_device, output_devices, input_devices}",
+      "summary": "The audio engine's device, buffer and monitoring settings, and the devices to choose from."
+    },
+    {
+      "changes_project": false,
+      "group": "audio",
+      "name": "audio.set",
+      "params": [
+        {
+          "description": "the I/O buffer (Record > I/O Buffer Size)",
+          "name": "buffer_frames",
+          "required": false,
+          "type": "integer",
+          "unit": "frames"
+        },
+        {
+          "description": "Record > Low Latency Mode",
+          "name": "low_latency",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "Record > Software Monitoring",
+          "name": "software_monitoring",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "the id of an output device from audio.get, or \"default\"",
+          "name": "output_device",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "the id of an input device from audio.get, or \"default\"",
+          "name": "input_device",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "the settings as audio.get gives them",
+      "summary": "Changes audio settings of this Mac (not of the project). Sound may drop out while a device or the buffer changes."
+    },
+    {
+      "changes_project": false,
+      "group": "events",
+      "name": "events.subscribe",
+      "params": [],
+      "result": "{subscribed: true, events: [names]}; each event is a line {\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"event\":name,...}}",
+      "summary": "Sends this connection a line for each thing that happens in the app, until it closes or unsubscribes."
+    },
+    {
+      "changes_project": false,
+      "group": "events",
+      "name": "events.unsubscribe",
+      "params": [],
+      "result": "{subscribed: false}",
+      "summary": "Stops the events on this connection."
+    },
+    {
+      "changes_project": false,
+      "group": "app",
+      "name": "app.quit",
+      "params": [
+        {
+          "description": "save: save first (to `path`, or the project's file); discard: quit without saving; cancel: do not quit when there are unsaved changes",
+          "name": "if_unsaved",
+          "required": true,
+          "type": "string",
+          "values": [
+            "save",
+            "discard",
+            "cancel"
+          ]
+        },
+        {
+          "description": "for save on a project that has no file yet: the .prowave file to save to",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{quitting, unsaved_changes}",
+      "summary": "Quits the app. What happens to unsaved changes must be said; it never waits on a question."
+    },
+    {
+      "changes_project": false,
+      "group": "export",
+      "name": "export.bounce",
+      "params": [
+        {
+          "description": "the file of the mix, ending in .wav or .aiff (default: a numbered WAV file in the session's folder)",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "the file format (default: what the path's ending names)",
+          "name": "format",
+          "required": false,
+          "type": "string",
+          "values": [
+            "wav",
+            "aiff"
+          ]
+        },
+        {
+          "description": "16 or 24 (whole numbers) or 32 (float, WAV only); default 24",
+          "name": "bit_depth",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "raise or lower each file so its loudest sample is at full scale (default false)",
+          "name": "normalize",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "sound kept after the end, for reverb and release. Given: exactly this much. Not given: one second, and on while the output is above -80 dB, up to `max_tail_seconds`",
+          "max": 600.0,
+          "min": 0.0,
+          "name": "tail_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "the longest tail when it follows the sound (default 20; with `tail_seconds` given, the tail may grow up to here)",
+          "max": 600.0,
+          "min": 0.0,
+          "name": "max_tail_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "write the mix (default true)",
+          "name": "mix",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "also write every track that is heard into a file of its own (default false)",
+          "name": "stems",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "only this track, into `path` (the others play nothing; `mix` and `stems` are not looked at)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "replace files that are already there",
+          "name": "overwrite",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "answer when the bounce ends (default true); false answers at once with {bounce, started, path} and the end comes as the event bounce.finished, or ask export.bounce.status",
+          "name": "wait",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{bounce, path, files: [{path, track, name, seconds, frames, peak_db, rms_db, silent, tail_seconds, gain_db, clipped_samples, speed}], seconds, sample_rate, channels, format, from, to, range_seconds, tail_seconds, peak_db, rms_db, silent, rendered_tracks, muted_tracks, not_rendered, complete, speed, took_seconds}; the top-level path, seconds and levels are the first file's (the mix); clipped_samples counts samples at full scale (the output is cut off at 0 dBFS, as the app's is); speed is seconds of sound for each second of rendering",
+      "summary": "Bounces the project to an audio file (File > Bounce > Project or Section): everything the app plays, through a second engine that has no sound card, faster than it plays. Audio regions, instruments, Aux strips and sends, effects, automation, tempo changes and the Stereo Out are in it; Mute and Solo are as in the app. Without a range: the cycle range while Cycle is on, else from bar 1 to the end of the last region. With `stems`, every track that is heard is also written to a file of its own beside the mix (\"<mix> - 03 <track>.wav\"), each from the same start and through the Stereo Out. `not_rendered` lists what should be in the file and is not, with the reason; `complete` says there is none. The call is answered when the bounce ends: pass `--timeout 0` to prowavectl for a long song."
+    },
+    {
+      "changes_project": false,
+      "group": "export",
+      "name": "export.bounce.status",
+      "params": [],
+      "result": "{running, bounce, fraction, file, files, track, preparing} while one runs; {running: false, bounce, ok, result | error} after",
+      "summary": "How far the running bounce is, or how the last one ended."
+    },
+    {
+      "changes_project": false,
+      "group": "export",
+      "name": "export.bounce.cancel",
+      "params": [],
+      "result": "{cancelled, bounce}",
+      "summary": "Stops the running bounce; the file being written is removed and the waiting export.bounce call gets an error."
+    },
+    {
+      "changes_project": false,
+      "group": "render",
+      "name": "render.range",
+      "params": [
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "a place as a bar, 1-based as the app shows it; a fraction is a part of the bar (5.5 is halfway through bar 5)",
+          "max": 100000.0,
+          "min": 1.0,
+          "name": "end_bar",
+          "required": false,
+          "type": "number",
+          "unit": "bars"
+        },
+        {
+          "description": "a place as \"bar.beat\", \"bar.beat.division\" or \"bar.beat.division.tick\", all 1-based as in the app's display (\"5.3\" is beat 3 of bar 5; divisions are sixteenths, 240 ticks each)",
+          "name": "end_position",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a place as seconds from the start of the song",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "end_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        },
+        {
+          "description": "a place as quarter notes from the start of the song, 0-based",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "end_beat",
+          "required": false,
+          "type": "number",
+          "unit": "quarter notes"
+        },
+        {
+          "description": "only this track (default: the whole mix)",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        },
+        {
+          "description": "the .wav file to write (default: a numbered file in the session's folder, deleted when the app quits)",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "replace a file that is already there",
+          "name": "overwrite",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "sound kept after the end, for reverb and release (default 1)",
+          "max": 60.0,
+          "min": 0.0,
+          "name": "tail_seconds",
+          "required": false,
+          "type": "number",
+          "unit": "seconds"
+        }
+      ],
+      "result": "{path, files: [{path, track, name, seconds, frames, peak_db, rms_db, silent, tail_seconds, gain_db, clipped_samples, speed}], seconds, sample_rate, channels, format, from, to, range_seconds, tail_seconds, peak_db, rms_db, silent, rendered_tracks, muted_tracks, not_rendered, complete, speed, took_seconds}",
+      "summary": "Plays a stretch of the song into a WAV file of 32-bit floats, without the speakers, for measuring what was made. It is the app's bounce (see export.bounce) with a fixed tail: audio regions, instruments, effects, sends, automation and the Stereo Out are in it. Without a range it runs from bar 1 to the end of the last region. The call is answered when the file is written."
+    }
+  ],
+  "protocol": 1,
+  "version": "0.2.0"
+}

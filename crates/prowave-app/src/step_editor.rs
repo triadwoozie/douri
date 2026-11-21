@@ -389,10 +389,18 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let cw = ((grid.width() - 12.0) / steps as f32).clamp(10.0, 64.0);
     let v = &mut s.steps;
     let overflow = (pat.rows.len() as f32 * ROW_H - area.height() + 8.0).max(0.0);
-    if ui
-        .input(|i| i.pointer.hover_pos())
-        .is_some_and(|pt| area.contains(pt))
-    {
+    let (middle_down, middle_delta, hover) = ui.input(|i| {
+        (
+            i.pointer.middle_down(),
+            i.pointer.delta(),
+            i.pointer.hover_pos(),
+        )
+    });
+    if middle_down && hover.is_some_and(|pt| area.contains(pt)) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        v.scroll_y = (v.scroll_y - middle_delta.y).clamp(0.0, overflow);
+    }
+    if hover.is_some_and(|pt| area.contains(pt)) {
         v.scroll_y -= ui.input(|i| i.smooth_scroll_delta.y);
     }
     v.scroll_y = v.scroll_y.clamp(0.0, overflow);

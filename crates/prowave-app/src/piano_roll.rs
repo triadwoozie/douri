@@ -9,7 +9,7 @@
 //! Smart Tempo are not implemented yet and show dimmed.
 use crate::i18n::{tr, trf};
 use crate::model::{Note, Project, TrackKind};
-use crate::note_edit::{self, GRIDS, MODES, ROOTS};
+use crate::note_edit::{self, NoteHitZone, GRIDS, MODES, ROOTS};
 use crate::tracks_area::{snap_step, snap_to, Snap};
 use crate::widgets::{
     back_chevron, menu_title, popup_button, slider_h, todo_item, BLUE, BTN_BG, TEXT, TEXT_DIM,
@@ -93,9 +93,13 @@ enum Drag {
         anchor_pitch: i32,
         orig: Vec<(usize, f32, u8)>,
     },
-    Resize {
+    ResizeRight {
         anchor_beat: f32,
         orig: Vec<(usize, f32)>,
+    },
+    ResizeLeft {
+        anchor_beat: f32,
+        orig: Vec<(usize, f32, f32)>,
     },
     Marquee {
         from: Pos2,
@@ -127,6 +131,12 @@ pub struct PianoView {
     centered_for: Option<(usize, usize)>,
     /// Edits waiting for the mouse to be released before the engine song is rebuilt.
     dirty: bool,
+}
+
+impl PianoView {
+    pub(crate) fn tool_menu_open(&self) -> bool {
+        false
+    }
 }
 
 impl Default for PianoView {
@@ -689,19 +699,45 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         v.scroll_x = 0.0;
     }
 
-    // Wheel: vertical scroll; Shift = horizontal; Ctrl/Cmd = horizontal zoom.
-    if ui
-        .input(|i| i.pointer.hover_pos())
-        .is_some_and(|pt| editor.contains(pt))
-    {
-        let (d, m) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers));
-        if m.command && d.y != 0.0 {
-            v.beat_px = (v.beat_px * (1.0 + d.y * 0.003)).clamp(12.0, 400.0);
-        } else if m.shift {
-            v.scroll_x -= d.y + d.x;
-        } else {
-            v.scroll_x -= d.x;
-            v.scroll_y -= d.y;
+    let content_w = ((len_beats + 2.0) * v.beat_px).max(grid.width());
+    let content_h = 128.0 * v.key_h;
+
+    // Middle-click 2D Panning
+    let (middle_down, middle_delta, hover) = ui.input(|i| {
+        (
+            i.pointer.middle_down(),
+            i.pointer.delta(),
+            i.pointer.hover_pos(),
+        )
+    });
+    if middle_down && hover.is_some_and(|pt| editor.contains(pt)) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        v.scroll_x = (v.scroll_x - middle_delta.x).clamp(0.0, (content_w - grid.width()).max(0.0));
+        v.scroll_y = (v.scroll_y - middle_delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));
+    }
+
+    // Wheel: vertical scroll; Shift = horizontal; Ctrl/Cmd = horizontal zoom; Alt/Ctrl+Shift = vertical zoom
+    if hover.is_some_and(|pt| editor.contains(pt)) {
+        let (delta, mods) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers));
+        let is_ctrl = mods.ctrl || mods.command;
+        let is_alt = mods.alt;
+        if (is_alt && delta.y != 0.0) || (is_ctrl && mods.shift && delta.y != 0.0) {
+            // Vertical pitch height zoom anchored at pointer Y
+            let pointer_y = hover.map_or(grid.center().y, |p| p.y);
+            let pitch_at_ptr = (127.0 - (pointer_y - grid.top() + v.scroll_y) / v.key_h).clamp(0.0, 127.0);
+            v.key_h = (v.key_h * (1.0 + delta.y * 0.003)).clamp(6.0, 48.0);
+            v.scroll_y = ((127.0 - pitch_at_ptr) * v.key_h - (pointer_y - grid.top())).clamp(0.0, (128.0 * v.key_h - grid.height()).max(0.0));
+        } else if is_ctrl && delta.y != 0.0 {
+            // Horizontal beat_px zoom anchored at pointer X
+            let pointer_x = hover.map_or(grid.left(), |p| p.x);
+            let beat_at_ptr = (pointer_x - grid.left() + v.scroll_x) / v.beat_px;
+            v.beat_px = (v.beat_px * (1.0 + delta.y * 0.003)).clamp(12.0, 400.0);
+            v.scroll_x = (beat_at_ptr * v.beat_px - (pointer_x - grid.left())).clamp(0.0, (content_w - grid.width()).max(0.0));
+        } else if mods.shift || delta.x != 0.0 {
+            let dx = if mods.shift && delta.x == 0.0 { delta.y } else { delta.x };
+            v.scroll_x = (v.scroll_x - dx).clamp(0.0, (content_w - grid.width()).max(0.0));
+        } else if delta.y != 0.0 {
+            v.scroll_y = (v.scroll_y - delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));
         }
     }
     v.scroll_y = v
@@ -772,6 +808,25 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         scroll_x / beat_px,
         (scroll_x + grid.width()) / beat_px,
     );
+
+    // Ruler interaction: click & drag scrubs playhead with snapping (or free-scrub with Alt)
+    let ruler_resp = ui.interact(ruler, id("piano_ruler"), Sense::click_and_drag());
+    if ruler_resp.hovered() || ruler_resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if ruler_resp.clicked() || ruler_resp.dragged() {
+        if let Some(pt) = ruler_resp.interact_pointer_pos() {
+            let raw_beat = (origin as f32 + beat_at(pt.x)).max(0.0);
+            let alt = ui.input(|i| i.modifiers.alt);
+            let scrub_beat = if alt {
+                raw_beat
+            } else {
+                snap_to(raw_beat as f64, step as f64) as f32
+            };
+            p.position_beats = scrub_beat as f64;
+            v.dirty = true;
+        }
+    }
 
     // ---- Grid background
     let gg = ui.painter_at(grid);
@@ -860,7 +915,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     // ---- Interaction
     let resp = ui.interact(grid, id("grid"), Sense::click_and_drag());
     let shift = ui.input(|i| i.modifiers.shift);
-    let edge_beats = 10.0 / beat_px;
+    let alt = ui.input(|i| i.modifiers.alt);
+    let edge_beats = (6.0 / beat_px).max(0.04);
     let notes = &mut p.tracks[ti].regions[ri].notes;
     // Right-click deletes the note under the pointer.
     let (secondary, hover, down_now) = ui.input(|i| {
@@ -872,8 +928,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     });
     if let Some(pt) = hover.filter(|pt| grid.contains(*pt) && resp.hovered()) {
         let (beat, pitch) = (beat_at(pt.x), pitch_at(pt.y));
-        let over_note = note_edit::hit_note(notes, beat, pitch as u8, edge_beats);
-        if over_note.is_some_and(|(_, on_edge)| on_edge) || matches!(v.drag, Drag::Resize { .. }) {
+        let over_note = note_edit::hit_note_edges(notes, beat, pitch as u8, edge_beats);
+        if let Some((_, zone)) = &over_note {
+            if matches!(zone, NoteHitZone::LeftEdge | NoteHitZone::RightEdge)
+                || matches!(v.drag, Drag::ResizeRight { .. } | Drag::ResizeLeft { .. })
+            {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+        } else if matches!(v.drag, Drag::ResizeRight { .. } | Drag::ResizeLeft { .. }) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if secondary {
@@ -899,8 +961,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let origin = ui.input(|i| i.pointer.press_origin());
         if let Some(pt) = origin.or(resp.interact_pointer_pos()) {
             let (beat, pitch) = (beat_at(pt.x), pitch_at(pt.y));
-            match note_edit::hit_note(notes, beat, pitch as u8, edge_beats) {
-                Some((i, on_edge)) => {
+            match note_edit::hit_note_edges(notes, beat, pitch as u8, edge_beats) {
+                Some((i, zone)) => {
                     audition(
                         &mut s.audition,
                         &mut v.held,
@@ -916,22 +978,45 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             v.selected = vec![i];
                         }
                     }
-                    v.drag = if on_edge {
-                        Drag::Resize {
-                            anchor_beat: beat,
-                            orig: v.selected.iter().map(|&k| (k, notes[k].len)).collect(),
+                    match zone {
+                        NoteHitZone::RightEdge => {
+                            v.drag = Drag::ResizeRight {
+                                anchor_beat: beat,
+                                orig: v.selected.iter().map(|&k| (k, notes[k].len)).collect(),
+                            };
                         }
-                    } else {
-                        Drag::Move {
-                            anchor_beat: beat,
-                            anchor_pitch: pitch,
-                            orig: v
-                                .selected
-                                .iter()
-                                .map(|&k| (k, notes[k].start, notes[k].pitch))
-                                .collect(),
+                        NoteHitZone::LeftEdge => {
+                            v.drag = Drag::ResizeLeft {
+                                anchor_beat: beat,
+                                orig: v
+                                    .selected
+                                    .iter()
+                                    .map(|&k| (k, notes[k].start, notes[k].len))
+                                    .collect(),
+                            };
                         }
-                    };
+                        NoteHitZone::Body => {
+                            // If Alt is held, duplicate selected notes before moving
+                            if alt {
+                                let mut new_indices = Vec::new();
+                                for &k in &v.selected {
+                                    let copy = notes[k].clone();
+                                    notes.push(copy);
+                                    new_indices.push(notes.len() - 1);
+                                }
+                                v.selected = new_indices;
+                            }
+                            v.drag = Drag::Move {
+                                anchor_beat: beat,
+                                anchor_pitch: pitch,
+                                orig: v
+                                    .selected
+                                    .iter()
+                                    .map(|&k| (k, notes[k].start, notes[k].pitch))
+                                    .collect(),
+                            };
+                        }
+                    }
                 }
                 None if v.tool == Tool::Pencil && beat >= 0.0 => {
                     let start = (beat / step).floor() * step;
@@ -940,6 +1025,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         len: step.max(0.0625),
                         pitch: pitch as u8,
                         vel: v.new_velocity,
+                        ..Default::default()
                     });
                     let index = notes.len() - 1;
                     v.selected = vec![index];
@@ -979,10 +1065,19 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         notes[i].pitch = (pc as i32 + dp).clamp(0, 127) as u8;
                     }
                 }
-                Drag::Resize { anchor_beat, orig } => {
+                Drag::ResizeRight { anchor_beat, orig } => {
                     let delta = snap_to((beat - anchor_beat) as f64, step as f64) as f32;
                     for &(i, len) in orig {
                         notes[i].len = (len + delta).max(0.0625);
+                    }
+                }
+                Drag::ResizeLeft { anchor_beat, orig } => {
+                    let delta = snap_to((beat - anchor_beat) as f64, step as f64) as f32;
+                    for &(i, start, len) in orig {
+                        let end = start + len;
+                        let new_start = (start + delta).clamp(0.0, end - 0.0625);
+                        notes[i].start = new_start;
+                        notes[i].len = end - new_start;
                     }
                 }
                 Drag::Marquee { from } => {
@@ -1010,7 +1105,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     if resp.drag_stopped() {
         if matches!(
             v.drag,
-            Drag::Move { .. } | Drag::Resize { .. } | Drag::Create { .. }
+            Drag::Move { .. }
+                | Drag::ResizeRight { .. }
+                | Drag::ResizeLeft { .. }
+                | Drag::Create { .. }
         ) {
             v.dirty = true;
         }
@@ -1047,6 +1145,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             len: step.max(0.0625),
                             pitch: pitch as u8,
                             vel: v.new_velocity,
+                            ..Default::default()
                         });
                         v.selected = vec![notes.len() - 1];
                         audition(

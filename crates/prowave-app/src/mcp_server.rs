@@ -818,6 +818,7 @@ impl McpEngine {
                             len: n_len,
                             pitch: key,
                             vel,
+                            ..Default::default()
                         });
                     }
                 }
@@ -832,6 +833,7 @@ impl McpEngine {
                     folder: None,
                     params: RegionParams::default(),
                     audio: None,
+                    missing: None,
                     generated: None,
                 };
                 let r_idx = p.tracks[ti].regions.len();
