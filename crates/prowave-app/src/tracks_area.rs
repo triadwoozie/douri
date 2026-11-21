@@ -3282,6 +3282,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     // ---- wheel: scroll; Shift = horizontal; the zooms (Command, Option, pinch) are in
     // `arrange_zoom::wheel_zoom`
     let hover = ui.input(|i| i.pointer.hover_pos());
+    // Middle-click 2D Panning (Logic Pro Hand tool navigation)
+    let (middle_down, middle_delta) = ui.input(|i| (i.pointer.middle_down(), i.pointer.delta()));
+    if middle_down && hover.is_some_and(|pt| lanes.contains(pt) || headers.contains(pt)) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        v.scroll_x = (v.scroll_x - middle_delta.x).max(0.0);
+        v.scroll_y = (v.scroll_y - middle_delta.y).max(0.0);
+    }
     if let Some(pt) =
         hover.filter(|&pt| lanes.contains(pt) || headers.contains(pt) || ruler.contains(pt))
     {

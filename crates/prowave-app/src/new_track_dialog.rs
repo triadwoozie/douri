@@ -353,4 +353,13 @@ mod tests {
             assert!(c.accent().a() > 0);
         }
     }
+
+    #[test]
+    fn new_track_dialog_defaults_and_options() {
+        let dlg = NewTrackDialog::default();
+        assert!(!dlg.open);
+        assert_eq!(dlg.count, 1);
+        assert!(dlg.open_library);
+        assert_eq!(dlg.choice, Choice::SoftwareInstrument);
+    }
 }

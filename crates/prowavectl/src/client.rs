@@ -8,9 +8,69 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+pub struct UnixStream;
+
+#[cfg(not(unix))]
+impl std::io::Read for UnixStream {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Unix sockets not supported on Windows",
+        ))
+    }
+}
+
+#[cfg(not(unix))]
+impl std::io::Write for UnixStream {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Unix sockets not supported on Windows",
+        ))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(unix))]
+impl<'a> std::io::Write for &'a UnixStream {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Unix sockets not supported on Windows",
+        ))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(unix))]
+impl UnixStream {
+    pub fn connect<P: AsRef<Path>>(_path: P) -> std::io::Result<Self> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Unix sockets not supported on Windows",
+        ))
+    }
+    pub fn set_read_timeout(&self, _timeout: Option<Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+    pub fn set_write_timeout(&self, _timeout: Option<Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+    pub fn set_nonblocking(&self, _nonblocking: bool) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 use serde_json::{json, Value};
 
