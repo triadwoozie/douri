@@ -1781,8 +1781,18 @@ impl eframe::App for App {
         }
         if s.show_lists {
             egui::Panel::right("lists")
-                .exact_size(event_list::WIDTH)
-                .frame(egui::Frame::new())
+                .resizable(true)
+                .min_size(340.0)
+                .default_size(360.0)
+                .max_size(440.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(egui::Color32::from_rgb(0x14, 0x15, 0x18))
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgb(0x2e, 0x31, 0x38),
+                        )),
+                )
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
@@ -1814,7 +1824,10 @@ impl eframe::App for App {
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::CANVAS_BG).corner_radius(0.0))
-            .show(ui, |ui| tracks_area::show(ui, p, s, &meters));
+            .show(ui, |ui| {
+                ui.set_min_width(420.0);
+                tracks_area::show(ui, p, s, &meters);
+            });
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
         hosted_plugins::idle();

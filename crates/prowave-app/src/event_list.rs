@@ -6,30 +6,60 @@
 
 use crate::i18n::tr;
 use crate::model::{Project, TrackKind, CHANNEL_PRESSURE, PITCH_BEND, SYSEX_BYTE};
-use crate::widgets::{BLUE, TEXT, TEXT_DIM};
+use crate::widgets::TEXT_DIM;
 use crate::UiState;
 use egui::{pos2, vec2, Align2, Color32, FontId, Painter, Rect, Sense, Stroke, Ui};
 
-pub const WIDTH: f32 = 330.0;
-const ROW_H: f32 = 17.5;
+pub const WIDTH: f32 = 360.0;
+const ROW_H: f32 = 19.0;
 const TICKS_PER_BEAT: i64 = 960;
 const TICKS_PER_DIVISION: i64 = 240;
 
-const BG: Color32 = Color32::from_rgb(33, 33, 33);
-const TAB_ON: Color32 = Color32::from_rgb(64, 64, 64);
-const TAB_OFF: Color32 = Color32::from_rgb(47, 47, 47);
-const TOOLBAR_BG: Color32 = Color32::from_rgb(55, 55, 55);
-const FILTER_BG: Color32 = Color32::from_rgb(66, 66, 66);
-const FILTER_BLUE: Color32 = Color32::from_rgb(29, 74, 134);
-const FILTER_TEXT: Color32 = Color32::from_rgb(190, 214, 245);
-const HEAD_BG: Color32 = Color32::from_rgb(45, 45, 45);
+// Authentic Liquid Glass Palette
+const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18); // #141518 deep recessed well
+const TAB_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1c); // #18191C
+const TAB_ACTIVE_BG: Color32 = Color32::from_rgb(0x22, 0x25, 0x2a); // #22252A
+const TAB_INACTIVE_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1c);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24); // #1E2024
+const FILTER_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1d); // #18191D
+const HEADER_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24); // #1E2024
+const BORDER_COLOR: Color32 = Color32::from_rgb(0x2e, 0x31, 0x38); // #2E3138
+const ROW_DIVIDER: Color32 = Color32::from_rgb(0x23, 0x26, 0x2c); // #23262C
+const ROW_BG_EVEN: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c); // #16181C
+const ROW_BG_ODD: Color32 = Color32::from_rgb(0x1b, 0x1d, 0x22); // #1B1D22
+
+const PILL_ACTIVE_BG: Color32 = Color32::from_rgb(0xf2, 0xf3, 0xf5); // #F2F3F5
+const PILL_ACTIVE_TEXT: Color32 = Color32::from_rgb(0x11, 0x12, 0x15); // #111215
+const PILL_INACTIVE_BG: Color32 = Color32::from_rgb(0x20, 0x22, 0x26); // #202226
+const PILL_INACTIVE_TEXT: Color32 = Color32::from_rgb(0x9a, 0xa0, 0xac); // #9AA0AC
+
+/// Tabs available in the List Editors panel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ListTab {
+    #[default]
+    Event,
+    Marker,
+    Tempo,
+    Signature,
+}
 
 /// The list's own state.
+#[derive(Clone, Debug)]
 pub struct ListView {
     /// Pixels the list is scrolled down.
     pub scroll: f32,
     /// Logic's Catch Playhead: the list follows the playhead while the song plays.
     pub follow: bool,
+    /// Currently active list editor tab.
+    pub active_tab: ListTab,
+    pub filter_notes: bool,
+    pub filter_program: bool,
+    pub filter_pitch_bend: bool,
+    pub filter_controller: bool,
+    pub filter_aftertouch: bool,
+    pub filter_poly_pressure: bool,
+    pub filter_sysex: bool,
+    pub filter_extra_info: bool,
 }
 
 impl Default for ListView {
@@ -37,11 +67,20 @@ impl Default for ListView {
         Self {
             scroll: 0.0,
             follow: true,
+            active_tab: ListTab::Event,
+            filter_notes: true,
+            filter_program: true,
+            filter_pitch_bend: true,
+            filter_controller: true,
+            filter_aftertouch: true,
+            filter_poly_pressure: true,
+            filter_sysex: true,
+            filter_extra_info: true,
         }
     }
 }
 
-/// One note of the list.
+/// One note or MIDI control event of the list.
 struct Event {
     /// Position in beats from the start of the song.
     beats: f64,
@@ -96,41 +135,52 @@ fn events(p: &Project, s: &UiState) -> Vec<Event> {
                     bytes.push(r.controls[i].val.min(255) as u8);
                     i += 1;
                 }
+                if s.lists.filter_sysex {
+                    out.push(Event {
+                        beats: offset + c.start as f64,
+                        dim,
+                        control: true,
+                        pitch: SYSEX_BYTE,
+                        vel: 0,
+                        value: bytes.len() as u16,
+                        text: crate::sysex::text(&bytes),
+                        len: 0.0,
+                    });
+                }
+                continue;
+            }
+            let keep = match c.num {
+                PITCH_BEND => s.lists.filter_pitch_bend,
+                CHANNEL_PRESSURE => s.lists.filter_aftertouch,
+                _ => s.lists.filter_controller,
+            };
+            if keep {
                 out.push(Event {
                     beats: offset + c.start as f64,
                     dim,
                     control: true,
-                    pitch: SYSEX_BYTE,
+                    pitch: c.num,
                     vel: 0,
-                    value: bytes.len() as u16,
-                    text: crate::sysex::text(&bytes),
+                    value: c.val,
+                    text: String::new(),
                     len: 0.0,
                 });
-                continue;
             }
-            out.push(Event {
-                beats: offset + c.start as f64,
-                dim,
-                control: true,
-                pitch: c.num,
-                vel: 0,
-                value: c.val,
-                text: String::new(),
-                len: 0.0,
-            });
             i += 1;
         }
-        for n in &r.notes {
-            out.push(Event {
-                beats: offset + n.start as f64,
-                dim,
-                control: false,
-                pitch: n.pitch,
-                vel: n.vel,
-                value: 0,
-                text: String::new(),
-                len: n.len as f64,
-            });
+        if s.lists.filter_notes {
+            for n in &r.notes {
+                out.push(Event {
+                    beats: offset + n.start as f64,
+                    dim,
+                    control: false,
+                    pitch: n.pitch,
+                    vel: n.vel,
+                    value: 0,
+                    text: String::new(),
+                    len: n.len as f64,
+                });
+            }
         }
     }
     // A controller at the same place as a note comes first, as in Logic.
@@ -294,137 +344,388 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     sysex_window(ui.ctx(), p, s);
     let area = ui.max_rect();
     let g = ui.painter_at(area);
-    g.rect_filled(area, 0.0, BG);
-    let events = events(p, s);
+    g.rect_filled(area, 0.0, WELL_BG);
 
-    // Tabs: Event / Marker / Tempo / Signature (only the Event list exists so far).
+    // 1. Tabs Header: Event / Marker / Tempo / Signature
     let mut y = area.top();
-    let tabs = [tr("Event"), tr("Marker"), tr("Tempo"), tr("Signature")];
+    let tabs = [
+        (ListTab::Event, tr("Event")),
+        (ListTab::Marker, tr("Marker")),
+        (ListTab::Tempo, tr("Tempo")),
+        (ListTab::Signature, tr("Signature")),
+    ];
     let tab_w = area.width() / tabs.len() as f32;
-    for (i, label) in tabs.iter().enumerate() {
+    let tab_bar_rect = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), 26.0));
+    g.rect_filled(tab_bar_rect, 0.0, TAB_BAR_BG);
+    g.line_segment(
+        [tab_bar_rect.left_bottom(), tab_bar_rect.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    for (i, (tab, label)) in tabs.iter().enumerate() {
         let r = Rect::from_min_size(pos2(area.left() + i as f32 * tab_w, y), vec2(tab_w, 26.0));
-        g.rect_filled(r, 0.0, if i == 0 { TAB_ON } else { TAB_OFF });
+        let is_active = s.lists.active_tab == *tab;
+        let resp = ui.interact(r, egui::Id::unique(("list_tab", i)), Sense::click());
+        if resp.clicked() {
+            s.lists.active_tab = *tab;
+            s.lists.scroll = 0.0;
+        }
+
+        let fill = if is_active {
+            TAB_ACTIVE_BG
+        } else if resp.hovered() {
+            Color32::from_rgb(0x1e, 0x20, 0x24)
+        } else {
+            TAB_INACTIVE_BG
+        };
+        g.rect_filled(r, 0.0, fill);
+
+        if is_active {
+            // Crisp top highlight and subtle vertical borders
+            g.line_segment(
+                [r.left_top(), r.right_top()],
+                Stroke::new(1.5, Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+            );
+            g.line_segment(
+                [r.left_top(), r.left_bottom()],
+                Stroke::new(1.0, BORDER_COLOR),
+            );
+            g.line_segment(
+                [r.right_top(), r.right_bottom()],
+                Stroke::new(1.0, BORDER_COLOR),
+            );
+        }
+
         g.text(
             r.center(),
             Align2::CENTER_CENTER,
             *label,
             FontId::proportional(12.0),
-            if i == 0 {
-                TEXT
+            if is_active {
+                Color32::from_rgb(0xf2, 0xf3, 0xf5)
             } else {
-                Color32::from_gray(0xb4)
+                Color32::from_rgb(0x8e, 0x92, 0x9b)
             },
         );
     }
     y += 26.0;
 
-    // Toolbar: back, Edit / Functions / View, Catch Playhead.
+    // 2. Main List Toolbar: Hierarchy Back, Menus, Follow Playhead
     let bar = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), 28.0));
     g.rect_filled(bar, 0.0, TOOLBAR_BG);
-    let st = Stroke::new(1.4, Color32::from_gray(0xc8));
-    let cb = pos2(bar.left() + 16.0, bar.center().y);
-    g.line_segment([cb + vec2(3.0, -4.0), cb + vec2(-2.0, 0.0)], st);
-    g.line_segment([cb + vec2(-2.0, 0.0), cb + vec2(3.0, 4.0)], st);
-    let mut x = bar.left() + 44.0;
+    g.line_segment(
+        [bar.left_bottom(), bar.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    // Hierarchy back button (Phosphor CARET_LEFT)
+    let back_rect =
+        Rect::from_center_size(pos2(bar.left() + 16.0, bar.center().y), vec2(20.0, 20.0));
+    let back_resp = ui
+        .interact(
+            back_rect,
+            egui::Id::unique(("event_list", "back")),
+            Sense::click(),
+        )
+        .on_hover_text("Hierarchy Up");
+    if back_resp.hovered() {
+        g.rect_filled(back_rect, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
+    g.text(
+        back_rect.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::CARET_LEFT,
+        FontId::proportional(13.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
+    );
+
+    // Edit, Functions, View action headers
+    let mut x = bar.left() + 38.0;
     for label in [tr("Edit"), tr("Functions"), tr("View")] {
-        let galley = g.layout_no_wrap(label.into(), FontId::proportional(12.5), TEXT);
+        let galley = g.layout_no_wrap(
+            label.into(),
+            FontId::proportional(12.0),
+            Color32::from_rgb(0xdd, 0xe0, 0xe8),
+        );
         let w = galley.size().x;
         g.text(
             pos2(x, bar.center().y),
             Align2::LEFT_CENTER,
             label,
-            FontId::proportional(12.5),
-            TEXT,
+            FontId::proportional(12.0),
+            Color32::from_rgb(0xdd, 0xe0, 0xe8),
         );
-        chevron_down(&g, pos2(x + w + 8.0, bar.center().y + 1.0));
-        x += w + 24.0;
+        chevron_down(&g, pos2(x + w + 7.0, bar.center().y + 1.0));
+        x += w + 20.0;
     }
-    let catch = Rect::from_center_size(pos2(bar.right() - 54.0, bar.center().y), vec2(28.0, 20.0));
-    let resp = ui.interact(
-        catch,
-        egui::Id::unique(("event_list", "catch")),
-        Sense::click(),
-    );
+
+    // Follow Playhead button (Phosphor LINK)
+    let catch = Rect::from_center_size(pos2(bar.right() - 22.0, bar.center().y), vec2(24.0, 20.0));
+    let resp = ui
+        .interact(
+            catch,
+            egui::Id::unique(("event_list", "catch")),
+            Sense::click(),
+        )
+        .on_hover_text("Link View (Follow Playhead)");
     if resp.clicked() {
         s.lists.follow = !s.lists.follow;
     }
     g.rect_filled(
         catch,
-        4.0,
+        3.0,
         if s.lists.follow {
-            BLUE
+            PILL_ACTIVE_BG
         } else {
-            Color32::from_gray(0x58)
+            PILL_INACTIVE_BG
         },
     );
+    if !s.lists.follow {
+        g.rect_stroke(
+            catch,
+            3.0,
+            Stroke::new(1.0, BORDER_COLOR),
+            egui::StrokeKind::Inside,
+        );
+    }
     g.text(
         catch.center(),
         Align2::CENTER_CENTER,
-        ">T<",
-        FontId::proportional(11.0),
-        Color32::WHITE,
+        crate::icons::LINK,
+        FontId::proportional(12.0),
+        if s.lists.follow {
+            PILL_ACTIVE_TEXT
+        } else {
+            PILL_INACTIVE_TEXT
+        },
     );
     y += 28.0;
 
-    // Event type filters.
-    let filters = [
-        [
-            tr("Notes"),
-            tr("Progr. Change"),
-            tr("Pitch Bend"),
-            tr("Controller"),
-        ],
-        [
-            tr("Aftertouch"),
-            tr("Poly Aftertouch"),
-            tr("Syst. Exclusive"),
-            tr("Additional Info"),
-        ],
-    ];
-    let block = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), 52.0));
-    g.rect_filled(block, 0.0, FILTER_BG);
-    let bw = (area.width() - 10.0 - 3.0 * 4.0) / 4.0;
-    for (row, labels) in filters.iter().enumerate() {
-        for (col, label) in labels.iter().enumerate() {
-            let r = Rect::from_min_size(
-                pos2(
-                    area.left() + 5.0 + col as f32 * (bw + 4.0),
-                    y + 5.0 + row as f32 * 22.0,
-                ),
-                vec2(bw, 18.0),
-            );
-            g.rect_filled(r, 3.0, FILTER_BLUE);
-            let font = FontId::proportional(10.5);
-            let text = crate::mixer::elide(&g, label, &font, bw - 6.0);
-            g.text(r.center(), Align2::CENTER_CENTER, text, font, FILTER_TEXT);
+    match s.lists.active_tab {
+        ListTab::Event => {
+            show_event_tab(ui, p, s, area, &g, &mut y);
+        }
+        ListTab::Marker => {
+            show_marker_tab(ui, p, s, area, &g, &mut y);
+        }
+        ListTab::Tempo => {
+            show_tempo_tab(ui, p, s, area, &g, &mut y);
+        }
+        ListTab::Signature => {
+            show_signature_tab(ui, p, s, area, &g, &mut y);
         }
     }
-    y += 52.0;
 
-    // The list's own header: add, title and quantize.
-    let head = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), 26.0));
-    g.rect_filled(head, 0.0, HEAD_BG);
-    let plus = pos2(head.left() + 16.0, head.center().y);
-    let st = Stroke::new(1.4, Color32::from_gray(0xc8));
-    g.line_segment([plus + vec2(-5.0, 0.0), plus + vec2(5.0, 0.0)], st);
-    g.line_segment([plus + vec2(0.0, -5.0), plus + vec2(0.0, 5.0)], st);
+    // Border line towards tracks area
+    g.line_segment(
+        [area.left_top(), area.left_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+}
+
+fn show_event_tab(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    area: Rect,
+    g: &Painter,
+    y: &mut f32,
+) {
+    let events = events(p, s);
+
+    // Filter pills grid (4 columns x 2 rows)
+    let filter_rect = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 48.0));
+    g.rect_filled(filter_rect, 0.0, FILTER_BAR_BG);
+    g.line_segment(
+        [filter_rect.left_bottom(), filter_rect.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    let filters: [[(&str, &str, bool); 4]; 2] = [
+        [
+            (tr("Notes"), "Filter Note Events", s.lists.filter_notes),
+            (
+                tr("Progr. Change"),
+                "Filter Program Change Events",
+                s.lists.filter_program,
+            ),
+            (
+                tr("Pitch Bend"),
+                "Filter Pitch Bend Events",
+                s.lists.filter_pitch_bend,
+            ),
+            (
+                tr("Controller"),
+                "Filter Controller Events",
+                s.lists.filter_controller,
+            ),
+        ],
+        [
+            (
+                tr("Aftertouch"),
+                "Filter Aftertouch Events",
+                s.lists.filter_aftertouch,
+            ),
+            (
+                tr("Poly Aftertouch"),
+                "Filter Polyphonic Aftertouch Events",
+                s.lists.filter_poly_pressure,
+            ),
+            (
+                tr("Syst. Exclusive"),
+                "Filter System Exclusive Events",
+                s.lists.filter_sysex,
+            ),
+            (
+                tr("Additional Info"),
+                "Filter Additional Event Info",
+                s.lists.filter_extra_info,
+            ),
+        ],
+    ];
+
+    let pad_x = 8.0;
+    let gap = 4.0;
+    let bw = (area.width() - 2.0 * pad_x - 3.0 * gap) / 4.0;
+    for (row_idx, row) in filters.iter().enumerate() {
+        for (col_idx, (label, tip, is_on)) in row.iter().enumerate() {
+            let pill_rect = Rect::from_min_size(
+                pos2(
+                    area.left() + pad_x + col_idx as f32 * (bw + gap),
+                    *y + 4.0 + row_idx as f32 * 20.0,
+                ),
+                vec2(bw, 17.0),
+            );
+            let resp = ui
+                .interact(
+                    pill_rect,
+                    egui::Id::unique(("filter_pill", row_idx, col_idx)),
+                    Sense::click(),
+                )
+                .on_hover_text(*tip);
+            if resp.clicked() {
+                match (row_idx, col_idx) {
+                    (0, 0) => s.lists.filter_notes = !s.lists.filter_notes,
+                    (0, 1) => s.lists.filter_program = !s.lists.filter_program,
+                    (0, 2) => s.lists.filter_pitch_bend = !s.lists.filter_pitch_bend,
+                    (0, 3) => s.lists.filter_controller = !s.lists.filter_controller,
+                    (1, 0) => s.lists.filter_aftertouch = !s.lists.filter_aftertouch,
+                    (1, 1) => s.lists.filter_poly_pressure = !s.lists.filter_poly_pressure,
+                    (1, 2) => s.lists.filter_sysex = !s.lists.filter_sysex,
+                    (1, 3) => s.lists.filter_extra_info = !s.lists.filter_extra_info,
+                    _ => {}
+                }
+            }
+
+            let bg_color = if *is_on {
+                PILL_ACTIVE_BG
+            } else if resp.hovered() {
+                Color32::from_rgb(0x28, 0x2b, 0x31)
+            } else {
+                PILL_INACTIVE_BG
+            };
+            g.rect_filled(pill_rect, 3.0, bg_color);
+            if !*is_on {
+                g.rect_stroke(
+                    pill_rect,
+                    3.0,
+                    Stroke::new(1.0, BORDER_COLOR),
+                    egui::StrokeKind::Inside,
+                );
+            }
+
+            let font = FontId::proportional(10.5);
+            let text = crate::mixer::elide(g, label, &font, bw - 4.0);
+            g.text(
+                pill_rect.center(),
+                Align2::CENTER_CENTER,
+                text,
+                font,
+                if *is_on {
+                    PILL_ACTIVE_TEXT
+                } else {
+                    PILL_INACTIVE_TEXT
+                },
+            );
+        }
+    }
+    *y += 48.0;
+
+    // Sub-toolbar: Add Event, Type Selector, SysEx, Quantize
+    let head = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 26.0));
+    g.rect_filled(head, 0.0, HEADER_BG);
+    g.line_segment(
+        [head.left_bottom(), head.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    // Add button (Phosphor PLUS)
+    let plus_btn =
+        Rect::from_center_size(pos2(head.left() + 18.0, head.center().y), vec2(20.0, 20.0));
+    let plus_resp = ui
+        .interact(
+            plus_btn,
+            egui::Id::unique(("event_list", "add_event")),
+            Sense::click(),
+        )
+        .on_hover_text("Create Event at Playhead");
+    if plus_resp.hovered() {
+        g.rect_filled(plus_btn, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
     g.text(
-        pos2(head.left() + 42.0, head.center().y),
+        plus_btn.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::PLUS,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
+    );
+    if plus_resp.clicked() {
+        if let Some((t, r)) = s.tracks.selected {
+            let offset = p
+                .tracks
+                .get(t)
+                .and_then(|tr| tr.regions.get(r))
+                .map(|rg| p.region_start_beats(rg));
+            if let Some(offset) = offset {
+                if let Some(track) = p.tracks.get_mut(t) {
+                    if let Some(region) = track.regions.get_mut(r) {
+                        let local_beat = (p.position_beats - offset).max(0.0) as f32;
+                        region.notes.push(crate::model::Note {
+                            start: local_beat,
+                            len: 1.0,
+                            pitch: 60,
+                            vel: 100,
+                            mute: false,
+                            lyric: crate::lyrics::Lyric::default(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Type Selector dropdown label
+    g.text(
+        pos2(head.left() + 40.0, head.center().y),
         Align2::LEFT_CENTER,
         tr("Notes"),
-        FontId::proportional(12.5),
-        TEXT,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xf2, 0xf3, 0xf5),
     );
-    // Add a System Exclusive message at the playhead (see `sysex.rs`).
+    chevron_down(g, pos2(head.left() + 82.0, head.center().y + 1.0));
+
+    // SysEx modal entry button
     let sysex_btn = Rect::from_center_size(
-        pos2(head.right() - 190.0, head.center().y),
-        vec2(64.0, 18.0),
+        pos2(head.right() - 172.0, head.center().y),
+        vec2(58.0, 18.0),
     );
-    let sysex_resp = ui.interact(
-        sysex_btn,
-        egui::Id::unique(("event_list", "sysex")),
-        Sense::click(),
-    );
+    let sysex_resp = ui
+        .interact(
+            sysex_btn,
+            egui::Id::unique(("event_list", "sysex")),
+            Sense::click(),
+        )
+        .on_hover_text("Insert System Exclusive Message");
     if sysex_resp.clicked() {
         s.sysex_entry.get_or_insert_with(String::new);
     }
@@ -432,83 +733,147 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         sysex_btn,
         3.0,
         if sysex_resp.hovered() {
-            Color32::from_gray(0x4a)
+            Color32::from_rgb(0x2d, 0x30, 0x38)
         } else {
-            Color32::from_gray(0x33)
+            Color32::from_rgb(0x22, 0x24, 0x2a)
         },
+    );
+    g.rect_stroke(
+        sysex_btn,
+        3.0,
+        Stroke::new(1.0, BORDER_COLOR),
+        egui::StrokeKind::Inside,
     );
     g.text(
         sysex_btn.center(),
         Align2::CENTER_CENTER,
         tr("SysEx…"),
         FontId::proportional(11.0),
-        TEXT,
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
     );
+
+    // Quantize section
     g.text(
-        pos2(head.right() - 110.0, head.center().y),
+        pos2(head.right() - 104.0, head.center().y),
         Align2::RIGHT_CENTER,
         tr("Quantize:"),
-        FontId::proportional(11.5),
-        TEXT_DIM,
+        FontId::proportional(11.0),
+        Color32::from_rgb(0x8e, 0x92, 0x9b),
     );
     let qbox = Rect::from_min_size(
-        pos2(head.right() - 104.0, head.top() + 4.0),
-        vec2(70.0, 18.0),
+        pos2(head.right() - 100.0, head.top() + 4.0),
+        vec2(64.0, 18.0),
     );
-    g.rect_filled(qbox, 3.0, Color32::from_gray(0x25));
+    g.rect_filled(qbox, 3.0, Color32::from_rgb(0x18, 0x19, 0x1d));
+    g.rect_stroke(
+        qbox,
+        3.0,
+        Stroke::new(1.0, BORDER_COLOR),
+        egui::StrokeKind::Inside,
+    );
     g.text(
-        qbox.left_center() + vec2(8.0, 0.0),
+        qbox.left_center() + vec2(6.0, 0.0),
         Align2::LEFT_CENTER,
         tr("Off"),
-        FontId::proportional(11.5),
-        TEXT,
+        FontId::proportional(11.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
     );
-    chevron_down(&g, qbox.right_center() - vec2(9.0, 0.0));
+    chevron_down(g, qbox.right_center() - vec2(8.0, 0.0));
+
+    // Quantize apply button (Phosphor CHECK)
+    let q_rect =
+        Rect::from_center_size(pos2(head.right() - 16.0, head.center().y), vec2(20.0, 20.0));
+    let q_resp = ui
+        .interact(
+            q_rect,
+            egui::Id::unique(("event_list", "apply_quantize")),
+            Sense::click(),
+        )
+        .on_hover_text("Apply Quantize");
+    if q_resp.hovered() {
+        g.rect_filled(q_rect, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
     g.text(
-        pos2(head.right() - 16.0, head.center().y),
+        q_rect.center(),
         Align2::CENTER_CENTER,
-        "Q",
-        FontId::proportional(11.5),
-        TEXT,
+        crate::icons::CHECK,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
     );
-    y += 26.0;
+    *y += 26.0;
 
-    // Column titles.
-    let cols = Rect::from_min_size(pos2(area.left(), y), vec2(area.width(), 20.0));
-    g.rect_filled(cols, 0.0, Color32::from_rgb(47, 47, 47));
+    // Column Titles Header (with 8px left margin)
+    let cols = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 20.0));
+    g.rect_filled(cols, 0.0, HEADER_BG);
+    g.line_segment(
+        [cols.left_bottom(), cols.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
     let f = FontId::proportional(10.5);
-    let dim = Color32::from_gray(0xc0);
+    let col_color = Color32::from_rgb(0x9a, 0xa0, 0xac);
     let cx = |v: f32| area.left() + v;
-    for (v, label) in [(6.0, "L"), (20.0, "M")] {
-        g.text(
-            pos2(cx(v), cols.center().y),
-            Align2::CENTER_CENTER,
-            label,
-            f.clone(),
-            dim,
-        );
-    }
-    for (v, label) in [
-        (68.0, tr("Position")),
-        (133.0, tr("Status")),
-        (170.0, tr("Ch")),
-        (200.0, tr("Num")),
-        (232.0, tr("Val")),
-        (290.0, tr("Length/Info")),
-    ] {
-        let t = crate::mixer::elide(&g, label, &f, 60.0);
-        g.text(
-            pos2(cx(v), cols.center().y),
-            Align2::CENTER_CENTER,
-            t,
-            f.clone(),
-            dim,
-        );
-    }
-    y += 20.0;
 
-    // The rows.
-    let list = Rect::from_min_max(pos2(area.left(), y), area.max);
+    g.text(
+        pos2(cx(14.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        "L",
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(28.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        "M",
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(78.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Position"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(138.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Status"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(178.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Ch"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(214.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Num"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(248.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Val"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(296.0), cols.center().y),
+        Align2::LEFT_CENTER,
+        tr("Length/Info"),
+        f.clone(),
+        col_color,
+    );
+    *y += 20.0;
+
+    // Table Rows Body
+    let list = Rect::from_min_max(pos2(area.left(), *y), area.max);
     let content_h = events.len() as f32 * ROW_H;
     let max_scroll = (content_h - list.height() + ROW_H).max(0.0);
     let resp = ui.interact(
@@ -528,10 +893,40 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     s.lists.scroll = s.lists.scroll.clamp(0.0, max_scroll);
 
     let gl = ui.painter_at(list);
+
+    // Full viewport zebra striping & dividers
+    let num_stripes = ((list.height() / ROW_H).ceil() as usize) + 2;
+    let stripe_offset = (s.lists.scroll / ROW_H).floor() as usize;
+    for idx in 0..num_stripes {
+        let row_idx = stripe_offset + idx;
+        let y_top = list.top() + (row_idx as f32 * ROW_H) - s.lists.scroll;
+        if y_top >= list.bottom() {
+            break;
+        }
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), y_top.max(list.top())),
+            vec2(list.width(), ROW_H.min(list.bottom() - y_top)),
+        );
+        let bg_color = if row_idx % 2 == 0 {
+            ROW_BG_EVEN
+        } else {
+            ROW_BG_ODD
+        };
+        gl.rect_filled(row_rect, 0.0, bg_color);
+        gl.line_segment(
+            [
+                pos2(list.left(), y_top + ROW_H),
+                pos2(list.right(), y_top + ROW_H),
+            ],
+            Stroke::new(1.0, ROW_DIVIDER),
+        );
+    }
+
     let first = (s.lists.scroll / ROW_H).floor() as usize;
     let last = (((s.lists.scroll + list.height()) / ROW_H).ceil() as usize).min(events.len());
     let font = FontId::monospace(11.0);
-    let ink = Color32::from_gray(0xde);
+    let ink = Color32::from_rgb(0xe6, 0xe6, 0xeb);
+
     for (i, e) in events.iter().enumerate().take(last).skip(first) {
         let cy = list.top() + i as f32 * ROW_H - s.lists.scroll + ROW_H / 2.0;
         let ([bar, beat, div], tick) = position_in(p, e.beats);
@@ -540,36 +935,36 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let at = |x: f32, align: Align2, text: String| {
             gl.text(pos2(cx(x), cy), align, text, font.clone(), color);
         };
-        at(80.0, Align2::RIGHT_CENTER, format!("{bar} {beat} {div}"));
-        at(103.0, Align2::RIGHT_CENTER, format!("{tick}"));
-        at(173.0, Align2::RIGHT_CENTER, "1".to_string());
+        at(94.0, Align2::RIGHT_CENTER, format!("{bar} {beat} {div}"));
+        at(114.0, Align2::RIGHT_CENTER, format!("{tick}"));
+        at(184.0, Align2::RIGHT_CENTER, "1".to_string());
         let value = if e.control { e.value } else { u16::from(e.vel) };
-        at(241.0, Align2::RIGHT_CENTER, format!("{value}"));
+        at(256.0, Align2::RIGHT_CENTER, format!("{value}"));
         if e.control {
-            at(115.0, Align2::LEFT_CENTER, control_type(e.pitch));
+            at(122.0, Align2::LEFT_CENTER, control_type(e.pitch));
             match e.pitch {
                 SYSEX_BYTE => {
-                    // The message's bytes, cut to what the Info column can show.
-                    let shown: String = e.text.chars().take(40).collect();
-                    at(250.0, Align2::LEFT_CENTER, shown);
+                    let shown: String = e.text.chars().take(30).collect();
+                    at(268.0, Align2::LEFT_CENTER, shown);
                 }
                 PITCH_BEND | CHANNEL_PRESSURE => {}
                 num => {
-                    at(200.0, Align2::CENTER_CENTER, format!("{num}"));
-                    at(250.0, Align2::LEFT_CENTER, controller_name(num));
+                    at(214.0, Align2::CENTER_CENTER, format!("{num}"));
+                    at(268.0, Align2::LEFT_CENTER, controller_name(num));
                 }
             }
         } else {
-            at(115.0, Align2::LEFT_CENTER, tr("Note").to_string());
-            at(200.0, Align2::CENTER_CENTER, note_name(e.pitch));
+            at(122.0, Align2::LEFT_CENTER, tr("Note").to_string());
+            at(214.0, Align2::CENTER_CENTER, note_name(e.pitch));
             at(
-                323.0,
+                list.width() - 8.0,
                 Align2::RIGHT_CENTER,
                 format!("{} {} {} {}", l[0], l[1], l[2], l[3]),
             );
         }
     }
-    // The playhead line, between the notes that have sounded and those still to come.
+
+    // Playhead tracking line
     let ly = list.top() + line_y - s.lists.scroll;
     if ly >= list.top() && ly <= list.bottom() && !events.is_empty() {
         gl.line_segment(
@@ -577,11 +972,523 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Stroke::new(1.5, crate::tracks_area::playhead_colors(p.recording).0),
         );
     }
-    // The edge towards the tracks.
+}
+
+fn show_marker_tab(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    area: Rect,
+    g: &Painter,
+    y: &mut f32,
+) {
+    let head = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 26.0));
+    g.rect_filled(head, 0.0, HEADER_BG);
     g.line_segment(
-        [area.left_top(), area.left_bottom()],
-        Stroke::new(1.5, Color32::from_rgb(70, 96, 140)),
+        [head.left_bottom(), head.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
     );
+
+    let plus_btn =
+        Rect::from_center_size(pos2(head.left() + 18.0, head.center().y), vec2(20.0, 20.0));
+    let plus_resp = ui
+        .interact(
+            plus_btn,
+            egui::Id::unique(("marker_list", "add")),
+            Sense::click(),
+        )
+        .on_hover_text("Create Marker at Playhead");
+    if plus_resp.hovered() {
+        g.rect_filled(plus_btn, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
+    g.text(
+        plus_btn.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::PLUS,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
+    );
+    if plus_resp.clicked() {
+        p.add_marker(p.position_beats);
+    }
+
+    g.text(
+        pos2(head.left() + 40.0, head.center().y),
+        Align2::LEFT_CENTER,
+        format!("{} ({})", tr("Marker"), p.markers.len()),
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xf2, 0xf3, 0xf5),
+    );
+    *y += 26.0;
+
+    let cols = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 20.0));
+    g.rect_filled(cols, 0.0, HEADER_BG);
+    g.line_segment(
+        [cols.left_bottom(), cols.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+    let f = FontId::proportional(10.5);
+    let col_color = Color32::from_rgb(0x9a, 0xa0, 0xac);
+    let cx = |v: f32| area.left() + v;
+
+    g.text(
+        pos2(cx(16.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        "L",
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(80.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Position"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(150.0), cols.center().y),
+        Align2::LEFT_CENTER,
+        tr("Name"),
+        f.clone(),
+        col_color,
+    );
+    *y += 20.0;
+
+    let list = Rect::from_min_max(pos2(area.left(), *y), area.max);
+    let content_h = p.markers.len() as f32 * ROW_H;
+    let max_scroll = (content_h - list.height() + ROW_H).max(0.0);
+    let resp = ui.interact(
+        list,
+        egui::Id::unique(("marker_list", "rows")),
+        Sense::hover(),
+    );
+    if resp.hovered() {
+        let dy = ui.input(|i| i.smooth_scroll_delta.y);
+        s.lists.scroll = (s.lists.scroll - dy).clamp(0.0, max_scroll);
+    }
+    s.lists.scroll = s.lists.scroll.clamp(0.0, max_scroll);
+
+    let gl = ui.painter_at(list);
+    let num_stripes = ((list.height() / ROW_H).ceil() as usize) + 2;
+    let stripe_offset = (s.lists.scroll / ROW_H).floor() as usize;
+    for idx in 0..num_stripes {
+        let row_idx = stripe_offset + idx;
+        let y_top = list.top() + (row_idx as f32 * ROW_H) - s.lists.scroll;
+        if y_top >= list.bottom() {
+            break;
+        }
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), y_top.max(list.top())),
+            vec2(list.width(), ROW_H.min(list.bottom() - y_top)),
+        );
+        let bg_color = if row_idx % 2 == 0 {
+            ROW_BG_EVEN
+        } else {
+            ROW_BG_ODD
+        };
+        gl.rect_filled(row_rect, 0.0, bg_color);
+        gl.line_segment(
+            [
+                pos2(list.left(), y_top + ROW_H),
+                pos2(list.right(), y_top + ROW_H),
+            ],
+            Stroke::new(1.0, ROW_DIVIDER),
+        );
+    }
+
+    let first = (s.lists.scroll / ROW_H).floor() as usize;
+    let last = (((s.lists.scroll + list.height()) / ROW_H).ceil() as usize).min(p.markers.len());
+    let font = FontId::monospace(11.0);
+    let ink = Color32::from_rgb(0xe6, 0xe6, 0xeb);
+
+    for (i, m) in p.markers.iter().enumerate().take(last).skip(first) {
+        let cy = list.top() + i as f32 * ROW_H - s.lists.scroll + ROW_H / 2.0;
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), cy - ROW_H / 2.0),
+            vec2(list.width(), ROW_H),
+        );
+        let r_resp = ui.interact(
+            row_rect,
+            egui::Id::unique(("marker_row", i)),
+            Sense::click(),
+        );
+        if r_resp.clicked() {
+            p.position_beats = m.beat;
+        }
+        if r_resp.hovered() {
+            gl.rect_filled(
+                row_rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+            );
+        }
+
+        gl.circle_filled(pos2(cx(16.0), cy), 4.5, m.color);
+        let ([bar, beat, div], tick) = position_in(p, m.beat);
+        gl.text(
+            pos2(cx(94.0), cy),
+            Align2::RIGHT_CENTER,
+            format!("{bar} {beat} {div}"),
+            font.clone(),
+            ink,
+        );
+        gl.text(
+            pos2(cx(114.0), cy),
+            Align2::RIGHT_CENTER,
+            format!("{tick}"),
+            font.clone(),
+            Color32::from_gray(0x9a),
+        );
+        gl.text(
+            pos2(cx(150.0), cy),
+            Align2::LEFT_CENTER,
+            &m.name,
+            FontId::proportional(12.0),
+            ink,
+        );
+    }
+}
+
+fn show_tempo_tab(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    area: Rect,
+    g: &Painter,
+    y: &mut f32,
+) {
+    let points = p.tempo_points();
+    let head = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 26.0));
+    g.rect_filled(head, 0.0, HEADER_BG);
+    g.line_segment(
+        [head.left_bottom(), head.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    let plus_btn =
+        Rect::from_center_size(pos2(head.left() + 18.0, head.center().y), vec2(20.0, 20.0));
+    let plus_resp = ui
+        .interact(
+            plus_btn,
+            egui::Id::unique(("tempo_list", "add")),
+            Sense::click(),
+        )
+        .on_hover_text("Create Tempo Point at Playhead");
+    if plus_resp.hovered() {
+        g.rect_filled(plus_btn, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
+    g.text(
+        plus_btn.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::PLUS,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
+    );
+    if plus_resp.clicked() {
+        p.add_tempo_change(p.position_beats, p.tempo_at(p.position_beats));
+    }
+
+    g.text(
+        pos2(head.left() + 40.0, head.center().y),
+        Align2::LEFT_CENTER,
+        format!("{} ({})", tr("Tempo"), points.len()),
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xf2, 0xf3, 0xf5),
+    );
+    *y += 26.0;
+
+    let cols = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 20.0));
+    g.rect_filled(cols, 0.0, HEADER_BG);
+    g.line_segment(
+        [cols.left_bottom(), cols.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+    let f = FontId::proportional(10.5);
+    let col_color = Color32::from_rgb(0x9a, 0xa0, 0xac);
+    let cx = |v: f32| area.left() + v;
+
+    g.text(
+        pos2(cx(80.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Position"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(170.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Tempo"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(240.0), cols.center().y),
+        Align2::LEFT_CENTER,
+        "Curve",
+        f.clone(),
+        col_color,
+    );
+    *y += 20.0;
+
+    let list = Rect::from_min_max(pos2(area.left(), *y), area.max);
+    let content_h = points.len() as f32 * ROW_H;
+    let max_scroll = (content_h - list.height() + ROW_H).max(0.0);
+    let resp = ui.interact(
+        list,
+        egui::Id::unique(("tempo_list", "rows")),
+        Sense::hover(),
+    );
+    if resp.hovered() {
+        let dy = ui.input(|i| i.smooth_scroll_delta.y);
+        s.lists.scroll = (s.lists.scroll - dy).clamp(0.0, max_scroll);
+    }
+    s.lists.scroll = s.lists.scroll.clamp(0.0, max_scroll);
+
+    let gl = ui.painter_at(list);
+    let num_stripes = ((list.height() / ROW_H).ceil() as usize) + 2;
+    let stripe_offset = (s.lists.scroll / ROW_H).floor() as usize;
+    for idx in 0..num_stripes {
+        let row_idx = stripe_offset + idx;
+        let y_top = list.top() + (row_idx as f32 * ROW_H) - s.lists.scroll;
+        if y_top >= list.bottom() {
+            break;
+        }
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), y_top.max(list.top())),
+            vec2(list.width(), ROW_H.min(list.bottom() - y_top)),
+        );
+        let bg_color = if row_idx % 2 == 0 {
+            ROW_BG_EVEN
+        } else {
+            ROW_BG_ODD
+        };
+        gl.rect_filled(row_rect, 0.0, bg_color);
+        gl.line_segment(
+            [
+                pos2(list.left(), y_top + ROW_H),
+                pos2(list.right(), y_top + ROW_H),
+            ],
+            Stroke::new(1.0, ROW_DIVIDER),
+        );
+    }
+
+    let first = (s.lists.scroll / ROW_H).floor() as usize;
+    let last = (((s.lists.scroll + list.height()) / ROW_H).ceil() as usize).min(points.len());
+    let font = FontId::monospace(11.0);
+    let ink = Color32::from_rgb(0xe6, 0xe6, 0xeb);
+
+    for (i, t) in points.iter().enumerate().take(last).skip(first) {
+        let cy = list.top() + i as f32 * ROW_H - s.lists.scroll + ROW_H / 2.0;
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), cy - ROW_H / 2.0),
+            vec2(list.width(), ROW_H),
+        );
+        let r_resp = ui.interact(row_rect, egui::Id::unique(("tempo_row", i)), Sense::click());
+        if r_resp.clicked() {
+            p.position_beats = t.beat;
+        }
+        if r_resp.hovered() {
+            gl.rect_filled(
+                row_rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+            );
+        }
+
+        let ([bar, beat, div], tick) = position_in(p, t.beat);
+        gl.text(
+            pos2(cx(94.0), cy),
+            Align2::RIGHT_CENTER,
+            format!("{bar} {beat} {div}"),
+            font.clone(),
+            ink,
+        );
+        gl.text(
+            pos2(cx(114.0), cy),
+            Align2::RIGHT_CENTER,
+            format!("{tick}"),
+            font.clone(),
+            Color32::from_gray(0x9a),
+        );
+        gl.text(
+            pos2(cx(180.0), cy),
+            Align2::RIGHT_CENTER,
+            format!("{:.2} BPM", t.bpm),
+            font.clone(),
+            ink,
+        );
+        let ramp_text = if t.ramp { "Ramp" } else { "Hold" };
+        gl.text(
+            pos2(cx(240.0), cy),
+            Align2::LEFT_CENTER,
+            ramp_text,
+            FontId::proportional(11.0),
+            if t.ramp {
+                Color32::from_rgb(0xf2, 0xf3, 0xf5)
+            } else {
+                Color32::from_gray(0x9a)
+            },
+        );
+    }
+}
+
+fn show_signature_tab(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    area: Rect,
+    g: &Painter,
+    y: &mut f32,
+) {
+    let sigs = p.sigs();
+    let mut sig_list = vec![(1u32, sigs.first)];
+    for c in sigs.changes {
+        sig_list.push((c.bar, (c.num, c.den)));
+    }
+
+    let head = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 26.0));
+    g.rect_filled(head, 0.0, HEADER_BG);
+    g.line_segment(
+        [head.left_bottom(), head.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+
+    let plus_btn =
+        Rect::from_center_size(pos2(head.left() + 18.0, head.center().y), vec2(20.0, 20.0));
+    let plus_resp = ui
+        .interact(
+            plus_btn,
+            egui::Id::unique(("sig_list", "add")),
+            Sense::click(),
+        )
+        .on_hover_text("Create Signature at Playhead Bar");
+    if plus_resp.hovered() {
+        g.rect_filled(plus_btn, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
+    }
+    g.text(
+        plus_btn.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::PLUS,
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xdd, 0xe0, 0xe8),
+    );
+    if plus_resp.clicked() {
+        let cur_bar = (p.beats_to_bar(p.position_beats).floor() as u32).max(1);
+        let cur_sig = p.signature_of_bar(cur_bar);
+        p.set_signature_from(cur_bar, cur_sig);
+    }
+
+    g.text(
+        pos2(head.left() + 40.0, head.center().y),
+        Align2::LEFT_CENTER,
+        format!("{} ({})", tr("Signature"), sig_list.len()),
+        FontId::proportional(12.0),
+        Color32::from_rgb(0xf2, 0xf3, 0xf5),
+    );
+    *y += 26.0;
+
+    let cols = Rect::from_min_size(pos2(area.left(), *y), vec2(area.width(), 20.0));
+    g.rect_filled(cols, 0.0, HEADER_BG);
+    g.line_segment(
+        [cols.left_bottom(), cols.right_bottom()],
+        Stroke::new(1.0, BORDER_COLOR),
+    );
+    let f = FontId::proportional(10.5);
+    let col_color = Color32::from_rgb(0x9a, 0xa0, 0xac);
+    let cx = |v: f32| area.left() + v;
+
+    g.text(
+        pos2(cx(50.0), cols.center().y),
+        Align2::CENTER_CENTER,
+        tr("Bar"),
+        f.clone(),
+        col_color,
+    );
+    g.text(
+        pos2(cx(160.0), cols.center().y),
+        Align2::LEFT_CENTER,
+        tr("Signature"),
+        f.clone(),
+        col_color,
+    );
+    *y += 20.0;
+
+    let list = Rect::from_min_max(pos2(area.left(), *y), area.max);
+    let content_h = sig_list.len() as f32 * ROW_H;
+    let max_scroll = (content_h - list.height() + ROW_H).max(0.0);
+    let resp = ui.interact(list, egui::Id::unique(("sig_list", "rows")), Sense::hover());
+    if resp.hovered() {
+        let dy = ui.input(|i| i.smooth_scroll_delta.y);
+        s.lists.scroll = (s.lists.scroll - dy).clamp(0.0, max_scroll);
+    }
+    s.lists.scroll = s.lists.scroll.clamp(0.0, max_scroll);
+
+    let gl = ui.painter_at(list);
+    let num_stripes = ((list.height() / ROW_H).ceil() as usize) + 2;
+    let stripe_offset = (s.lists.scroll / ROW_H).floor() as usize;
+    for idx in 0..num_stripes {
+        let row_idx = stripe_offset + idx;
+        let y_top = list.top() + (row_idx as f32 * ROW_H) - s.lists.scroll;
+        if y_top >= list.bottom() {
+            break;
+        }
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), y_top.max(list.top())),
+            vec2(list.width(), ROW_H.min(list.bottom() - y_top)),
+        );
+        let bg_color = if row_idx % 2 == 0 {
+            ROW_BG_EVEN
+        } else {
+            ROW_BG_ODD
+        };
+        gl.rect_filled(row_rect, 0.0, bg_color);
+        gl.line_segment(
+            [
+                pos2(list.left(), y_top + ROW_H),
+                pos2(list.right(), y_top + ROW_H),
+            ],
+            Stroke::new(1.0, ROW_DIVIDER),
+        );
+    }
+
+    let first = (s.lists.scroll / ROW_H).floor() as usize;
+    let last = (((s.lists.scroll + list.height()) / ROW_H).ceil() as usize).min(sig_list.len());
+    let font = FontId::monospace(11.0);
+    let ink = Color32::from_rgb(0xe6, 0xe6, 0xeb);
+
+    for (i, &(bar, (num, den))) in sig_list.iter().enumerate().take(last).skip(first) {
+        let cy = list.top() + i as f32 * ROW_H - s.lists.scroll + ROW_H / 2.0;
+        let row_rect = Rect::from_min_size(
+            pos2(list.left(), cy - ROW_H / 2.0),
+            vec2(list.width(), ROW_H),
+        );
+        let r_resp = ui.interact(row_rect, egui::Id::unique(("sig_row", i)), Sense::click());
+        if r_resp.clicked() {
+            p.position_beats = p.bar_to_beats(bar.saturating_sub(1) as f64);
+        }
+        if r_resp.hovered() {
+            gl.rect_filled(
+                row_rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+            );
+        }
+
+        gl.text(
+            pos2(cx(50.0), cy),
+            Align2::CENTER_CENTER,
+            format!("Bar {bar}"),
+            font.clone(),
+            ink,
+        );
+        gl.text(
+            pos2(cx(160.0), cy),
+            Align2::LEFT_CENTER,
+            format!("{num}/{den}"),
+            FontId::proportional(12.5),
+            Color32::from_rgb(0xf2, 0xf3, 0xf5),
+        );
+    }
 }
 
 #[cfg(test)]

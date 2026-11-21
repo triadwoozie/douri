@@ -3,7 +3,7 @@ use egui::{Color32, CornerRadius, Stroke};
 
 // Primary neutral graphite/charcoal surfaces
 pub const CHROME_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a); // #18181A window chrome & top bar
-pub const CANVAS_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21); // #1E1E21 arrangement & mixer canvas
+pub const CANVAS_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18); // #141518 deep recessed arrangement & mixer canvas well
 pub const CARD_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a); // #26262A cards, track headers, browser rows
 pub const CARD_HOVER: Color32 = Color32::from_rgb(0x30, 0x30, 0x35); // #303035 hover state
 pub const BORDER: Color32 = Color32::from_rgb(0x34, 0x34, 0x39); // #343439 subtle 1px dividers

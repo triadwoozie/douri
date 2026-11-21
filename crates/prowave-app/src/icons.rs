@@ -44,6 +44,10 @@ pub const PLUS: &str = regular::PLUS;
 pub const COPY: &str = regular::COPY;
 pub const POWER: &str = regular::POWER;
 pub const LINK: &str = regular::LINK;
+pub const CARET_LEFT: &str = regular::CARET_LEFT;
+pub const CHECK: &str = regular::CHECK;
+pub const LOCK: &str = regular::LOCK;
+pub const SPEAKER_SLASH: &str = regular::SPEAKER_SLASH;
 
 fn add_font_bytes_as_family(fonts: &mut egui::FontDefinitions, name: &str, bytes: &'static [u8]) {
     fonts

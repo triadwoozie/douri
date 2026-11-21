@@ -29,7 +29,7 @@ const INDENT_W: f32 = 14.0;
 const TOOLBAR_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
 const HEADER_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
 const HEADER_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
-const LANE_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
+const LANE_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
 const LANE_SEL: Color32 = Color32::from_rgb(0x23, 0x23, 0x27);
 /// The band over a track stack's tracks in its parent's lane: purple-grey.
 const STACK_BAND: Color32 = Color32::from_rgb(0x3a, 0x38, 0x42);
@@ -828,11 +828,11 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
     }
     let cy = rect.center().y;
     let trough = Rect::from_center_size(pos2(rect.center().x, cy), vec2(rect.width(), 4.0));
-    g.rect_filled(trough, 2.0, Color32::from_rgb(0x13, 0x16, 0x1e));
+    g.rect_filled(trough, 2.0, Color32::from_rgb(0x14, 0x15, 0x18));
     g.rect_stroke(
         trough,
         2.0,
-        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
+        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38)),
         StrokeKind::Inside,
     );
     if v > 0.0 {
@@ -840,14 +840,14 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
             trough.min,
             pos2(trough.left() + trough.width() * v, trough.bottom()),
         );
-        g.rect_filled(fill, 2.0, Color32::from_rgb(0x00, 0xd2, 0xff));
+        g.rect_filled(fill, 2.0, Color32::from_rgb(0x6e, 0x75, 0x82));
     }
     let thumb_c = pos2(rect.left() + rect.width() * v, cy);
-    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xe6, 0xed, 0xf3));
+    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xf2, 0xf3, 0xf5));
     g.circle_stroke(
         thumb_c,
         5.5,
-        Stroke::new(1.0, Color32::from_rgb(0x11, 0x11, 0x13)),
+        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38)),
     );
     v
 }
