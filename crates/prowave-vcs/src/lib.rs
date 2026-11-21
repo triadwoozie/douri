@@ -153,6 +153,62 @@ pub fn normalize_studio_link(raw: &str) -> Result<String, String> {
     Ok(format!("{scheme}{host}/{owner}/{repo}.git"))
 }
 
+/// Translates low-level Git CLI stderr messages into concise, studio-friendly explanations
+/// with zero technical Git jargon or CLI flags.
+pub fn map_studio_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+
+    if lower.contains("no tracking information") || lower.contains("set-upstream") {
+        "This alternative hasn't been shared yet — click Share Updates first.".into()
+    } else if lower.contains("could not read from remote repository")
+        || lower.contains("could not resolve host")
+        || lower.contains("repository not found")
+        || lower.contains("please make sure you have the correct access rights")
+    {
+        "Unable to reach studio link. Please verify your internet connection and repository link permissions.".into()
+    } else if lower.contains("permission denied (publickey)")
+        || lower.contains("authentication failed")
+        || lower.contains("terminal prompts disabled")
+    {
+        "Permission denied. Please verify your studio credentials or SSH keys.".into()
+    } else if lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || lower.contains("failed to push some refs")
+    {
+        "Updates exist online. Click Get Updates before sharing your changes.".into()
+    } else if lower.contains("conflict") || lower.contains("automatic merge failed") {
+        "Conflicting edits found with remote version. Please review recent edits.".into()
+    } else if lower.contains("not a git repository") {
+        "Project history is not enabled. Click Enable Project History to start.".into()
+    } else if lower.contains("no such remote") || lower.contains("remote origin does not exist") {
+        "No studio link configured. Click Studio Link… to connect.".into()
+    } else if lower.contains("nothing to commit") {
+        "No unsaved musical changes to save.".into()
+    } else if lower.contains("already exists") {
+        "An alternative with that name already exists.".into()
+    } else {
+        let trimmed = raw.trim();
+        let cleaned = trimmed
+            .strip_prefix("fatal:")
+            .or_else(|| trimmed.strip_prefix("error:"))
+            .unwrap_or(trimmed)
+            .trim();
+
+        let first_line = cleaned.lines().next().unwrap_or(cleaned).trim();
+        if first_line.is_empty() {
+            "An error occurred while syncing updates.".into()
+        } else if first_line.contains("git ") {
+            "Unable to sync updates with studio link. Please verify repository settings.".into()
+        } else {
+            let mut s = first_line.to_string();
+            if !s.ends_with('.') && !s.ends_with('!') && !s.ends_with('?') {
+                s.push('.');
+            }
+            s
+        }
+    }
+}
+
 pub fn scaffold_gitignore(repo_path: &Path) -> std::io::Result<()> {
     let ignore_path = repo_path.join(".gitignore");
     let content = "\
@@ -742,29 +798,68 @@ impl GitRepo {
         }
     }
 
+    pub fn current_branch(&self) -> Result<String, String> {
+        self.status().map(|s| s.current_branch)
+    }
+
     pub fn pull(&self) -> Result<(), String> {
+        let current_branch = self.current_branch().unwrap_or_else(|_| "main".to_string());
+
+        // Check if an upstream tracking branch is already configured
+        let mut check_upstream = self.git_cmd();
+        check_upstream.args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+        let upstream_out = check_upstream.output();
+        let has_upstream = upstream_out.as_ref().is_ok_and(|o| o.status.success());
+
+        if !has_upstream {
+            // Fetch origin first to see if origin has this branch
+            let _ = self.fetch();
+
+            let mut verify_cmd = self.git_cmd();
+            verify_cmd.args(["rev-parse", "--verify", &format!("origin/{current_branch}")]);
+            let verify_out = verify_cmd.output();
+            let exists_on_origin = verify_out.as_ref().is_ok_and(|o| o.status.success());
+
+            if exists_on_origin {
+                let mut set_up = self.git_cmd();
+                set_up.args([
+                    "branch",
+                    &format!("--set-upstream-to=origin/{current_branch}"),
+                    &current_branch,
+                ]);
+                let _ = set_up.output();
+            } else {
+                return Err(
+                    "This alternative hasn't been shared yet — click Share Updates first.".into(),
+                );
+            }
+        }
+
         let mut cmd = self.git_cmd();
         cmd.arg("pull");
         let out = cmd
             .output()
-            .map_err(|e| format!("Getting updates failed: {e}"))?;
+            .map_err(|e| map_studio_error(&format!("Getting updates failed: {e}")))?;
         if out.status.success() {
             Ok(())
         } else {
-            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+            let err_raw = String::from_utf8_lossy(&out.stderr);
+            Err(map_studio_error(&err_raw))
         }
     }
 
     pub fn push(&self) -> Result<(), String> {
+        let current_branch = self.current_branch().unwrap_or_else(|_| "main".to_string());
         let mut cmd = self.git_cmd();
-        cmd.arg("push");
+        cmd.args(["push", "-u", "origin", &current_branch]);
         let out = cmd
             .output()
-            .map_err(|e| format!("Sharing updates failed: {e}"))?;
+            .map_err(|e| map_studio_error(&format!("Sharing updates failed: {e}")))?;
         if out.status.success() {
             Ok(())
         } else {
-            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+            let err_raw = String::from_utf8_lossy(&out.stderr);
+            Err(map_studio_error(&err_raw))
         }
     }
 
@@ -941,7 +1036,7 @@ impl VcsWorker {
                                 Self::send_refresh(&repo, &event_tx, None, None);
                             }
                             Err(e) => {
-                                let _ = event_tx.send(VcsEvent::Error(e));
+                                let _ = event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                             }
                         },
                         VcsTask::Refresh {
@@ -977,7 +1072,8 @@ impl VcsWorker {
                                         );
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1025,7 +1121,8 @@ impl VcsWorker {
                                         );
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1040,7 +1137,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1055,7 +1153,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1072,7 +1171,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1087,7 +1187,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1102,7 +1203,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1117,7 +1219,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1132,7 +1235,8 @@ impl VcsWorker {
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
-                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                        let _ =
+                                            event_tx.send(VcsEvent::Error(map_studio_error(&e)));
                                     }
                                 }
                             }
@@ -1418,6 +1522,34 @@ mod tests {
         assert_eq!(
             repo.remote_url().unwrap(),
             Some("https://github.com/producer/beat.git".into())
+        );
+    }
+
+    #[test]
+    fn test_map_studio_error() {
+        assert_eq!(
+            map_studio_error("fatal: There is no tracking information for the current branch."),
+            "This alternative hasn't been shared yet — click Share Updates first."
+        );
+        assert_eq!(
+            map_studio_error("fatal: Could not read from remote repository."),
+            "Unable to reach studio link. Please verify your internet connection and repository link permissions."
+        );
+        assert_eq!(
+            map_studio_error("error: failed to push some refs to 'origin' (non-fast-forward)"),
+            "Updates exist online. Click Get Updates before sharing your changes."
+        );
+        assert_eq!(
+            map_studio_error("CONFLICT (content): Merge conflict in song.prowavedoc"),
+            "Conflicting edits found with remote version. Please review recent edits."
+        );
+        assert_eq!(
+            map_studio_error("fatal: not a git repository"),
+            "Project history is not enabled. Click Enable Project History to start."
+        );
+        assert_eq!(
+            map_studio_error("fatal: A branch named 'my-alt' already exists"),
+            "An alternative with that name already exists."
         );
     }
 }

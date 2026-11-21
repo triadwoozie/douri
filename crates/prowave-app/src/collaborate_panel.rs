@@ -9,7 +9,7 @@ use crate::i18n::tr;
 use crate::model::Project;
 use crate::UiState;
 use egui::{
-    vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui, Vec2, ViewportBuilder,
+    pos2, vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui, Vec2, ViewportBuilder,
     ViewportCommand, ViewportId,
 };
 use prowave_vcs::{MusicalChange, VcsTask, VcsUiState};
@@ -36,11 +36,15 @@ fn format_relative_time(timestamp: i64) -> String {
     format!("{}d ago", diff / 86400)
 }
 
-fn collaborate_viewport_size(monitor: Option<Vec2>) -> Vec2 {
+fn collaborate_viewport_size(monitor: Option<Vec2>) -> (Vec2, Option<egui::Pos2>) {
     let mon = monitor.unwrap_or(vec2(1920.0, 1080.0));
-    let w = (mon.x * 0.58).clamp(760.0, 1120.0);
-    let h = (mon.y * 0.68).clamp(520.0, 760.0);
-    vec2(w, h)
+    let max_w = (mon.x - 48.0).max(640.0);
+    let max_h = (mon.y - 64.0).max(480.0);
+    let w = (mon.x * 0.58).clamp(760.0, 1120.0).min(max_w);
+    let h = (mon.y * 0.68).clamp(520.0, 760.0).min(max_h);
+    let size = vec2(w, h);
+    let pos = pos2(((mon.x - w) * 0.5).max(24.0), ((mon.y - h) * 0.5).max(32.0));
+    (size, Some(pos))
 }
 
 fn primary_btn(label: &str) -> egui::Button<'static> {
@@ -97,8 +101,8 @@ pub fn update(s: &mut UiState, p: &Project, project_path: Option<&Path>) {
                 prowave_vcs::VcsEvent::CheckoutCompleted(target) => {
                     s.status = Some(format!("Switched to version / alternative: {target}"));
                 }
-                prowave_vcs::VcsEvent::Error(err) => {
-                    s.status = Some(err);
+                prowave_vcs::VcsEvent::Error(_err) => {
+                    // Collaborate errors are routed exclusively to the Collaborate window!
                 }
                 prowave_vcs::VcsEvent::Notice(msg) => {
                     s.status = Some(msg);
@@ -146,9 +150,9 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
         return;
     }
 
-    let size = collaborate_viewport_size(ctx.input(|i| i.viewport().monitor_size));
+    let (size, pos) = collaborate_viewport_size(ctx.input(|i| i.viewport().monitor_size));
     let viewport_id = ViewportId::from_hash_of("douri_collaborate_window");
-    let builder = ViewportBuilder::default()
+    let mut builder = ViewportBuilder::default()
         .with_inner_size(size)
         .with_min_inner_size(vec2(760.0, 520.0))
         .with_resizable(true)
@@ -156,6 +160,10 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
         .with_transparent(true)
         .with_has_shadow(false)
         .with_title("Collaborate");
+
+    if let Some(p) = pos {
+        builder = builder.with_position(p);
+    }
 
     ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
         let mut visuals = ctx.global_style().visuals.clone();
@@ -349,34 +357,112 @@ fn render_active(
         return;
     };
 
-    // Notice or Error Banner
+    // Dismissible Error Banner
     if let Some(ref err) = latest_state.error_msg {
+        let mut dismiss = false;
         egui::Frame::new()
-            .fill(Color32::from_rgb(0x3d, 0x18, 0x18))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(0xff, 0x45, 0x3a)))
+            .fill(Color32::from_rgb(0x34, 0x19, 0x19))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x8a, 0x2e, 0x2e)))
             .corner_radius(CornerRadius::same(6))
-            .inner_margin(8.0)
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 8,
+                top: 6,
+                bottom: 6,
+            })
             .show(ui, |ui| {
-                ui.label(
-                    RichText::new(err)
-                        .size(11.5)
-                        .color(Color32::from_rgb(0xff, 0x80, 0x80)),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(phosphor_egui::regular::WARNING_CIRCLE)
+                            .size(14.0)
+                            .color(Color32::from_rgb(0xff, 0x6b, 0x6b)),
+                    );
+                    ui.add_space(2.0);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_btn = egui::Button::new(
+                            RichText::new("×")
+                                .size(14.0)
+                                .color(Color32::from_rgb(0xff, 0xaa, 0xaa)),
+                        )
+                        .frame(false);
+                        if ui.add(close_btn).on_hover_text("Dismiss").clicked() {
+                            dismiss = true;
+                        }
+
+                        let msg_w = (ui.available_width() - 8.0).max(60.0);
+                        let label = egui::Label::new(
+                            RichText::new(err)
+                                .size(11.5)
+                                .color(Color32::from_rgb(0xff, 0xaa, 0xaa)),
+                        )
+                        .truncate()
+                        .wrap_mode(egui::TextWrapMode::Truncate);
+
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add_sized(vec2(msg_w, 18.0), label).on_hover_text(err);
+                        });
+                    });
+                });
             });
+        if dismiss {
+            if let Some(ref mut worker) = s.collaborate_worker {
+                worker.latest_state.error_msg = None;
+            }
+        }
         ui.add_space(8.0);
     } else if let Some(ref notice) = latest_state.notice_msg {
+        let mut dismiss = false;
         egui::Frame::new()
-            .fill(Color32::from_rgb(0x1a, 0x2e, 0x22))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(0x30, 0xd1, 0x58)))
+            .fill(Color32::from_rgb(0x18, 0x2b, 0x1f))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x2d, 0x6a, 0x3e)))
             .corner_radius(CornerRadius::same(6))
-            .inner_margin(8.0)
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 8,
+                top: 6,
+                bottom: 6,
+            })
             .show(ui, |ui| {
-                ui.label(
-                    RichText::new(notice)
-                        .size(11.5)
-                        .color(Color32::from_rgb(0x80, 0xe6, 0xa0)),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(phosphor_egui::regular::CHECK_CIRCLE)
+                            .size(14.0)
+                            .color(Color32::from_rgb(0x4e, 0xcd, 0x76)),
+                    );
+                    ui.add_space(2.0);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_btn = egui::Button::new(
+                            RichText::new("×")
+                                .size(14.0)
+                                .color(Color32::from_rgb(0x9a, 0xeb, 0xb2)),
+                        )
+                        .frame(false);
+                        if ui.add(close_btn).on_hover_text("Dismiss").clicked() {
+                            dismiss = true;
+                        }
+
+                        let msg_w = (ui.available_width() - 8.0).max(60.0);
+                        let label = egui::Label::new(
+                            RichText::new(notice)
+                                .size(11.5)
+                                .color(Color32::from_rgb(0x9a, 0xeb, 0xb2)),
+                        )
+                        .truncate()
+                        .wrap_mode(egui::TextWrapMode::Truncate);
+
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add_sized(vec2(msg_w, 18.0), label).on_hover_text(notice);
+                        });
+                    });
+                });
             });
+        if dismiss {
+            if let Some(ref mut worker) = s.collaborate_worker {
+                worker.latest_state.notice_msg = None;
+            }
+        }
         ui.add_space(8.0);
     }
 
@@ -389,15 +475,19 @@ fn render_active(
         // Left Column (~42%)
         ui.vertical(|ui| {
             ui.set_width(left_w);
-            render_left_column(
-                ui,
-                p,
-                s,
-                project_path,
-                &latest_state,
-                card_bg,
-                border_stroke,
-            );
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    render_left_column(
+                        ui,
+                        p,
+                        s,
+                        project_path,
+                        &latest_state,
+                        card_bg,
+                        border_stroke,
+                    );
+                });
         });
 
         ui.add_space(gap);
@@ -857,13 +947,6 @@ fn render_right_column(
                         .inner_margin(10.0)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(&commit.message)
-                                        .size(12.5)
-                                        .strong()
-                                        .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
-                                );
-
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
@@ -888,6 +971,24 @@ fn render_right_column(
                                                 });
                                             }
                                         }
+
+                                        let label = egui::Label::new(
+                                            RichText::new(&commit.message)
+                                                .size(12.5)
+                                                .strong()
+                                                .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+                                        )
+                                        .truncate()
+                                        .wrap_mode(egui::TextWrapMode::Truncate);
+
+                                        let title_w = (ui.available_width() - 8.0).max(40.0);
+                                        ui.with_layout(
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.add_sized(vec2(title_w, 20.0), label)
+                                                    .on_hover_text(&commit.message);
+                                            },
+                                        );
                                     },
                                 );
                             });

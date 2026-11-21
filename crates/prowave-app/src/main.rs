@@ -1952,6 +1952,7 @@ fn top_bar(ui: &mut egui::Ui, p: &mut Project, s: &mut UiState) {
     let frame = egui::Frame::side_top_panel(ui.style()).fill(menus::bar_fill(s.light_menus));
     if menus::IN_WINDOW {
         let bar = egui::Panel::top("menu")
+            .exact_size(28.0)
             .frame(frame)
             .show(ui, |ui| menus::menu_bar(ui, p, s));
         if window_chrome::CUSTOM {

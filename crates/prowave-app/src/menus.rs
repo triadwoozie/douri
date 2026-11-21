@@ -1980,7 +1980,12 @@ pub fn status_line(ui: &mut egui::Ui, p: &Project, s: &crate::UiState) {
         Color32::from_rgb(0xff, 0xb0, 0x40)
     };
     if let Some(msg) = &s.status {
-        ui.colored_label(warn, msg);
+        let first_line = msg.lines().next().unwrap_or(msg).trim();
+        let label = egui::Label::new(egui::RichText::new(first_line).color(warn).size(11.5))
+            .truncate()
+            .wrap_mode(egui::TextWrapMode::Truncate);
+        ui.add_sized(vec2(ui.available_width().min(220.0), 18.0), label)
+            .on_hover_text(msg);
     }
     // The engine plays only its first MAX_TRACKS tracks; say so instead of failing silently.
     let max = prowave_engine::MAX_TRACKS;
@@ -1989,9 +1994,13 @@ pub fn status_line(ui: &mut egui::Ui, p: &Project, s: &crate::UiState) {
             "Tracks {}–{} are silent (limit {})",
             &[&(max + 1), &p.tracks.len(), &max],
         );
-        ui.colored_label(warn, text).on_hover_text(tr(
-            "The audio engine plays up to 1024 tracks. Tracks after that are kept in the project but not played.",
-        ));
+        let label = egui::Label::new(egui::RichText::new(text).color(warn).size(11.5))
+            .truncate()
+            .wrap_mode(egui::TextWrapMode::Truncate);
+        ui.add_sized(vec2(ui.available_width().min(220.0), 18.0), label)
+            .on_hover_text(tr(
+                "The audio engine plays up to 1024 tracks. Tracks after that are kept in the project but not played.",
+            ));
     }
 }
 
