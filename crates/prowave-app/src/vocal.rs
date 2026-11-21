@@ -682,7 +682,19 @@ pub(crate) fn sing_openutau(
 ) -> Result<(), String> {
     std::fs::create_dir_all(cache_dir()).map_err(|e| e.to_string())?;
     let total = todo.len();
-    let vb = prowave_vocal::voicebank::Voicebank::default();
+    let vb = if !_set.voice.is_empty() {
+        let singers = prowave_vocal::discover_singers(&[]);
+        if let Some(s) = singers
+            .iter()
+            .find(|s| s.name == _set.voice || s.id == _set.voice)
+        {
+            prowave_vocal::Voicebank::load(&s.path).unwrap_or_default()
+        } else {
+            prowave_vocal::voicebank::Voicebank::default()
+        }
+    } else {
+        prowave_vocal::voicebank::Voicebank::default()
+    };
     let tempo_map = prowave_engine::TempoMap::default();
 
     for (i, ph) in todo.iter().enumerate() {
@@ -1316,6 +1328,36 @@ fn defaults() -> VocalSettings {
 fn openutau_panel(ui: &mut egui::Ui, set: &mut VocalSettings, changed: &mut bool) {
     let d = defaults();
     let id = egui::Id::unique("vocal_openutau_dials");
+    hw_vocal::section(ui, "Voicebank / Singer");
+    let singers = prowave_vocal::discover_singers(&[]);
+    let current_label = if set.voice.is_empty() {
+        "Default (Built-in)".to_string()
+    } else {
+        set.voice.clone()
+    };
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt(id.with("singer_combo"))
+            .selected_text(&current_label)
+            .width(180.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(set.voice.is_empty(), "Default (Built-in)")
+                    .clicked()
+                {
+                    set.voice.clear();
+                    *changed = true;
+                }
+                for s in &singers {
+                    let sel = set.voice == s.name || set.voice == s.id;
+                    let label = format!("{} ({})", s.name, s.vb_type.label());
+                    if ui.selectable_label(sel, label).clicked() {
+                        set.voice = s.name.clone();
+                        *changed = true;
+                    }
+                }
+            });
+    });
+    hw_vocal::gap(ui, 6.0);
     hw_vocal::section(ui, tr("Sound"));
     *changed |= hw_vocal::dials(
         ui,

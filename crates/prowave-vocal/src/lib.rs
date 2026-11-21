@@ -28,6 +28,7 @@ pub use resampler::{
 pub use ust::{UstNote, UstPitchBend, UstProject, UstVibrato, TICKS_PER_BEAT};
 pub use ustx::{UstxNote, UstxPitch, UstxProject, UstxTrack, UstxVibrato, UstxVoicePart};
 pub use voicebank::{
-    parse_oto_ini, parse_tone_name, read_file_detect_encoding, tone_to_name, Oto, OtoSet,
-    PrefixMap, Voicebank,
+    default_singers_dir, discover_singers, import_voicebank_folder, import_voicebank_zip,
+    load_singer_info, parse_oto_ini, parse_tone_name, read_file_detect_encoding, remove_singer,
+    tone_to_name, Oto, OtoSet, PrefixMap, SingerInfo, Voicebank, VoicebankType,
 };

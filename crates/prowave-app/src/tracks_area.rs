@@ -3510,8 +3510,25 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         }
         let base_h = row_h - take_rows_height(&p.tracks[ti]);
         for ri in 0..p.tracks[ti].regions.len() {
-            let start_beat = p.region_start_beats(&p.tracks[ti].regions[ri]);
-            let len_beats = p.region_len_beats(&p.tracks[ti].regions[ri]);
+            let orig_start = p.region_start_beats(&p.tracks[ti].regions[ri]);
+            let orig_len = p.region_len_beats(&p.tracks[ti].regions[ri]);
+            let (start_beat, len_beats) = if let Some((dt, dr, live_end, _)) = v.edge_drag {
+                if dt == ti && dr == ri {
+                    (orig_start, (live_end - orig_start).max(1.0 / 64.0))
+                } else {
+                    (orig_start, orig_len)
+                }
+            } else if let Some((dt, dr, live_start)) = v.start_drag {
+                if dt == ti && dr == ri {
+                    let end = orig_start + orig_len;
+                    let s = live_start.min(end - 1.0 / 64.0);
+                    (s, end - s)
+                } else {
+                    (orig_start, orig_len)
+                }
+            } else {
+                (orig_start, orig_len)
+            };
             let full = Rect::from_min_max(
                 pos2(x_of(start_beat), y + 1.0),
                 pos2(x_of(start_beat + len_beats), y + base_h - 1.0),
@@ -3586,20 +3603,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 }
             }
             if tool.moves_regions() && (full.right() - rr.right()).abs() < 0.5 {
-                let grip = Rect::from_min_max(pos2(rr.right() - 5.0, full.center().y), rr.max);
+                let grip = Rect::from_min_max(pos2(rr.right() - 8.0, full.center().y), rr.max);
                 let er = ui.interact(grip, id(("region_end", ti, ri)), Sense::drag());
                 if er.hovered() || er.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
                 if let (true, Some(pt)) = (er.dragged(), er.interact_pointer_pos()) {
-                    let end = snap_pos(beat_of(pt.x)).max(start_beat + 1.0 / 64.0);
+                    let end = snap_pos(beat_of(pt.x)).max(orig_start + 1.0 / 64.0);
                     let stretch = ui.input(|i| i.modifiers.alt);
                     v.edge_drag = Some((ti, ri, end, stretch));
-                    let x = x_of(end);
-                    ui.painter_at(lanes).line_segment(
-                        [pos2(x, full.top()), pos2(x, full.bottom())],
-                        Stroke::new(2.0, crate::theme::ORANGE),
-                    );
                 }
                 if er.drag_stopped() {
                     if let Some((t, r, end, stretch)) = v.edge_drag.take() {
@@ -3610,20 +3622,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             if tool.moves_regions() && (full.left() - rr.left()).abs() < 0.5 {
                 let grip = Rect::from_min_max(
                     pos2(rr.left(), full.center().y),
-                    pos2(rr.left() + 5.0, rr.bottom()),
+                    pos2(rr.left() + 8.0, rr.bottom()),
                 );
                 let sr = ui.interact(grip, id(("region_start", ti, ri)), Sense::drag());
                 if sr.hovered() || sr.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
                 if let (true, Some(pt)) = (sr.dragged(), sr.interact_pointer_pos()) {
-                    let at = snap_pos(beat_of(pt.x)).min(start_beat + len_beats - 1.0 / 64.0);
+                    let at = snap_pos(beat_of(pt.x)).min(orig_start + orig_len - 1.0 / 64.0);
                     v.start_drag = Some((ti, ri, at));
-                    let x = x_of(at);
-                    ui.painter_at(lanes).line_segment(
-                        [pos2(x, full.top()), pos2(x, full.bottom())],
-                        Stroke::new(2.0, crate::theme::ORANGE),
-                    );
                 }
                 if sr.drag_stopped() {
                     if let Some((t, r, at)) = v.start_drag.take() {
@@ -3923,6 +3930,41 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     false,
                     false,
                     gt as u32 * 77 + gr as u32 * 13 + 3,
+                );
+            }
+        }
+    }
+    // Active edge drag boundary highlight
+    if let Some((dt, _dr, live_end, _)) = v.edge_drag {
+        let x = x_of(live_end);
+        if let Some(&(top, row_h)) = rows.get(dt) {
+            let y = lanes.top() + top - scroll_y;
+            let base_h = row_h - take_rows_height(&p.tracks[dt]);
+            let bar_rect =
+                Rect::from_min_max(pos2(x - 1.5, y + 1.0), pos2(x + 1.5, y + base_h - 1.0));
+            if bar_rect.intersects(lanes) {
+                let p = ui.painter_at(lanes);
+                p.rect_filled(bar_rect.intersect(lanes), 1.0, crate::theme::ACCENT_BLUE);
+                p.line_segment(
+                    [pos2(x, y + 1.0), pos2(x, y + base_h - 1.0)],
+                    Stroke::new(1.0, Color32::WHITE),
+                );
+            }
+        }
+    }
+    if let Some((dt, _dr, live_start)) = v.start_drag {
+        let x = x_of(live_start);
+        if let Some(&(top, row_h)) = rows.get(dt) {
+            let y = lanes.top() + top - scroll_y;
+            let base_h = row_h - take_rows_height(&p.tracks[dt]);
+            let bar_rect =
+                Rect::from_min_max(pos2(x - 1.5, y + 1.0), pos2(x + 1.5, y + base_h - 1.0));
+            if bar_rect.intersects(lanes) {
+                let p = ui.painter_at(lanes);
+                p.rect_filled(bar_rect.intersect(lanes), 1.0, crate::theme::ACCENT_BLUE);
+                p.line_segment(
+                    [pos2(x, y + 1.0), pos2(x, y + base_h - 1.0)],
+                    Stroke::new(1.0, Color32::WHITE),
                 );
             }
         }
@@ -4367,10 +4409,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
 
     // ---- corner above the headers: "+" (new track), duplicate track, global tracks
     let gc = ui.painter_at(corner);
-    gc.rect_filled(corner, 0.0, Color32::from_gray(0x3a));
+    gc.rect_filled(corner, 0.0, crate::theme::CARD_BG);
     gc.line_segment(
         [corner.left_bottom(), corner.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x24)),
+        Stroke::new(1.0, crate::theme::BORDER),
     );
     let plus = Rect::from_center_size(
         pos2(corner.left() + 18.0, corner.center().y),
@@ -4381,7 +4423,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         plus,
         4.0,
         if pr.hovered() {
-            Color32::from_gray(0x66)
+            crate::theme::CARD_HOVER
         } else {
             BTN_BG
         },
@@ -4396,7 +4438,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     );
     let dr = ui.interact(dup, id(("icon", "dup")), Sense::click());
     let dup_bg = if dr.hovered() {
-        Color32::from_gray(0x66)
+        crate::theme::CARD_HOVER
     } else {
         BTN_BG
     };

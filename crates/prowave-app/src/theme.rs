@@ -47,7 +47,14 @@ pub const REGION_AUDIO: Color32 = Color32::from_rgb(0xa8, 0xa2, 0x95);
 pub fn apply(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
     v.panel_fill = CHROME_BG;
-    v.window_fill = CARD_BG;
+    v.window_fill = Color32::from_rgb(0x1a, 0x1b, 0x1e);
+    v.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38));
+    v.popup_shadow = egui::epaint::Shadow {
+        offset: [0, 8],
+        blur: 24,
+        spread: 2,
+        color: Color32::from_black_alpha(160),
+    };
     v.extreme_bg_color = CANVAS_BG;
     v.faint_bg_color = Color32::from_rgba_premultiplied(0x26, 0x26, 0x2a, 160);
     v.override_text_color = Some(TEXT);

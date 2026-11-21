@@ -1,54 +1,62 @@
-//! Logic Pro's card-based "Choose a track type" Sheet Dialog (`new_track_dialog.rs`).
+//! Logic Pro's card-based "Create New Track" Modal Sheet (`new_track_dialog.rs`).
 //!
-//! Provides the visual track selection sheet specified by Apple Logic Pro,
-//! featuring categorized track cards with colored accents, Phosphor icons,
-//! a collapsible Details routing drawer, and track count stepper.
+//! Provides the visual track selection sheet matching Apple Logic Pro's layout:
+//! single clean header, 5 distinct cards with bold circular 44x44px colored badges,
+//! generous padding preventing label clipping, sub-selector pills, quick Voicebank selector,
+//! collapsible 2-column Details routing drawer, and track count stepper.
 
 use crate::model::{Project, TrackKind};
 use crate::ui_chrome::{
-    self, cancel_button, modal_sheet, number_stepper, primary_button, track_type_card,
-    ACCENT_AMBER, ACCENT_BLUE, ACCENT_CYAN, ACCENT_GREEN, ACCENT_PURPLE,
+    self, cancel_button, modal_sheet, number_stepper, primary_button, ACCENT_AMBER, ACCENT_BLUE,
+    ACCENT_CYAN, ACCENT_GREEN,
 };
 use crate::UiState;
-use egui::{vec2, Color32, FontId, Response, Sense, Stroke, Ui, Vec2};
+use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind};
 
-/// The track category choice in the dialog sheet.
+pub const ACCENT_INDIGO: Color32 = Color32::from_rgb(0x5E, 0x5C, 0xE6);
+pub const ACCENT_ROSE: Color32 = Color32::from_rgb(0xFF, 0x37, 0x5F);
+
+/// The 5 primary track card choices in the dialog sheet.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Choice {
+pub enum CardChoice {
     #[default]
     SoftwareInstrument,
-    AudioMic,
-    AudioGuitar,
+    Pattern,
     SessionPlayer,
+    Audio,
     VocalUtau,
 }
 
-impl Choice {
+// Aliases for compatibility
+pub type Choice = CardChoice;
+
+impl CardChoice {
     pub fn kind(self) -> TrackKind {
         match self {
             Self::SoftwareInstrument => TrackKind::Instrument,
-            Self::AudioMic | Self::AudioGuitar => TrackKind::Audio,
+            Self::Pattern => TrackKind::Drummer,
             Self::SessionPlayer => TrackKind::Drummer,
+            Self::Audio => TrackKind::Audio,
             Self::VocalUtau => TrackKind::Instrument,
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::SoftwareInstrument => "Software Instrument",
-            Self::AudioMic => "Audio (Mic/Line)",
-            Self::AudioGuitar => "Guitar or Bass",
+            Self::SoftwareInstrument => "MIDI / Instrument",
+            Self::Pattern => "Pattern",
             Self::SessionPlayer => "Session Player",
+            Self::Audio => "Audio",
             Self::VocalUtau => "Vocal / UTAU",
         }
     }
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            Self::SoftwareInstrument => "Virtual synths, samplers, and instruments.",
-            Self::AudioMic => "Microphones or line inputs for recording.",
-            Self::AudioGuitar => "Electric guitar or bass with amp effects.",
+            Self::SoftwareInstrument => "Virtual synths, samplers, and MIDI.",
+            Self::Pattern => "Step sequencer beats and melodic grids.",
             Self::SessionPlayer => "Intelligent drum, bass, and keys grooves.",
+            Self::Audio => "Microphones, line inputs, and guitar amps.",
             Self::VocalUtau => "OpenUtau synthesized vocal top lines.",
         }
     }
@@ -56,32 +64,59 @@ impl Choice {
     pub fn accent(self) -> Color32 {
         match self {
             Self::SoftwareInstrument => ACCENT_GREEN,
-            Self::AudioMic => ACCENT_BLUE,
-            Self::AudioGuitar => ACCENT_CYAN,
+            Self::Pattern => ACCENT_INDIGO,
             Self::SessionPlayer => ACCENT_AMBER,
-            Self::VocalUtau => ACCENT_PURPLE,
+            Self::Audio => ACCENT_BLUE,
+            Self::VocalUtau => ACCENT_ROSE,
         }
     }
 
     pub fn icon(self) -> &'static str {
         match self {
             Self::SoftwareInstrument => phosphor_egui::regular::PIANO_KEYS,
-            Self::AudioMic => phosphor_egui::regular::MICROPHONE_STAGE,
-            Self::AudioGuitar => phosphor_egui::regular::GUITAR,
+            Self::Pattern => phosphor_egui::regular::GRID_FOUR,
             Self::SessionPlayer => phosphor_egui::regular::METRONOME,
+            Self::Audio => phosphor_egui::regular::MICROPHONE_STAGE,
             Self::VocalUtau => phosphor_egui::regular::MUSIC_NOTES,
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MidiSub {
+    #[default]
+    SoftwareInstrument,
+    ExternalMidi,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SessionPlayerSub {
+    #[default]
+    Drummer,
+    BassPlayer,
+    KeyboardPlayer,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum AudioSub {
+    #[default]
+    MicLine,
+    GuitarBass,
 }
 
 /// The dialog's state, kept in [`UiState`] between frames.
 #[derive(Clone, Debug)]
 pub struct NewTrackDialog {
     pub open: bool,
-    pub choice: Choice,
+    pub choice: CardChoice,
+    pub midi_sub: MidiSub,
+    pub session_sub: SessionPlayerSub,
+    pub audio_sub: AudioSub,
+    pub vocal_voicebank: String,
     pub count: u32,
     pub details_open: bool,
     pub open_library: bool,
+    pub load_default_patch: bool,
     pub input_channel: u16,
     pub output_channel: u16,
     pub instrument_choice: usize,
@@ -91,10 +126,15 @@ impl Default for NewTrackDialog {
     fn default() -> Self {
         Self {
             open: false,
-            choice: Choice::SoftwareInstrument,
+            choice: CardChoice::SoftwareInstrument,
+            midi_sub: MidiSub::SoftwareInstrument,
+            session_sub: SessionPlayerSub::Drummer,
+            audio_sub: AudioSub::MicLine,
+            vocal_voicebank: String::new(),
             count: 1,
             details_open: false,
             open_library: true,
+            load_default_patch: true,
             input_channel: 0,
             output_channel: 0,
             instrument_choice: 0,
@@ -110,7 +150,7 @@ impl NewTrackDialog {
     }
 }
 
-/// Draws the "Choose a track type" modal sheet when open.
+/// Draws the "Create New Track" modal sheet when open.
 pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
     if !s.new_track.open {
         return;
@@ -120,54 +160,221 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
     let mut cancel = false;
 
     let sheet_size = if s.new_track.details_open {
-        vec2(660.0, 370.0)
+        vec2(760.0, 440.0)
     } else {
-        vec2(660.0, 275.0)
+        vec2(760.0, 320.0)
     };
 
     modal_sheet(
         ctx,
-        egui::Id::unique("choose_track_type_dialog"),
-        "Choose a track type",
+        egui::Id::unique("create_new_track_dialog"),
+        "Create New Track",
         sheet_size,
         |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
 
-            // Header Title
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Choose a track type")
-                        .size(15.0)
-                        .strong()
-                        .color(ui_chrome::TEXT_PRIMARY),
-                );
-            });
+            // Row of 5 visual track cards with circular 44x44px badges
+            let card_w = 138.0;
+            let card_h = 168.0;
 
-            ui.add_space(4.0);
-
-            // Row of 5 visual track cards
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
 
-                let choices = [
-                    Choice::SoftwareInstrument,
-                    Choice::AudioMic,
-                    Choice::AudioGuitar,
-                    Choice::SessionPlayer,
-                    Choice::VocalUtau,
+                const CARDS: [CardChoice; 5] = [
+                    CardChoice::SoftwareInstrument,
+                    CardChoice::Pattern,
+                    CardChoice::SessionPlayer,
+                    CardChoice::Audio,
+                    CardChoice::VocalUtau,
                 ];
 
-                for c in choices {
+                for c in CARDS {
                     let selected = s.new_track.choice == c;
-                    if track_type_card(ui, selected, c.accent(), c.icon(), c.title(), c.subtitle())
-                        .clicked()
-                    {
+                    let accent = c.accent();
+                    let (rect, resp) = ui.allocate_exact_size(vec2(card_w, card_h), Sense::click());
+                    let painter = ui.painter();
+
+                    if resp.clicked() {
                         s.new_track.choice = c;
+                    }
+
+                    // Background fill & border
+                    let bg_color = if selected {
+                        ui_chrome::CARD_BG_SELECTED
+                    } else if resp.hovered() {
+                        ui_chrome::CARD_BG_HOVER
+                    } else {
+                        ui_chrome::CARD_BG
+                    };
+
+                    let border_stroke = if selected {
+                        Stroke::new(2.0, accent)
+                    } else if resp.hovered() {
+                        Stroke::new(1.0, Color32::from_white_alpha(50))
+                    } else {
+                        Stroke::new(1.0, ui_chrome::RIM_COLOR)
+                    };
+
+                    painter.rect(rect, 10.0, bg_color, border_stroke, StrokeKind::Inside);
+
+                    // Circular 44x44px colored badge at top center
+                    let circle_center = pos2(rect.center().x, rect.top() + 32.0);
+                    painter.circle_filled(circle_center, 22.0, accent);
+                    painter.circle_stroke(
+                        circle_center,
+                        22.0,
+                        Stroke::new(1.0, Color32::from_white_alpha(60)),
+                    );
+
+                    // Icon centered inside circular badge
+                    painter.text(
+                        circle_center,
+                        Align2::CENTER_CENTER,
+                        c.icon(),
+                        FontId::proportional(22.0),
+                        Color32::WHITE,
+                    );
+
+                    // Title
+                    let title_pos = pos2(rect.center().x, rect.top() + 66.0);
+                    painter.text(
+                        title_pos,
+                        Align2::CENTER_CENTER,
+                        c.title(),
+                        FontId::proportional(12.5),
+                        if selected {
+                            ui_chrome::TEXT_PRIMARY
+                        } else {
+                            Color32::from_rgb(0xDC, 0xDC, 0xE0)
+                        },
+                    );
+
+                    // Sub-selector / controls area inside the card
+                    let sub_rect = Rect::from_min_max(
+                        pos2(rect.left() + 6.0, rect.top() + 84.0),
+                        pos2(rect.right() - 6.0, rect.bottom() - 6.0),
+                    );
+
+                    let mut sub_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(sub_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Center)),
+                    );
+
+                    match c {
+                        CardChoice::SoftwareInstrument => {
+                            let inst = s.new_track.midi_sub == MidiSub::SoftwareInstrument;
+                            if sub_ui
+                                .selectable_label(inst, "Instrument")
+                                .on_hover_text("Virtual synths & samplers")
+                                .clicked()
+                            {
+                                s.new_track.midi_sub = MidiSub::SoftwareInstrument;
+                                s.new_track.choice = c;
+                            }
+                            if sub_ui
+                                .selectable_label(!inst, "External MIDI")
+                                .on_hover_text("External hardware MIDI synth/sound module")
+                                .clicked()
+                            {
+                                s.new_track.midi_sub = MidiSub::ExternalMidi;
+                                s.new_track.choice = c;
+                            }
+                        }
+                        CardChoice::Pattern => {
+                            sub_ui.label(
+                                egui::RichText::new("Step Sequencer")
+                                    .size(11.0)
+                                    .color(ui_chrome::TEXT_SECONDARY),
+                            );
+                            sub_ui.label(
+                                egui::RichText::new("Drum/synth patterns")
+                                    .size(9.5)
+                                    .color(ui_chrome::TEXT_MUTED),
+                            );
+                        }
+                        CardChoice::SessionPlayer => {
+                            if sub_ui
+                                .selectable_label(
+                                    s.new_track.session_sub == SessionPlayerSub::Drummer,
+                                    "Drummer",
+                                )
+                                .clicked()
+                            {
+                                s.new_track.session_sub = SessionPlayerSub::Drummer;
+                                s.new_track.choice = c;
+                            }
+                            if sub_ui
+                                .selectable_label(
+                                    s.new_track.session_sub == SessionPlayerSub::BassPlayer,
+                                    "Bass Player",
+                                )
+                                .clicked()
+                            {
+                                s.new_track.session_sub = SessionPlayerSub::BassPlayer;
+                                s.new_track.choice = c;
+                            }
+                        }
+                        CardChoice::Audio => {
+                            if sub_ui
+                                .selectable_label(
+                                    s.new_track.audio_sub == AudioSub::MicLine,
+                                    "Mic / Line",
+                                )
+                                .clicked()
+                            {
+                                s.new_track.audio_sub = AudioSub::MicLine;
+                                s.new_track.choice = c;
+                            }
+                            if sub_ui
+                                .selectable_label(
+                                    s.new_track.audio_sub == AudioSub::GuitarBass,
+                                    "Guitar / Bass",
+                                )
+                                .clicked()
+                            {
+                                s.new_track.audio_sub = AudioSub::GuitarBass;
+                                s.new_track.choice = c;
+                            }
+                        }
+                        CardChoice::VocalUtau => {
+                            sub_ui.label(
+                                egui::RichText::new("OpenUtau Synth")
+                                    .size(10.5)
+                                    .color(ui_chrome::TEXT_SECONDARY),
+                            );
+                            let singers = prowave_vocal::discover_singers(&[]);
+                            let cur_singer = if s.new_track.vocal_voicebank.is_empty() {
+                                "Default (Built-in)"
+                            } else {
+                                &s.new_track.vocal_voicebank
+                            };
+                            egui::ComboBox::from_id_salt("card_voicebank_combo")
+                                .selected_text(cur_singer)
+                                .width(115.0)
+                                .show_ui(&mut sub_ui, |ui| {
+                                    if ui
+                                        .selectable_label(
+                                            s.new_track.vocal_voicebank.is_empty(),
+                                            "Default (Built-in)",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.new_track.vocal_voicebank.clear();
+                                    }
+                                    for sng in &singers {
+                                        let sel = s.new_track.vocal_voicebank == sng.name;
+                                        if ui.selectable_label(sel, &sng.name).clicked() {
+                                            s.new_track.vocal_voicebank = sng.name.clone();
+                                        }
+                                    }
+                                });
+                        }
                     }
                 }
             });
 
-            ui.add_space(6.0);
+            ui.add_space(4.0);
 
             // Collapsible Details Section (▼ Details)
             let details_label = if s.new_track.details_open {
@@ -194,65 +401,119 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                     .fill(Color32::from_rgb(0x1C, 0x1D, 0x20))
                     .corner_radius(6.0)
                     .stroke(ui_chrome::RIM_STROKE)
-                    .inner_margin(8.0)
+                    .inner_margin(10.0)
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing = vec2(14.0, 4.0);
-
-                            // Input routing (relevant for audio/guitar)
-                            if matches!(s.new_track.choice, Choice::AudioMic | Choice::AudioGuitar)
-                            {
-                                ui.label(
-                                    egui::RichText::new("Audio Input:")
-                                        .size(11.5)
-                                        .color(ui_chrome::TEXT_SECONDARY),
-                                );
-                                let inputs =
-                                    ["Input 1 (Mono)", "Input 2 (Mono)", "Input 1 + 2 (Stereo)"];
-                                egui::ComboBox::from_id_salt("track_audio_input")
-                                    .selected_text(
-                                        inputs[s.new_track.input_channel as usize % inputs.len()],
-                                    )
-                                    .show_ui(ui, |ui| {
-                                        for (idx, name) in inputs.iter().enumerate() {
-                                            ui.selectable_value(
-                                                &mut s.new_track.input_channel,
-                                                idx as u16,
-                                                *name,
-                                            );
-                                        }
-                                    });
-                            }
-
-                            // Output routing
-                            ui.label(
-                                egui::RichText::new("Audio Output:")
-                                    .size(11.5)
-                                    .color(ui_chrome::TEXT_SECONDARY),
-                            );
-                            let outputs =
-                                ["Output 1 + 2 (Stereo Out)", "Output 3 + 4", "Output 5 + 6"];
-                            egui::ComboBox::from_id_salt("track_audio_output")
-                                .selected_text(
-                                    outputs[s.new_track.output_channel as usize % outputs.len()],
-                                )
-                                .show_ui(ui, |ui| {
-                                    for (idx, name) in outputs.iter().enumerate() {
-                                        ui.selectable_value(
-                                            &mut s.new_track.output_channel,
-                                            idx as u16,
-                                            *name,
+                        ui.horizontal_top(|ui| {
+                            // Column 1: Audio / Instrument Routing
+                            ui.vertical(|ui| {
+                                ui.set_width(340.0);
+                                if s.new_track.choice == CardChoice::Audio {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new("Audio Input:")
+                                                .size(11.5)
+                                                .color(ui_chrome::TEXT_SECONDARY),
                                         );
-                                    }
-                                });
+                                        let inputs = [
+                                            "Input 1 (Mono)",
+                                            "Input 2 (Mono)",
+                                            "Input 1 + 2 (Stereo)",
+                                        ];
+                                        egui::ComboBox::from_id_salt("track_audio_input")
+                                            .selected_text(
+                                                inputs[s.new_track.input_channel as usize
+                                                    % inputs.len()],
+                                            )
+                                            .show_ui(ui, |ui| {
+                                                for (idx, name) in inputs.iter().enumerate() {
+                                                    ui.selectable_value(
+                                                        &mut s.new_track.input_channel,
+                                                        idx as u16,
+                                                        *name,
+                                                    );
+                                                }
+                                            });
+                                    });
+                                } else {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new("Default Instrument:")
+                                                .size(11.5)
+                                                .color(ui_chrome::TEXT_SECONDARY),
+                                        );
+                                        const INSTRUMENTS: [&str; 4] = [
+                                            "Vintage Electric Piano",
+                                            "Sampler (Grand Piano)",
+                                            "808 Bass",
+                                            "Drum Machine",
+                                        ];
+                                        egui::ComboBox::from_id_salt("track_default_instrument")
+                                            .selected_text(
+                                                INSTRUMENTS[s.new_track.instrument_choice
+                                                    % INSTRUMENTS.len()],
+                                            )
+                                            .show_ui(ui, |ui| {
+                                                for (idx, name) in INSTRUMENTS.iter().enumerate() {
+                                                    ui.selectable_value(
+                                                        &mut s.new_track.instrument_choice,
+                                                        idx,
+                                                        *name,
+                                                    );
+                                                }
+                                            });
+                                    });
+                                }
 
-                            // Open Library toggle
-                            ui.checkbox(&mut s.new_track.open_library, "Open Library");
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("Audio Output:")
+                                            .size(11.5)
+                                            .color(ui_chrome::TEXT_SECONDARY),
+                                    );
+                                    let outputs = [
+                                        "Output 1 + 2 (Stereo Out)",
+                                        "Output 3 + 4",
+                                        "Output 5 + 6",
+                                    ];
+                                    egui::ComboBox::from_id_salt("track_audio_output")
+                                        .selected_text(
+                                            outputs[s.new_track.output_channel as usize
+                                                % outputs.len()],
+                                        )
+                                        .show_ui(ui, |ui| {
+                                            for (idx, name) in outputs.iter().enumerate() {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.output_channel,
+                                                    idx as u16,
+                                                    *name,
+                                                );
+                                            }
+                                        });
+                                });
+                            });
+
+                            ui.separator();
+
+                            // Column 2: Checkboxes & Shortcuts
+                            ui.vertical(|ui| {
+                                ui.set_width(320.0);
+                                ui.checkbox(&mut s.new_track.open_library, "Open Sound Library");
+                                ui.checkbox(
+                                    &mut s.new_track.load_default_patch,
+                                    "Load Default Patch",
+                                );
+
+                                if s.new_track.choice == CardChoice::VocalUtau {
+                                    if ui.button("Manage UTAU Singers…").clicked() {
+                                        s.singer_manager.open();
+                                    }
+                                }
+                            });
                         });
                     });
             }
 
-            ui.add_space(8.0);
+            ui.add_space(6.0);
             ui.separator();
             ui.add_space(4.0);
 
@@ -288,29 +549,57 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
 
         for _ in 0..count {
             match choice {
-                Choice::SoftwareInstrument => {
-                    let at = p.add_track(TrackKind::Instrument);
-                    p.tracks[at].color = ACCENT_GREEN;
+                CardChoice::SoftwareInstrument => {
+                    if s.new_track.midi_sub == MidiSub::ExternalMidi {
+                        let at = p.add_track(TrackKind::ExternalMidi);
+                        p.tracks[at].name = "External MIDI".to_string();
+                        p.tracks[at].icon = Some(crate::track_icons::IconKind::ExternalMidi);
+                    } else {
+                        let at = p.add_track(TrackKind::Instrument);
+                        p.tracks[at].color = ACCENT_GREEN;
+                    }
                 }
-                Choice::AudioMic => {
-                    let at = p.add_track(TrackKind::Audio);
-                    p.tracks[at].color = ACCENT_BLUE;
-                }
-                Choice::AudioGuitar => {
-                    let at = p.add_track(TrackKind::Audio);
-                    p.tracks[at].name = "Guitar".to_string();
-                    p.tracks[at].color = ACCENT_CYAN;
-                    p.tracks[at].icon = Some(crate::track_icons::IconKind::Guitar);
-                }
-                Choice::SessionPlayer => {
+                CardChoice::Pattern => {
                     let at = p.add_track(TrackKind::Drummer);
-                    p.tracks[at].color = ACCENT_AMBER;
+                    p.tracks[at].name = "Pattern".to_string();
+                    p.tracks[at].color = ACCENT_INDIGO;
                 }
-                Choice::VocalUtau => {
+                CardChoice::SessionPlayer => match s.new_track.session_sub {
+                    SessionPlayerSub::Drummer => {
+                        let at = p.add_track(TrackKind::Drummer);
+                        p.tracks[at].color = ACCENT_AMBER;
+                    }
+                    SessionPlayerSub::BassPlayer => {
+                        let at = p.add_track(TrackKind::Instrument);
+                        p.tracks[at].name = "Bass Player".to_string();
+                        p.tracks[at].color = ACCENT_AMBER;
+                    }
+                    SessionPlayerSub::KeyboardPlayer => {
+                        let at = p.add_track(TrackKind::Instrument);
+                        p.tracks[at].name = "Keyboard Player".to_string();
+                        p.tracks[at].color = ACCENT_AMBER;
+                    }
+                },
+                CardChoice::Audio => match s.new_track.audio_sub {
+                    AudioSub::MicLine => {
+                        let at = p.add_track(TrackKind::Audio);
+                        p.tracks[at].color = ACCENT_BLUE;
+                    }
+                    AudioSub::GuitarBass => {
+                        let at = p.add_track(TrackKind::Audio);
+                        p.tracks[at].name = "Guitar".to_string();
+                        p.tracks[at].color = ACCENT_CYAN;
+                        p.tracks[at].icon = Some(crate::track_icons::IconKind::Guitar);
+                    }
+                },
+                CardChoice::VocalUtau => {
                     crate::vocal::new_track(p, s);
                     if let Some(track) = p.tracks.last_mut() {
-                        track.color = ACCENT_PURPLE;
+                        track.color = ACCENT_ROSE;
                         track.icon = Some(crate::track_icons::IconKind::Mic);
+                        if !s.new_track.vocal_voicebank.is_empty() {
+                            track.name = s.new_track.vocal_voicebank.clone();
+                        }
                     }
                 }
             }
@@ -330,23 +619,23 @@ mod tests {
 
     #[test]
     fn each_choice_creates_correct_track_kind() {
-        assert_eq!(Choice::SoftwareInstrument.kind(), TrackKind::Instrument);
-        assert_eq!(Choice::AudioMic.kind(), TrackKind::Audio);
-        assert_eq!(Choice::AudioGuitar.kind(), TrackKind::Audio);
-        assert_eq!(Choice::SessionPlayer.kind(), TrackKind::Drummer);
-        assert_eq!(Choice::VocalUtau.kind(), TrackKind::Instrument);
+        assert_eq!(CardChoice::SoftwareInstrument.kind(), TrackKind::Instrument);
+        assert_eq!(CardChoice::Pattern.kind(), TrackKind::Drummer);
+        assert_eq!(CardChoice::SessionPlayer.kind(), TrackKind::Drummer);
+        assert_eq!(CardChoice::Audio.kind(), TrackKind::Audio);
+        assert_eq!(CardChoice::VocalUtau.kind(), TrackKind::Instrument);
     }
 
     #[test]
     fn each_choice_has_distinct_accent_and_icon() {
-        let choices = [
-            Choice::SoftwareInstrument,
-            Choice::AudioMic,
-            Choice::AudioGuitar,
-            Choice::SessionPlayer,
-            Choice::VocalUtau,
+        const CARDS: [CardChoice; 5] = [
+            CardChoice::SoftwareInstrument,
+            CardChoice::Pattern,
+            CardChoice::SessionPlayer,
+            CardChoice::Audio,
+            CardChoice::VocalUtau,
         ];
-        for c in choices {
+        for c in CARDS {
             assert!(!c.title().is_empty());
             assert!(!c.subtitle().is_empty());
             assert!(!c.icon().is_empty());
@@ -360,6 +649,6 @@ mod tests {
         assert!(!dlg.open);
         assert_eq!(dlg.count, 1);
         assert!(dlg.open_library);
-        assert_eq!(dlg.choice, Choice::SoftwareInstrument);
+        assert_eq!(dlg.choice, CardChoice::SoftwareInstrument);
     }
 }

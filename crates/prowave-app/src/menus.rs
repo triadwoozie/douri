@@ -254,6 +254,7 @@ const TRACK: &[&str] = &[
     "New External MIDI Track",
     "New Vocal Top Line Track",
     "Vocal Top Line…",
+    "Manage UTAU Singers…",
     "New Pattern Region",
     "New Drummer Region",
     "MIDI FX…",
@@ -533,14 +534,14 @@ struct Look {
 }
 
 const DARK: Look = Look {
-    bar: Color32::from_rgb(0x22, 0x22, 0x25),
+    bar: Color32::from_rgb(0x18, 0x18, 0x1a),
     bar_text: Color32::from_rgb(0xdc, 0xdc, 0xdc),
-    menu: Color32::from_rgb(0x4a, 0x4a, 0x4c),
+    menu: Color32::from_rgb(0x1a, 0x1b, 0x1e),
     text: Color32::from_rgb(0xe6, 0xe6, 0xe6),
     dim: Color32::from_rgb(0x8a, 0x8a, 0x8c),
-    hover: Color32::from_rgb(0x2f, 0x6f, 0xd8),
+    hover: Color32::from_rgb(0x28, 0x29, 0x2d),
     hover_text: Color32::WHITE,
-    separator: Color32::from_rgb(0x5e, 0x5e, 0x60),
+    separator: Color32::from_rgb(0x2e, 0x31, 0x38),
 };
 
 /// macOS light menu bar and menus, as in Logic with the system in light mode.
@@ -709,7 +710,10 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
-        "Configure Track Header…" | "Show Master Track" | "Show Automation" => true,
+        "Configure Track Header…"
+        | "Show Master Track"
+        | "Show Automation"
+        | "Manage UTAU Singers…" => true,
         "Delete Automation" => p
             .tracks
             .get(p.selected_track)
@@ -1268,6 +1272,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         }
         "New Vocal Top Line Track" => crate::vocal::new_track(p, s),
         "Vocal Top Line…" => s.vocal.open = !s.vocal.open,
+        "Manage UTAU Singers…" => s.singer_manager.open(),
         "Hide Track" => crate::track_selection::hide_tracks(p, s),
         "Unhide All Tracks" => crate::track_commands::unhide_all(p),
         "Show Hidden Tracks" => s.tracks.show_hidden = !s.tracks.show_hidden,
@@ -1761,7 +1766,7 @@ fn menu_style(light: bool) -> impl Fn(&mut egui::Style) + Send + Sync + 'static 
         let hover_fill = if light {
             Color32::from_rgb(0xdc, 0xdc, 0xdc)
         } else {
-            Color32::from_rgb(0x55, 0x55, 0x58)
+            Color32::from_rgb(0x28, 0x29, 0x2d)
         };
         let v = &mut style.visuals;
         v.window_fill = l.menu;
@@ -1962,6 +1967,7 @@ mod tests {
                         s.show_groups,
                         s.typing.open,
                         s.vocal.open,
+                        s.singer_manager.open,
                         s.show_plugin_manager,
                         s.show_multimeter,
                         s.export_all_tracks_cmd,

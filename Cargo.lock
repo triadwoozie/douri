@@ -3694,6 +3694,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

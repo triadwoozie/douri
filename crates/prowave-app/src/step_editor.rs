@@ -25,8 +25,8 @@ use egui::{
     UiBuilder,
 };
 
-const BG: Color32 = Color32::from_rgb(0x2b, 0x2b, 0x2b);
-const STRIP_BG: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
+const BG: Color32 = crate::theme::CANVAS_BG;
+const STRIP_BG: Color32 = crate::theme::CARD_BG;
 const STRIP_H: f32 = 32.0;
 const ROW_H: f32 = 24.0;
 const LABEL_W: f32 = 124.0;
@@ -422,7 +422,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             continue;
         }
         let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0));
-        g.rect_filled(label, 3.0, Color32::from_gray(0x44));
+        g.rect_filled(label, 3.0, crate::theme::CARD_BG);
         g.text(
             label.left_center() + vec2(8.0, 0.0),
             Align2::LEFT_CENTER,
@@ -432,8 +432,12 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         );
         for k in 0..steps {
             let c = cell(r, k).shrink(1.0);
-            let shade = if (k / per_beat) % 2 == 0 { 0x38 } else { 0x30 };
-            g.rect_filled(c, 2.0, Color32::from_gray(shade));
+            let shade = if (k / per_beat) % 2 == 0 {
+                Color32::from_rgb(0x25, 0x25, 0x29)
+            } else {
+                Color32::from_rgb(0x1d, 0x1d, 0x20)
+            };
+            g.rect_filled(c, 2.0, shade);
             let vel = row.steps[k];
             if vel > 0 {
                 let (level, color) = match mode {
@@ -731,7 +735,7 @@ fn show_drummer(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     g.rect_filled(panel, 0.0, STRIP_BG);
     g.line_segment(
         [panel.right_top(), panel.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x24)),
+        Stroke::new(1.0, crate::theme::BORDER),
     );
     let pad = Rect::from_min_size(
         pos2(panel.left() + 14.0, panel.top() + 12.0),
@@ -819,7 +823,7 @@ fn show_drummer(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             pos2(lanes.left(), lanes.top() + i as f32 * lane_h),
             vec2(lanes.width() - 8.0, lane_h - 2.0),
         );
-        lg.rect_filled(lane, 3.0, Color32::from_gray(0x33));
+        lg.rect_filled(lane, 3.0, crate::theme::CARD_BG);
         let on = d.parts & part != 0;
         lg.text(
             lane.left_center() + vec2(8.0, 0.0),
@@ -834,7 +838,7 @@ fn show_drummer(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         let x = grid.left() + ((bar.start - origin) as f32) * beat_px;
         lg.line_segment(
             [pos2(x, lanes.top()), pos2(x, lanes.top() + lane_h * 6.0)],
-            Stroke::new(1.0, Color32::from_gray(0x5a)),
+            Stroke::new(1.0, crate::theme::BORDER),
         );
     }
     for n in &p.tracks[ti].regions[ri].notes {
@@ -888,10 +892,10 @@ fn xy_pad(
     d: &mut DrummerParams,
     (ti, ri): (usize, usize),
 ) -> bool {
-    g.rect_filled(pad, 4.0, Color32::from_gray(0x22));
+    g.rect_filled(pad, 4.0, crate::theme::CANVAS_BG);
     for k in 1..4 {
         let t = k as f32 / 4.0;
-        let line = Stroke::new(1.0, Color32::from_gray(0x34));
+        let line = Stroke::new(1.0, crate::theme::BORDER);
         g.line_segment(
             [
                 pos2(pad.left() + pad.width() * t, pad.top()),
@@ -910,7 +914,7 @@ fn xy_pad(
     g.rect_stroke(
         pad,
         4.0,
-        Stroke::new(1.0, Color32::from_gray(0x50)),
+        Stroke::new(1.0, crate::theme::BORDER),
         StrokeKind::Inside,
     );
     let small = FontId::proportional(10.5);

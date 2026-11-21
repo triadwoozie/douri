@@ -99,6 +99,7 @@ mod shuffle_edit;
 mod side_panes;
 mod signature_track;
 pub mod singer;
+pub mod singer_manager;
 mod smart_tempo;
 mod snap_grid;
 pub mod sound_library;
@@ -332,6 +333,8 @@ pub struct UiState {
     pub vocal: vocal::VocalState,
     /// Singer instrument window and bounces.
     pub singer: singer::SingerUi,
+    /// OpenUtau Singer Manager dialog.
+    pub singer_manager: singer_manager::SingerManagerDialog,
     /// Missing audio files detected during project load or recovery.
     pub missing_audio: Vec<String>,
     /// What the Tracks area's track commands remember (`track_commands`).
@@ -448,6 +451,7 @@ impl UiState {
             shot_top_menu: None,
             vocal: vocal::VocalState::default(),
             singer: singer::SingerUi::default(),
+            singer_manager: singer_manager::SingerManagerDialog::default(),
             missing_audio: Vec::new(),
             arrange: track_commands::ArrangeView::default(),
             spectrogram: spectrogram_view::SpectrogramView::default(),
@@ -1384,25 +1388,25 @@ impl App {
                 &mut self.ui.simplified_mode,
             ) {
                 // When Welcome dialog is completed, transition viewport to Chooser
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(840.0, 540.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(760.0, 560.0)));
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                    840.0, 540.0,
+                    760.0, 560.0,
                 )));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("Choose a Project".into()));
             }
         } else {
-            top_bar(ui, &mut self.project, &mut self.ui);
             egui::CentralPanel::default()
-                .frame(egui::Frame::new())
+                .frame(egui::Frame::NONE)
                 .show(ui, |ui| start_screen::show(ui, &mut self.ui));
             // If chooser was dismissed / template chosen, open and maximize main DAW
             if self.ui.chooser.is_none() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
                     800.0, 520.0,
                 )));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1600.0, 980.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1440.0, 900.0)));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
             }
         }
@@ -1479,6 +1483,18 @@ impl eframe::App for App {
                 .collect()
         });
         for path in dropped {
+            let is_zip = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+            let is_voicebank_dir = path.is_dir()
+                && (path.join("oto.ini").is_file() || path.join("character.txt").is_file());
+            if is_zip || is_voicebank_dir {
+                if self.ui.singer_manager.import_path(&path).is_ok() {
+                    self.ui.singer_manager.open = true;
+                    continue;
+                }
+            }
             self.import(&path, &ctx);
         }
         let panic = std::mem::take(&mut self.ui.midi_panic);
@@ -1737,6 +1753,7 @@ impl eframe::App for App {
         }
         track_dialogs::show(&ctx, &mut self.project, &mut self.ui);
         new_track_dialog::show(&ctx, &mut self.project, &mut self.ui);
+        singer_manager::show(&ctx, &mut self.ui.singer_manager);
         stack_dialog::show(&ctx, &mut self.project, &mut self.ui);
         midi_fx_ui::show(&ctx, &mut self.project, &mut self.ui);
         transform_ui::show(&ctx, &mut self.project, &mut self.ui);
@@ -2228,8 +2245,8 @@ fn main() -> eframe::Result {
             )
         } else {
             (
-                [840.0, 540.0],
-                [840.0, 540.0],
+                [760.0, 560.0],
+                [760.0, 560.0],
                 false,
                 false,
                 "Choose a Project",

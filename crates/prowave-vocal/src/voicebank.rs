@@ -4,8 +4,8 @@
 //! decoding Shift-JIS (standard UTAU Japanese encoding) or UTF-8 via `encoding_rs`.
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 /// A single oto.ini record specifying timing parameters for a phoneme sample.
@@ -118,6 +118,33 @@ pub struct Voicebank {
 }
 
 impl Voicebank {
+    /// Detects the voicebank type (CV, VCV, CVVC) based on alias conventions.
+    pub fn detect_type(&self) -> VoicebankType {
+        let mut vcv_count = 0usize;
+        let mut cvvc_count = 0usize;
+        for alias in self.alias_index.keys() {
+            if alias.starts_with("- ")
+                || alias.starts_with("a ")
+                || alias.starts_with("i ")
+                || alias.starts_with("u ")
+                || alias.starts_with("e ")
+                || alias.starts_with("o ")
+                || alias.starts_with("n ")
+            {
+                vcv_count += 1;
+            } else if alias.contains(' ') {
+                cvvc_count += 1;
+            }
+        }
+        if vcv_count > 3 {
+            VoicebankType::VCV
+        } else if cvvc_count > 3 {
+            VoicebankType::CVVC
+        } else {
+            VoicebankType::CV
+        }
+    }
+
     /// Finds an oto entry matching `alias`, or with prefix/suffix applied for `tone`.
     pub fn find_oto(&self, alias: &str, tone: Option<u8>) -> Option<(&Oto, &Path)> {
         if let Some(t) = tone {
@@ -351,6 +378,295 @@ pub fn tone_to_name(tone: u8) -> String {
     format!("{}{}", names[semitone], octave)
 }
 
+/// Classification of UTAU voicebanks based on phoneme alias conventions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum VoicebankType {
+    #[default]
+    CV,
+    VCV,
+    CVVC,
+}
+
+impl VoicebankType {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CV => "CV",
+            Self::VCV => "VCV",
+            Self::CVVC => "CVVC",
+        }
+    }
+}
+
+/// Metadata and summary for an installed UTAU / OpenUtau singer.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SingerInfo {
+    pub id: String,
+    pub name: String,
+    pub author: String,
+    pub voice: String,
+    pub path: PathBuf,
+    pub image: Option<PathBuf>,
+    pub vb_type: VoicebankType,
+    pub sample_count: usize,
+    pub oto_count: usize,
+    pub resampler: Option<String>,
+}
+
+/// Default storage directory for UTAU voicebanks:
+/// - Linux: `~/.local/share/douri/Singers/`
+/// - Windows: `%APPDATA%/douri/Singers/`
+/// - macOS: `~/Library/Application Support/douri/Singers/`
+pub fn default_singers_dir() -> PathBuf {
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    let base = if cfg!(windows) {
+        var("APPDATA")
+            .or_else(|| var("USERPROFILE").map(|p| p.join("AppData").join("Roaming")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("douri")
+    } else if cfg!(target_os = "macos") {
+        var("HOME")
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Library")
+            .join("Application Support")
+            .join("douri")
+    } else {
+        var("XDG_DATA_HOME")
+            .or_else(|| var("HOME").map(|h| h.join(".local").join("share")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("douri")
+    };
+    base.join("Singers")
+}
+
+/// Inspects a directory to read singer metadata if it contains `character.txt` or `oto.ini`.
+pub fn load_singer_info(dir: impl AsRef<Path>) -> Option<SingerInfo> {
+    let dir = dir.as_ref();
+    if !dir.is_dir() {
+        return None;
+    }
+    let mut root_dir = dir.to_path_buf();
+    if !root_dir.join("oto.ini").is_file() && !root_dir.join("character.txt").is_file() {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() && (p.join("oto.ini").is_file() || p.join("character.txt").is_file())
+                {
+                    root_dir = p;
+                    break;
+                }
+            }
+        }
+    }
+    let vb = Voicebank::load(&root_dir).ok()?;
+    let vb_type = vb.detect_type();
+    let sample_count = vb
+        .oto_sets
+        .iter()
+        .flat_map(|s| &s.otos)
+        .map(|o| &o.wav)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let oto_count = vb.alias_index.len();
+    let id = root_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| vb.name.clone());
+
+    Some(SingerInfo {
+        id,
+        name: vb.name,
+        author: vb.author,
+        voice: vb.voice,
+        path: root_dir,
+        image: vb.image,
+        vb_type,
+        sample_count,
+        oto_count,
+        resampler: None,
+    })
+}
+
+/// Discovers all voicebanks inside the default storage directory and user search folders.
+pub fn discover_singers(extra_dirs: &[PathBuf]) -> Vec<SingerInfo> {
+    let mut search_paths = vec![default_singers_dir()];
+    search_paths.extend_from_slice(extra_dirs);
+
+    let mut singers = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+
+    for base in search_paths {
+        if !base.is_dir() {
+            continue;
+        }
+        if let Ok(entries) = fs::read_dir(&base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(info) = load_singer_info(&path) {
+                        if seen_names.insert(info.name.clone()) {
+                            singers.push(info);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    singers.sort_by(|a, b| a.name.cmp(&b.name));
+    singers
+}
+
+/// Imports a voicebank from a `.zip` archive, decoding Shift-JIS or UTF-8 file paths.
+pub fn import_voicebank_zip(
+    zip_path: &Path,
+    target_dir: Option<&Path>,
+) -> Result<SingerInfo, String> {
+    let file = File::open(zip_path).map_err(|e| format!("Could not open zip: {e}"))?;
+    let mut archive = zip::ZipArchive::new(BufReader::new(file))
+        .map_err(|e| format!("Invalid zip archive: {e}"))?;
+    let dest_base = target_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_singers_dir);
+    fs::create_dir_all(&dest_base)
+        .map_err(|e| format!("Failed to create singers directory: {e}"))?;
+
+    let stem = zip_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("ImportedSinger");
+
+    // Check if the zip has a single root folder
+    let mut common_root: Option<String> = None;
+    let mut has_common_root = true;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let raw = entry.name_raw();
+        let (cow, _, had_errors) = encoding_rs::SHIFT_JIS.decode(raw);
+        let path_str = if had_errors {
+            String::from_utf8_lossy(raw).to_string()
+        } else {
+            std::str::from_utf8(raw)
+                .map(String::from)
+                .unwrap_or_else(|_| cow.into_owned())
+        };
+        let norm = path_str.replace('\\', "/");
+        if let Some((first, rest)) = norm.split_once('/') {
+            if !rest.is_empty() {
+                if let Some(ref r) = common_root {
+                    if r != first {
+                        has_common_root = false;
+                        break;
+                    }
+                } else {
+                    common_root = Some(first.to_string());
+                }
+            }
+        } else {
+            has_common_root = false;
+            break;
+        }
+    }
+
+    let extract_folder = if has_common_root && common_root.is_some() {
+        dest_base.clone()
+    } else {
+        dest_base.join(stem)
+    };
+
+    fs::create_dir_all(&extract_folder).map_err(|e| e.to_string())?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let raw = entry.name_raw();
+        let (cow, _, had_errors) = encoding_rs::SHIFT_JIS.decode(raw);
+        let path_str = if had_errors {
+            String::from_utf8_lossy(raw).to_string()
+        } else {
+            std::str::from_utf8(raw)
+                .map(String::from)
+                .unwrap_or_else(|_| cow.into_owned())
+        };
+        let norm = path_str.replace('\\', "/");
+        let safe_rel = norm.trim_start_matches('/');
+        if safe_rel.is_empty() || safe_rel.contains("..") {
+            continue;
+        }
+
+        let out_path = extract_folder.join(safe_rel);
+        if entry.is_dir() {
+            let _ = fs::create_dir_all(&out_path);
+        } else {
+            if let Some(parent) = out_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let mut outfile = File::create(&out_path)
+                .map_err(|e| format!("Failed to create {}: {e}", out_path.display()))?;
+            io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Failed to extract {}: {e}", out_path.display()))?;
+        }
+    }
+
+    let singer_path = match (has_common_root, common_root) {
+        (true, Some(root)) => dest_base.join(root),
+        _ => extract_folder,
+    };
+
+    load_singer_info(&singer_path).ok_or_else(|| {
+        "No valid UTAU voicebank found in archive (missing oto.ini or character.txt)".to_string()
+    })
+}
+
+/// Imports a voicebank from a folder, copying it into the singers directory.
+pub fn import_voicebank_folder(
+    src_folder: &Path,
+    target_dir: Option<&Path>,
+) -> Result<SingerInfo, String> {
+    if !src_folder.is_dir() {
+        return Err("Source is not a directory".into());
+    }
+    let dest_base = target_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_singers_dir);
+    fs::create_dir_all(&dest_base).map_err(|e| e.to_string())?;
+
+    let folder_name = src_folder.file_name().ok_or("Invalid folder name")?;
+    let dest_folder = dest_base.join(folder_name);
+
+    if dest_folder != src_folder {
+        copy_dir_recursive(src_folder, &dest_folder)?;
+    }
+
+    load_singer_info(&dest_folder)
+        .ok_or_else(|| "No valid UTAU voicebank found in folder".to_string())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    let entries = fs::read_dir(src).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        let target = dst.join(entry.file_name());
+        if p.is_dir() {
+            copy_dir_recursive(&p, &target)?;
+        } else {
+            fs::copy(&p, &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Removes an installed singer folder from disk.
+pub fn remove_singer(dir: &Path) -> io::Result<()> {
+    if dir.is_dir() {
+        fs::remove_dir_all(dir)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +714,49 @@ _blank.wav=,10,20,30,40,50
         assert_eq!(map.get_prefix_suffix(70), ("", ""));
         assert_eq!(map.map_alias("あ", 60), "あ_C4");
         assert_eq!(map.map_alias("あ", 69), "high_あ");
+    }
+
+    #[test]
+    fn detects_vcv_and_cv_types() {
+        let mut vb_vcv = Voicebank::default();
+        for alias in ["- か", "a か", "i か", "u か", "e か", "o か"] {
+            vb_vcv
+                .alias_index
+                .insert(alias.to_string(), (Oto::default(), PathBuf::new()));
+        }
+        assert_eq!(vb_vcv.detect_type(), VoicebankType::VCV);
+
+        let mut vb_cv = Voicebank::default();
+        for alias in ["か", "き", "く", "け", "こ"] {
+            vb_cv
+                .alias_index
+                .insert(alias.to_string(), (Oto::default(), PathBuf::new()));
+        }
+        assert_eq!(vb_cv.detect_type(), VoicebankType::CV);
+    }
+
+    #[test]
+    fn loads_and_discovers_singers() {
+        let temp = tempfile::tempdir().unwrap();
+        let singer_dir = temp.path().join("KasaneTeto");
+        fs::create_dir_all(&singer_dir).unwrap();
+        fs::write(
+            singer_dir.join("character.txt"),
+            "name=Kasane Teto\nauthor=TwinDrill\n",
+        )
+        .unwrap();
+        fs::write(
+            singer_dir.join("oto.ini"),
+            "_ka.wav=- か,50,120,-100,80,40\n",
+        )
+        .unwrap();
+
+        let info = load_singer_info(&singer_dir).unwrap();
+        assert_eq!(info.name, "Kasane Teto");
+        assert_eq!(info.author, "TwinDrill");
+
+        let discovered = discover_singers(&[temp.path().to_path_buf()]);
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].name, "Kasane Teto");
     }
 }

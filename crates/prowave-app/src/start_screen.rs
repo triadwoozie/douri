@@ -463,8 +463,8 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     ui.allocate_rect(full, Sense::hover());
     let g = ui.painter().clone();
 
-    // Standalone dialog window (<= 900x600) fills the frame; otherwise centers as a modal over the DAW
-    let standalone = full.width() <= 920.0 && full.height() <= 620.0;
+    // Standalone dialog window (or startup chooser) fills the frame 100% edge-to-edge
+    let standalone = !s.has_path || (full.width() <= 920.0 && full.height() <= 620.0);
     let area = if standalone {
         full
     } else {
@@ -479,16 +479,20 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         g.rect_stroke(area, 8.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
     }
 
-    // Sidebar: width 165px
-    let side_w = 165.0f32;
+    // Sidebar: width 170px
+    let side_w = 170.0f32;
     let side = Rect::from_min_size(area.min, vec2(side_w, area.height()));
     g.rect_filled(
         side,
-        egui::CornerRadius {
-            nw: 8,
-            ne: 0,
-            sw: 8,
-            se: 0,
+        if standalone {
+            egui::CornerRadius::ZERO
+        } else {
+            egui::CornerRadius {
+                nw: 8,
+                ne: 0,
+                sw: 8,
+                se: 0,
+            }
         },
         SIDEBAR,
     );
@@ -797,11 +801,15 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     let footer_bg = Rect::from_min_max(pos2(side.right(), area.bottom() - footer_h), area.max);
     g.rect_filled(
         footer_bg,
-        egui::CornerRadius {
-            nw: 0,
-            ne: 0,
-            sw: 0,
-            se: 8,
+        if standalone {
+            egui::CornerRadius::ZERO
+        } else {
+            egui::CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: 0,
+                se: 8,
+            }
         },
         SIDEBAR,
     );
