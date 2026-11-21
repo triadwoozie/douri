@@ -22,7 +22,7 @@ const FILE: &[&str] = &[
     "Save",
     "Save As…",
     "Save A Copy As…",
-    "Quick Checkpoint",
+    "Quick Snapshot",
     "Save as Template…",
     "Revert to",
     "-",
@@ -370,6 +370,22 @@ const MIX: &[&str] = &[
     "Export",
     "Import",
 ];
+
+const COLLABORATE: &[&str] = &[
+    "Enable Collaborate",
+    "-",
+    "Toggle Collaborate Sidebar",
+    "Save Version…",
+    "Quick Snapshot",
+    "New Alternative…",
+    "-",
+    "Get Updates",
+    "Share Updates",
+    "Studio Link…",
+    "-",
+    "Enable Project History",
+];
+
 /// Logic Pro 11's View menu.
 const VIEW: &[&str] = &[
     "Hide All Automation",
@@ -397,7 +413,7 @@ const VIEW: &[&str] = &[
     "Show Inspector",
     "Show Performers",
     "Show Project Notes",
-    "Show Git Version Control",
+    "Toggle Collaborate Sidebar",
     "Show Movie",
     "Show Media Browser",
     "-",
@@ -476,13 +492,14 @@ const LANGUAGE: &[&str] = &[
 ];
 
 /// The menus in bar order, used by the in-window bar and the macOS menu bar.
-pub(crate) const MENUS: [(&str, &[&str]); 10] = [
+pub(crate) const MENUS: [(&str, &[&str]); 11] = [
     ("File", FILE),
     ("Edit", EDIT),
     ("Track", TRACK),
     ("Navigate", NAVIGATE),
     ("Record", RECORD),
     ("Mix", MIX),
+    ("Collaborate", COLLABORATE),
     ("View", VIEW),
     ("Settings", SETTINGS),
     ("Window", WINDOW),
@@ -503,7 +520,8 @@ pub(crate) const CHECKABLE: &[&str] = &[
     "Show List Editors",
     "Show Quick Help",
     "Show Project Notes",
-    "Show Git Version Control",
+    "Enable Collaborate",
+    "Toggle Collaborate Sidebar",
     "Show Media Browser",
     "Check for Updates Automatically",
     "Show Toolbar",
@@ -851,8 +869,15 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show Library"
         | "Show Inspector"
         | "Show List Editors"
-        | "Show Git Version Control"
-        | "Quick Checkpoint"
+        | "Enable Collaborate"
+        | "Toggle Collaborate Sidebar"
+        | "Save Version…"
+        | "Quick Snapshot"
+        | "New Alternative…"
+        | "Get Updates"
+        | "Share Updates"
+        | "Studio Link…"
+        | "Enable Project History"
         | "Project Alternatives…"
         | "Alternatives"
         | "Check for Updates…"
@@ -942,8 +967,15 @@ const ALWAYS: &[&str] = &[
     "Capture Recording",
     "Show Toolbar",
     "Show Project Notes",
-    "Show Git Version Control",
-    "Quick Checkpoint",
+    "Enable Collaborate",
+    "Toggle Collaborate Sidebar",
+    "Save Version…",
+    "Quick Snapshot",
+    "New Alternative…",
+    "Get Updates",
+    "Share Updates",
+    "Studio Link…",
+    "Enable Project History",
     "Project Alternatives…",
     "Alternatives",
     "Show Media Browser",
@@ -1127,7 +1159,8 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Quick Help" => s.show_quick_help,
         "Show Toolbar" => s.show_toolbar,
         "Show Project Notes" => s.show_notes,
-        "Show Git Version Control" => s.show_git,
+        "Enable Collaborate" => s.collaborate_enabled,
+        "Toggle Collaborate Sidebar" => s.show_collaborate,
         "Show Media Browser" => s.browser.open == Some(crate::file_browser::Tab::Files),
         "Check for Updates Automatically" => s.update_auto,
         "Show Tempo Track" => s.tracks.show_tempo,
@@ -1205,9 +1238,51 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Show Quick Help" | "Quick Help" => s.show_quick_help = !s.show_quick_help,
         "Show Toolbar" => s.show_toolbar = !s.show_toolbar,
         "Show Project Notes" => s.show_notes = !s.show_notes,
-        "Show Git Version Control" => s.show_git = !s.show_git,
-        "Quick Checkpoint" => s.git_trigger_checkpoint = true,
-        "Project Alternatives…" | "Alternatives" => s.show_git = true,
+        "Enable Collaborate" => s.collaborate_enabled = !s.collaborate_enabled,
+        "Toggle Collaborate Sidebar" => s.show_collaborate = !s.show_collaborate,
+        "Save Version…" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+        }
+        "Quick Snapshot" => {
+            s.collaborate_enabled = true;
+            s.collaborate_trigger_snapshot = true;
+        }
+        "New Alternative…" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+            s.collaborate_creating_alt = true;
+        }
+        "Get Updates" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+            if let Some(ref worker) = s.collaborate_worker {
+                worker.send(prowave_vcs::VcsTask::Pull);
+            }
+        }
+        "Share Updates" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+            if let Some(ref worker) = s.collaborate_worker {
+                worker.send(prowave_vcs::VcsTask::Push);
+            }
+        }
+        "Studio Link…" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+            s.collaborate_showing_link_modal = true;
+        }
+        "Enable Project History" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+            if let Some(ref worker) = s.collaborate_worker {
+                worker.send(prowave_vcs::VcsTask::Init);
+            }
+        }
+        "Project Alternatives…" | "Alternatives" => {
+            s.show_collaborate = true;
+            s.collaborate_enabled = true;
+        }
         "Show Media Browser" => s.browser.toggle(crate::file_browser::Tab::Files),
         "Capture Recording" => s.capture_cmd = true,
         "Check for Updates…" => s.update_check = true,
@@ -1938,7 +2013,11 @@ mod tests {
                     s.show_library,
                     s.show_inspector,
                     s.show_lists,
-                    s.show_git
+                    s.show_collaborate,
+                    s.collaborate_enabled,
+                    s.collaborate_trigger_snapshot,
+                    s.collaborate_creating_alt,
+                    s.collaborate_showing_link_modal,
                 ),
                 (
                     s.update_check,
@@ -1972,7 +2051,7 @@ mod tests {
                         s.import_audio_cmd,
                         s.export_xml_cmd,
                         s.open_band_cmd,
-                        s.git_trigger_checkpoint,
+                        s.collaborate_trigger_snapshot,
                     ),
                 ),
                 (

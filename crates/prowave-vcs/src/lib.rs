@@ -1,8 +1,8 @@
-//! `prowave-vcs`: Native Git version control and project alternatives engine for Dōri.
+//! `prowave-vcs`: Native Collaborate version history and project alternatives engine for Dōri.
 //!
 //! Provides a pure-Rust, CLI-backed Git wrapper (zero C / OpenSSL / libgit2 dependencies)
-//! with background threading (`VcsWorker`), `.gitignore` scaffolding, and a musical diff
-//! engine comparing `ProjectDoc` states.
+//! with background threading (`VcsWorker`), DAW-aware `.gitignore` scaffolding, smart Studio Link
+//! URL normalization, and a musical diff engine comparing `ProjectDoc` states.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -88,10 +88,77 @@ impl MusicalChange {
     }
 }
 
+/// Normalizes any user-pasted browser or Git repository link into a valid clone/remote URL.
+///
+/// Accepts:
+/// - Shorthand: `alice/sunset-groove` -> `https://github.com/alice/sunset-groove.git`
+/// - Domain without scheme: `github.com/alice/sunset-groove` -> `https://github.com/alice/sunset-groove.git`
+/// - Browser subpaths: `https://github.com/alice/sunset-groove/tree/main/src` -> `https://github.com/alice/sunset-groove.git`
+/// - Issues/PRs subpaths: `https://github.com/alice/sunset-groove/pulls` -> `https://github.com/alice/sunset-groove.git`
+/// - GitLab / Codeberg / self-hosted URLs
+/// - Standard SSH URLs: `git@github.com:alice/sunset-groove.git` (preserved as-is)
+pub fn normalize_studio_link(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Studio link cannot be empty".into());
+    }
+
+    // Preserve valid SSH URLs
+    if trimmed.starts_with("git@") {
+        if trimmed.contains(':') && (trimmed.contains('/') || trimmed.ends_with(".git")) {
+            return Ok(trimmed.to_string());
+        }
+        return Err("Invalid SSH Git URL format".into());
+    }
+
+    // Determine scheme and base content
+    let (scheme, without_scheme) = if let Some(rest) = trimmed.strip_prefix("https://") {
+        ("https://", rest)
+    } else if let Some(rest) = trimmed.strip_prefix("http://") {
+        ("http://", rest)
+    } else {
+        ("https://", trimmed)
+    };
+
+    let cleaned = without_scheme.trim_end_matches('/');
+
+    // Split host and path
+    let (host, path) = if cleaned.contains('/') {
+        let parts: Vec<&str> = cleaned.splitn(2, '/').collect();
+        let possible_host = parts[0];
+        if possible_host.contains('.') {
+            (possible_host, parts[1])
+        } else {
+            // Shorthand owner/repo without host defaults to github.com
+            ("github.com", cleaned)
+        }
+    } else {
+        return Err(
+            "Studio link must include owner and project name (e.g. username/project)".into(),
+        );
+    };
+
+    let path_parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if path_parts.len() < 2 {
+        return Err("Studio link must include both owner and project name".into());
+    }
+
+    let owner = path_parts[0];
+    let mut repo = path_parts[1];
+
+    if let Some(r) = repo.strip_suffix(".git") {
+        repo = r;
+    }
+
+    Ok(format!("{scheme}{host}/{owner}/{repo}.git"))
+}
+
 pub fn scaffold_gitignore(repo_path: &Path) -> std::io::Result<()> {
     let ignore_path = repo_path.join(".gitignore");
     let content = "\
-# Dōri / ProWave transient audio caches & temp files
+# Dōri DAW transient audio caches & temp files
+Cache/utau_renders/*.wav
+Cache/peaks/*.peak
 Cache/
 *.peak
 *.tmp
@@ -104,7 +171,14 @@ Thumbs.db
     } else {
         let existing = std::fs::read_to_string(&ignore_path)?;
         let mut to_append = String::new();
-        for line in ["Cache/", "*.peak", "*.tmp", "*.bak"] {
+        for line in [
+            "Cache/utau_renders/*.wav",
+            "Cache/peaks/*.peak",
+            "Cache/",
+            "*.peak",
+            "*.tmp",
+            "*.bak",
+        ] {
             if !existing.contains(line) {
                 to_append.push_str(line);
                 to_append.push('\n');
@@ -297,6 +371,7 @@ pub struct VcsUiState {
     pub status: RepoStatus,
     pub commits: Vec<CommitInfo>,
     pub changes: Vec<MusicalChange>,
+    pub remote_url: Option<String>,
     pub is_busy: bool,
     pub error_msg: Option<String>,
     pub notice_msg: Option<String>,
@@ -314,43 +389,59 @@ impl GitRepo {
         None
     }
     pub fn init(_path: &Path) -> Result<Self, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn status(&self) -> Result<RepoStatus, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn branches(&self) -> Result<Vec<BranchInfo>, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn create_branch(&self, _name: &str) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn checkout(&self, _target: &str) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn create_and_checkout(&self, _name: &str) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
+    }
+    pub fn create_and_checkout_from(&self, _name: &str, _from_rev: &str) -> Result<(), String> {
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn commit(&self, _msg: &str) -> Result<String, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn log(&self, _limit: usize) -> Result<Vec<CommitInfo>, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn fetch(&self) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn pull(&self) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn push(&self) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn reset_hard(&self) -> Result<(), String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
+    }
+    pub fn remote_url(&self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+    pub fn set_remote_url(&self, _url: &str) -> Result<(), String> {
+        Err("Collaborate is unsupported on wasm32".into())
     }
     pub fn cat_file(&self, _rev: &str, _file: &str) -> Result<Vec<u8>, String> {
-        Err("Git is unsupported on wasm32".into())
+        Err("Collaborate is unsupported on wasm32".into())
+    }
+    pub fn load_project_from_commit(
+        &self,
+        _rev: &str,
+        _project_rel_path: &Path,
+    ) -> Result<prowave_project::ProjectDoc, String> {
+        Err("Collaborate is unsupported on wasm32".into())
     }
 }
 
@@ -463,7 +554,6 @@ impl GitRepo {
             } else if let Some(path) = line.strip_prefix("? ") {
                 status.untracked_files.push(path.trim().to_string());
             } else if line.starts_with("1 ") || line.starts_with("2 ") || line.starts_with("u ") {
-                // Modified / staged / unmerged
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if let Some(path) = parts.last() {
                     status.modified_files.push(path.to_string());
@@ -484,7 +574,7 @@ impl GitRepo {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to list branches: {e}"))?;
+            .map_err(|e| format!("Failed to list alternatives: {e}"))?;
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).into_owned());
         }
@@ -524,7 +614,7 @@ impl GitRepo {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to create branch: {e}"))?;
+            .map_err(|e| format!("Failed to create alternative: {e}"))?;
         if output.status.success() {
             Ok(())
         } else {
@@ -538,7 +628,7 @@ impl GitRepo {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to checkout: {e}"))?;
+            .map_err(|e| format!("Failed to open version: {e}"))?;
         if output.status.success() {
             Ok(())
         } else {
@@ -552,7 +642,21 @@ impl GitRepo {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to create and checkout branch: {e}"))?;
+            .map_err(|e| format!("Failed to create alternative: {e}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).into_owned())
+        }
+    }
+
+    pub fn create_and_checkout_from(&self, name: &str, from_rev: &str) -> Result<(), String> {
+        let mut cmd = self.git_cmd();
+        cmd.args(["checkout", "-b", name, from_rev]);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to create alternative from version: {e}"))?;
         if output.status.success() {
             Ok(())
         } else {
@@ -565,7 +669,7 @@ impl GitRepo {
         add_cmd.args(["add", "-A"]);
         let add_out = add_cmd
             .output()
-            .map_err(|e| format!("git add failed: {e}"))?;
+            .map_err(|e| format!("Staging failed: {e}"))?;
         if !add_out.status.success() {
             return Err(String::from_utf8_lossy(&add_out.stderr).into_owned());
         }
@@ -574,12 +678,11 @@ impl GitRepo {
         commit_cmd.args(["commit", "-m", msg]);
         let commit_out = commit_cmd
             .output()
-            .map_err(|e| format!("git commit failed: {e}"))?;
+            .map_err(|e| format!("Saving version failed: {e}"))?;
         if !commit_out.status.success() {
             return Err(String::from_utf8_lossy(&commit_out.stderr).into_owned());
         }
 
-        // Return short hash of HEAD
         let mut rev_cmd = self.git_cmd();
         rev_cmd.args(["rev-parse", "--short", "HEAD"]);
         let rev_out = rev_cmd
@@ -593,9 +696,10 @@ impl GitRepo {
         let limit_arg = format!("-n{limit}");
         cmd.args(["log", &limit_arg, "--format=%H|%h|%an|%at|%s"]);
 
-        let output = cmd.output().map_err(|e| format!("git log failed: {e}"))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Reading history failed: {e}"))?;
         if !output.status.success() {
-            // New repo with no commits returns error, which is fine
             return Ok(Vec::new());
         }
 
@@ -628,7 +732,9 @@ impl GitRepo {
     pub fn fetch(&self) -> Result<(), String> {
         let mut cmd = self.git_cmd();
         cmd.arg("fetch");
-        let out = cmd.output().map_err(|e| format!("git fetch failed: {e}"))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Fetching updates failed: {e}"))?;
         if out.status.success() {
             Ok(())
         } else {
@@ -639,7 +745,9 @@ impl GitRepo {
     pub fn pull(&self) -> Result<(), String> {
         let mut cmd = self.git_cmd();
         cmd.arg("pull");
-        let out = cmd.output().map_err(|e| format!("git pull failed: {e}"))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Getting updates failed: {e}"))?;
         if out.status.success() {
             Ok(())
         } else {
@@ -650,7 +758,9 @@ impl GitRepo {
     pub fn push(&self) -> Result<(), String> {
         let mut cmd = self.git_cmd();
         cmd.arg("push");
-        let out = cmd.output().map_err(|e| format!("git push failed: {e}"))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Sharing updates failed: {e}"))?;
         if out.status.success() {
             Ok(())
         } else {
@@ -661,7 +771,9 @@ impl GitRepo {
     pub fn reset_hard(&self) -> Result<(), String> {
         let mut cmd = self.git_cmd();
         cmd.args(["reset", "--hard", "HEAD"]);
-        let out = cmd.output().map_err(|e| format!("git reset failed: {e}"))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Discarding unsaved edits failed: {e}"))?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).into_owned());
         }
@@ -670,7 +782,7 @@ impl GitRepo {
         clean_cmd.args(["clean", "-fd"]);
         let clean_out = clean_cmd
             .output()
-            .map_err(|e| format!("git clean failed: {e}"))?;
+            .map_err(|e| format!("Clean failed: {e}"))?;
         if clean_out.status.success() {
             Ok(())
         } else {
@@ -678,11 +790,57 @@ impl GitRepo {
         }
     }
 
+    pub fn remote_url(&self) -> Result<Option<String>, String> {
+        let mut cmd = self.git_cmd();
+        cmd.args(["remote", "get-url", "origin"]);
+        match cmd.output() {
+            Ok(out) if out.status.success() => {
+                let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if url.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(url))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn set_remote_url(&self, url: &str) -> Result<(), String> {
+        let mut check_cmd = self.git_cmd();
+        check_cmd.args(["remote"]);
+        let has_origin = match check_cmd.output() {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                stdout.lines().any(|l| l.trim() == "origin")
+            }
+            _ => false,
+        };
+
+        let mut cmd = self.git_cmd();
+        if has_origin {
+            cmd.args(["remote", "set-url", "origin", url]);
+        } else {
+            cmd.args(["remote", "add", "origin", url]);
+        }
+
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Failed to set studio link: {e}"))?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+        }
+    }
+
     pub fn cat_file(&self, rev: &str, file: &str) -> Result<Vec<u8>, String> {
         let spec = format!("{rev}:{file}");
         let mut cmd = self.git_cmd();
         cmd.args(["show", &spec]);
-        let out = cmd.output().map_err(|e| format!("git show failed: {e}"))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Reading version failed: {e}"))?;
         if out.status.success() {
             Ok(out.stdout)
         } else {
@@ -702,13 +860,12 @@ impl GitRepo {
             let json = String::from_utf8(bytes).map_err(|e| e.to_string())?;
             serde_json::from_str(&json).map_err(|e| e.to_string())
         } else {
-            // Treat as .prowave zip
             use std::io::Read;
             let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
-                .map_err(|e| format!("Invalid zip archive: {e}"))?;
+                .map_err(|e| format!("Invalid project archive: {e}"))?;
             let mut file = archive
                 .by_name(prowave_project::PROJECT_JSON)
-                .map_err(|e| format!("Missing project.json in archive: {e}"))?;
+                .map_err(|e| format!("Missing project document in version archive: {e}"))?;
             let mut json = String::new();
             file.read_to_string(&mut json)
                 .map_err(|e| format!("Read failed: {e}"))?;
@@ -735,6 +892,10 @@ pub enum VcsTask {
     CreateBranch {
         name: String,
     },
+    CreateBranchFrom {
+        name: String,
+        from_rev: String,
+    },
     Checkout {
         target: String,
     },
@@ -742,6 +903,9 @@ pub enum VcsTask {
     Push,
     RevertUnsaved,
     Init,
+    SetRemote {
+        url: String,
+    },
 }
 
 pub enum VcsEvent {
@@ -763,7 +927,7 @@ impl VcsWorker {
         let (event_tx, event_rx) = std::sync::mpsc::channel::<VcsEvent>();
 
         std::thread::Builder::new()
-            .name("douri-vcs-worker".into())
+            .name("douri-collaborate-worker".into())
             .spawn(move || {
                 let mut repo = GitRepo::open(&repo_dir);
 
@@ -773,7 +937,7 @@ impl VcsWorker {
                             Ok(r) => {
                                 repo = Some(r);
                                 let _ = event_tx
-                                    .send(VcsEvent::Notice("Repository initialized".into()));
+                                    .send(VcsEvent::Notice("Project history initialized".into()));
                                 Self::send_refresh(&repo, &event_tx, None, None);
                             }
                             Err(e) => {
@@ -803,7 +967,7 @@ impl VcsWorker {
                                 match r.commit(&message) {
                                     Ok(hash) => {
                                         let _ = event_tx.send(VcsEvent::Notice(format!(
-                                            "Snapshot saved ({hash})"
+                                            "Version saved ({hash})"
                                         )));
                                         Self::send_refresh(
                                             &repo,
@@ -823,15 +987,35 @@ impl VcsWorker {
                             project_file_rel,
                         } => {
                             if let Some(ref r) = repo {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_secs())
-                                    .unwrap_or(0);
-                                let msg = format!("Quick Checkpoint [{}]", now);
-                                match r.commit(&msg) {
+                                let head_doc = project_file_rel
+                                    .as_ref()
+                                    .and_then(|rel| r.load_project_from_commit("HEAD", rel).ok());
+
+                                let note = if let Some(ref curr) = current_doc {
+                                    let diffs = musical_diff(head_doc.as_ref(), curr);
+                                    if diffs.is_empty() {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .map(|d| d.as_secs())
+                                            .unwrap_or(0);
+                                        format!("Quick snapshot [{}]", now)
+                                    } else if diffs.len() == 1 {
+                                        diffs[0].description()
+                                    } else {
+                                        format!(
+                                            "{}, and {} more edits",
+                                            diffs[0].description(),
+                                            diffs.len() - 1
+                                        )
+                                    }
+                                } else {
+                                    "Quick snapshot".to_string()
+                                };
+
+                                match r.commit(&note) {
                                     Ok(hash) => {
                                         let _ = event_tx.send(VcsEvent::Notice(format!(
-                                            "Checkpoint saved ({hash})"
+                                            "Snapshot saved ({hash})"
                                         )));
                                         Self::send_refresh(
                                             &repo,
@@ -861,6 +1045,21 @@ impl VcsWorker {
                                 }
                             }
                         }
+                        VcsTask::CreateBranchFrom { name, from_rev } => {
+                            if let Some(ref r) = repo {
+                                match r.create_and_checkout_from(&name, &from_rev) {
+                                    Ok(()) => {
+                                        let _ = event_tx.send(VcsEvent::Notice(format!(
+                                            "Created alternative \"{name}\" from version"
+                                        )));
+                                        Self::send_refresh(&repo, &event_tx, None, None);
+                                    }
+                                    Err(e) => {
+                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                    }
+                                }
+                            }
+                        }
                         VcsTask::Checkout { target } => {
                             if let Some(ref r) = repo {
                                 match r.checkout(&target) {
@@ -868,7 +1067,7 @@ impl VcsWorker {
                                         let _ = event_tx
                                             .send(VcsEvent::CheckoutCompleted(target.clone()));
                                         let _ = event_tx.send(VcsEvent::Notice(format!(
-                                            "Checked out \"{target}\""
+                                            "Switched to alternative \"{target}\""
                                         )));
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
@@ -882,8 +1081,9 @@ impl VcsWorker {
                             if let Some(ref r) = repo {
                                 match r.pull() {
                                     Ok(()) => {
-                                        let _ = event_tx
-                                            .send(VcsEvent::Notice("Pulled latest changes".into()));
+                                        let _ = event_tx.send(VcsEvent::Notice(
+                                            "Retrieved latest updates from studio link".into(),
+                                        ));
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
@@ -896,8 +1096,24 @@ impl VcsWorker {
                             if let Some(ref r) = repo {
                                 match r.push() {
                                     Ok(()) => {
-                                        let _ = event_tx
-                                            .send(VcsEvent::Notice("Pushed to remote".into()));
+                                        let _ = event_tx.send(VcsEvent::Notice(
+                                            "Shared updates to studio link".into(),
+                                        ));
+                                        Self::send_refresh(&repo, &event_tx, None, None);
+                                    }
+                                    Err(e) => {
+                                        let _ = event_tx.send(VcsEvent::Error(e));
+                                    }
+                                }
+                            }
+                        }
+                        VcsTask::SetRemote { url } => {
+                            if let Some(ref r) = repo {
+                                match r.set_remote_url(&url) {
+                                    Ok(()) => {
+                                        let _ = event_tx.send(VcsEvent::Notice(
+                                            "Studio link configured successfully".into(),
+                                        ));
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
                                     Err(e) => {
@@ -911,7 +1127,7 @@ impl VcsWorker {
                                 match r.reset_hard() {
                                     Ok(()) => {
                                         let _ = event_tx.send(VcsEvent::Notice(
-                                            "Reverted unsaved changes".into(),
+                                            "Discarded unsaved edits".into(),
                                         ));
                                         Self::send_refresh(&repo, &event_tx, None, None);
                                     }
@@ -924,7 +1140,7 @@ impl VcsWorker {
                     }
                 }
             })
-            .expect("Failed to spawn douri-vcs-worker thread");
+            .expect("Failed to spawn douri-collaborate-worker thread");
 
         let worker = Self {
             task_tx,
@@ -955,6 +1171,7 @@ impl VcsWorker {
         let status = r.status().unwrap_or_default();
         let branches = r.branches().unwrap_or_default();
         let commits = r.log(30).unwrap_or_default();
+        let remote_url = r.remote_url().unwrap_or(None);
 
         let head_doc =
             project_file_rel.and_then(|rel| r.load_project_from_commit("HEAD", rel).ok());
@@ -972,6 +1189,7 @@ impl VcsWorker {
             status,
             commits,
             changes,
+            remote_url,
             is_busy: false,
             error_msg: None,
             notice_msg: None,
@@ -1012,11 +1230,82 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_normalize_studio_link() {
+        // Shorthand owner/repo
+        assert_eq!(
+            normalize_studio_link("alice/sunset-groove").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // Domain without scheme
+        assert_eq!(
+            normalize_studio_link("github.com/alice/sunset-groove").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // Full https url without .git
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // Full https url with trailing slash
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // Browser subpaths (/tree/main, /blob, /commits, /pulls, /issues)
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/tree/main/crates/ui")
+                .unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/blob/main/README.md")
+                .unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/commits/main").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/pulls").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        assert_eq!(
+            normalize_studio_link("https://github.com/alice/sunset-groove/issues/12").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // GitLab / Codeberg
+        assert_eq!(
+            normalize_studio_link("https://gitlab.com/producer/beats").unwrap(),
+            "https://gitlab.com/producer/beats.git"
+        );
+        assert_eq!(
+            normalize_studio_link("codeberg.org/band/album").unwrap(),
+            "https://codeberg.org/band/album.git"
+        );
+        // Valid SSH preserved
+        assert_eq!(
+            normalize_studio_link("git@github.com:alice/sunset-groove.git").unwrap(),
+            "git@github.com:alice/sunset-groove.git"
+        );
+        // Whitespace trimmed
+        assert_eq!(
+            normalize_studio_link("   https://github.com/alice/sunset-groove.git  ").unwrap(),
+            "https://github.com/alice/sunset-groove.git"
+        );
+        // Empty / invalid
+        assert!(normalize_studio_link("").is_err());
+        assert!(normalize_studio_link("just-a-word").is_err());
+    }
+
+    #[test]
     fn test_gitignore_scaffolding() {
         let dir = tempfile::tempdir().unwrap();
         scaffold_gitignore(dir.path()).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains("Cache/utau_renders/*.wav"));
+        assert!(content.contains("Cache/peaks/*.peak"));
         assert!(content.contains("Cache/"));
         assert!(content.contains("*.peak"));
         assert!(content.contains("*.tmp"));
@@ -1101,7 +1390,7 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_git_repo_lifecycle() {
+    fn test_git_repo_lifecycle_and_remote() {
         let dir = tempfile::tempdir().unwrap();
         let repo = GitRepo::init(dir.path()).expect("git init failed");
 
@@ -1109,17 +1398,26 @@ mod tests {
         assert!(status.current_branch == "main" || status.current_branch == "master");
 
         // Commit initial
-        let hash = repo.commit("Initial commit").expect("git commit failed");
+        let hash = repo.commit("Initial version").expect("git commit failed");
         assert!(!hash.is_empty());
 
         let logs = repo.log(5).expect("git log failed");
         assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].message, "Initial commit");
+        assert_eq!(logs[0].message, "Initial version");
 
-        // Create alternative / branch
+        // Create alternative
         repo.create_and_checkout("alt-chorus")
             .expect("branch failed");
         let branches = repo.branches().expect("branches failed");
         assert!(branches.iter().any(|b| b.name == "alt-chorus" && b.is_head));
+
+        // Test remote url configuration
+        assert_eq!(repo.remote_url().unwrap(), None);
+        repo.set_remote_url("https://github.com/producer/beat.git")
+            .expect("set remote failed");
+        assert_eq!(
+            repo.remote_url().unwrap(),
+            Some("https://github.com/producer/beat.git".into())
+        );
     }
 }

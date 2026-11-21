@@ -21,6 +21,7 @@ mod bench;
 mod bounce;
 mod clock_follow;
 mod clock_in;
+mod collaborate_panel;
 mod crash_log;
 pub mod cycle_area;
 mod drag_modes;
@@ -35,7 +36,6 @@ mod file_commands;
 mod flex_edit;
 mod fx_ui;
 mod garageband;
-mod git_panel;
 mod graphics;
 mod groove;
 mod group_editor;
@@ -165,14 +165,18 @@ pub struct UiState {
     /// List Editors (the Event list on the right).
     pub show_lists: bool,
     pub lists: event_list::ListView,
-    /// Git Version Control & Project Alternatives panel.
-    pub show_git: bool,
-    pub git_worker: Option<prowave_vcs::VcsWorker>,
-    pub git_commit_input: String,
-    pub git_branch_input: String,
-    pub git_creating_branch: bool,
-    pub git_revert_confirm: bool,
-    pub git_trigger_checkpoint: bool,
+    /// Collaborate Version History & Project Alternatives panel.
+    pub show_collaborate: bool,
+    pub collaborate_enabled: bool,
+    pub collaborate_worker: Option<prowave_vcs::VcsWorker>,
+    pub collaborate_note_input: String,
+    pub collaborate_alt_input: String,
+    pub collaborate_creating_alt: bool,
+    pub collaborate_link_input: String,
+    pub collaborate_showing_link_modal: bool,
+    pub collaborate_revert_confirm: bool,
+    pub collaborate_trigger_snapshot: bool,
+    pub collaborate_branch_from_rev: Option<String>,
     /// The MIDI recording in progress.
     pub rec: recorder::Recorder,
     /// The audio recording in progress, and the open audio input.
@@ -365,13 +369,17 @@ impl UiState {
             lcd_smpte: false,
             show_lists: false,
             lists: event_list::ListView::default(),
-            show_git: false,
-            git_worker: None,
-            git_commit_input: String::new(),
-            git_branch_input: String::new(),
-            git_creating_branch: false,
-            git_revert_confirm: false,
-            git_trigger_checkpoint: false,
+            show_collaborate: false,
+            collaborate_enabled: true,
+            collaborate_worker: None,
+            collaborate_note_input: String::new(),
+            collaborate_alt_input: String::new(),
+            collaborate_creating_alt: false,
+            collaborate_link_input: String::new(),
+            collaborate_showing_link_modal: false,
+            collaborate_revert_confirm: false,
+            collaborate_trigger_snapshot: false,
+            collaborate_branch_from_rev: None,
             rec: recorder::Recorder::default(),
             audio_rec: audio_rec::AudioRecorder::default(),
             capture_cmd: false,
@@ -1669,7 +1677,7 @@ impl eframe::App for App {
                 }
             }
         }
-        git_panel::update(&mut self.ui, &self.project, self.path.as_deref());
+        collaborate_panel::update(&mut self.ui, &self.project, self.path.as_deref());
         let p = &mut self.project;
         let s = &mut self.ui;
 
@@ -1714,14 +1722,16 @@ impl eframe::App for App {
                 .frame(egui::Frame::new())
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
-        if s.show_git {
-            egui::Panel::right("git_panel")
+        if s.show_collaborate {
+            egui::Panel::right("collaborate_panel")
                 .resizable(true)
                 .min_size(280.0)
                 .max_size(500.0)
-                .default_size(git_panel::WIDTH)
+                .default_size(collaborate_panel::WIDTH)
                 .frame(egui::Frame::new())
-                .show(ui, |ui| git_panel::show(ui, p, s, self.path.as_deref()));
+                .show(ui, |ui| {
+                    collaborate_panel::show(ui, p, s, self.path.as_deref())
+                });
         }
         if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks
