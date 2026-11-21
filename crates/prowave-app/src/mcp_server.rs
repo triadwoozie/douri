@@ -6,7 +6,7 @@
 //! flex pitch, sound browser, and project settings).
 
 use crate::mixer::Meters;
-use crate::model::{Insert, Note, Project, Region, RegionParams, TrackKind};
+use crate::model::{Insert, Note, Project, Region, RegionParams, Track, TrackKind};
 use crate::UiState;
 use prowave_engine::FxKind;
 use serde::{Deserialize, Serialize};
@@ -417,6 +417,91 @@ impl McpEngine {
                 "inputSchema": { "type": "object", "properties": {} }
             }),
             json!({
+                "name": "save_project",
+                "description": "Save current project to a .douri or .prowave file.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute destination path (.douri or .prowave)" }
+                    },
+                    "required": ["path"]
+                }
+            }),
+            json!({
+                "name": "load_project",
+                "description": "Load a project from a .douri or .prowave file.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Project file path" }
+                    },
+                    "required": ["path"]
+                }
+            }),
+            json!({
+                "name": "new_project",
+                "description": "Reset and create a clean empty project.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "tempo": { "type": "number" },
+                        "numerator": { "type": "integer" },
+                        "denominator": { "type": "integer" }
+                    }
+                }
+            }),
+            json!({
+                "name": "create_vocal_track",
+                "description": "Create an OpenUtau / UTAU Vocal Top Line score track and matching audio track.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "voice": { "type": "string", "description": "Voicebank folder name or path" },
+                        "gender": { "type": "number" },
+                        "vibrato_depth": { "type": "number" },
+                        "vibrato_rate": { "type": "number" }
+                    }
+                }
+            }),
+            json!({
+                "name": "set_vocal_notes",
+                "description": "Set vocal notes and Japanese lyrics on a vocal score track.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" },
+                        "notes": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "start_beat": { "type": "number" },
+                                    "length_beats": { "type": "number" },
+                                    "key": { "type": "integer" },
+                                    "lyric": { "type": "string" },
+                                    "velocity": { "type": "integer" }
+                                },
+                                "required": ["start_beat", "length_beats", "key", "lyric"]
+                            }
+                        }
+                    },
+                    "required": ["track_index", "notes"]
+                }
+            }),
+            json!({
+                "name": "render_vocal_track",
+                "description": "Synthesize a Vocal Top Line track's notes into audio regions using pure-Rust OpenUtau voicebank engine.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" }
+                    },
+                    "required": ["track_index"]
+                }
+            }),
+            json!({
                 "name": "set_transport",
                 "description": "Control playback transport: play, stop, record, seek playhead, set tempo, set time signature, or toggle cycle range.",
                 "inputSchema": {
@@ -692,6 +777,219 @@ impl McpEngine {
     ) -> Result<Value, String> {
         match name {
             "get_project_state" => Ok(Self::snapshot_project_state(p)),
+            "save_project" => {
+                let path_str = args["path"].as_str().ok_or("Missing path")?;
+                let path = std::path::Path::new(path_str);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let saved = crate::project_io::save_project(p, path)
+                    .map_err(|e| format!("Save failed: {e}"))?;
+                Ok(json!({ "status": "saved", "path": saved.display().to_string() }))
+            }
+            "load_project" => {
+                let path_str = args["path"].as_str().ok_or("Missing path")?;
+                let path = std::path::Path::new(path_str);
+                let ctx = egui::Context::default();
+                let (loaded, warnings) = crate::project_io::open_project(path, &ctx)
+                    .map_err(|e| format!("Load failed: {e}"))?;
+                *p = loaded;
+                Ok(
+                    json!({ "status": "loaded", "path": path_str, "tracks_count": p.tracks.len(), "warnings": warnings }),
+                )
+            }
+            "new_project" => {
+                let name = args["name"].as_str().unwrap_or("Untitled");
+                let tempo = args["tempo"].as_f64().unwrap_or(120.0) as f32;
+                let num = args["numerator"].as_u64().unwrap_or(4) as u8;
+                let den = args["denominator"].as_u64().unwrap_or(4) as u8;
+                *p = Project::empty();
+                p.tracks.clear();
+                p.name = name.to_string();
+                p.tempo = tempo;
+                p.sig = (num, den);
+                Ok(
+                    json!({ "status": "created", "name": p.name, "tempo": p.tempo, "time_signature": [num, den] }),
+                )
+            }
+            "create_vocal_track" => {
+                let link = crate::vocal::new_link();
+                let name = args["name"]
+                    .as_str()
+                    .unwrap_or("Vocal Top Line")
+                    .to_string();
+                let voice = args["voice"].as_str().unwrap_or("Kasane_Teto").to_string();
+                let mut score = Track::new(name.clone(), TrackKind::Instrument);
+                score.color = egui::Color32::from_rgb(0xd8, 0x5a, 0x9a);
+                let mut set = crate::vocal::VocalSettings::new(link);
+                set.singer = crate::vocal::Singer::OpenUtau;
+                set.voice = voice.clone();
+                if let Some(g) = args["gender"].as_f64() {
+                    set.gender = g as f32;
+                }
+                if let Some(vd) = args["vibrato_depth"].as_f64() {
+                    set.vibrato_depth = vd as f32;
+                }
+                if let Some(vr) = args["vibrato_rate"].as_f64() {
+                    set.vibrato_rate = vr as f32;
+                }
+                score.vocal = Some(crate::vocal::VocalRole::Score(set));
+                let mut out = Track::new(format!("{name} Audio"), TrackKind::Audio);
+                out.color = egui::Color32::from_rgb(0xb0, 0x48, 0x80);
+                out.vocal = Some(crate::vocal::VocalRole::Output { link });
+                p.tracks.push(score);
+                let score_idx = p.tracks.len() - 1;
+                p.tracks.push(out);
+                let out_idx = p.tracks.len() - 1;
+                p.song_rev += 1;
+                Ok(json!({
+                    "score_track_index": score_idx,
+                    "audio_track_index": out_idx,
+                    "link": link,
+                    "voice": voice,
+                    "status": "created"
+                }))
+            }
+            "set_vocal_notes" => {
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                if ti >= p.tracks.len() {
+                    return Err(format!("Track index {ti} out of bounds"));
+                }
+                let notes_arr = args["notes"].as_array().ok_or("Missing notes array")?;
+                let mut notes_vec = Vec::new();
+                for n in notes_arr {
+                    let key = n["key"].as_u64().unwrap_or(60) as u8;
+                    let n_start = n["start_beat"].as_f64().unwrap_or(0.0) as f32;
+                    let n_len = n["length_beats"].as_f64().unwrap_or(1.0) as f32;
+                    let vel = n["velocity"].as_u64().unwrap_or(100) as u8;
+                    let lyric_text = n["lyric"].as_str().unwrap_or("a");
+                    let lyric = crate::lyrics::Lyric::new(lyric_text);
+                    notes_vec.push(Note {
+                        start: n_start,
+                        len: n_len,
+                        pitch: key,
+                        vel,
+                        lyric,
+                        ..Default::default()
+                    });
+                }
+                let beats_per_bar = (p.sig.0 as f32) * 4.0 / (p.sig.1 as f32);
+                let max_beat = notes_vec
+                    .iter()
+                    .map(|n| n.start + n.len)
+                    .fold(0.0f32, f32::max);
+                let len_bars = (max_beat / beats_per_bar).ceil().max(4.0);
+                let region = Region {
+                    name: p.tracks[ti].name.clone(),
+                    start_bar: 1.0,
+                    len_bars,
+                    notes: notes_vec,
+                    controls: Vec::new(),
+                    folder: None,
+                    params: RegionParams::default(),
+                    audio: None,
+                    missing: None,
+                    generated: None,
+                };
+                p.tracks[ti].regions.clear();
+                p.tracks[ti].regions.push(region);
+                p.song_rev += 1;
+                Ok(json!({
+                    "track_index": ti,
+                    "notes_count": p.tracks[ti].regions[0].notes.len(),
+                    "len_bars": len_bars,
+                    "status": "updated"
+                }))
+            }
+            "render_vocal_track" => {
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                if ti >= p.tracks.len() {
+                    return Err(format!("Track index {ti} out of bounds"));
+                }
+                let Some(crate::vocal::VocalRole::Score(set)) = p.tracks[ti].vocal.clone() else {
+                    return Err("Specified track is not a Vocal Top Line score track".to_string());
+                };
+                let link = set.link;
+                let out_idx = p
+                    .tracks
+                    .iter()
+                    .position(|t| t.vocal == Some(crate::vocal::VocalRole::Output { link }))
+                    .ok_or("Matching vocal audio output track not found")?;
+
+                let singers = prowave_vocal::discover_singers(&[]);
+                let vb = if !set.voice.is_empty() {
+                    let direct_path = std::path::Path::new(&set.voice);
+                    if direct_path.is_dir() {
+                        prowave_vocal::Voicebank::load(direct_path).unwrap_or_default()
+                    } else if let Some(s) = singers
+                        .iter()
+                        .find(|s| s.name == set.voice || s.id == set.voice)
+                    {
+                        prowave_vocal::Voicebank::load(&s.path).unwrap_or_default()
+                    } else {
+                        prowave_vocal::Voicebank::default()
+                    }
+                } else {
+                    prowave_vocal::Voicebank::default()
+                };
+
+                let tempo_map = p.tempo_map();
+                let mut engine = prowave_vocal::VocalEngine::new();
+                let mut all_phrases_rendered = 0;
+                let ctx = egui::Context::default();
+
+                let score_track = p.tracks[ti].clone();
+                let mut output_regions = Vec::new();
+
+                for r in &score_track.regions {
+                    let phrases =
+                        crate::vocal::region_phrases(p, &tempo_map, &score_track, r, &set);
+                    for ph in phrases {
+                        let notes: Vec<(f64, f64, u8, String)> = ph
+                            .notes
+                            .iter()
+                            .map(|n| (n.start as f64, n.dur as f64, n.pitch, n.lyric.clone()))
+                            .collect();
+                        if let Some(clip) = engine.render_phrase(&vb, &notes, &tempo_map, 44100) {
+                            let cache_dir = crate::vocal::cache_dir();
+                            let _ = std::fs::create_dir_all(&cache_dir);
+                            let wav_path = cache_dir.join(format!("vocal_clip_{}.wav", ph.key));
+                            let _ = crate::vocal::write_wav(&wav_path, &clip.sound, 44100);
+                            if let Ok(file) = prowave_engine::AudioFile::open(&wav_path) {
+                                let audio = crate::import::audio_region(file, &ctx);
+                                let start_beats = tempo_map.beat_at(clip.origin);
+                                let start_bar = (p.beats_to_bar(start_beats) + 1.0) as f32;
+                                let duration_sec = clip.sound.len() as f64 / 44100.0;
+                                let end_beats = tempo_map.beat_at(clip.origin + duration_sec);
+                                let end_bar = (p.beats_to_bar(end_beats) + 1.0) as f32;
+                                let len_bars = (end_bar - start_bar).max(0.1);
+                                output_regions.push(Region {
+                                    name: format!("{} Vocal", score_track.name),
+                                    start_bar,
+                                    len_bars,
+                                    notes: Vec::new(),
+                                    controls: Vec::new(),
+                                    folder: None,
+                                    audio: Some(audio),
+                                    params: RegionParams::default(),
+                                    missing: None,
+                                    generated: None,
+                                });
+                                all_phrases_rendered += 1;
+                            }
+                        }
+                    }
+                }
+                p.tracks[out_idx].regions = output_regions;
+                p.song_rev += 1;
+                Ok(json!({
+                    "score_track_index": ti,
+                    "audio_track_index": out_idx,
+                    "phrases_rendered": all_phrases_rendered,
+                    "regions_count": p.tracks[out_idx].regions.len(),
+                    "status": "synthesized"
+                }))
+            }
             "set_transport" => {
                 let action = args["action"].as_str().ok_or("Missing action")?;
                 match action {
@@ -873,16 +1171,38 @@ impl McpEngine {
                 let sr = args["sample_rate"].as_u64().unwrap_or(48000) as u32;
                 let bits = args["bit_depth"].as_u64().unwrap_or(24) as u8;
                 let dither = args["dither"].as_bool().unwrap_or(true);
-                let stems = args["stems"].as_bool().unwrap_or(false);
                 let path = args["output_path"].as_str().unwrap_or("bounce.wav");
+                let bit_depth = match bits {
+                    16 => prowave_engine::BitDepth::Pcm16,
+                    32 => prowave_engine::BitDepth::Float32,
+                    _ => prowave_engine::BitDepth::Pcm24,
+                };
+                let out_path = std::path::Path::new(path);
+                if let Some(parent) = out_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let end_beat = p
+                    .tracks
+                    .iter()
+                    .flat_map(|t| &t.regions)
+                    .map(|r| p.region_end_beats(r))
+                    .fold(0.0f64, f64::max)
+                    .max(16.0);
+                let res = crate::bounce::run_offline_bounce(
+                    None, p, 0.0, end_beat, out_path, None, bit_depth, dither, sr,
+                )
+                .map_err(|e| format!("Bounce failed: {e}"))?;
                 Ok(json!({
-                    "status": "ready",
+                    "status": "completed",
                     "output_path": path,
                     "format": format,
+                    "frames": res.frames,
+                    "duration_seconds": res.frames as f64 / sr as f64,
+                    "peak_db": res.peak_db,
+                    "lufs_integrated": res.lufs_integrated,
+                    "true_peak_db": res.true_peak_db,
                     "sample_rate": sr,
                     "bit_depth": bits,
-                    "dither": dither,
-                    "stems": stems,
                     "speed": "500x-realtime"
                 }))
             }
@@ -1222,5 +1542,105 @@ mod tests {
         assert_eq!(p.tracks[0].volume_db, -6.0);
         assert_eq!(p.tracks[0].pan, -0.5);
         assert!(p.tracks[0].mute);
+
+        // 5. new_project
+        let np_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(104)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "new_project",
+                "arguments": { "name": "Sonare MCP", "tempo": 102.0, "numerator": 4, "denominator": 4 }
+            })),
+        };
+        let np_resp = McpEngine::handle_request(np_req, &mut p, &mut s, None);
+        assert!(np_resp.error.is_none());
+        assert_eq!(p.tempo, 102.0);
+        assert_eq!(p.name, "Sonare MCP");
+
+        // 6. create_vocal_track
+        let vt_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(105)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "create_vocal_track",
+                "arguments": { "name": "Kasane Teto", "voice": "Kasane_Teto" }
+            })),
+        };
+        let vt_resp = McpEngine::handle_request(vt_req, &mut p, &mut s, None);
+        assert!(vt_resp.error.is_none());
+        assert_eq!(p.tracks.len(), 2);
+
+        // 7. set_vocal_notes
+        let vn_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(106)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "set_vocal_notes",
+                "arguments": {
+                    "track_index": 0,
+                    "notes": [
+                        { "start_beat": 0.0, "length_beats": 1.0, "key": 56, "lyric": "ね", "velocity": 100 },
+                        { "start_beat": 1.0, "length_beats": 1.0, "key": 58, "lyric": "む", "velocity": 100 }
+                    ]
+                }
+            })),
+        };
+        let vn_resp = McpEngine::handle_request(vn_req, &mut p, &mut s, None);
+        assert!(vn_resp.error.is_none());
+        assert_eq!(p.tracks[0].regions[0].notes.len(), 2);
+
+        // 8. bounce_project to temp file
+        let tmp_wav =
+            std::env::temp_dir().join(format!("test_mcp_bounce_{}.wav", std::process::id()));
+        let b_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(107)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "bounce_project",
+                "arguments": {
+                    "output_path": tmp_wav.to_string_lossy(),
+                    "sample_rate": 44100,
+                    "bit_depth": 16,
+                    "dither": true
+                }
+            })),
+        };
+        let b_resp = McpEngine::handle_request(b_req, &mut p, &mut s, None);
+        assert!(b_resp.error.is_none());
+        assert!(tmp_wav.is_file());
+        let _ = std::fs::remove_file(&tmp_wav);
+
+        // 9. save_project and load_project
+        let tmp_proj = std::env::temp_dir().join(format!("test_mcp_{}.douri", std::process::id()));
+        let sp_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(108)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "save_project",
+                "arguments": { "path": tmp_proj.to_string_lossy() }
+            })),
+        };
+        let sp_resp = McpEngine::handle_request(sp_req, &mut p, &mut s, None);
+        assert!(sp_resp.error.is_none());
+        assert!(tmp_proj.is_file());
+
+        let lp_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(109)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "load_project",
+                "arguments": { "path": tmp_proj.to_string_lossy() }
+            })),
+        };
+        let lp_resp = McpEngine::handle_request(lp_req, &mut p, &mut s, None);
+        assert!(lp_resp.error.is_none());
+        assert_eq!(p.tempo, 102.0);
+        let _ = std::fs::remove_file(&tmp_proj);
     }
 }

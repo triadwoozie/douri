@@ -546,7 +546,7 @@ pub fn local_installed() -> bool {
     local_engine().is_file()
 }
 
-fn cache_dir() -> PathBuf {
+pub fn cache_dir() -> PathBuf {
     vocal_home().join("cache")
 }
 
@@ -1018,7 +1018,7 @@ impl VocalState {
 }
 
 /// A new link: random enough that two tracks never share one.
-fn new_link() -> u64 {
+pub fn new_link() -> u64 {
     let mut h = Fnv::new();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

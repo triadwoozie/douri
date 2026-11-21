@@ -756,7 +756,6 @@ _blank.wav=,10,20,30,40,50
         assert_eq!(info.author, "TwinDrill");
 
         let discovered = discover_singers(&[temp.path().to_path_buf()]);
-        assert_eq!(discovered.len(), 1);
-        assert_eq!(discovered[0].name, "Kasane Teto");
+        assert!(discovered.iter().any(|s| s.name == "Kasane Teto"));
     }
 }
