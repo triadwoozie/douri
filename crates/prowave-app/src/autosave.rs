@@ -353,7 +353,7 @@ mod tests {
         let ctx = egui::Context::default();
         let (mut a, session) = app_in(root.path());
         assert!(a.save_to(&projects.path().join("Song")));
-        let file = projects.path().join("Song.prowave");
+        let file = projects.path().join("Song.douri");
         let before = std::fs::read(&file).unwrap();
 
         a.project.tempo = 61.0;
@@ -395,7 +395,7 @@ mod tests {
         let ctx = egui::Context::default();
         let (mut a, session) = app_in(root.path());
         assert!(a.save_to(&projects.path().join("Song")));
-        let file = projects.path().join("Song.prowave");
+        let file = projects.path().join("Song.douri");
         let take = record_take(&mut a, &session, &ctx);
         a.project.tempo = 61.0;
         tick_when_due(&mut a, &ctx);
@@ -619,8 +619,7 @@ mod tests {
         saved.project.tempo += 1.0;
         saved.answer_save_prompt(FileCmd::Quit, crate::file_commands::Answer::Save, &ctx);
         assert!(saved.autosave.quit_confirmed && !saved.has_unsaved_changes());
-        let (on_disk, _) =
-            project_io::open_project(&dir.path().join("Song.prowave"), &ctx).unwrap();
+        let (on_disk, _) = project_io::open_project(&dir.path().join("Song.douri"), &ctx).unwrap();
         assert_eq!(on_disk.tempo, saved.project.tempo);
     }
 

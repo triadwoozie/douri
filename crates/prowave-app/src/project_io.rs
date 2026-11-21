@@ -2533,7 +2533,7 @@ pub(crate) mod tests {
         });
 
         let file = save_project(&p, &dir.path().join("song")).unwrap();
-        assert_eq!(file.extension().unwrap(), "prowave");
+        assert_eq!(file.extension().unwrap(), prowave_project::EXTENSION);
         assert_eq!(to_doc(&p).1.len(), 1);
 
         let (q, warnings) = open_project(&file, &ctx).unwrap();
@@ -3132,5 +3132,32 @@ mod stack_io_tests {
         );
         assert_eq!(parent.output, 0, "and it plays to Stereo Out");
         assert_eq!(crate::engine_sync::route_of(&p, 0).output, 0);
+    }
+
+    #[test]
+    fn test_save_project_migrates_legacy_to_douri() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy_file = dir.path().join("test_legacy.prowave");
+        std::fs::write(&legacy_file, b"placeholder legacy content").unwrap();
+
+        let mut p = Project::empty();
+        p.name = "test_legacy".into();
+        let saved_path = super::save_project(&p, &legacy_file).expect("save failed");
+
+        assert_eq!(saved_path.extension().unwrap(), "douri");
+        assert!(saved_path.exists());
+        assert!(
+            legacy_file.exists(),
+            "original .prowave must remain untouched as backup"
+        );
+        assert_eq!(
+            std::fs::read(&legacy_file).unwrap(),
+            b"placeholder legacy content"
+        );
+
+        // Verify that the saved .douri opens cleanly
+        let (opened, _) =
+            super::open_project(&saved_path, &egui::Context::default()).expect("open failed");
+        assert_eq!(opened.name, "test_legacy");
     }
 }

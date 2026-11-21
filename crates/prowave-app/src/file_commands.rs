@@ -87,8 +87,12 @@ pub fn content(p: &Project) -> ProjectDoc {
     doc
 }
 
-fn dialog() -> FileDialog {
+fn save_dialog() -> FileDialog {
     FileDialog::new().add_filter(tr("Dōri Project"), &[prowave_project::EXTENSION])
+}
+
+fn open_dialog() -> FileDialog {
+    FileDialog::new().add_filter(tr("Dōri & Pro-Wave Projects"), prowave_project::EXTENSIONS)
 }
 
 /// Opens the system's file manager with `path` (the project file) selected.
@@ -162,7 +166,7 @@ impl App {
                 self.replace(p, None)
             }
             FileCmd::Open => {
-                if let Some(path) = dialog().set_title(tr("Open Project")).pick_file() {
+                if let Some(path) = open_dialog().set_title(tr("Open Project")).pick_file() {
                     self.open(&path, ctx);
                 }
             }
@@ -321,16 +325,29 @@ impl App {
     }
 
     /// Save to the current file, or ask for one. Returns false if cancelled or failed.
+    /// If an existing `.prowave` project is opened, saving writes `<name>.douri` while leaving
+    /// the original `.prowave` file untouched as a backup.
     fn save(&mut self) -> bool {
         match self.path.clone() {
-            Some(path) => self.save_to(&path),
+            Some(path) => {
+                let is_legacy = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION));
+                if is_legacy {
+                    let new_path = path.with_extension(prowave_project::EXTENSION);
+                    self.save_to(&new_path)
+                } else {
+                    self.save_to(&path)
+                }
+            }
             None => self.save_as(),
         }
     }
 
     fn save_as(&mut self) -> bool {
         let name = format!("{}.{}", self.project.name, prowave_project::EXTENSION);
-        match dialog()
+        match save_dialog()
             .set_title(tr("Save As"))
             .set_file_name(name)
             .save_file()
@@ -343,7 +360,7 @@ impl App {
     /// Save A Copy As…: writes the project elsewhere and keeps working in the current file.
     fn save_copy(&mut self) -> bool {
         let name = format!("{} copy.{}", self.project.name, prowave_project::EXTENSION);
-        match dialog()
+        match save_dialog()
             .set_title(tr("Save A Copy As"))
             .set_file_name(name)
             .save_file()
@@ -515,7 +532,7 @@ pub(crate) mod tests {
         assert_ne!(content(&a.project), a.saved);
 
         assert!(a.save_to(&dir.path().join("Night Drive")));
-        let file = dir.path().join("Night Drive.prowave");
+        let file = dir.path().join("Night Drive.douri");
         assert_eq!(a.path.as_deref(), Some(file.as_path()));
         assert_eq!(a.project.name, "Night Drive");
         assert_eq!(content(&a.project), a.saved);
@@ -589,10 +606,7 @@ pub(crate) mod tests {
         let mut a = app();
         assert!(a.save_to(&dir.path().join("One")));
         assert!(a.save_to(&dir.path().join("Two")));
-        let (one, two) = (
-            dir.path().join("One.prowave"),
-            dir.path().join("Two.prowave"),
-        );
+        let (one, two) = (dir.path().join("One.douri"), dir.path().join("Two.douri"));
         assert_eq!(a.ui.recent.paths(), [two.clone(), one.clone()]);
 
         a.open(&one, &ctx);
@@ -612,7 +626,7 @@ pub(crate) mod tests {
         let ctx = egui::Context::default();
         let mut a = app();
         assert!(a.save_to(&dir.path().join("Saved")));
-        let file = dir.path().join("Saved.prowave");
+        let file = dir.path().join("Saved.douri");
 
         a.project.tempo = 61.0;
         a.ui.recent_pick = Some(file.clone());
@@ -667,7 +681,7 @@ pub(crate) mod tests {
 
         a.project.tempo += 5.0;
         assert!(a.save_copy_to(&dir.path().join("Backup")));
-        let copy = dir.path().join("Backup.prowave");
+        let copy = dir.path().join("Backup.douri");
         assert!(copy.is_file());
         assert_eq!((a.path.clone(), a.project.name.clone()), (path, name));
         assert_ne!(content(&a.project), a.saved, "still has unsaved changes");
@@ -699,8 +713,40 @@ pub(crate) mod tests {
 
         assert!(a.save_to(&dir.path().join("Waltz")));
         a.project.sig = (4, 4);
-        a.open(&dir.path().join("Waltz.prowave"), &ctx);
+        a.open(&dir.path().join("Waltz.douri"), &ctx);
         assert_eq!(a.project.sig, (6, 8));
         assert_eq!(a.project.bar_len(0), 3.0);
+    }
+
+    #[test]
+    fn legacy_prowave_save_migrates_to_douri_and_leaves_original_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let legacy = dir.path().join("LegacySong.prowave");
+
+        // Write a valid legacy project file
+        let mut doc = prowave_project::ProjectDoc::default();
+        doc.name = "LegacySong".into();
+        doc.tempo = 110.0;
+        prowave_project::save(&legacy, &doc, &[]).unwrap();
+        let legacy_bytes = std::fs::read(&legacy).unwrap();
+
+        let mut a = app();
+        a.open(&legacy, &ctx);
+        assert_eq!(a.project.name, "LegacySong");
+        assert_eq!(a.path.as_deref(), Some(legacy.as_path()));
+
+        // Make an edit and save
+        a.project.tempo = 125.0;
+        assert!(a.save());
+
+        // Target path is now .douri
+        let douri_path = dir.path().join("LegacySong.douri");
+        assert_eq!(a.path.as_deref(), Some(douri_path.as_path()));
+        assert!(douri_path.exists());
+        assert_eq!(a.ui.recent.paths()[0], douri_path);
+
+        // Original .prowave file is untouched as backup
+        assert_eq!(std::fs::read(&legacy).unwrap(), legacy_bytes);
     }
 }

@@ -21,7 +21,9 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 pub const FORMAT_VERSION: u32 = 1;
 pub const PROJECT_JSON: &str = "project.json";
 pub const MEDIA_DIR: &str = "media/";
-pub const EXTENSION: &str = "prowave";
+pub const EXTENSION: &str = "douri";
+pub const LEGACY_EXTENSION: &str = "prowave";
+pub const EXTENSIONS: &[&str] = &["douri", "prowave"];
 /// Largest `project.json` accepted when loading (guards against zip bombs).
 pub const MAX_JSON_BYTES: u64 = 64 << 20;
 /// Most media data extracted from one project (guards against zip bombs filling the disk).
@@ -819,7 +821,11 @@ pub fn media_path(index: usize, source: &Path) -> String {
 /// Writes the project to `path`. The archive is written next to it first and then renamed, so
 /// a failed save never destroys the previous file.
 pub fn save(path: &Path, doc: &ProjectDoc, media: &[MediaFile]) -> Result<(), ProjectError> {
-    let tmp = path.with_extension(format!("{EXTENSION}.tmp"));
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or(EXTENSION);
+    let tmp = path.with_extension(format!("{ext}.tmp"));
     let written = write_archive(&tmp, doc, media);
     if written.is_err() {
         // Do not leave a half-written archive behind.
@@ -1187,5 +1193,42 @@ mod tests {
         ));
         assert!(!out.exists(), "partial extraction removed");
         assert!(load_with_limits(&file, &out, 1000, 1200).is_ok());
+    }
+
+    #[test]
+    fn test_douri_and_legacy_prowave_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy_file = dir.path().join("song.prowave");
+
+        let doc = ProjectDoc {
+            name: "My Song".into(),
+            tempo: 128.0,
+            ..Default::default()
+        };
+
+        // Save legacy format
+        save(&legacy_file, &doc, &[]).expect("save legacy failed");
+        assert!(legacy_file.exists());
+
+        // Load legacy format
+        let loaded_doc = load(&legacy_file, &dir.path().join("media")).expect("load legacy failed");
+        assert_eq!(loaded_doc.name, "My Song");
+        assert_eq!(loaded_doc.tempo, 128.0);
+
+        // Save as new .douri format
+        let douri_file = legacy_file.with_extension(EXTENSION);
+        assert_eq!(douri_file.extension().unwrap(), "douri");
+        save(&douri_file, &loaded_doc, &[]).expect("save douri failed");
+        assert!(douri_file.exists());
+        assert!(
+            legacy_file.exists(),
+            "original legacy file must remain untouched"
+        );
+
+        // Load new .douri format
+        let loaded_douri =
+            load(&douri_file, &dir.path().join("media_douri")).expect("load douri failed");
+        assert_eq!(loaded_douri.name, "My Song");
+        assert_eq!(loaded_douri.tempo, 128.0);
     }
 }

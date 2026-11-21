@@ -336,6 +336,7 @@ pub(crate) mod tests {
         "EQ",
         "Dōri",
         "Dōri Project",
+        "Dōri & Pro-Wave Projects",
         "Go",
         "Pro Wave",
         "Quit Dōri",

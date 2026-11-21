@@ -25,7 +25,8 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 /// The recovery copy's name in its session folder.
-pub const COPY: &str = "recovery.prowave";
+pub const COPY: &str = "recovery.douri";
+pub const LEGACY_COPY: &str = "recovery.prowave";
 const LOCK: &str = "lock";
 const ORIGINAL: &str = "original-path.txt";
 const RECORDINGS: &str = "recordings";
@@ -355,7 +356,11 @@ pub fn sweep(root: &Path, now: SystemTime) -> Vec<Candidate> {
 
 /// The recovery copy in session folder `dir`, if it is worth offering.
 fn candidate(dir: &Path, now: SystemTime) -> Option<Candidate> {
-    let copy = dir.join(COPY);
+    let copy = if dir.join(COPY).exists() {
+        dir.join(COPY)
+    } else {
+        dir.join(LEGACY_COPY)
+    };
     let written = modified(&copy)?;
     if now.duration_since(written).is_ok_and(|age| age > MAX_AGE) {
         return None;
@@ -367,7 +372,18 @@ fn candidate(dir: &Path, now: SystemTime) -> Option<Candidate> {
     // The project file was saved after the copy was written: the copy is the older one.
     let saved_later = original
         .as_deref()
-        .and_then(modified)
+        .and_then(|p| {
+            modified(p).or_else(|| {
+                if p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("prowave"))
+                {
+                    modified(&p.with_extension("douri"))
+                } else {
+                    None
+                }
+            })
+        })
         .is_some_and(|saved| saved >= written);
     if saved_later {
         return None;
@@ -389,7 +405,12 @@ fn candidate(dir: &Path, now: SystemTime) -> Option<Candidate> {
 
 fn load(dir: &Path) -> Result<ProjectDoc, ProjectError> {
     // The copy has no media entries, so nothing is unpacked.
-    prowave_project::load(&dir.join(COPY), &dir.join("recovery-media"))
+    let copy = if dir.join(COPY).exists() {
+        dir.join(COPY)
+    } else {
+        dir.join(LEGACY_COPY)
+    };
+    prowave_project::load(&copy, &dir.join("recovery-media"))
 }
 
 /// Opens the recovery copy `c`: the project, and the audio files that are not where the copy
@@ -526,8 +547,9 @@ mod tests {
     fn after_a_crash_the_copy_is_offered_with_its_project_and_time() {
         let root = tempfile::tempdir().unwrap();
         let projects = tempfile::tempdir().unwrap();
-        let original = projects.path().join("Night Drive.prowave");
-        crate::project_io::save_project(&Project::demo(), &original).unwrap();
+        let original =
+            crate::project_io::save_project(&Project::demo(), &projects.path().join("Night Drive"))
+                .unwrap();
         let before = std::fs::read(&original).unwrap();
 
         let s = Session::start(root.path()).unwrap();
@@ -600,7 +622,9 @@ mod tests {
             .unwrap();
 
         // A copy whose project file was saved after it.
-        let original = projects.path().join("Song.prowave");
+        let original =
+            crate::project_io::save_project(&Project::demo(), &projects.path().join("Song"))
+                .unwrap();
         let s = Session::start(root.path()).unwrap();
         write(s.dir(), &snapshot(&dirty_project(), Some(&original))).unwrap();
         let stale = s.crash();
@@ -617,7 +641,7 @@ mod tests {
 
         // And one worth offering, whose project file is gone.
         let s = Session::start(root.path()).unwrap();
-        let gone = projects.path().join("Gone.prowave");
+        let gone = projects.path().join("Gone.douri");
         write(s.dir(), &snapshot(&dirty_project(), Some(&gone))).unwrap();
         let good = s.crash();
 

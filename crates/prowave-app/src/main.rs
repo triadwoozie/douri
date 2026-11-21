@@ -1397,8 +1397,17 @@ impl App {
                 .collect()
         });
         if !dropped.is_empty() {
-            self.ui.chooser = None;
             for path in dropped {
+                let is_proj = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                    e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                        || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+                });
+                if is_proj {
+                    self.ui.chooser = None;
+                    self.open(&path, ctx);
+                    continue;
+                }
+                self.ui.chooser = None;
                 self.import(&path, ctx);
             }
         }
@@ -1590,6 +1599,14 @@ impl eframe::App for App {
                 .collect()
         });
         for path in dropped {
+            let is_proj = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                    || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+            });
+            if is_proj {
+                self.open(&path, &ctx);
+                continue;
+            }
             let is_zip = path
                 .extension()
                 .and_then(|e| e.to_str())
@@ -1931,11 +1948,28 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
                 ui.label("• storytold/soundcraft");
                 ui.label("• Ardour");
                 ui.add_space(8.0);
+                ui.label("Icons & Artwork:");
+                ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
+                ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
+                ui.add_space(8.0);
                 ui.label(
                     "Released under GNU General Public License v3.0 or later (GPL-3.0-or-later).",
                 );
-                ui.add_space(12.0);
-                if ui.button("Close").clicked() {
+                ui.add_space(14.0);
+                if ui
+                    .add_sized(
+                        egui::vec2(120.0, 30.0),
+                        egui::Button::new(
+                            egui::RichText::new("Close")
+                                .color(egui::Color32::from_rgb(0x11, 0x12, 0x15))
+                                .size(12.5)
+                                .strong(),
+                        )
+                        .fill(egui::Color32::from_rgb(0xf2, 0xf3, 0xf5))
+                        .corner_radius(egui::CornerRadius::same(6)),
+                    )
+                    .clicked()
+                {
                     close = true;
                 }
                 ui.add_space(4.0);
@@ -2242,7 +2276,7 @@ fn print_help() {
         env!("CARGO_PKG_VERSION")
     );
     println!();
-    println!("Usage: douri [options] [project.prowave] [audio files...]");
+    println!("Usage: douri [options] [project.douri] [audio files...]");
     println!();
     println!("  --play                    start playing on launch");
     println!("  --piano                   open the Piano Roll on launch");
@@ -2259,13 +2293,17 @@ fn print_help() {
     println!("  --scan-ladspa <file>      list the plug-ins in a LADSPA library, then exit (the");
     println!("                            Plugin Manager reads each library in a child process)");
     println!();
-    println!("A .prowave path opens that project; other paths are imported as audio files.");
+    println!(
+        "A .douri or .prowave path opens that project; other paths are imported as audio files."
+    );
 }
 
 fn is_project_path(a: &std::ffi::OsStr) -> bool {
-    std::path::Path::new(a)
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case(prowave_project::EXTENSION))
+    let ext = std::path::Path::new(a).extension();
+    ext.is_some_and(|e| {
+        e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+            || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+    })
 }
 
 fn detect_initial_monitor_size() -> egui::Vec2 {
@@ -2746,9 +2784,11 @@ fn main() -> eframe::Result {
                 std::env::args_os().skip(1).collect()
             };
             let is_project = |a: &std::ffi::OsString| {
-                std::path::Path::new(a)
-                    .extension()
-                    .is_some_and(|e| e.eq_ignore_ascii_case(prowave_project::EXTENSION))
+                let ext = std::path::Path::new(a).extension();
+                ext.is_some_and(|e| {
+                    e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                        || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+                })
             };
             if !measuring {
                 recovery::session_dir();

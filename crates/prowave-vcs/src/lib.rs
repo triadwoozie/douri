@@ -231,6 +231,8 @@ pub fn scaffold_gitignore(repo_path: &Path) -> std::io::Result<()> {
 Cache/utau_renders/*.wav
 Cache/peaks/*.peak
 Cache/
+*.douri.tmp
+*.prowave.tmp
 *.peak
 *.tmp
 *.bak
@@ -246,6 +248,8 @@ Thumbs.db
             "Cache/utau_renders/*.wav",
             "Cache/peaks/*.peak",
             "Cache/",
+            "*.douri.tmp",
+            "*.prowave.tmp",
             "*.peak",
             "*.tmp",
             "*.bak",
@@ -516,6 +520,9 @@ impl GitRepo {
         _project_rel_path: &Path,
     ) -> Result<prowave_project::ProjectDoc, String> {
         Err("Collaborate is unsupported on wasm32".into())
+    }
+    pub fn find_project_file(&self) -> Option<PathBuf> {
+        None
     }
 }
 
@@ -982,13 +989,43 @@ impl GitRepo {
         }
     }
 
+    pub fn find_project_file(&self) -> Option<PathBuf> {
+        let entries = std::fs::read_dir(&self.work_dir).ok()?;
+        let mut douri_file = None;
+        let mut prowave_file = None;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if ext.eq_ignore_ascii_case("douri") {
+                        douri_file = Some(path);
+                        break;
+                    } else if ext.eq_ignore_ascii_case("prowave") && prowave_file.is_none() {
+                        prowave_file = Some(path);
+                    }
+                }
+            }
+        }
+        douri_file.or(prowave_file)
+    }
+
     pub fn load_project_from_commit(
         &self,
         rev: &str,
         project_rel_path: &Path,
     ) -> Result<prowave_project::ProjectDoc, String> {
         let path_str = project_rel_path.to_string_lossy();
-        let bytes = self.cat_file(rev, &path_str)?;
+        let bytes = self.cat_file(rev, &path_str).or_else(|_| {
+            if path_str.ends_with(".douri") {
+                let fallback = project_rel_path.with_extension("prowave");
+                self.cat_file(rev, &fallback.to_string_lossy())
+            } else if path_str.ends_with(".prowave") {
+                let fallback = project_rel_path.with_extension("douri");
+                self.cat_file(rev, &fallback.to_string_lossy())
+            } else {
+                Err("File not found in version".into())
+            }
+        })?;
 
         if path_str.ends_with(".json") {
             let json = String::from_utf8(bytes).map_err(|e| e.to_string())?;
@@ -1088,6 +1125,11 @@ impl VcsWorker {
                             if repo.is_none() {
                                 repo = GitRepo::open(&thread_repo_dir);
                             }
+                            let project_file_rel = project_file_rel.or_else(|| {
+                                repo.as_ref()
+                                    .and_then(|r| r.find_project_file())
+                                    .and_then(|p| p.file_name().map(PathBuf::from))
+                            });
                             Self::send_refresh(
                                 &repo,
                                 &event_tx,
@@ -1101,6 +1143,10 @@ impl VcsWorker {
                             project_file_rel,
                         } => {
                             if let Some(ref r) = repo {
+                                let project_file_rel = project_file_rel.or_else(|| {
+                                    r.find_project_file()
+                                        .and_then(|p| p.file_name().map(PathBuf::from))
+                                });
                                 match r.commit(&message) {
                                     Ok(hash) => {
                                         let _ = event_tx.send(VcsEvent::Notice(format!(
@@ -1125,6 +1171,10 @@ impl VcsWorker {
                             project_file_rel,
                         } => {
                             if let Some(ref r) = repo {
+                                let project_file_rel = project_file_rel.or_else(|| {
+                                    r.find_project_file()
+                                        .and_then(|p| p.file_name().map(PathBuf::from))
+                                });
                                 let head_doc = project_file_rel
                                     .as_ref()
                                     .and_then(|rel| r.load_project_from_commit("HEAD", rel).ok());

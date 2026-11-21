@@ -134,7 +134,7 @@ cd douri
 cargo run --release --bin douri
 
 # Open a specific project or audio file
-cargo run --release --bin douri -- my_project.prowave
+cargo run --release --bin douri -- my_project.douri
 cargo run --release --bin douri -- song_stems.wav
 ```
 
@@ -186,7 +186,7 @@ Dōri supports loading sound fonts, sample libraries, and impulse responses:
 |---|---|
 | [`crates/prowave-engine`](crates/prowave-engine) | Real-time audio engine: sample-accurate transport, lock-free queues, 64-bit mixer, offline freewheeling bounce, EBU R128 metering, synths, and cpal output |
 | [`crates/prowave-app`](crates/prowave-app) | Desktop interface built in pure `egui`: tracks area, Piano Roll, Mixer, MultiMeter, and inspector |
-| [`crates/prowave-project`](crates/prowave-project) | Project serializer & archive container (`.prowave` zip package) |
+| [`crates/prowave-project`](crates/prowave-project) | Project serializer & archive container (`.douri` zip package with full `.prowave` backward compatibility) |
 | [`crates/prowave-plugin-host`](crates/prowave-plugin-host) | Out-of-process and in-process plugin hosting for CLAP, VST3, LADSPA, and AU |
 | [`crates/prowave-logicx-import`](crates/prowave-logicx-import) | Parser for Apple Logic Pro `.logicx` packages and ProjectData structures |
 | [`crates/prowave-garageband-import`](crates/prowave-garageband-import) | Parser for GarageBand `.band` projects |
@@ -209,5 +209,7 @@ Per **Section 5 of the GNU General Public License v3**, Dōri explicitly attribu
 - **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version arranging tools (Marquee selection, snap grid, Option-drag), crash recovery, and 808 Bass synthesizer.
 - **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): Faster-than-realtime offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 True Peak and loudness metering.
 - **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.
+- **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Clean vector studio icons via `phosphor-egui`.
+- **Original 3D Artwork**: Blender-rendered Dōri studio app icon and 3D studio visual assets created by **triadwoozie**.
 
-All original copyright notices and license texts have been retained. See [`LICENSE`](LICENSE) for complete terms.
+All original copyright notices and license texts have been retained. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for detailed third-party attributions, and [`LICENSE`](LICENSE) for complete terms.
