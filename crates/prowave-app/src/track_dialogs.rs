@@ -4,11 +4,11 @@
 //! Each one changes the track or the header display at once and closes; Cancel and the window's
 //! close button change nothing.
 
+use crate::hw::{self, Cap};
 use crate::i18n::tr;
 use crate::model::{HeaderPart, Project};
 use crate::track_icons::{draw_icon, IconKind};
 use egui::{vec2, Color32, Sense, Stroke};
-use crate::hw::{self, Cap};
 
 pub(crate) fn dialog_key(
     ui: &mut egui::Ui,
@@ -227,7 +227,8 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                         field.request_focus();
                         ui.data_mut(|d| d.insert_temp(opened, true));
                     }
-                    let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let entered =
+                        field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let ok = !name.trim().is_empty();
                     let mut ok_clicked = false;
                     ui.horizontal(|ui| {
@@ -303,12 +304,16 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 TrackDialog::GoTo { text } => {
                     ui.add(egui::TextEdit::singleline(text).char_limit(16));
                     if let Some(pos) = parse_position(p, text) {
-                        if ui.button(tr("Go")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if ui.button(tr("Go")).clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
                             p.position_beats = pos;
                             done = true;
                         }
                     }
-                    if ui.button(tr("Cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    if ui.button(tr("Cancel")).clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
                         done = true;
                     }
                 }

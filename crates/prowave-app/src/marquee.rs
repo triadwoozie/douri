@@ -130,7 +130,11 @@ fn inside(p: &Project, t: usize, a: f64, b: f64) -> Vec<usize> {
         .regions
         .iter()
         .enumerate()
-        .filter(|(_, r)| !r.params.locked && p.region_start_beats(r) >= a - EPS && p.region_end_beats(r) <= b + EPS)
+        .filter(|(_, r)| {
+            !r.params.locked
+                && p.region_start_beats(r) >= a - EPS
+                && p.region_end_beats(r) <= b + EPS
+        })
         .map(|(i, _)| i)
         .collect()
 }

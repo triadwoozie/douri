@@ -718,7 +718,10 @@ pub(crate) fn sing_openutau(
         };
         write_wav(&cached(ph.key), &x, SAMPLE_RATE).map_err(|e| e.to_string())?;
         if let Ok(mut p) = progress.lock() {
-            *p = trf("OpenUtau: {} of {} phrases", &[&(i + 1).to_string(), &total.to_string()]);
+            *p = trf(
+                "OpenUtau: {} of {} phrases",
+                &[&(i + 1).to_string(), &total.to_string()],
+            );
         }
     }
     Ok(())
@@ -1318,13 +1321,7 @@ fn openutau_panel(ui: &mut egui::Ui, set: &mut VocalSettings, changed: &mut bool
         ui,
         id,
         vec![
-            dial(
-                tr("Gender"),
-                &mut set.gender,
-                -100.0..=100.0,
-                d.gender,
-                0,
-            ),
+            dial(tr("Gender"), &mut set.gender, -100.0..=100.0, d.gender, 0),
             dial(
                 tr("Breathiness"),
                 &mut set.breathiness,
@@ -2144,7 +2141,10 @@ mod tests {
         };
         let diffsinger = with(&|_| {});
         let openutau = with(&|s| s.singer = Singer::OpenUtau);
-        assert_ne!(diffsinger.key, openutau.key, "another singer sings it again");
+        assert_ne!(
+            diffsinger.key, openutau.key,
+            "another singer sings it again"
+        );
         // Each singer's own settings count; the other's do not.
         assert_ne!(
             with(&|s| {

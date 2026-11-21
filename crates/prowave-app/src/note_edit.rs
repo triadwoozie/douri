@@ -97,7 +97,12 @@ pub enum NoteHitZone {
 
 /// Identifies note under (beat, pitch) and whether the hit is near the left edge, right edge,
 /// or inside the note body.
-pub fn hit_note_edges(notes: &[Note], beat: f32, pitch: u8, edge: f32) -> Option<(usize, NoteHitZone)> {
+pub fn hit_note_edges(
+    notes: &[Note],
+    beat: f32,
+    pitch: u8,
+    edge: f32,
+) -> Option<(usize, NoteHitZone)> {
     notes
         .iter()
         .enumerate()

@@ -3,8 +3,8 @@
 //! Converts lyric sequences and musical note timing into phoneme aliases
 //! resolved against the voicebank's `oto.ini` and `prefix.map`.
 
-use std::collections::HashMap;
 use crate::voicebank::Voicebank;
+use std::collections::HashMap;
 
 /// The tail vowel of a Japanese hiragana or katakana syllable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,22 +185,23 @@ mod tests {
     fn phonemizes_vcv_chain() {
         let p = JapaneseVcvPhonemizer::new();
         let mut vb = Voicebank::default();
-        let mut otos = Vec::new();
-        otos.push(Oto {
-            alias: "- か".into(),
-            wav: "ka.wav".into(),
-            ..Default::default()
-        });
-        otos.push(Oto {
-            alias: "a わ".into(),
-            wav: "wa.wav".into(),
-            ..Default::default()
-        });
-        otos.push(Oto {
-            alias: "a い".into(),
-            wav: "i.wav".into(),
-            ..Default::default()
-        });
+        let otos = vec![
+            Oto {
+                alias: "- か".into(),
+                wav: "ka.wav".into(),
+                ..Default::default()
+            },
+            Oto {
+                alias: "a わ".into(),
+                wav: "wa.wav".into(),
+                ..Default::default()
+            },
+            Oto {
+                alias: "a い".into(),
+                wav: "i.wav".into(),
+                ..Default::default()
+            },
+        ];
         let set = OtoSet {
             name: "test".into(),
             dir: PathBuf::from("/test"),

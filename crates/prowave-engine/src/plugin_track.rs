@@ -1,5 +1,6 @@
 //! A track's plug-ins (Logic: the Instrument slot and the Audio FX slots): an instrument and
 //! a chain of effects, each processing whole blocks.
+#![allow(dead_code)]
 //!
 //! The engine mixes one frame at a time and a plug-in renders one block, so they meet through
 //! a block of buffering: what the instrument renders, and what the effects return, is heard

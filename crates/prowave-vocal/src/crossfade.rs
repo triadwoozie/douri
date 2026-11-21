@@ -140,7 +140,7 @@ mod tests {
         // Verify samples in overlap region have smooth equal-power transitions
         for &s in &out {
             assert!(s.is_finite());
-            assert!(s >= 0.0 && s <= 2.0);
+            assert!((0.0..=2.0).contains(&s));
         }
     }
 }

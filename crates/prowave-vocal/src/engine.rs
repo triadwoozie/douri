@@ -3,9 +3,9 @@
 //! Generates `SingerClip` and `SingerScore` objects for `prowave-engine` from
 //! track notes and lyrics.
 
+use prowave_engine::{SingerClip, SingerScore, TempoMap};
 use std::path::PathBuf;
 use std::sync::Arc;
-use prowave_engine::{SingerClip, SingerScore, TempoMap};
 
 use crate::cache::PhraseCache;
 use crate::crossfade::{crossfade_phrase, RenderedSegment};

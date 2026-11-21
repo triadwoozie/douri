@@ -343,7 +343,9 @@ pub fn parse_tone_name(s: &str) -> Option<u8> {
 
 /// Formats a MIDI tone number as standard note name (e.g. 60 -> "C4").
 pub fn tone_to_name(tone: u8) -> String {
-    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let names = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let octave = (tone as i32 / 12) - 1;
     let semitone = (tone % 12) as usize;
     format!("{}{}", names[semitone], octave)

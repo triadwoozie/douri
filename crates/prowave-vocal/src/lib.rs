@@ -28,6 +28,6 @@ pub use resampler::{
 pub use ust::{UstNote, UstPitchBend, UstProject, UstVibrato, TICKS_PER_BEAT};
 pub use ustx::{UstxNote, UstxPitch, UstxProject, UstxTrack, UstxVibrato, UstxVoicePart};
 pub use voicebank::{
-    parse_oto_ini, parse_tone_name, read_file_detect_encoding, tone_to_name, Oto, OtoSet, PrefixMap,
-    Voicebank,
+    parse_oto_ini, parse_tone_name, read_file_detect_encoding, tone_to_name, Oto, OtoSet,
+    PrefixMap, Voicebank,
 };

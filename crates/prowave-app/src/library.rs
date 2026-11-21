@@ -394,7 +394,12 @@ fn draw_badge(g: &Painter, rect: Rect, badge: SoundBadge) {
         ),
     };
     g.rect_filled(rect, 4.0, bg);
-    g.rect_stroke(rect, 4.0, Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
+    g.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, stroke_col),
+        egui::StrokeKind::Inside,
+    );
     crate::icons::paint_fill(g, rect, glyph, 11.0, Color32::WHITE);
 }
 
@@ -479,7 +484,11 @@ fn list_row(
         Align2::LEFT_CENTER,
         shown,
         font,
-        if selected { Color32::from_rgb(0xf5, 0xf5, 0xf7) } else { TEXT },
+        if selected {
+            Color32::from_rgb(0xf5, 0xf5, 0xf7)
+        } else {
+            TEXT
+        },
     );
     if chevron {
         let c = pos2(r.right() - 9.0, r.center().y);
@@ -553,7 +562,9 @@ fn draw_audition_waveform(g: &Painter, rect: Rect, playing: bool) {
         Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2e)),
         egui::StrokeKind::Inside,
     );
-    let bars = [4.0, 7.0, 11.0, 6.0, 13.0, 10.0, 15.0, 12.0, 8.0, 14.0, 9.0, 5.0, 11.0, 7.0, 3.0];
+    let bars = [
+        4.0, 7.0, 11.0, 6.0, 13.0, 10.0, 15.0, 12.0, 8.0, 14.0, 9.0, 5.0, 11.0, 7.0, 3.0,
+    ];
     let n = bars.len();
     let pad = 4.0;
     let avail_w = rect.width() - pad * 2.0;
@@ -570,7 +581,10 @@ fn draw_audition_waveform(g: &Painter, rect: Rect, playing: bool) {
     }
     let playhead_x = rect.left() + pad;
     g.line_segment(
-        [pos2(playhead_x, rect.top() + 2.0), pos2(playhead_x, rect.bottom() - 2.0)],
+        [
+            pos2(playhead_x, rect.top() + 2.0),
+            pos2(playhead_x, rect.bottom() - 2.0),
+        ],
         Stroke::new(1.0, Color32::WHITE),
     );
 }
@@ -658,8 +672,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         egui::StrokeKind::Inside,
     );
-    let mag_r = Rect::from_center_size(pos2(search_r.left() + 14.0, search_r.center().y), vec2(14.0, 14.0));
-    crate::icons::paint_regular(&g, mag_r, crate::icons::MAGNIFYING_GLASS, 14.0, Color32::from_rgb(0x8e, 0x8e, 0x93));
+    let mag_r = Rect::from_center_size(
+        pos2(search_r.left() + 14.0, search_r.center().y),
+        vec2(14.0, 14.0),
+    );
+    crate::icons::paint_regular(
+        &g,
+        mag_r,
+        crate::icons::MAGNIFYING_GLASS,
+        14.0,
+        Color32::from_rgb(0x8e, 0x8e, 0x93),
+    );
     let edit_r = Rect::from_min_max(
         pos2(search_r.left() + 26.0, search_r.top() + 2.5),
         pos2(search_r.right() - 8.0, search_r.bottom() - 2.5),
@@ -892,7 +915,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     }
                     SoundChip::Keys => {
                         let n = c.name.to_lowercase();
-                        n.contains("piano") || n.contains("organ") || n.contains("keyboard") || n.contains("key") || n.contains("clav")
+                        n.contains("piano")
+                            || n.contains("organ")
+                            || n.contains("keyboard")
+                            || n.contains("key")
+                            || n.contains("clav")
                     }
                 };
                 c.patches
@@ -933,15 +960,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
         // Vertical divider between columns
         g.line_segment(
-            [pos2(left_rect.right(), cols.top()), pos2(left_rect.right(), cols.bottom())],
+            [
+                pos2(left_rect.right(), cols.top()),
+                pos2(left_rect.right(), cols.bottom()),
+            ],
             Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2e)),
         );
 
         // Left Column (Categories)
-        let cat_items: Vec<String> = CATEGORIES
-            .iter()
-            .map(|c| tr(c.name).to_string())
-            .collect();
+        let cat_items: Vec<String> = CATEGORIES.iter().map(|c| tr(c.name).to_string()).collect();
         if let Some(ci) = column(
             ui,
             &g,
@@ -1036,7 +1063,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         Align2::CENTER_CENTER,
         "Auto",
         FontId::proportional(10.5),
-        if v.audition_auto { Color32::WHITE } else { TEXT_DIM },
+        if v.audition_auto {
+            Color32::WHITE
+        } else {
+            TEXT_DIM
+        },
     );
     rx = auto_r.left() - 4.0;
 
@@ -1048,7 +1079,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
     // Audition speaker icon
     let spk_r = Rect::from_center_size(pos2(rx - 7.0, fy + 10.0), vec2(13.0, 13.0));
-    crate::icons::paint_regular(&g, spk_r, crate::icons::SPEAKER_HIGH, 13.0, Color32::from_rgb(0x8e, 0x8e, 0x93));
+    crate::icons::paint_regular(
+        &g,
+        spk_r,
+        crate::icons::SPEAKER_HIGH,
+        13.0,
+        Color32::from_rgb(0x8e, 0x8e, 0x93),
+    );
     rx = spk_r.left() - 4.0;
 
     // Audition Play/Stop button

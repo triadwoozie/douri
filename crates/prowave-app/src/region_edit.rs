@@ -366,7 +366,7 @@ pub(crate) fn split_at_playhead(p: &mut Project, v: &mut TracksView) {
             let Some(reg) = p.tracks.get(t).and_then(|tr| tr.regions.get(r)) else {
                 return false;
             };
-            if reg.params.locked || reg.folder.is_some() {
+            if reg.params.locked {
                 return false;
             }
             let (start, end) = (p.region_start_beats(reg), p.region_end_beats(reg));
@@ -383,7 +383,10 @@ pub(crate) fn split_at_playhead(p: &mut Project, v: &mut TracksView) {
             Some(reg) => reg,
             None => continue,
         };
-        let needs_local = reg.audio.is_some() || reg.generated.is_some() || reg.params.reverse;
+        let needs_local = reg.audio.is_some()
+            || reg.generated.is_some()
+            || reg.folder.is_some()
+            || reg.params.reverse;
         let did_split = if needs_local {
             split_region(p, t, r, at).is_some()
         } else {

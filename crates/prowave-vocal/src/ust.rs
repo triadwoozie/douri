@@ -176,8 +176,8 @@ impl UstProject {
                 _ => {
                     // Check if note header [#0000], [#0001], etc.
                     let inner = &header[1..header.len() - 1];
-                    let is_note = inner.starts_with('#')
-                        && inner[1..].chars().all(|c| c.is_ascii_digit());
+                    let is_note =
+                        inner.starts_with('#') && inner[1..].chars().all(|c| c.is_ascii_digit());
                     if is_note {
                         let note = parse_ust_note(&lines, current_pos_ticks);
                         current_pos_ticks += note.duration_ticks;
@@ -324,10 +324,11 @@ fn parse_ust_note(lines: &[String], pos_ticks: u32) -> UstNote {
                 "pby" => pby_str = Some(v.to_string()),
                 "pbm" => pbm_str = Some(v.to_string()),
                 "vbr" => {
-                    let parts: Vec<f64> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                    let parts: Vec<f64> =
+                        v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
                     if parts.len() >= 3 {
                         note.vibrato = Some(UstVibrato {
-                            length_pct: parts.get(0).copied().unwrap_or(100.0),
+                            length_pct: parts.first().copied().unwrap_or(100.0),
                             period_ms: parts.get(1).copied().unwrap_or(100.0),
                             depth_cents: parts.get(2).copied().unwrap_or(50.0),
                             fade_in_ms: parts.get(3).copied().unwrap_or(0.0),

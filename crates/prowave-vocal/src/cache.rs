@@ -28,11 +28,7 @@ impl PhraseCache {
     }
 
     /// Computes a hash key for a vocal phrase.
-    pub fn compute_key(
-        voicebank_name: &str,
-        tempo: f64,
-        notes: &[(f64, f64, u8, String)],
-    ) -> u64 {
+    pub fn compute_key(voicebank_name: &str, tempo: f64, notes: &[(f64, f64, u8, String)]) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         voicebank_name.hash(&mut hasher);
         tempo.to_bits().hash(&mut hasher);

@@ -8,8 +8,8 @@ static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisab
 
 mod aaf;
 mod apple_loops;
-mod arrange_select;
 pub mod arrange_nav;
+mod arrange_select;
 pub mod arrange_zoom;
 mod audio_prefs;
 mod audio_rec;
@@ -52,9 +52,9 @@ mod library;
 pub mod liquid_glass;
 pub mod lyrics;
 pub mod lyrics_ui;
-mod marker_track;
 pub mod marker_edit;
 pub mod marker_number;
+mod marker_track;
 mod marquee;
 pub mod mcp_server;
 mod menus;
@@ -1385,7 +1385,9 @@ impl App {
             ) {
                 // When Welcome dialog is completed, transition viewport to Chooser
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(840.0, 540.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(840.0, 540.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+                    840.0, 540.0,
+                )));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("Choose a Project".into()));
             }
         } else {
@@ -1395,7 +1397,9 @@ impl App {
                 .show(ui, |ui| start_screen::show(ui, &mut self.ui));
             // If chooser was dismissed / template chosen, open and maximize main DAW
             if self.ui.chooser.is_none() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(800.0, 520.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+                    800.0, 520.0,
+                )));
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(1600.0, 980.0)));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
@@ -2212,16 +2216,28 @@ fn main() -> eframe::Result {
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
     let has_project_arg = all_args.iter().any(|a| is_project_path(a.as_os_str()));
     let start_in_dialog = !has_project_arg && !no_chooser_flag;
-    let (init_size, init_min_size, init_maximized, init_resizable, init_title) =
-        if start_in_dialog {
-            if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
-                ([520.0, 310.0], [520.0, 310.0], false, false, "Welcome to Dōri")
-            } else {
-                ([840.0, 540.0], [840.0, 540.0], false, false, "Choose a Project")
-            }
+    let (init_size, init_min_size, init_maximized, init_resizable, init_title) = if start_in_dialog
+    {
+        if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
+            (
+                [520.0, 310.0],
+                [520.0, 310.0],
+                false,
+                false,
+                "Welcome to Dōri",
+            )
         } else {
-            ([1600.0, 980.0], [800.0, 520.0], true, true, "Dōri")
-        };
+            (
+                [840.0, 540.0],
+                [840.0, 540.0],
+                false,
+                false,
+                "Choose a Project",
+            )
+        }
+    } else {
+        ([1600.0, 980.0], [800.0, 520.0], true, true, "Dōri")
+    };
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size(init_size)

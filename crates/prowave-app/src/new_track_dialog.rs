@@ -159,15 +159,8 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
 
                 for c in choices {
                     let selected = s.new_track.choice == c;
-                    if track_type_card(
-                        ui,
-                        selected,
-                        c.accent(),
-                        c.icon(),
-                        c.title(),
-                        c.subtitle(),
-                    )
-                    .clicked()
+                    if track_type_card(ui, selected, c.accent(), c.icon(), c.title(), c.subtitle())
+                        .clicked()
                     {
                         s.new_track.choice = c;
                     }
@@ -214,9 +207,12 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                                         .size(11.5)
                                         .color(ui_chrome::TEXT_SECONDARY),
                                 );
-                                let inputs = ["Input 1 (Mono)", "Input 2 (Mono)", "Input 1 + 2 (Stereo)"];
+                                let inputs =
+                                    ["Input 1 (Mono)", "Input 2 (Mono)", "Input 1 + 2 (Stereo)"];
                                 egui::ComboBox::from_id_salt("track_audio_input")
-                                    .selected_text(inputs[s.new_track.input_channel as usize % inputs.len()])
+                                    .selected_text(
+                                        inputs[s.new_track.input_channel as usize % inputs.len()],
+                                    )
                                     .show_ui(ui, |ui| {
                                         for (idx, name) in inputs.iter().enumerate() {
                                             ui.selectable_value(
@@ -234,9 +230,12 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                                     .size(11.5)
                                     .color(ui_chrome::TEXT_SECONDARY),
                             );
-                            let outputs = ["Output 1 + 2 (Stereo Out)", "Output 3 + 4", "Output 5 + 6"];
+                            let outputs =
+                                ["Output 1 + 2 (Stereo Out)", "Output 3 + 4", "Output 5 + 6"];
                             egui::ComboBox::from_id_salt("track_audio_output")
-                                .selected_text(outputs[s.new_track.output_channel as usize % outputs.len()])
+                                .selected_text(
+                                    outputs[s.new_track.output_channel as usize % outputs.len()],
+                                )
                                 .show_ui(ui, |ui| {
                                     for (idx, name) in outputs.iter().enumerate() {
                                         ui.selectable_value(

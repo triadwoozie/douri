@@ -123,6 +123,9 @@ impl Combo {
         let keys = if cfg!(target_os = "macos") {
             let cmd_down = m.mac_cmd || (m.command && !m.ctrl);
             cmd_down == self.cmd && m.ctrl == self.ctrl
+        } else if m.command != m.ctrl {
+            let cmd_down = m.command;
+            cmd_down == self.cmd && m.ctrl == self.ctrl
         } else {
             (m.command || m.ctrl) == (self.cmd || self.ctrl)
         };

@@ -259,10 +259,7 @@ pub(crate) fn target_region(p: &Project, s: &UiState) -> Option<(usize, usize)> 
 fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<usize> {
     let mut clicked = None;
     g.rect_filled(bar, 0.0, PANEL_BG);
-    let tabs = [
-        tr("Piano Roll"),
-        tr("Step Sequencer"),
-    ];
+    let tabs = [tr("Piano Roll"), tr("Step Sequencer")];
     let font = FontId::proportional(12.5);
     let widths: Vec<f32> = tabs
         .iter()
@@ -585,11 +582,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             TEXT_DIM,
         );
         let btn_r = Rect::from_center_size(pos2(center.x, center.y + 36.0), vec2(170.0, 26.0));
-        let resp = ui.interact(btn_r, egui::Id::unique("empty_piano_roll_create"), Sense::click());
+        let resp = ui.interact(
+            btn_r,
+            egui::Id::unique("empty_piano_roll_create"),
+            Sense::click(),
+        );
         let hov = resp.hovered();
-        g.rect_filled(btn_r, 5.0, if hov { Color32::from_rgb(0x30, 0x30, 0x35) } else { Color32::from_rgb(0x26, 0x26, 0x2a) });
-        g.rect_stroke(btn_r, 5.0, Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)), StrokeKind::Inside);
-        g.text(btn_r.center(), Align2::CENTER_CENTER, "+ Create MIDI Region", FontId::proportional(12.0), Color32::WHITE);
+        g.rect_filled(
+            btn_r,
+            5.0,
+            if hov {
+                Color32::from_rgb(0x30, 0x30, 0x35)
+            } else {
+                Color32::from_rgb(0x26, 0x26, 0x2a)
+            },
+        );
+        g.rect_stroke(
+            btn_r,
+            5.0,
+            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+            StrokeKind::Inside,
+        );
+        g.text(
+            btn_r.center(),
+            Align2::CENTER_CENTER,
+            "+ Create MIDI Region",
+            FontId::proportional(12.0),
+            Color32::WHITE,
+        );
         if resp.clicked() {
             let trk = p.selected_track;
             if let Some(new_ri) = p.add_empty_region(trk, 1.0) {
@@ -724,17 +744,24 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         if (is_alt && delta.y != 0.0) || (is_ctrl && mods.shift && delta.y != 0.0) {
             // Vertical pitch height zoom anchored at pointer Y
             let pointer_y = hover.map_or(grid.center().y, |p| p.y);
-            let pitch_at_ptr = (127.0 - (pointer_y - grid.top() + v.scroll_y) / v.key_h).clamp(0.0, 127.0);
+            let pitch_at_ptr =
+                (127.0 - (pointer_y - grid.top() + v.scroll_y) / v.key_h).clamp(0.0, 127.0);
             v.key_h = (v.key_h * (1.0 + delta.y * 0.003)).clamp(6.0, 48.0);
-            v.scroll_y = ((127.0 - pitch_at_ptr) * v.key_h - (pointer_y - grid.top())).clamp(0.0, (128.0 * v.key_h - grid.height()).max(0.0));
+            v.scroll_y = ((127.0 - pitch_at_ptr) * v.key_h - (pointer_y - grid.top()))
+                .clamp(0.0, (128.0 * v.key_h - grid.height()).max(0.0));
         } else if is_ctrl && delta.y != 0.0 {
             // Horizontal beat_px zoom anchored at pointer X
             let pointer_x = hover.map_or(grid.left(), |p| p.x);
             let beat_at_ptr = (pointer_x - grid.left() + v.scroll_x) / v.beat_px;
             v.beat_px = (v.beat_px * (1.0 + delta.y * 0.003)).clamp(12.0, 400.0);
-            v.scroll_x = (beat_at_ptr * v.beat_px - (pointer_x - grid.left())).clamp(0.0, (content_w - grid.width()).max(0.0));
+            v.scroll_x = (beat_at_ptr * v.beat_px - (pointer_x - grid.left()))
+                .clamp(0.0, (content_w - grid.width()).max(0.0));
         } else if mods.shift || delta.x != 0.0 {
-            let dx = if mods.shift && delta.x == 0.0 { delta.y } else { delta.x };
+            let dx = if mods.shift && delta.x == 0.0 {
+                delta.y
+            } else {
+                delta.x
+            };
             v.scroll_x = (v.scroll_x - dx).clamp(0.0, (content_w - grid.width()).max(0.0));
         } else if delta.y != 0.0 {
             v.scroll_y = (v.scroll_y - delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));

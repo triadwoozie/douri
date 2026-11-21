@@ -3,11 +3,11 @@
 //! Imports tracks and audio clip placements from AAF files referencing external WAV files,
 //! mapping them onto the Dōri timeline with exact start beats, lengths, and track names.
 
+use crate::model::{AudioRegion, Project, Region, RegionParams, Track, TrackKind};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use crate::model::{AudioRegion, Project, Region, RegionParams, Track, TrackKind};
 
 /// An audio clip entry parsed from an AAF session.
 #[derive(Clone, Debug, PartialEq)]
@@ -89,10 +89,7 @@ impl AafSession {
                     notes: Vec::new(),
                     controls: Vec::new(),
                     folder: None,
-                    audio: Some(AudioRegion::whole(
-                        audio_file,
-                        Arc::new(OnceLock::new()),
-                    )),
+                    audio: Some(AudioRegion::whole(audio_file, Arc::new(OnceLock::new()))),
                     missing: None,
                     params: RegionParams::default(),
                     generated: None,

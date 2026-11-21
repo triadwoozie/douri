@@ -737,15 +737,30 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Snap to Grid" | "Snap Regions to Relative Value" | "Snap Regions to Absolute Value" => {
             true
         }
-        "Edit Groups…" | "Show Musical Typing" | "Plug-In Manager…" | "Plugin Manager" | "MultiMeter" | "Pitch Editor" => true,
+        "Edit Groups…"
+        | "Show Musical Typing"
+        | "Plug-In Manager…"
+        | "Plugin Manager"
+        | "MultiMeter"
+        | "Pitch Editor" => true,
         "Record / Record Repeat" | "Record Toggle" | "Record Project Settings" => true,
         "Record Enable" => p.tracks.get(p.selected_track).is_some(),
-        "Score as MusicXML…" => p.tracks.iter().any(|t| t.regions.iter().any(|r| !r.notes.is_empty())),
+        "Score as MusicXML…" => p
+            .tracks
+            .iter()
+            .any(|t| t.regions.iter().any(|r| !r.notes.is_empty())),
         "Undo History…" => true,
         "Audio File…" | "Other Projects…" => true,
         "Project or Section…" => !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty()),
-        "Track as Audio File…" => !s.bouncing && p.tracks.get(p.selected_track).is_some_and(|t| !t.regions.is_empty()),
-        "All Tracks as Audio Files…" => !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty()),
+        "Track as Audio File…" => {
+            !s.bouncing
+                && p.tracks
+                    .get(p.selected_track)
+                    .is_some_and(|t| !t.regions.is_empty())
+        }
+        "All Tracks as Audio Files…" => {
+            !s.bouncing && p.tracks.iter().any(|t| !t.regions.is_empty())
+        }
         "Regions in Place…" | "Bounce In Place" | "Bounce and Join" => {
             !s.bouncing
                 && s.tracks.selected.is_some_and(|(t, r)| {
@@ -838,11 +853,13 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show Signature Track"
         | "Show Global Tracks"
         | "Show Hidden Tracks"
+        | "Show Colors"
         | "Show Editor"
         | "MIDI File…"
         | "MIDI FX…"
         | "Selection as MIDI File…"
         | "Create Marker"
+        | "Create Marker Without Rounding"
         | "Mixer"
         | "Piano Roll"
         | "Bigger Interface"
@@ -867,9 +884,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Select Overlapped Regions" => {
             !crate::arrange_select::overlapped(p, s.tracks.show_hidden).is_empty()
         }
-        "Select Muted Regions" => {
-            !crate::arrange_select::muted(p, s.tracks.show_hidden).is_empty()
-        }
+        "Select Muted Regions" => !crate::arrange_select::muted(p, s.tracks.show_hidden).is_empty(),
         _ => {
             crate::region_commands::NudgeValue::from_menu(label).is_some()
                 || buffer_frames(label).is_some()
@@ -1108,9 +1123,7 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Snap Regions to Absolute Value" => !s.tracks.grid.relative,
         "Show Hidden Tracks" => s.tracks.show_hidden,
         "Show Global Tracks" => crate::track_commands::global_tracks_shown(s),
-        _ if buffer_frames(label).is_some() => {
-            buffer_frames(label) == s.audio_prefs.buffer
-        }
+        _ if buffer_frames(label).is_some() => buffer_frames(label) == s.audio_prefs.buffer,
         _ if crate::region_commands::NudgeValue::from_menu(label).is_some() => {
             crate::region_commands::NudgeValue::from_menu(label) == Some(s.tracks.nudge)
         }
@@ -1118,7 +1131,8 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
             Lang::from_native_name(label) == Some(i18n::current())
         }
         // Always visible in this app.
-        "Show Track Header" | "Show Ruler" | "Show Colors" | "Show Grid" => true,
+        "Show Colors" => s.arrange.colors,
+        "Show Track Header" | "Show Ruler" | "Show Grid" => true,
         _ => false,
     }
 }
@@ -1258,6 +1272,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Unhide All Tracks" => crate::track_commands::unhide_all(p),
         "Show Hidden Tracks" => s.tracks.show_hidden = !s.tracks.show_hidden,
         "Show Global Tracks" => crate::track_commands::toggle_global_tracks(s),
+        "Show Colors" => s.arrange.colors = !s.arrange.colors,
         "Show Editor" => crate::track_commands::toggle_editor(p, s),
         "Color Regions by Track Color" => crate::region_colors::color_by_track(p, s),
         "Delete Unused Tracks" => {
@@ -1961,6 +1976,7 @@ mod tests {
                     s.tracks.show_signatures,
                     s.tracks.grid.on,
                     s.tracks.grid.relative,
+                    s.arrange.colors,
                 ),
                 (i18n::chosen(), i18n::current()),
             )

@@ -1,4 +1,5 @@
 //! Logic Pro's Process Buffer Range: two buffer sizes at once.
+#![allow(dead_code)]
 //!
 //! Live tracks (record-enabled, monitoring, the selected instrument being played, and the Aux
 //! strips they reach) run their plug-ins in the I/O callback at the I/O buffer size, as

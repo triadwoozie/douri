@@ -4,11 +4,11 @@
 //! and provides a pure-Rust built-in time-stretcher and pitch-shifter fallback powered by
 //! `prowave-stretch`.
 
+use crate::voicebank::tone_to_name;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::voicebank::tone_to_name;
 
 /// Arguments for a single phoneme resampler invocation.
 #[derive(Clone, Debug)]
@@ -93,14 +93,11 @@ pub fn run_external_resampler(
 
     let output = cmd.output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Resampler exited with code {:?}: {}",
-                output.status.code(),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "Resampler exited with code {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
 
     read_mono_wav(&item.output_file)
@@ -223,9 +220,12 @@ pub fn read_mono_wav(path: &Path) -> std::io::Result<Vec<f32>> {
         let chunk_size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
         let chunk_data = pos + 8;
         if chunk_id == b"fmt " && chunk_data + 16 <= bytes.len() {
-            audio_format = u16::from_le_bytes(bytes[chunk_data..chunk_data + 2].try_into().unwrap());
-            num_channels = u16::from_le_bytes(bytes[chunk_data + 2..chunk_data + 4].try_into().unwrap());
-            bits_per_sample = u16::from_le_bytes(bytes[chunk_data + 14..chunk_data + 16].try_into().unwrap());
+            audio_format =
+                u16::from_le_bytes(bytes[chunk_data..chunk_data + 2].try_into().unwrap());
+            num_channels =
+                u16::from_le_bytes(bytes[chunk_data + 2..chunk_data + 4].try_into().unwrap());
+            bits_per_sample =
+                u16::from_le_bytes(bytes[chunk_data + 14..chunk_data + 16].try_into().unwrap());
         } else if chunk_id == b"data" {
             data_start = chunk_data;
             data_len = chunk_size.min(bytes.len().saturating_sub(chunk_data));
@@ -285,7 +285,8 @@ pub fn read_mono_wav(path: &Path) -> std::io::Result<Vec<f32>> {
                     let b0 = data[idx];
                     let b1 = data[idx + 1];
                     let b2 = data[idx + 2];
-                    let val = i32::from_le_bytes([b0, b1, b2, if b2 & 0x80 != 0 { 0xFF } else { 0x00 }]);
+                    let val =
+                        i32::from_le_bytes([b0, b1, b2, if b2 & 0x80 != 0 { 0xFF } else { 0x00 }]);
                     sum += val as f32 / 8388608.0;
                 }
                 samples.push(sum / channels as f32);

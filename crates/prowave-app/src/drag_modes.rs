@@ -74,14 +74,8 @@ pub(crate) fn drop(
             Some((t, s0, p.region_len_beats(reg)))
         })
         .collect();
-    let landed = crate::region_edit::drop_regions(
-        p,
-        group,
-        delta,
-        rows,
-        copy,
-        mode == DragMode::XFade,
-    );
+    let landed =
+        crate::region_edit::drop_regions(p, group, delta, rows, copy, mode == DragMode::XFade);
     match mode {
         DragMode::Overlap | DragMode::XFade => {}
         DragMode::NoOverlap => no_overlap(p, &landed),

@@ -223,15 +223,7 @@ fn segmented(
         pos2(left, cy - 14.0),
         vec2(pad_x * 2.0 + seg.x * items.len() as f32, 28.0),
     );
-    crate::liquid_glass::paint_glass_pill(
-        ui,
-        full,
-        14.0,
-        quality,
-        false,
-        None,
-        None,
-    );
+    crate::liquid_glass::paint_glass_pill(ui, full, 14.0, quality, false, None, None);
     let mut hit = None;
     for (i, (draw, on)) in items.iter().enumerate() {
         let r = Rect::from_min_size(
@@ -675,7 +667,13 @@ pub(crate) fn master_volume(
     let cy = rect.center().y;
     // Small speaker icon on the left (14px, #9A9CA2)
     let spk_r = Rect::from_center_size(pos2(rect.left() + 7.0, cy), vec2(14.0, 14.0));
-    crate::icons::paint_regular(g, spk_r, crate::icons::SPEAKER_HIGH, 14.0, Color32::from_rgb(0x9a, 0x9c, 0xa2));
+    crate::icons::paint_regular(
+        g,
+        spk_r,
+        crate::icons::SPEAKER_HIGH,
+        14.0,
+        Color32::from_rgb(0x9a, 0x9c, 0xa2),
+    );
 
     // 104px neutral charcoal pill track (#141416) with 8px gap after speaker icon
     let track_left = rect.left() + 14.0 + 8.0;
@@ -713,7 +711,11 @@ pub(crate) fn master_volume(
 
     // Clean 11px matte silver-grey thumb (#C8CACF)
     let thumb_c = pos2(thumb_x, cy);
-    g.circle_filled(thumb_c + vec2(0.0, 1.0), 5.5, Color32::from_black_alpha(100));
+    g.circle_filled(
+        thumb_c + vec2(0.0, 1.0),
+        5.5,
+        Color32::from_black_alpha(100),
+    );
     g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xc8, 0xca, 0xcf));
     g.circle_stroke(
         thumb_c,
@@ -840,7 +842,10 @@ pub fn control_bar(
     let pad_x = 4.0;
     for i in 0..7 {
         let r = Rect::from_min_size(
-            pos2(transport_capsule.left() + pad_x + i as f32 * btn_w, cy - 12.0),
+            pos2(
+                transport_capsule.left() + pad_x + i as f32 * btn_w,
+                cy - 12.0,
+            ),
             vec2(btn_w, 24.0),
         );
         let cr = CornerRadius {
@@ -861,8 +866,7 @@ pub fn control_bar(
         match i {
             // 0: |< (Go to Beginning)
             0 => {
-                let resp =
-                    ui.interact(r, egui::Id::unique(("transport", "start")), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("transport", "start")), Sense::click());
                 tip(&resp, "start");
                 if resp.hovered() {
                     g.rect_filled(
@@ -916,8 +920,7 @@ pub fn control_bar(
             }
             // 3: ⏹ (Stop)
             3 => {
-                let resp =
-                    ui.interact(r, egui::Id::unique(("transport", "stop")), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("transport", "stop")), Sense::click());
                 tip(&resp, "stop");
                 if resp.hovered() {
                     g.rect_filled(
@@ -937,8 +940,7 @@ pub fn control_bar(
             }
             // 4: ▶ (Play, #30D158 when active)
             4 => {
-                let resp =
-                    ui.interact(r, egui::Id::unique(("transport", "play")), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("transport", "play")), Sense::click());
                 tip(&resp, "play");
                 if p.playing {
                     g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0x30, 0xd1, 0x58));
@@ -992,8 +994,7 @@ pub fn control_bar(
             }
             // 6: ↻ (Cycle, #FFD60A when active)
             _ => {
-                let resp =
-                    ui.interact(r, egui::Id::unique(("transport", "cycle")), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("transport", "cycle")), Sense::click());
                 tip(&resp, "cycle");
                 if p.cycle {
                     g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0xff, 0xd6, 0x0a));
@@ -1012,7 +1013,12 @@ pub fn control_bar(
                             Color32::from_rgba_unmultiplied(255, 255, 255, 18),
                         );
                     }
-                    icon_cycle(&g, r, if resp.hovered() { Color32::WHITE } else { ICON }, false);
+                    icon_cycle(
+                        &g,
+                        r,
+                        if resp.hovered() { Color32::WHITE } else { ICON },
+                        false,
+                    );
                 }
                 if resp.clicked() {
                     p.cycle = !p.cycle;

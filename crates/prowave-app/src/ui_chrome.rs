@@ -101,13 +101,7 @@ pub fn track_type_card(
         Stroke::new(1.0, RIM_COLOR)
     };
 
-    painter.rect(
-        rect,
-        10.0,
-        bg_color,
-        border_stroke,
-        StrokeKind::Inside,
-    );
+    painter.rect(rect, 10.0, bg_color, border_stroke, StrokeKind::Inside);
 
     // Top accent indicator when selected
     if selected {
@@ -143,7 +137,11 @@ pub fn track_type_card(
         Align2::CENTER_CENTER,
         title,
         FontId::proportional(12.5),
-        if selected { TEXT_PRIMARY } else { Color32::from_rgb(0xDC, 0xDC, 0xE0) },
+        if selected {
+            TEXT_PRIMARY
+        } else {
+            Color32::from_rgb(0xDC, 0xDC, 0xE0)
+        },
     );
 
     // Subtitle / description (word-wrapped across ~104px)
@@ -156,11 +154,11 @@ pub fn track_type_card(
             .max_rect(sub_rect)
             .layout(Layout::top_down(Align::Center)),
     );
-    sub_ui.label(
-        egui::RichText::new(subtitle)
-            .size(10.0)
-            .color(if selected { Color32::from_rgb(0xA0, 0xA0, 0xA8) } else { TEXT_MUTED }),
-    );
+    sub_ui.label(egui::RichText::new(subtitle).size(10.0).color(if selected {
+        Color32::from_rgb(0xA0, 0xA0, 0xA8)
+    } else {
+        TEXT_MUTED
+    }));
 
     resp
 }
@@ -307,7 +305,10 @@ pub fn popover_menu_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(Color32::from_rgb(0x22, 0x23, 0x26))
         .corner_radius(8.0)
-        .stroke(Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 25)))
+        .stroke(Stroke::new(
+            1.0,
+            Color32::from_rgba_premultiplied(255, 255, 255, 25),
+        ))
         .shadow(Shadow {
             offset: [0, 6],
             blur: 16,
@@ -357,7 +358,11 @@ pub fn menu_row(
         Align2::LEFT_CENTER,
         label,
         FontId::proportional(12.5),
-        if selected { Color32::WHITE } else { TEXT_PRIMARY },
+        if selected {
+            Color32::WHITE
+        } else {
+            TEXT_PRIMARY
+        },
     );
 
     if let Some(sc) = shortcut {
@@ -366,7 +371,11 @@ pub fn menu_row(
             Align2::RIGHT_CENTER,
             sc,
             FontId::proportional(11.5),
-            if selected { Color32::from_white_alpha(200) } else { TEXT_SECONDARY },
+            if selected {
+                Color32::from_white_alpha(200)
+            } else {
+                TEXT_SECONDARY
+            },
         );
     }
 

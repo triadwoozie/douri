@@ -15,7 +15,24 @@ use crate::UiState;
 use egui::{pos2, vec2, Color32, Rect, Sense, Stroke};
 
 /// The colours of the window.
-pub const PALETTE: [Color32; 16] = theme::TRACK_PALETTE;
+pub const PALETTE: [Color32; 16] = [
+    Color32::from_rgb(0xff, 0x6b, 0x35), // orange
+    Color32::from_rgb(0x2b, 0x29, 0x26), // black cap
+    Color32::from_rgb(0x8f, 0x88, 0x7a), // warm grey
+    Color32::from_rgb(0x7f, 0x8c, 0x6a), // LCD olive
+    Color32::from_rgb(0xc9, 0x8a, 0x2e), // amber
+    Color32::from_rgb(0x5c, 0x6b, 0x78), // slate
+    Color32::from_rgb(0xa2, 0x4b, 0x2a), // rust
+    Color32::from_rgb(0xb7, 0xa8, 0x82), // khaki
+    Color32::from_rgb(0xff, 0x8a, 0x52), // light orange
+    Color32::from_rgb(0x4a, 0x47, 0x41), // graphite
+    Color32::from_rgb(0xc2, 0xbb, 0xab), // stone
+    Color32::from_rgb(0x56, 0x63, 0x45), // moss
+    Color32::from_rgb(0xd9, 0xb3, 0x4c), // mustard
+    Color32::from_rgb(0x3b, 0x4a, 0x5a), // navy grey
+    Color32::from_rgb(0x8a, 0x3a, 0x22), // brick
+    Color32::from_rgb(0x9e, 0x93, 0x78), // sand
+];
 
 /// The regions the window colours: the selected regions that are there.
 fn targets(p: &Project, s: &UiState) -> Vec<(usize, usize)> {

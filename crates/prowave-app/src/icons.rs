@@ -45,11 +45,7 @@ pub const COPY: &str = regular::COPY;
 pub const POWER: &str = regular::POWER;
 pub const LINK: &str = regular::LINK;
 
-fn add_font_bytes_as_family(
-    fonts: &mut egui::FontDefinitions,
-    name: &str,
-    bytes: &'static [u8],
-) {
+fn add_font_bytes_as_family(fonts: &mut egui::FontDefinitions, name: &str, bytes: &'static [u8]) {
     fonts
         .font_data
         .insert(name.into(), egui::FontData::from_static(bytes).into());
@@ -65,11 +61,7 @@ fn add_font_bytes_as_family(
         .insert(egui::FontFamily::Name(name.into()), keys);
 }
 
-fn add_font_bytes_to_fonts(
-    fonts: &mut egui::FontDefinitions,
-    name: &str,
-    bytes: &'static [u8],
-) {
+fn add_font_bytes_to_fonts(fonts: &mut egui::FontDefinitions, name: &str, bytes: &'static [u8]) {
     add_font_bytes_as_family(fonts, name, bytes);
 
     if let Some(font_keys) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
@@ -87,14 +79,7 @@ pub fn install_fonts(fonts: &mut egui::FontDefinitions) {
 
 /// Renders a Phosphor glyph optically centered inside `rect`.
 /// When `fill` is true, the Fill font variant is used; otherwise Regular is used.
-pub fn paint(
-    painter: &Painter,
-    rect: Rect,
-    glyph: &str,
-    size: f32,
-    color: Color32,
-    fill: bool,
-) {
+pub fn paint(painter: &Painter, rect: Rect, glyph: &str, size: f32, color: Color32, fill: bool) {
     let family = if fill {
         FontFamily::Name("phosphor-fill".into())
     } else {
@@ -111,13 +96,7 @@ pub fn paint(
 }
 
 /// Renders a Phosphor glyph optically centered with the Bold font variant.
-pub fn paint_bold(
-    painter: &Painter,
-    rect: Rect,
-    glyph: &str,
-    size: f32,
-    color: Color32,
-) {
+pub fn paint_bold(painter: &Painter, rect: Rect, glyph: &str, size: f32, color: Color32) {
     let font_id = FontId::new(size, FontFamily::Name("phosphor-bold".into()));
     let galley = painter.layout_no_wrap(glyph.to_string(), font_id, color);
     let center = rect.center();

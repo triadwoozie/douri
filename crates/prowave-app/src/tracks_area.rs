@@ -2679,7 +2679,12 @@ pub(crate) fn display_amp(a: f32) -> f32 {
 #[cfg(test)]
 pub(crate) fn region_look_for_test(track: &Track, region: &Region) -> crate::theme::RegionLook {
     let color = region.params.color.unwrap_or(track.color);
-    crate::theme::region_look(color, region.is_audio() || track.kind == TrackKind::Audio, false, false)
+    crate::theme::region_look(
+        color,
+        region.is_audio() || track.kind == TrackKind::Audio,
+        false,
+        false,
+    )
 }
 
 fn draw_peaks(
@@ -2813,7 +2818,10 @@ fn volume_slider(
 ) {
     // Volume slider with embedded green level meter (right-aligned, 10px margin)
     let sl = Rect::from_min_size(
-        pos2(hdr.right() - 10.0 - SLIDER_W, hdr.center().y - SLIDER_H / 2.0),
+        pos2(
+            hdr.right() - 10.0 - SLIDER_W,
+            hdr.center().y - SLIDER_H / 2.0,
+        ),
         vec2(SLIDER_W, SLIDER_H),
     );
     let travel = (sl.left() + SLIDER_H / 2.0, sl.right() - SLIDER_H / 2.0);
@@ -2959,7 +2967,10 @@ fn header(
     let color_bar = Rect::from_min_size(hdr.min, vec2(4.0, hdr.height()));
     let track_color = p.tracks.get(i).map_or(Color32::TRANSPARENT, |t| t.color);
     g.rect_filled(color_bar, 0.0, track_color);
-    let num = Rect::from_min_size(pos2(hdr.left() + 4.0, hdr.top()), vec2(NUM_W - 4.0, hdr.height()));
+    let num = Rect::from_min_size(
+        pos2(hdr.left() + 4.0, hdr.top()),
+        vec2(NUM_W - 4.0, hdr.height()),
+    );
     if show_number {
         g.text(
             num.center(),
@@ -3414,7 +3425,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                         p.selected_track = row;
                         v.select_only(row, ri);
                     }
-                } else if p.tracks[row].kind.has_regions() && p.tracks[row].kind != TrackKind::Audio {
+                } else if p.tracks[row].kind.has_regions() && p.tracks[row].kind != TrackKind::Audio
+                {
                     if let Some(ri) = p.add_empty_region(row, bar) {
                         p.selected_track = row;
                         v.select_only(row, ri);
@@ -3512,13 +3524,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             // The Marquee tool's clicks and drags are the marquee's, and the Solo tool's hold
             // selects nothing (Logic).
             let selects = tool != TrackTool::Marquee;
-            if selects && resp.clicked() && ui.input(|i| i.modifiers.shift || i.modifiers.command)
-            {
+            if selects && resp.clicked() && ui.input(|i| i.modifiers.shift || i.modifiers.command) {
                 v.toggle(ti, ri);
                 p.selected_track = ti;
             } else if (selects && resp.clicked())
-                || (resp.drag_started()
-                    && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
+                || (resp.drag_started() && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
                 || context_click(&resp)
             {
                 if !v.is_selected(ti, ri) {
@@ -4221,15 +4231,25 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         }
     }
 
-    // ---- keyboard: Delete, Cmd/Ctrl+R
+    // ---- keyboard: Delete (Command-R, Repeat, is a key command: `key_commands`)
+    let keys_free = !ui.ctx().egui_wants_keyboard_input()
+        && !s.piano_focus
+        && !s.typing.open
+        && s.track_dialog.is_none()
+        && s.chooser.is_none()
+        && s.settings_tab.is_none();
+    if keys_free && v.tool_menu.is_none() {
+        if let Some(pt) = hover.filter(|pt| full.contains(*pt)) {
+            if take_plain_key(ui, Key::T) {
+                v.tool_menu = Some(pt);
+            }
+        }
+    }
     if !ui.ctx().egui_wants_keyboard_input() && !s.piano_focus {
-        let (del, rep) = ui.input(|i| {
-            (
-                !i.modifiers.command
-                    && !i.modifiers.ctrl
-                    && (i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)),
-                (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(Key::R),
-            )
+        let del = ui.input(|i| {
+            !i.modifiers.command
+                && !i.modifiers.ctrl
+                && (i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace))
         });
         if del {
             let tracks = p.tracks.len();
@@ -4238,9 +4258,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 ui.ctx().request_repaint();
                 return;
             }
-        }
-        if rep {
-            repeat_selected(p, v, &s.auto);
         }
     }
 
@@ -4294,7 +4311,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     }
     // Crisp 1.5px divider separating headers column and the void below from the timeline
     gh.line_segment(
-        [pos2(headers.right(), headers.top()), pos2(headers.right(), headers.bottom())],
+        [
+            pos2(headers.right(), headers.top()),
+            pos2(headers.right(), headers.bottom()),
+        ],
         Stroke::new(1.5, Color32::from_rgb(0x10, 0x11, 0x13)),
     );
     if let Some(action) = picked {
@@ -4537,6 +4557,27 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             crate::region_solo::end(p, was);
         }
     }
+}
+
+/// Takes a press of `key` with no modifier held out of this frame's input; returns whether
+/// there was one.
+fn take_plain_key(ui: &Ui, key: Key) -> bool {
+    let mut found = false;
+    ui.input_mut(|i| {
+        i.events.retain(|e| match e {
+            egui::Event::Key {
+                key: k,
+                pressed,
+                modifiers,
+                ..
+            } if *k == key && modifiers.is_none() => {
+                found |= *pressed;
+                false
+            }
+            _ => true,
+        });
+    });
+    found
 }
 
 #[cfg(test)]

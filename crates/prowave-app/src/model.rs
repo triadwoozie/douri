@@ -1940,8 +1940,8 @@ impl Project {
         self.region_end_beats(r) - self.region_start_beats(r)
     }
 
-/// Most repeats one looped region plays (a guard against a tiny region looped for hours).
-pub const MAX_LOOP_REPEATS: usize = 4096;
+    /// Most repeats one looped region plays (a guard against a tiny region looped for hours).
+    pub const MAX_LOOP_REPEATS: usize = 4096;
 
     pub fn region_loop_end_beats(&self, r: &Region) -> f64 {
         self.region_end_beats(r) + f64::from(r.params.loop_beats.max(0.0))

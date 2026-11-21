@@ -847,7 +847,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
     for t in &doc.tracks {
         let mut regions = Vec::new();
         for r in &t.regions {
-            let missing = None;
+            let mut missing = None;
             let audio = match &r.audio {
                 None => None,
                 Some(zip_path) if !prowave_project::is_media_path(zip_path) => {
@@ -859,7 +859,9 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     let own = media_dir.join(zip_path);
                     let outside = Path::new(&r.audio_source);
                     let found = AudioFile::open(&own).or_else(|e| {
-                        if !r.audio_source.is_empty() && (outside.is_file() || crate::import::is_audio_path(outside)) {
+                        if !r.audio_source.is_empty()
+                            && (outside.is_file() || crate::import::is_audio_path(outside))
+                        {
                             AudioFile::open(outside)
                         } else {
                             Err(e)
@@ -881,7 +883,14 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                                 outside.to_path_buf()
                             };
                             warnings.push(shown_media(&source));
-                            continue;
+                            if r.audio_source.is_empty() {
+                                continue;
+                            }
+                            missing = Some(crate::model::MissingAudio {
+                                source,
+                                flex: r.flex.clone(),
+                            });
+                            None
                         }
                     }
                 }
@@ -1433,9 +1442,10 @@ pub fn bounces_dir() -> PathBuf {
 }
 
 pub fn shown_media(source: &Path) -> String {
-    source
-        .file_name()
-        .map_or_else(|| source.display().to_string(), |n| n.to_string_lossy().into_owned())
+    source.file_name().map_or_else(
+        || source.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
 }
 
 /// A track's input from a project file, which can hold any number.
@@ -1543,9 +1553,7 @@ pub fn save_project(p: &Project, path: &Path) -> Result<PathBuf, prowave_project
     }
     let (doc, media) = to_doc(p);
     prowave_project::save(&path, &doc, &media)?;
-    let held = media
-        .iter()
-        .map(|m| (m.source.clone(), m.zip_path.clone()));
+    let held = media.iter().map(|m| (m.source.clone(), m.zip_path.clone()));
     note_archived(&path, held);
     Ok(path)
 }
