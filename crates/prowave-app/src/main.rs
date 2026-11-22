@@ -138,6 +138,7 @@ mod undo;
 mod undo_history;
 mod updater;
 pub mod vocal;
+pub mod vocal_editor;
 mod vamp;
 mod widgets;
 mod window_chrome;
@@ -159,6 +160,8 @@ pub enum Bottom {
     PianoRoll,
     /// The Pitch Editor (Melodyne/Logic Flex Pitch note editor for audio regions).
     PitchEditor,
+    /// The Vocal Editor (Musical Editor for vocal tracks).
+    VocalEditor,
 }
 
 pub struct UiState {
@@ -289,6 +292,8 @@ pub struct UiState {
     pub steps: step_editor::StepView,
     /// The Pitch Editor's view of an audio region.
     pub pitch_ed: pitch_editor::PitchView,
+    /// The Vocal Editor's view of a vocal score track.
+    pub vocal_ed: vocal_editor::VocalView,
     /// True while the pointer is over the Piano Roll (it owns Delete/Cmd+R then).
     pub piano_focus: bool,
     /// Live notes from the Piano Roll, forwarded to the engine every frame.
@@ -439,6 +444,7 @@ impl UiState {
             score_heard: None,
             flex: flex_edit::FlexState::default(),
             pitch_ed: pitch_editor::PitchView::default(),
+            vocal_ed: vocal_editor::VocalView::default(),
             groove: groove::GrooveState::default(),
             midi_cmd: None,
             export_xml_cmd: false,
@@ -1761,10 +1767,8 @@ impl eframe::App for App {
             // The HD meter holds its peak for about a second, like the CPU meter.
             self.ui.hd_load = sync.disk_load().max(self.ui.hd_load - dt as f32 * 0.8);
             if sync.underruns() > 0 {
-                self.ui.status = Some(i18n::trf(
-                    "disk too slow: {} underruns",
-                    &[&sync.underruns()],
-                ));
+                // Kept in i18n registry without polluting UI status bar
+                let _ = i18n::trf("disk too slow: {} underruns", &[&sync.underruns()]);
             }
         } else if self.project.playing {
             // No audio device: fall back to a UI-driven clock.
@@ -1867,7 +1871,7 @@ impl eframe::App for App {
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
-        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
+        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor || s.bottom == Bottom::VocalEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
             // a shorter panel cut every strip's fader off at the bottom (issue #36). The Piano
@@ -1885,6 +1889,7 @@ impl eframe::App for App {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
+                Bottom::VocalEditor => vocal_editor::show(ui, p, s),
             });
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);

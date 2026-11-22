@@ -1015,10 +1015,26 @@ impl VocalState {
         })
     }
 
+    pub fn is_rendering(&self, link: Option<u64>) -> bool {
+        if let Some(l) = link {
+            self.tracks.get(&l).is_some_and(|t| t.job.is_some())
+        } else {
+            self.tracks.values().any(|t| t.job.is_some())
+        }
+    }
+
     /// The order to try the places in for `place`.
     fn order(&self, _: Place) -> Vec<Place> {
         vec![Place::ThisMac]
     }
+}
+
+/// Trigger an immediate re-render of the vocal score track for the given link.
+pub fn trigger_render(s: &mut crate::UiState, link: u64) {
+    if let Some(t) = s.vocal.tracks.get_mut(&link) {
+        t.done = None;
+    }
+    s.vocal.force = true;
 }
 
 /// A new link: random enough that two tracks never share one.
@@ -1311,8 +1327,7 @@ pub fn frame(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
             }
         }
     }
-    if let Some(progress) = st.progress() {
-        s.status = Some(progress);
+    if let Some(_progress) = st.progress() {
         ctx.request_repaint_after(Duration::from_millis(250));
     } else if st
         .tracks

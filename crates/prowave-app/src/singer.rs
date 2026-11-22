@@ -532,7 +532,7 @@ pub fn frame(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
             Some(j.progress.lock().map(|x| x.clone()).unwrap_or_default())
         })
     }) {
-        s.status = Some(trf("Singing: {}", &[&step]));
+        // Singing progress kept internal to the vocal editor rather than spamming top status
     }
     show_window(ctx, p, s);
 }

@@ -234,7 +234,7 @@ const MIN_THUMB: f32 = 24.0;
 /// Length of a scrollbar thumb on a bar `track` long, for a `view` of `content`. Never shorter
 /// than [`MIN_THUMB`] unless the bar itself is, and never longer than the bar: a panel dragged
 /// very small must not crash the editor.
-fn thumb_len(track: f32, view: f32, content: f32) -> f32 {
+pub(crate) fn thumb_len(track: f32, view: f32, content: f32) -> f32 {
     let track = track.max(0.0);
     let share = if content > 0.0 { view / content } else { 1.0 };
     let len = track * share;
@@ -249,12 +249,12 @@ fn id(key: impl std::hash::Hash + std::fmt::Debug) -> egui::Id {
     egui::Id::unique(("piano_roll", key))
 }
 
-fn is_black(pitch: i32) -> bool {
+pub(crate) fn is_black(pitch: i32) -> bool {
     matches!(pitch.rem_euclid(12), 1 | 3 | 6 | 8 | 10)
 }
 
 /// Logic octave naming: pitch 60 is C3.
-fn c_label(pitch: i32) -> String {
+pub(crate) fn c_label(pitch: i32) -> String {
     format!("C{}", pitch / 12 - 2)
 }
 
@@ -278,7 +278,7 @@ pub(crate) fn target_region(p: &Project, s: &UiState) -> Option<(usize, usize)> 
 fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<usize> {
     let mut clicked = None;
     g.rect_filled(bar, 0.0, PANEL_BG);
-    let tabs = [tr("Piano Roll"), tr("Step Sequencer")];
+    let tabs = [tr("Piano Roll"), "Vocal Editor", tr("Step Sequencer")];
     let font = FontId::proportional(12.5);
     let widths: Vec<f32> = tabs
         .iter()
@@ -541,11 +541,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     });
     // Ordinary MIDI regions can be shown in Piano Roll or Step Sequencer
     let is_step = generated.is_some() || s.score_tab;
-    let active = if is_step { 1 } else { 0 };
+    let active = if is_step { 2 } else { 0 };
     if let Some(i) = tabs(ui, &g, tab_bar, active, true) {
-        s.score_tab = i == 1;
+        match i {
+            0 => {
+                s.score_tab = false;
+            }
+            1 => {
+                s.bottom = crate::Bottom::VocalEditor;
+                return;
+            }
+            2 => {
+                s.score_tab = true;
+            }
+            _ => {}
+        }
     }
-    if let (Some((ti, ri)), true) = (region, active == 1) {
+    if let (Some((ti, ri)), true) = (region, active == 2) {
         s.piano_focus = ui
             .input(|i| i.pointer.hover_pos())
             .is_some_and(|pt| area.contains(pt));

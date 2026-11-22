@@ -1230,8 +1230,9 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         return on;
     }
     match label {
-        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor),
+        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor),
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
+        "Vocal Editor" | "Show Vocal Editor" => s.bottom == Bottom::VocalEditor,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,
         "Show Library" => s.show_library,
@@ -1418,6 +1419,13 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 Bottom::Mixer
             } else {
                 Bottom::PianoRoll
+            }
+        }
+        "Vocal Editor" | "Show Vocal Editor" => {
+            s.bottom = if s.bottom == Bottom::VocalEditor {
+                Bottom::Mixer
+            } else {
+                Bottom::VocalEditor
             }
         }
         "Pitch Editor" | "Show Pitch Editor" => {
@@ -2082,12 +2090,15 @@ pub fn status_line(ui: &mut egui::Ui, p: &Project, s: &crate::UiState) {
         Color32::from_rgb(0xff, 0xb0, 0x40)
     };
     if let Some(msg) = &s.status {
-        let first_line = msg.lines().next().unwrap_or(msg).trim();
-        let label = egui::Label::new(egui::RichText::new(first_line).color(warn).size(11.5))
-            .truncate()
-            .wrap_mode(egui::TextWrapMode::Truncate);
-        ui.add_sized(vec2(ui.available_width().min(220.0), 18.0), label)
-            .on_hover_text(msg);
+        // Suppress transient background rendering and underrun spam from the calm top menu bar
+        if !msg.contains("Singing:") && !msg.contains("underrun") {
+            let first_line = msg.lines().next().unwrap_or(msg).trim();
+            let label = egui::Label::new(egui::RichText::new(first_line).color(warn).size(11.5))
+                .truncate()
+                .wrap_mode(egui::TextWrapMode::Truncate);
+            ui.add_sized(vec2(ui.available_width().min(220.0), 18.0), label)
+                .on_hover_text(msg);
+        }
     }
     // The engine plays only its first MAX_TRACKS tracks; say so instead of failing silently.
     let max = prowave_engine::MAX_TRACKS;
