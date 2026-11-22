@@ -13,7 +13,11 @@
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="rust">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational" alt="platform">
 </p>
-
+<p align="center">
+  <a href="https://github.com/triadwoozie/douri/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Latest%20Release-1269cc?style=for-the-badge&logo=github&logoColor=white" alt="Download Latest Release">
+  </a>
+</p>
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
