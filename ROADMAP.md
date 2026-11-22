@@ -189,7 +189,3 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 | Plug-in Delay Compensation (PDC) | Sample-accurate (`< -90 dB` null residual) | `prowave-engine` PDC null test suite |
 | Cold startup & idle footprint | `< 400 ms` startup, `< 150 MB` idle RSS | Release binary RSS & startup benchmark |
 | Workspace code quality | Zero lints, formatting diffs, or test regressions | `cargo xtask check` (`fmt`, `clippy -D warnings`, `test`, `rt-check`) |
-
-```
-
-```

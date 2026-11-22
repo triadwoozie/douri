@@ -163,41 +163,34 @@ jobs:
       - name: Unpack release binary
         run: |
           tar -xzf prowave-linux-x86_64.tar.gz
-          install -D -m 755 prowave-linux-x86_64/prowave target/release/prowave
+          install -D -m 755 prowave-linux-x86_64/prowave target/release/douri
           echo "VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/prowave-app/Cargo.toml | head -1)" >> "$GITHUB_ENV"
       - name: Build .rpm
         run: |
           sudo apt-get update
           sudo apt-get install -y rpm
-          src=$(mktemp -d)
-          cp target/release/prowave dist/linux/prowave-studio.desktop dist/linux/prowave.png \
-            dist/linux/prowave-mime.xml "$src/"
-          cp dist/README-linux.txt "$src/README.txt"
-          rpmbuild -bb dist/linux/prowave-studio.spec \
-            --define "_sourcedir $src" --define "_rpmdir $PWD/rpm" --define "pkg_version $VERSION"
-          mv rpm/x86_64/prowave-studio-*.rpm .
-          rpm -qpi prowave-studio-*.rpm
-          rpm -qpl prowave-studio-*.rpm
-          # The ALSA dependency must have been found from the ELF.
-          reqs=$(rpm -qpR prowave-studio-*.rpm)
+          dist/linux/build-rpm.sh "$VERSION"
+          mv dist/dori-*.rpm .
+          rpm -qpi dori-*.rpm
+          rpm -qpl dori-*.rpm
+          reqs=$(rpm -qpR dori-*.rpm)
           echo "$reqs"
           grep -qF 'libasound.so.2()(64bit)' <<<"$reqs"
-      # Installs into a clean Fedora container, so dnf has to resolve every dependency itself.
       - name: Check .rpm installs and removes on Fedora
         run: |
           docker run --rm -v "$PWD:/pkg" fedora:41 sh -euc '
             dnf install -y shared-mime-info desktop-file-utils
-            dnf install -y /pkg/prowave-studio-*.x86_64.rpm
-            test -x /usr/bin/prowave
-            if ldd /usr/bin/prowave | grep "not found"; then exit 1; fi
-            grep -q application/x-prowave /usr/share/mime/globs2
-            desktop-file-validate /usr/share/applications/prowave-studio.desktop
-            dnf remove -y prowave-studio
-            test ! -e /usr/bin/prowave'
+            dnf install -y /pkg/dori-*.x86_64.rpm
+            test -x /usr/bin/douri
+            if ldd /usr/bin/douri | grep "not found"; then exit 1; fi
+            grep -q application/x-douri /usr/share/mime/globs2 || grep -q douri /usr/share/mime/packages/douri.xml
+            desktop-file-validate /usr/share/applications/io.github.triadwoozie.douri.desktop
+            dnf remove -y dori
+            test ! -e /usr/bin/douri'
       - uses: actions/upload-artifact@v4
         with:
-          name: prowave-linux-rpm
-          path: prowave-studio-*.x86_64.rpm
+          name: dori-linux-rpm
+          path: dori-*.x86_64.rpm
           if-no-files-found: error
 
   linux-appimage:
@@ -420,7 +413,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: prowave-*
           merge-multiple: true
       - name: Publish the Release
         env:
@@ -441,6 +433,6 @@ jobs:
               | { grep '^SHA' || true; } \
               | while read -r name; do gh release delete-asset "$TAG" "$name" --yes; done
           else
-            gh release create "$TAG" artifacts/* --title "Pro Wave ${TAG#v}" \
+            gh release create "$TAG" artifacts/* --title "Dōri ${TAG#v}" \
               --notes-file notes.md --prerelease --verify-tag
           fi

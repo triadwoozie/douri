@@ -1,9 +1,9 @@
 [package]
 name = "xtask"
-version = "0.3.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 publish = false
-description = "Pro Wave developer tasks: `cargo xtask check`, `wasm-check`, `rt-check`, `bench`, `status`, `package-installers`"
+description = "Dōri developer tasks: `cargo xtask check`, `wasm-check`, `rt-check`, `bench`, `status`, `package-installers`"
 license = "GPL-3.0-or-later"
 
 [dependencies]

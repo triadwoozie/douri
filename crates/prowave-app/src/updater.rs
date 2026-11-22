@@ -57,23 +57,84 @@ pub struct Release {
 
 // ------------------------------------------------------------------ versions and releases
 
-/// `1.2.3`, `v1.2.3` or `1.2.3-beta` as numbers.
-pub fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SemVer {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    pub prerelease: Option<String>,
+}
+
+impl PartialOrd for SemVer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SemVer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.major, self.minor, self.patch).cmp(&(other.major, other.minor, other.patch)) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match (&self.prerelease, &other.prerelease) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(a), Some(b)) => compare_prerelease(a, b),
+        }
+    }
+}
+
+fn compare_prerelease(a: &str, b: &str) -> std::cmp::Ordering {
+    let a_parts: Vec<&str> = a.split('.').collect();
+    let b_parts: Vec<&str> = b.split('.').collect();
+    for (pa, pb) in a_parts.iter().zip(b_parts.iter()) {
+        let na = pa.parse::<u64>().ok();
+        let nb = pb.parse::<u64>().ok();
+        let ord = match (na, nb) {
+            (Some(num_a), Some(num_b)) => num_a.cmp(&num_b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => pa.cmp(pb),
+        };
+        if ord != std::cmp::Ordering::Equal {
+            return ord;
+        }
+    }
+    a_parts.len().cmp(&b_parts.len())
+}
+
+pub fn parse_semver(text: &str) -> Option<SemVer> {
     let core = text.trim().trim_start_matches('v');
-    let core = core.split(['-', '+']).next()?;
-    let mut parts = core.split('.');
+    let (core, _build) = core.split_once('+').unwrap_or((core, ""));
+    let (ver, pre) = match core.split_once('-') {
+        Some((v, p)) => (v, Some(p.to_string())),
+        None => (core, None),
+    };
+    let mut parts = ver.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     let patch = parts.next().map_or(Some(0), |p| p.parse().ok())?;
     if parts.next().is_some() {
         return None;
     }
-    Some((major, minor, patch))
+    Some(SemVer {
+        major,
+        minor,
+        patch,
+        prerelease: pre,
+    })
+}
+
+/// `1.2.3`, `v1.2.3` or `1.2.3-beta` as numbers.
+pub fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+    parse_semver(text).map(|v| (v.major, v.minor, v.patch))
 }
 
 /// Whether `candidate` is a newer version than `current`.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
-    match (parse_version(candidate), parse_version(current)) {
+    match (parse_semver(candidate), parse_semver(current)) {
         (Some(a), Some(b)) => a > b,
         _ => false,
     }
@@ -97,34 +158,49 @@ impl Kind {
         match self {
             Kind::Windows => {
                 (name.starts_with("Dori-Setup-")
+                    || name.starts_with("Dori-")
                     || name.starts_with("douri-")
                     || name.starts_with("prowave-"))
-                    && (name.ends_with("-windows-x86_64.zip") || name.ends_with("-x86_64.exe"))
+                    && (name.ends_with("-windows-x86_64.zip")
+                        || name.ends_with("-win64-portable.zip")
+                        || name.ends_with("-x86_64.exe"))
             }
             Kind::Mac => {
-                (name.starts_with("douri-") || name.starts_with("prowave-"))
+                (name.starts_with("Dori-")
+                    || name.starts_with("douri-")
+                    || name.starts_with("prowave-"))
                     && name.ends_with("-macos-universal.zip")
             }
             Kind::AppImage => {
                 (name.starts_with("Dori-Setup-")
+                    || name.starts_with("Dori-")
                     || name.starts_with("Douri-")
                     || name.starts_with("Pro_Wave-"))
                     && name.ends_with("-x86_64.AppImage")
             }
             Kind::Tarball => {
-                (name.starts_with("douri-") || name.starts_with("prowave-"))
-                    && name.ends_with("-linux-x86_64.tar.gz")
+                (name.starts_with("Dori-")
+                    || name.starts_with("douri-")
+                    || name.starts_with("prowave-"))
+                    && (name.ends_with("-linux-x86_64.tar.gz")
+                        || name.ends_with("-linux-x86_64-portable.tar.gz"))
             }
             Kind::Deb => {
-                (name.starts_with("douri") || name.starts_with("prowave"))
+                (name.starts_with("dori")
+                    || name.starts_with("douri")
+                    || name.starts_with("prowave"))
                     && name.ends_with("_amd64.deb")
             }
             Kind::Rpm => {
-                (name.starts_with("douri") || name.starts_with("prowave"))
-                    && name.ends_with(".x86_64.rpm")
+                (name.starts_with("dori")
+                    || name.starts_with("douri")
+                    || name.starts_with("prowave"))
+                    && (name.ends_with(".x86_64.rpm") || name.ends_with(".rpm"))
             }
             Kind::Flatpak => {
-                (name.starts_with("douri") || name.starts_with("prowave"))
+                (name.starts_with("dori")
+                    || name.starts_with("douri")
+                    || name.starts_with("prowave"))
                     && name.ends_with("-x86_64.flatpak")
             }
         }
@@ -218,7 +294,7 @@ pub fn detect(
                 };
             }
             exe.file_name()
-                .is_some_and(|n| n == "prowave")
+                .is_some_and(|n| n == "prowave" || n == "douri")
                 .then(|| Target::new(Kind::Tarball, exe))
         }
         _ => None,
@@ -233,7 +309,11 @@ fn owning_package(exe: &Path) -> Option<Kind> {
             .arg(exe)
             .output()
             .is_ok_and(|o| {
-                o.status.success() && String::from_utf8_lossy(&o.stdout).contains("prowave-studio")
+                let out = String::from_utf8_lossy(&o.stdout);
+                o.status.success()
+                    && (out.contains("prowave-studio")
+                        || out.contains("dori")
+                        || out.contains("douri"))
             })
     };
     if owns("dpkg", &["-S"]) {
@@ -292,20 +372,25 @@ pub fn parse_releases(
     let list = value
         .as_array()
         .ok_or_else(|| "unexpected answer from GitHub".to_string())?;
-    // The list is newest first; drafts and prereleases are not offered.
+
+    // Prereleases are offered only when the current running version is also a prerelease.
+    let allow_prereleases = current.contains('-');
+
+    // The list is newest first; drafts and (unless allowed) prereleases are not offered.
     let newest = list
         .iter()
         .filter(|r| !r["draft"].as_bool().unwrap_or(false))
-        .filter(|r| !r["prerelease"].as_bool().unwrap_or(false))
+        .filter(|r| allow_prereleases || !r["prerelease"].as_bool().unwrap_or(false))
         .filter_map(|r| {
             let tag = r["tag_name"].as_str()?;
-            // Only plain `1.2.3` tags: a `-rc1` build is not the version it is a candidate for.
-            if tag.contains('-') {
+            if !allow_prereleases
+                && (tag.contains('-') || r["prerelease"].as_bool().unwrap_or(false))
+            {
                 return None;
             }
-            parse_version(tag).map(|v| (v, r))
+            parse_semver(tag).map(|v| (v, r))
         })
-        .max_by_key(|(v, _)| *v);
+        .max_by(|(v1, _), (v2, _)| v1.cmp(v2));
     let Some((_, release)) = newest else {
         return Ok(None);
     };
@@ -483,13 +568,18 @@ pub fn unpack_from_tarball(tarball: &Path, dest: &Path) -> Result<(), String> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
     for entry in archive.entries().map_err(|e| e.to_string())? {
         let mut entry = entry.map_err(|e| e.to_string())?;
-        let is_program = entry
+        let entry_path = entry
             .path()
             .map_err(|e| e.to_string())?
             .to_string_lossy()
-            .replace('\\', "/")
-            .trim_start_matches("./")
-            == "prowave-linux-x86_64/prowave";
+            .replace('\\', "/");
+        let path_str = entry_path.trim_start_matches("./");
+        let is_program = path_str == "prowave-linux-x86_64/prowave"
+            || path_str == "douri-linux-x86_64/douri"
+            || path_str == "prowave"
+            || path_str == "douri"
+            || ((path_str.starts_with("Dori-") || path_str.starts_with("douri-"))
+                && (path_str.ends_with("/douri") || path_str.ends_with("/prowave")));
         if is_program && entry.header().entry_type().is_file() {
             return copy_program(&mut entry, dest);
         }
@@ -1869,6 +1959,29 @@ mod tests {
         assert_eq!(release.version, "0.1.9", "the beta is skipped");
         let only_beta = r#"[{"tag_name":"v0.2.0","draft":false,"prerelease":true,"body":"","html_url":"x","assets":[]}]"#;
         assert_eq!(parse_releases(only_beta, "0.1.8", None).unwrap(), None);
+    }
+
+    #[test]
+    fn alpha_and_prereleases_are_offered_when_running_prerelease() {
+        let json = r#"[
+          {"tag_name":"v0.1.0-alpha.1","draft":false,"prerelease":true,"body":"alpha 1","html_url":"https://github.com/triadwoozie/douri/releases/tag/v0.1.0-alpha.1","assets":[
+            {"name":"Dori-Setup-0.1.0-alpha.1-x86_64.AppImage","browser_download_url":"https://github.com/dl/app.AppImage","size":12345}
+          ]}
+        ]"#;
+        let release = parse_releases(json, "0.1.0-alpha.0", Some(Kind::AppImage))
+            .unwrap()
+            .unwrap();
+        assert_eq!(release.version, "0.1.0-alpha.1");
+        assert_eq!(
+            release.asset.unwrap().name,
+            "Dori-Setup-0.1.0-alpha.1-x86_64.AppImage"
+        );
+
+        // Same version is not offered
+        assert_eq!(
+            parse_releases(json, "0.1.0-alpha.1", Some(Kind::AppImage)).unwrap(),
+            None
+        );
     }
 
     #[test]

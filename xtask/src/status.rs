@@ -1,4 +1,4 @@
-//! `cargo xtask status`: how far Pro Wave has come, for the README. Counts the menu entries
+//! `cargo xtask status`: how far Dōri has come, for the README. Counts the menu entries
 //! that work (what `menus::enabled` turns on) and the ROADMAP.md checkboxes of the phases, draws
 //! `docs/status.svg` and rewrites the block between the status markers in README.md.
 use std::fmt::Write as _;
@@ -113,6 +113,10 @@ fn phase_name(heading: &str) -> String {
     if let Some(name) = heading.strip_prefix("### Platform: ") {
         return name.to_string();
     }
+    if let Some(name) = heading.strip_prefix("### Shipped in ") {
+        let name = name.split(" (").next().unwrap_or(name);
+        return format!("Shipped {name}");
+    }
     let text = heading.trim_start_matches("### Phase ");
     let (number, title) = text.split_once(": ").unwrap_or(("", text));
     let title = title.split(" (").next().unwrap_or(title);
@@ -126,7 +130,10 @@ fn roadmap_groups(roadmap: &str) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
     let mut inside = false;
     for line in roadmap.lines() {
-        if line.starts_with("### Phase ") || line.starts_with("### Platform: ") {
+        if line.starts_with("### Phase ")
+            || line.starts_with("### Shipped in ")
+            || line.starts_with("### Platform: ")
+        {
             inside = true;
             groups.push(Group {
                 name: phase_name(line),
@@ -135,11 +142,14 @@ fn roadmap_groups(roadmap: &str) -> Vec<Group> {
         } else if line.starts_with("## ") {
             inside = false;
         } else if let (true, Some(group)) = (inside, groups.last_mut()) {
-            let state = match line.get(..6) {
-                Some("- [x] ") => State::Done,
-                Some("- [~] ") => State::Partial,
-                Some("- [ ] ") => State::Todo,
-                _ => continue,
+            let state = if line.starts_with("- [x] ") || line.starts_with("* [x] ") {
+                State::Done
+            } else if line.starts_with("- [~] ") || line.starts_with("* [~] ") {
+                State::Partial
+            } else if line.starts_with("- [ ] ") || line.starts_with("* [ ] ") {
+                State::Todo
+            } else {
+                continue;
             };
             group.items.push(state);
         }
@@ -370,7 +380,7 @@ fn block(menus: &[Group], roadmap: &[Group]) -> String {
         )
     };
     format!(
-        "{START}\n![Pro Wave status: menu entries and roadmap items, done and to do]({SVG})\n\n\
+        "{START}\n![Dōri status: menu entries and roadmap items, done and to do]({SVG})\n\n\
          | | Done | Started | Total | Done % |\n| --- | ---: | ---: | ---: | ---: |\n{}{}{END}",
         row("Menu entries", menus),
         row("Roadmap items", roadmap),
@@ -388,6 +398,23 @@ fn replace_block(readme: &str, block: &str) -> Option<String> {
     Some(format!("{}{block}{}", &readme[..start], &readme[end..]))
 }
 
+fn to_json(groups: &[Group]) -> String {
+    let mut out = String::from("[\n");
+    for (i, g) in groups.iter().enumerate() {
+        let comma = if i + 1 < groups.len() { "," } else { "" };
+        let escaped = g.name.replace('\\', "\\\\").replace('"', "\\\"");
+        let _ = writeln!(
+            out,
+            r#"    {{"name": "{escaped}", "done": {}, "prog": {}, "rem": {}}}{comma}"#,
+            g.count(State::Done),
+            g.count(State::Partial),
+            g.count(State::Todo),
+        );
+    }
+    out.push_str("  ]");
+    out
+}
+
 /// Writes the picture and the README block. Returns what went wrong, if anything.
 pub fn run(root: &Path) -> Result<(), String> {
     let read = |path: &str| {
@@ -403,7 +430,41 @@ pub fn run(root: &Path) -> Result<(), String> {
     if total(&menus) == 0 || total(&roadmap) == 0 {
         return Err("no menu entries or roadmap items found".into());
     }
-    std::fs::write(root.join(SVG), svg(&menus, &roadmap)).map_err(|e| format!("{SVG}: {e}"))?;
+
+    let json_payload = format!(
+        "{{\n  \"menu_coverage\": {},\n  \"roadmap_progress\": {}\n}}\n",
+        to_json(&menus),
+        to_json(&roadmap)
+    );
+
+    let script = root.join("scripts").join("generate_status_svg.py");
+    let mut py_ok = false;
+    if script.is_file() {
+        let child = std::process::Command::new("python3")
+            .arg(&script)
+            .arg("--input")
+            .arg("-")
+            .arg("--output")
+            .arg(root.join(SVG))
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+
+        if let Ok(mut c) = child {
+            use std::io::Write;
+            if let Some(mut stdin) = c.stdin.take() {
+                let _ = stdin.write_all(json_payload.as_bytes());
+            }
+            if let Ok(status) = c.wait() {
+                if status.success() {
+                    py_ok = true;
+                }
+            }
+        }
+    }
+
+    if !py_ok {
+        std::fs::write(root.join(SVG), svg(&menus, &roadmap)).map_err(|e| format!("{SVG}: {e}"))?;
+    }
     let readme_path = root.join("README.md");
     let readme = std::fs::read_to_string(&readme_path).map_err(|e| format!("README.md: {e}"))?;
     let updated = replace_block(&readme, &block(&menus, &roadmap))

@@ -357,8 +357,9 @@ fn main() -> ExitCode {
             }
         },
         "package-installers" => package_installers::run(&root()),
+        "package-rpm" => package_installers::build_rpm(&root()),
         _ => {
-            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status|package-installers>");
+            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status|package-installers|package-rpm>");
             false
         }
     };

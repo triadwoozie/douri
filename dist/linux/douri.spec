@@ -6,10 +6,10 @@
 %global __strip /bin/true
 %global _build_id_links none
 
-Name:           douri
+Name:           dori
 Version:        %{pkg_version}
 Release:        1
-Summary:        Music production studio in the style of Logic Pro
+Summary:        Pure Rust digital audio workstation
 License:        GPL-3.0-or-later
 URL:            https://github.com/triadwoozie/douri
 ExclusiveArch:  x86_64

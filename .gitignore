@@ -13,6 +13,8 @@
 /dist/Douri.AppDir/
 /dist/deb/
 /dist/staging/
+/dist/release-*/
+/dist/linux/runtime-*
 /.wineprefix/
 .wineprefix/
 
@@ -41,3 +43,7 @@ Cache/
 *.peak
 *.tmp
 *.bak
+
+# Python cache
+__pycache__/
+*.pyc

@@ -19,6 +19,7 @@
   </a>
 </p>
 <p align="center">
+  <a href="#download">Download</a> •
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#sound-libraries">Sound Libraries</a> •
@@ -42,6 +43,21 @@
   </tr>
 </table>
 
+## Download
+
+Official release packages for **v0.1.0-alpha.1**:
+
+| Package | Platform | Details |
+| :--- | :--- | :--- |
+| [**`Dori-Setup-0.1.0-alpha.1-x86_64.exe`**](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/Dori-Setup-0.1.0-alpha.1-x86_64.exe) | Windows 10/11 (x64) | **For most Windows users.** Guided dark minimal setup wizard that installs Dōri to `%LOCALAPPDATA%\Programs\Dori`, configures default language, registers `.douri` project file associations, and adds Start Menu/Desktop shortcuts (no administrator privileges required). |
+| [**`Dori-0.1.0-alpha.1-win64-portable.zip`**](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/Dori-0.1.0-alpha.1-win64-portable.zip) | Windows (x64 Portable) | **For USB drives or portable use.** Extract anywhere and run `douri.exe` directly without modifying the registry or system paths. |
+| [**`Dori-Setup-0.1.0-alpha.1-x86_64.AppImage`**](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/Dori-Setup-0.1.0-alpha.1-x86_64.AppImage) | Linux (All Distros) | **For most Linux desktop users (Ubuntu, Fedora, Arch, Debian, openSUSE).** Interactive dark minimal setup wizard that installs Dōri cleanly to `~/.local`, sets language preferences, and registers desktop and `.douri` MIME integrations. |
+| [**`Dori-0.1.0-alpha.1-linux-x86_64-portable.tar.gz`**](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/Dori-0.1.0-alpha.1-linux-x86_64-portable.tar.gz) | Linux (x64 Tarball) | **For custom setups, headless environments, or manual installs.** Standalone archive with precompiled `douri` binary, icons, desktop entries, and an optional `./install.sh` user-space helper script. |
+| [**`dori-0.1.0-alpha.1-1.x86_64.rpm`**](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/dori-0.1.0-alpha.1-1.x86_64.rpm) | Fedora / RHEL / openSUSE | **For RPM-based distribution users.** System-wide native package that installs via `sudo dnf install ./dori-0.1.0-alpha.1-1.x86_64.rpm` with automatic dependency resolution. |
+
+To verify download integrity, SHA-256 checksums are published in [`SHA256SUMS.txt`](https://github.com/triadwoozie/douri/releases/download/v0.1.0-alpha.1/SHA256SUMS.txt).
+
+---
 ## Status
 
 How much of the app works today, counted from the source: a menu entry is done when it can be
@@ -53,8 +69,8 @@ to update this section.
 
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
-| Menu entries | 110 | 0 | 189 | 58.20% |
-| Roadmap items | 25 | 15 | 77 | 32.47% |
+| Menu entries | 211 | 0 | 311 | 67.85% |
+| Roadmap items | 6 | 0 | 24 | 25.00% |
 <!-- status:end -->
 
 Dōri handles arranging, recording, editing, mixing, and bouncing in a single window on an engine built so the audio thread never blocks.

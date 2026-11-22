@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-const VERSION: &str = "0.3.0";
+const VERSION: &str = "0.1.0-alpha.1";
 
 fn run_cmd(mut cmd: Command, desc: &str) -> bool {
     println!("\n==> {desc} ({:?})", cmd);
@@ -261,9 +261,14 @@ exec \"${HERE}/usr/bin/douri-installer\" \"$@\"\n";
     appimagetool
         .env("ARCH", "x86_64")
         .env("VERSION", VERSION)
-        .env("APPIMAGE_EXTRACT_AND_RUN", "1")
-        .arg(&appdir)
-        .arg(&linux_appimage_out);
+        .env("APPIMAGE_EXTRACT_AND_RUN", "1");
+
+    let runtime_file = root.join("dist").join("linux").join("runtime-x86_64");
+    if runtime_file.is_file() {
+        appimagetool.arg("--runtime-file").arg(&runtime_file);
+    }
+
+    appimagetool.arg(&appdir).arg(&linux_appimage_out);
 
     if !run_cmd(
         appimagetool,
@@ -367,24 +372,189 @@ exec \"${HERE}/usr/bin/douri-installer\" \"$@\"\n";
     // Clean up temporary payload staging directory
     let _ = fs::remove_dir_all(&staging_dir);
 
+    // -------------------------------------------------------------
+    // 8. Package Portables & RPM
+    // -------------------------------------------------------------
+    let win_portable_out = package_portable_windows(root, &dist_dir, &win_bin);
+    let linux_portable_out = package_portable_linux(root, &dist_dir, &linux_bin);
+    let rpm_ok = build_rpm(root);
+
+    // -------------------------------------------------------------
+    // 9. Assemble dist/release-<VERSION> and SHA256SUMS.txt
+    // -------------------------------------------------------------
+    assemble_release_artifacts(root, &dist_dir);
+
     println!("\n=======================================================");
-    println!(" Installers Successfully Packaged!");
+    println!(" Release Artifacts Successfully Packaged!");
     println!("=======================================================");
     if let Ok(meta) = fs::metadata(&linux_appimage_out) {
         println!(
-            "  -> Linux AppImage:  {} ({:.2} MB)",
+            "  -> Linux AppImage:   {} ({:.2} MB)",
             linux_appimage_out.display(),
             meta.len() as f64 / 1_048_576.0
         );
     }
     if let Ok(meta) = fs::metadata(&win_exe_out) {
         println!(
-            "  -> Windows .exe:    {} ({:.2} MB)",
+            "  -> Windows .exe:     {} ({:.2} MB)",
             win_exe_out.display(),
             meta.len() as f64 / 1_048_576.0
         );
     }
+    println!("  -> Windows Portable: {win_portable_out}");
+    println!("  -> Linux Portable:   {linux_portable_out}");
+    println!("  -> Linux RPM:        {rpm_ok}");
     println!("=======================================================\n");
 
     true
+}
+
+pub fn build_rpm(root: &Path) -> bool {
+    let script = root.join("dist").join("linux").join("build-rpm.sh");
+    if !script.is_file() {
+        eprintln!("Missing build-rpm.sh script at {}", script.display());
+        return false;
+    }
+    let mut cmd = Command::new("bash");
+    cmd.current_dir(root).arg(&script).arg(VERSION);
+    run_cmd(cmd, "Building RPM package with dist/linux/build-rpm.sh")
+}
+
+fn package_portable_windows(root: &Path, dist_dir: &Path, win_bin: &Path) -> bool {
+    let folder_name = format!("Dori-{VERSION}-win64-portable");
+    let staging = dist_dir.join("staging").join(&folder_name);
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::create_dir_all(&staging);
+
+    if fs::copy(win_bin, staging.join("douri.exe")).is_err() {
+        eprintln!("Failed to copy douri.exe to portable staging");
+        return false;
+    }
+    let readme = root.join("dist").join("windows").join("README.txt");
+    if readme.is_file() {
+        let _ = fs::copy(readme, staging.join("README.txt"));
+    }
+    let license = root.join("LICENSE");
+    if license.is_file() {
+        let _ = fs::copy(license, staging.join("LICENSE"));
+    }
+
+    let out_zip = dist_dir.join(format!("{folder_name}.zip"));
+    let _ = fs::remove_file(&out_zip);
+    let file = match fs::File::create(&out_zip) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to create {}: {e}", out_zip.display());
+            return false;
+        }
+    };
+    let mut zip = zip::ZipWriter::new(file);
+    if let Err(e) = add_dir_to_zip(&mut zip, &staging, Path::new(&folder_name)) {
+        eprintln!("Failed to write portable zip: {e}");
+        return false;
+    }
+    let _ = zip.finish();
+    let _ = fs::remove_dir_all(dist_dir.join("staging"));
+    true
+}
+
+fn package_portable_linux(root: &Path, dist_dir: &Path, linux_bin: &Path) -> bool {
+    let folder_name = format!("Dori-{VERSION}-linux-x86_64-portable");
+    let staging = dist_dir.join("staging").join(&folder_name);
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::create_dir_all(&staging);
+
+    if fs::copy(linux_bin, staging.join("douri")).is_err() {
+        eprintln!("Failed to copy douri to linux portable staging");
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(staging.join("douri"), fs::Permissions::from_mode(0o755));
+    }
+    let install_sh = root.join("dist").join("linux").join("install.sh");
+    if install_sh.is_file() {
+        let _ = fs::copy(&install_sh, staging.join("install.sh"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(
+                staging.join("install.sh"),
+                fs::Permissions::from_mode(0o755),
+            );
+        }
+    }
+    let desktop = root
+        .join("dist")
+        .join("linux")
+        .join("io.github.triadwoozie.douri.desktop");
+    if desktop.is_file() {
+        let _ = fs::copy(
+            &desktop,
+            staging.join("io.github.triadwoozie.douri.desktop"),
+        );
+    }
+    let icon = root
+        .join("dist")
+        .join("linux")
+        .join("io.github.triadwoozie.douri.png");
+    if icon.is_file() {
+        let _ = fs::copy(&icon, staging.join("io.github.triadwoozie.douri.png"));
+    }
+    let mime = root.join("dist").join("linux").join("douri-mime.xml");
+    if mime.is_file() {
+        let _ = fs::copy(&mime, staging.join("douri-mime.xml"));
+    }
+    let readme = root.join("dist").join("README-linux.txt");
+    if readme.is_file() {
+        let _ = fs::copy(readme, staging.join("README.txt"));
+    }
+    let license = root.join("LICENSE");
+    if license.is_file() {
+        let _ = fs::copy(license, staging.join("LICENSE"));
+    }
+
+    let out_tar_gz = dist_dir.join(format!("{folder_name}.tar.gz"));
+    let _ = fs::remove_file(&out_tar_gz);
+    let mut cmd = Command::new("tar");
+    cmd.current_dir(dist_dir.join("staging")).args([
+        "-czf",
+        out_tar_gz.to_str().unwrap(),
+        &folder_name,
+    ]);
+    let ok = run_cmd(cmd, "Creating Linux portable tarball");
+    let _ = fs::remove_dir_all(dist_dir.join("staging"));
+    ok
+}
+
+fn assemble_release_artifacts(_root: &Path, dist_dir: &Path) {
+    let release_dir = dist_dir.join(format!("release-{VERSION}"));
+    let _ = fs::remove_dir_all(&release_dir);
+    let _ = fs::create_dir_all(&release_dir);
+
+    let artifacts = [
+        format!("Dori-Setup-{VERSION}-x86_64.exe"),
+        format!("Dori-{VERSION}-win64-portable.zip"),
+        format!("Dori-Setup-{VERSION}-x86_64.AppImage"),
+        format!("Dori-{VERSION}-linux-x86_64-portable.tar.gz"),
+        format!("dori-{VERSION}-1.x86_64.rpm"),
+    ];
+
+    for name in &artifacts {
+        let src = dist_dir.join(name);
+        let dst = release_dir.join(name);
+        if src.is_file() {
+            let _ = fs::copy(&src, &dst);
+        } else {
+            eprintln!("Warning: artifact missing: {}", src.display());
+        }
+    }
+
+    // Generate SHA256SUMS.txt
+    let mut cmd = Command::new("sh");
+    cmd.current_dir(&release_dir)
+        .arg("-c")
+        .arg("sha256sum Dori* dori* > SHA256SUMS.txt 2>/dev/null || true");
+    let _ = cmd.status();
 }
