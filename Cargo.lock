@@ -1228,6 +1228,7 @@ dependencies = [
  "mslnk",
  "rfd",
  "winreg",
+ "winresource",
  "zip",
 ]
 

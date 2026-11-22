@@ -12,7 +12,6 @@ fn main() {
         if src_path.is_file() {
             println!("cargo:rerun-if-changed={}", src_path.display());
             fs::copy(&src_path, &dest_payload).expect("failed to copy payload.zip");
-            return;
         }
     }
 
@@ -23,5 +22,15 @@ fn main() {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         fs::write(&dest_payload, EMPTY_ZIP).expect("failed to write empty fallback payload.zip");
+    }
+
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let mut res = winresource::WindowsResource::new();
+        res.set_icon("assets/douri.ico")
+            .set("ProductName", "Dōri Setup")
+            .set("FileDescription", "Dōri Setup");
+        if let Err(e) = res.compile() {
+            println!("cargo:warning=could not embed Windows installer icon: {e}");
+        }
     }
 }

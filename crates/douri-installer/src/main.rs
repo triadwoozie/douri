@@ -515,6 +515,10 @@ fn configure_system_integration(target_dir: &Path, installed_exe: &Path) -> Resu
     Ok(())
 }
 
+fn _test_native_options(mut opt: eframe::NativeOptions) {
+    opt.centered = true;
+}
+
 fn middle_ellipsize(s: &str, max_len: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max_len || max_len < 7 {
@@ -1055,12 +1059,19 @@ fn main() -> eframe::Result<()> {
             });
     }
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([820.0, 500.0])
+        .with_resizable(false)
+        .with_decorations(false)
+        .with_transparent(true);
+
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(ICON_BYTES) {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([820.0, 500.0])
-            .with_resizable(false)
-            .with_decorations(false)
-            .with_transparent(true),
+        viewport,
+        centered: true,
         wgpu_options,
         ..Default::default()
     };
