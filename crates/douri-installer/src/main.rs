@@ -527,6 +527,60 @@ fn middle_ellipsize(s: &str, max_len: usize) -> String {
     format!("{left_str}...{right_str}")
 }
 
+fn launch_installed_app(exe_path: &Path) {
+    let target = if exe_path.is_file() {
+        exe_path.to_path_buf()
+    } else if let Some(parent) = exe_path.parent() {
+        let in_bin = parent.join("bin").join("douri");
+        if in_bin.is_file() {
+            in_bin
+        } else {
+            exe_path.to_path_buf()
+        }
+    } else {
+        exe_path.to_path_buf()
+    };
+
+    let mut cmd = std::process::Command::new(&target);
+    if let Some(parent) = target.parent() {
+        cmd.current_dir(parent);
+    }
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+
+    // Decouple from AppImage runtime environment so child process doesn't terminate on unmount
+    cmd.env_remove("APPIMAGE");
+    cmd.env_remove("APPDIR");
+    cmd.env_remove("OWD");
+    cmd.env_remove("ARGV0");
+    if let Ok(ld) = std::env::var("LD_LIBRARY_PATH") {
+        let cleaned: Vec<&str> = ld
+            .split(':')
+            .filter(|p| !p.starts_with("/tmp/.mount"))
+            .collect();
+        if cleaned.is_empty() {
+            cmd.env_remove("LD_LIBRARY_PATH");
+        } else {
+            cmd.env("LD_LIBRARY_PATH", cleaned.join(":"));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000008 | 0x00000200);
+    }
+
+    let _ = cmd.spawn();
+}
+
 impl eframe::App for InstallerApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         egui::Rgba::TRANSPARENT.to_array()
@@ -809,7 +863,8 @@ impl eframe::App for InstallerApp {
                         );
 
                         if btn_resp.clicked() {
-                            let _ = std::process::Command::new(exe_path).spawn();
+                            launch_installed_app(exe_path);
+                            std::thread::sleep(std::time::Duration::from_millis(150));
                             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         }
 
