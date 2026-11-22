@@ -232,7 +232,3 @@ Per **Section 5 of the GNU General Public License v3**, Dōri attributes and bui
 All original copyright notices and license texts are retained. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for third-party attributions, and [`LICENSE`](https://www.google.com/search?q=LICENSE) for complete terms.
 
 Dōri is an independent open-source project and is not affiliated with, sponsored by, or endorsed by Apple Inc. `.logicx`, `.band`, and `.exs` are referenced solely to describe file format compatibility.
-
-```
-
-```
