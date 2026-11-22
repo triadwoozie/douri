@@ -1,0 +1,30 @@
+[package]
+name = "douri-installer"
+version = "0.3.0"
+edition = "2021"
+description = "Installer for Dōri Digital Audio Workstation"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "douri-installer"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false, features = [
+    "clipboard",
+    "default_fonts",
+    "links",
+    "system_fonts",
+    "wayland",
+    "wgpu",
+    "glow",
+] }
+egui = "0.37"
+phosphor-egui = { package = "egui-phosphor", version = "0.14", default-features = false, features = ["regular", "fill", "bold"] }
+rfd = "0.17"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+mslnk = "0.1"

@@ -3,5 +3,8 @@ name = "xtask"
 version = "0.3.0"
 edition = "2021"
 publish = false
-description = "Pro Wave developer tasks: `cargo xtask check`, `wasm-check`, `rt-check`, `bench`, `status`"
+description = "Pro Wave developer tasks: `cargo xtask check`, `wasm-check`, `rt-check`, `bench`, `status`, `package-installers`"
 license = "GPL-3.0-or-later"
+
+[dependencies]
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }

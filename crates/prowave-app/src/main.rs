@@ -392,7 +392,7 @@ impl UiState {
             show_lists: false,
             lists: event_list::ListView::default(),
             show_collaborate: false,
-            collaborate_enabled: true,
+            collaborate_enabled: false,
             collaborate_worker: None,
             collaborate_note_input: String::new(),
             collaborate_alt_input: String::new(),
@@ -491,7 +491,7 @@ impl UiState {
             plugin_manager_format: None,
             plugin_manager_selected_path: None,
             glass_quality: liquid_glass::GlassQuality::FullRefraction,
-            mcp_server_enabled: true,
+            mcp_server_enabled: false,
             mcp_port: 38420,
             show_about: false,
             simplified_mode: false,
@@ -2687,7 +2687,7 @@ fn main() -> eframe::Result {
             };
             let (mcp_tx, mcp_rx) = std::sync::mpsc::channel();
             let mcp_bridge = mcp_server::McpBridge::new(mcp_tx);
-            if !measuring {
+            if !measuring && flag("--mcp-server") {
                 let _ = mcp_server::start_tcp_listener(
                     mcp_server::DEFAULT_MCP_PORT,
                     mcp_bridge.clone(),

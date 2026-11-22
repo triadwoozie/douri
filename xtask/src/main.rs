@@ -8,6 +8,7 @@
 //!   size, 24-track DSP load); see bench.rs
 //! - `status`: counts the working menu entries and roadmap items for the README; see status.rs
 mod bench;
+mod package_installers;
 mod status;
 
 use std::path::{Path, PathBuf};
@@ -355,8 +356,9 @@ fn main() -> ExitCode {
                 false
             }
         },
+        "package-installers" => package_installers::run(&root()),
         _ => {
-            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status>");
+            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status|package-installers>");
             false
         }
     };

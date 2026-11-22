@@ -96,15 +96,19 @@ impl Kind {
     pub fn matches(self, name: &str) -> bool {
         match self {
             Kind::Windows => {
-                (name.starts_with("douri-") || name.starts_with("prowave-"))
-                    && name.ends_with("-windows-x86_64.zip")
+                (name.starts_with("Dori-Setup-")
+                    || name.starts_with("douri-")
+                    || name.starts_with("prowave-"))
+                    && (name.ends_with("-windows-x86_64.zip") || name.ends_with("-x86_64.exe"))
             }
             Kind::Mac => {
                 (name.starts_with("douri-") || name.starts_with("prowave-"))
                     && name.ends_with("-macos-universal.zip")
             }
             Kind::AppImage => {
-                (name.starts_with("Douri-") || name.starts_with("Pro_Wave-"))
+                (name.starts_with("Dori-Setup-")
+                    || name.starts_with("Douri-")
+                    || name.starts_with("Pro_Wave-"))
                     && name.ends_with("-x86_64.AppImage")
             }
             Kind::Tarball => {
@@ -454,9 +458,9 @@ fn unpack_file(zip_path: &Path, name: &str, dest: &Path) -> Result<(), String> {
     copy_program(&mut entry, dest)
 }
 
-/// Unpacks `prowave.exe` from the release zip into `dest`.
+/// Unpacks `douri.exe` (or `prowave.exe`) from the release zip into `dest`.
 pub fn unpack_exe(zip_path: &Path, dest: &Path) -> Result<(), String> {
-    unpack_file(zip_path, "prowave.exe", dest)
+    unpack_file(zip_path, "douri.exe", dest).or_else(|_| unpack_file(zip_path, "prowave.exe", dest))
 }
 
 /// Writes a program from `from` to `dest`, refusing one that is cut short.
@@ -676,7 +680,16 @@ fn stage_for(
         }
         progress.step.store(2, Ordering::Relaxed);
         match target.kind {
-            Kind::Windows => unpack_exe(&download_to, &new)?,
+            Kind::Windows => {
+                if asset.name.ends_with(".exe") {
+                    let mut file = std::fs::File::open(&download_to)
+                        .map_err(|e| format!("{}: {e}", download_to.display()))?;
+                    copy_program(&mut file, &new)?;
+                    make_executable(&new)?;
+                } else {
+                    unpack_exe(&download_to, &new)?;
+                }
+            }
             Kind::Tarball => {
                 unpack_from_tarball(&download_to, &new)?;
                 make_executable(&new)?;
@@ -1448,6 +1461,16 @@ mod tests {
     ];
 
     #[test]
+    fn installer_asset_names_match_expected_kinds() {
+        assert!(Kind::Windows.matches("Dori-Setup-0.3.0-x86_64.exe"));
+        assert!(Kind::Windows.matches("douri-0.3.0-windows-x86_64.zip"));
+        assert!(Kind::AppImage.matches("Dori-Setup-0.3.0-x86_64.AppImage"));
+        assert!(Kind::AppImage.matches("Douri-0.3.0-x86_64.AppImage"));
+        assert!(!Kind::Windows.matches("Dori-Setup-0.3.0-x86_64.AppImage"));
+        assert!(!Kind::AppImage.matches("Dori-Setup-0.3.0-x86_64.exe"));
+    }
+
+    #[test]
     fn each_install_gets_the_file_made_for_it_with_its_checksum() {
         let file = |kind| {
             parse_releases(SAMPLE, "0.1.7", Some(kind))
@@ -1472,8 +1495,10 @@ mod tests {
         assert_eq!(file(Kind::Deb).sha256.as_deref(), Some("33"));
         // No file is taken for two kinds.
         for name in [
+            "Dori-Setup-0.3.0-x86_64.exe",
             "prowave-windows-x86_64.zip",
             "prowave-macos-universal.zip",
+            "Dori-Setup-0.3.0-x86_64.AppImage",
             "Pro_Wave-0.1.8-x86_64.AppImage",
             "prowave-linux-x86_64.tar.gz",
             "prowave-studio_0.1.8_amd64.deb",

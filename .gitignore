@@ -8,7 +8,13 @@
 /dist/*.AppImage
 /dist/*.flatpak
 /dist/*.zip
+/dist/*.exe
+/dist/*.AppDir/
+/dist/Douri.AppDir/
 /dist/deb/
+/dist/staging/
+/.wineprefix/
+.wineprefix/
 
 # Signing material and local secrets (see AGENTS.md section 5)
 *.p12
