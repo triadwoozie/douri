@@ -61,32 +61,6 @@ pub struct NoteDoc {
     pub lyric: String,
 }
 
-/// A Vocal Top Line track's part: `score` or `output`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
-#[serde(default)]
-pub struct VocalDoc {
-    pub role: String,
-    pub link: u64,
-    pub voice: String,
-    pub color: String,
-    pub language: String,
-    pub gender: f32,
-    pub breathiness: f32,
-    pub tension: f32,
-    pub voicing: f32,
-    pub velocity: f32,
-    pub vibrato_depth: f32,
-    pub vibrato_rate: f32,
-    pub transition_ms: f32,
-    pub place: String,
-    pub singer: String,
-    pub body_female: f32,
-    pub body_child: f32,
-    pub chimera_breathiness: f32,
-    pub brightness: f32,
-    pub ring: f32,
-}
-
 /// One take of a take folder.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 #[serde(default)]
@@ -388,8 +362,6 @@ pub struct TrackDoc {
     /// The Groove Track, and the tracks that follow it.
     pub groove: bool,
     pub follow_groove: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vocal: Option<VocalDoc>,
     #[serde(default)]
     pub hidden: bool,
     pub regions: Vec<RegionDoc>,
@@ -600,7 +572,6 @@ impl Default for TrackDoc {
             midi_fx: Vec::new(),
             groove: false,
             follow_groove: false,
-            vocal: None,
             hidden: false,
             regions: Vec::new(),
         }

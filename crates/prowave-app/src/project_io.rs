@@ -569,7 +569,6 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                     },
                 })
                 .collect(),
-            vocal: t.vocal.as_ref().map(crate::vocal::to_doc),
             au_instrument: t.au_instrument.as_ref().map(plugin_doc),
             au_effects: t.au_effects.iter().map(plugin_doc).collect(),
             hidden: t.hidden,
@@ -1023,7 +1022,6 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     })
                 })
                 .collect(),
-            vocal: t.vocal.as_ref().and_then(crate::vocal::from_doc),
             au_instrument: t.au_instrument.as_ref().map(plugin_slot),
             au_effects: t.au_effects.iter().map(plugin_slot).collect(),
         });

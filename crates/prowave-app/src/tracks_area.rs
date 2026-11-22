@@ -3572,9 +3572,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 p.selected_track = ti;
             }
             if resp.double_clicked() {
-                if p.tracks[ti].vocal.is_some() {
-                    s.bottom = Bottom::VocalEditor;
-                } else if p.tracks[ti].kind != TrackKind::Audio {
+                if p.tracks[ti].kind != TrackKind::Audio {
                     s.bottom = Bottom::PianoRoll;
                 } else if v.tool != TrackTool::Fade {
                     if let Some(pt) = resp.interact_pointer_pos() {

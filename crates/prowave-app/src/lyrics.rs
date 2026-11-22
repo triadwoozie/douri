@@ -1,7 +1,6 @@
 //! Lyrics on notes: each note can carry a word or syllable, kept in the note and saved with it.
 //!
-//! The Vocal Top Line track (see `vocal.rs`) sings them. Like Synthesizer V and UTAU, each
-//! note carries a word, or a sign that it goes on with the word before:
+//! Each note carries a word, or a sign that it goes on with the word before:
 //!
 //! - a word (`row`, `gently`): the note sings that word, or its first syllable when the next
 //!   notes are `+`;

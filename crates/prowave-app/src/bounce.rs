@@ -510,16 +510,6 @@ fn render(
     rendered: &AtomicU64,
     cancel: &AtomicBool,
 ) -> Result<Option<Vec<f32>>, String> {
-    // Flush any pending vocal synthesis so that unified vocal tracks have their latest audio buffer ready.
-    for ti in 0..project.tracks.len() {
-        if matches!(
-            project.tracks[ti].vocal,
-            Some(crate::vocal::VocalRole::Score(_))
-        ) {
-            let _ =
-                crate::vocal::render_score_track_sync(&mut project, ti, &egui::Context::default());
-        }
-    }
     let engine = Engine::offline(sample_rate).map_err(|e| e.to_string())?;
     let mut sync = EngineSync::new(engine, &project);
     let mut block = vec![0f32; RENDER_BLOCK * 2];

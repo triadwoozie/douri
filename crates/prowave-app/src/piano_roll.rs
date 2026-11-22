@@ -564,17 +564,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         return;
     }
 
-    // Active tab is Piano Roll: if the track is a Vocal Track, transform into Vocal Editor
-    if let Some((ti, ri)) = region {
-        if p.tracks[ti].vocal.is_some() {
-            s.piano_focus = ui
-                .input(|i| i.pointer.hover_pos())
-                .is_some_and(|pt| area.contains(pt));
-            let body = Rect::from_min_max(pos2(area.left(), tab_bar.bottom()), area.max);
-            crate::vocal_editor::show_in_rect(ui, p, s, ti, ri, body);
-            return;
-        }
-    }
     let bar = Rect::from_min_size(
         pos2(area.left(), tab_bar.bottom()),
         vec2(area.width(), TOOLBAR_H),
@@ -647,8 +636,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let trk = p.selected_track;
         let btn_label = if trk < p.tracks.len() && p.tracks[trk].kind == TrackKind::Drummer {
             "+ Create Pattern Region"
-        } else if trk < p.tracks.len() && p.tracks[trk].vocal.is_some() {
-            "+ Create Vocal Region"
         } else {
             "+ Create MIDI Region"
         };

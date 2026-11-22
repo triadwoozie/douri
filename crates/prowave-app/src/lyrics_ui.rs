@@ -1,4 +1,4 @@
-//! Typing lyrics in the Piano Roll, as in Synthesizer V and UTAU: select a note and press
+//! Typing lyrics in the Piano Roll: select a note and press
 //! Return to type its lyric; Tab or Space keeps it and goes on to the next note (Shift-Tab to
 //! the one before), Return keeps it and stops, Escape leaves the note as it was. Typing several
 //! words spreads them over the notes from this one on. Edit > Paste Lyrics… spreads a whole

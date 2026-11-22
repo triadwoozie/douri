@@ -102,8 +102,6 @@ mod select_similar;
 mod shuffle_edit;
 mod side_panes;
 mod signature_track;
-pub mod singer;
-pub mod singer_manager;
 mod smart_tempo;
 mod snap_grid;
 pub mod sound_library;
@@ -137,8 +135,6 @@ mod undo;
 mod undo_history;
 mod updater;
 mod vamp;
-pub mod vocal;
-pub mod vocal_editor;
 mod widgets;
 mod window_chrome;
 
@@ -159,8 +155,6 @@ pub enum Bottom {
     PianoRoll,
     /// The Pitch Editor (Melodyne/Logic Flex Pitch note editor for audio regions).
     PitchEditor,
-    /// The Vocal Editor (Musical Editor for vocal tracks).
-    VocalEditor,
 }
 
 pub struct UiState {
@@ -291,8 +285,6 @@ pub struct UiState {
     pub steps: step_editor::StepView,
     /// The Pitch Editor's view of an audio region.
     pub pitch_ed: pitch_editor::PitchView,
-    /// The Vocal Editor's view of a vocal score track.
-    pub vocal_ed: vocal_editor::VocalView,
     /// True while the pointer is over the Piano Roll (it owns Delete/Cmd+R then).
     pub piano_focus: bool,
     /// Live notes from the Piano Roll, forwarded to the engine every frame.
@@ -355,12 +347,6 @@ pub struct UiState {
     pub simplified_mode: bool,
     /// Force a top-level menu open for verification screenshots.
     pub shot_top_menu: Option<String>,
-    /// Vocal Top Line window and background renders.
-    pub vocal: vocal::VocalState,
-    /// Singer instrument window and bounces.
-    pub singer: singer::SingerUi,
-    /// OpenUtau Singer Manager dialog.
-    pub singer_manager: singer_manager::SingerManagerDialog,
     /// Missing audio files detected during project load or recovery.
     pub missing_audio: Vec<String>,
     /// What the Tracks area's track commands remember (`track_commands`).
@@ -437,7 +423,6 @@ impl UiState {
             score_heard: None,
             flex: flex_edit::FlexState::default(),
             pitch_ed: pitch_editor::PitchView::default(),
-            vocal_ed: vocal_editor::VocalView::default(),
             groove: groove::GrooveState::default(),
             midi_cmd: None,
             export_xml_cmd: false,
@@ -489,9 +474,6 @@ impl UiState {
             simplified_mode: false,
             app_settings: project_settings::AppSettings::load(),
             shot_top_menu: None,
-            vocal: vocal::VocalState::default(),
-            singer: singer::SingerUi::default(),
-            singer_manager: singer_manager::SingerManagerDialog::default(),
             missing_audio: Vec::new(),
             arrange: track_commands::ArrangeView::default(),
             spectrogram: spectrogram_view::SpectrogramView::default(),
@@ -1530,7 +1512,6 @@ impl eframe::App for App {
         smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
         flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
         groove::poll(&ctx, &mut self.project, &mut self.ui);
-        vocal::frame(&ctx, &mut self.project, &mut self.ui);
         if !ctx.egui_wants_keyboard_input() {
             if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
                 self.project.playing = !self.project.playing;
@@ -1563,18 +1544,6 @@ impl eframe::App for App {
             if is_proj {
                 self.open(&path, &ctx);
                 continue;
-            }
-            let is_zip = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("zip"));
-            let is_voicebank_dir = path.is_dir()
-                && (path.join("oto.ini").is_file() || path.join("character.txt").is_file());
-            if is_zip || is_voicebank_dir {
-                if self.ui.singer_manager.import_path(&path).is_ok() {
-                    self.ui.singer_manager.open = true;
-                    continue;
-                }
             }
             self.import(&path, &ctx);
         }
@@ -1705,11 +1674,7 @@ impl eframe::App for App {
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
-        if s.show_mixer
-            || s.bottom == Bottom::PianoRoll
-            || s.bottom == Bottom::PitchEditor
-            || s.bottom == Bottom::VocalEditor
-        {
+        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
             // a shorter panel cut every strip's fader off at the bottom (issue #36). The Piano
@@ -1727,7 +1692,6 @@ impl eframe::App for App {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
-                Bottom::VocalEditor => vocal_editor::show(ui, p, s),
             });
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);
@@ -1856,7 +1820,6 @@ impl eframe::App for App {
         track_dialogs::show(&ctx, &mut self.project, &mut self.ui);
         logicx::show_report(&ctx, &mut self.ui.logicx_report);
         new_track_dialog::show(&ctx, &mut self.project, &mut self.ui);
-        singer_manager::show(&ctx, &mut self.ui.singer_manager);
         stack_dialog::show(&ctx, &mut self.project, &mut self.ui);
         midi_fx_ui::show(&ctx, &mut self.project, &mut self.ui);
         transform_ui::show(&ctx, &mut self.project, &mut self.ui);
@@ -1917,7 +1880,6 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
                 ui.label("• yuribeats/prowave");
                 ui.label("• storytold/soundcraft");
                 ui.label("• Ardour");
-                ui.label("• OpenUtau by stakira and contributors (MIT License)");
                 ui.add_space(8.0);
                 ui.label("Icons & Artwork:");
                 ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
@@ -2766,6 +2728,20 @@ fn main() -> eframe::Result {
             }
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
+            } else if !measuring
+                && std::env::var("CI").is_err()
+                && std::env::var("HEADLESS").is_err()
+            {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter(
+                        crate::i18n::tr("Dōri & Pro-Wave Projects"),
+                        prowave_project::EXTENSIONS,
+                    )
+                    .add_filter(crate::i18n::tr("Logic Pro Project"), &["logicx"])
+                    .pick_file()
+                {
+                    app.open(&path, &cc.egui_ctx);
+                }
             }
             for arg in args.iter().filter(|a| !is_project(a)) {
                 if arg == "--play" {

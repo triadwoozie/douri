@@ -452,56 +452,6 @@ impl McpEngine {
                 }
             }),
             json!({
-                "name": "create_vocal_track",
-                "description": "Create an OpenUtau / UTAU Vocal Top Line score track and matching audio track.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" },
-                        "voice": { "type": "string", "description": "Voicebank folder name or path" },
-                        "gender": { "type": "number" },
-                        "vibrato_depth": { "type": "number" },
-                        "vibrato_rate": { "type": "number" }
-                    }
-                }
-            }),
-            json!({
-                "name": "set_vocal_notes",
-                "description": "Set vocal notes and Japanese lyrics on a vocal score track.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "track_index": { "type": "integer" },
-                        "notes": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "start_beat": { "type": "number" },
-                                    "length_beats": { "type": "number" },
-                                    "key": { "type": "integer" },
-                                    "lyric": { "type": "string" },
-                                    "velocity": { "type": "integer" }
-                                },
-                                "required": ["start_beat", "length_beats", "key", "lyric"]
-                            }
-                        }
-                    },
-                    "required": ["track_index", "notes"]
-                }
-            }),
-            json!({
-                "name": "render_vocal_track",
-                "description": "Synthesize a Vocal Top Line track's notes into audio regions using pure-Rust OpenUtau voicebank engine.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "track_index": { "type": "integer" }
-                    },
-                    "required": ["track_index"]
-                }
-            }),
-            json!({
                 "name": "set_transport",
                 "description": "Control playback transport: play, stop, record, seek playhead, set tempo, set time signature, or toggle cycle range.",
                 "inputSchema": {
@@ -824,118 +774,6 @@ impl McpEngine {
                 Ok(
                     json!({ "status": "created", "name": p.name, "tempo": p.tempo, "time_signature": [num, den] }),
                 )
-            }
-            "create_vocal_track" => {
-                let link = crate::vocal::new_link();
-                let name = args["name"]
-                    .as_str()
-                    .unwrap_or("Vocal Top Line")
-                    .to_string();
-                let voice = args["voice"].as_str().unwrap_or("Kasane_Teto").to_string();
-                let mut score = Track::new(name.clone(), TrackKind::Instrument);
-                score.color = egui::Color32::from_rgb(0xd8, 0x5a, 0x9a);
-                let mut set = crate::vocal::VocalSettings::new(link);
-                set.singer = crate::vocal::Singer::OpenUtau;
-                set.voice = voice.clone();
-                if let Some(g) = args["gender"].as_f64() {
-                    set.gender = g as f32;
-                }
-                if let Some(vd) = args["vibrato_depth"].as_f64() {
-                    set.vibrato_depth = vd as f32;
-                }
-                if let Some(vr) = args["vibrato_rate"].as_f64() {
-                    set.vibrato_rate = vr as f32;
-                }
-                score.vocal = Some(crate::vocal::VocalRole::Score(set));
-                let mut out = Track::new(format!("{name} Audio"), TrackKind::Audio);
-                out.color = egui::Color32::from_rgb(0xb0, 0x48, 0x80);
-                out.vocal = Some(crate::vocal::VocalRole::Output { link });
-                p.tracks.push(score);
-                let score_idx = p.tracks.len() - 1;
-                p.tracks.push(out);
-                let out_idx = p.tracks.len() - 1;
-                p.song_rev += 1;
-                Ok(json!({
-                    "score_track_index": score_idx,
-                    "audio_track_index": out_idx,
-                    "link": link,
-                    "voice": voice,
-                    "status": "created"
-                }))
-            }
-            "set_vocal_notes" => {
-                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
-                if ti >= p.tracks.len() {
-                    return Err(format!("Track index {ti} out of bounds"));
-                }
-                let notes_arr = args["notes"].as_array().ok_or("Missing notes array")?;
-                let mut notes_vec = Vec::new();
-                for n in notes_arr {
-                    let key = n["key"].as_u64().unwrap_or(60) as u8;
-                    let n_start = n["start_beat"].as_f64().unwrap_or(0.0) as f32;
-                    let n_len = n["length_beats"].as_f64().unwrap_or(1.0) as f32;
-                    let vel = n["velocity"].as_u64().unwrap_or(100) as u8;
-                    let lyric_text = n["lyric"].as_str().unwrap_or("a");
-                    let lyric = crate::lyrics::Lyric::new(lyric_text);
-                    notes_vec.push(Note {
-                        start: n_start,
-                        len: n_len,
-                        pitch: key,
-                        vel,
-                        lyric,
-                        ..Default::default()
-                    });
-                }
-                let beats_per_bar = (p.sig.0 as f32) * 4.0 / (p.sig.1 as f32);
-                let max_beat = notes_vec
-                    .iter()
-                    .map(|n| n.start + n.len)
-                    .fold(0.0f32, f32::max);
-                let len_bars = (max_beat / beats_per_bar).ceil().max(4.0);
-                let region = Region {
-                    name: p.tracks[ti].name.clone(),
-                    start_bar: 1.0,
-                    len_bars,
-                    notes: notes_vec,
-                    controls: Vec::new(),
-                    folder: None,
-                    params: RegionParams::default(),
-                    audio: None,
-                    missing: None,
-                    generated: None,
-                };
-                p.tracks[ti].regions.clear();
-                p.tracks[ti].regions.push(region);
-                p.song_rev += 1;
-                Ok(json!({
-                    "track_index": ti,
-                    "notes_count": p.tracks[ti].regions[0].notes.len(),
-                    "len_bars": len_bars,
-                    "status": "updated"
-                }))
-            }
-            "render_vocal_track" => {
-                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
-                let ctx = egui::Context::default();
-                let phrases_count = crate::vocal::render_score_track_sync(p, ti, &ctx)?;
-                let out_idx = p
-                    .tracks
-                    .iter()
-                    .position(|t| {
-                        if let Some(crate::vocal::VocalRole::Score(set)) = &p.tracks[ti].vocal {
-                            t.vocal == Some(crate::vocal::VocalRole::Output { link: set.link })
-                        } else {
-                            false
-                        }
-                    })
-                    .unwrap_or(ti);
-                Ok(json!({
-                    "score_track_index": ti,
-                    "audio_track_index": out_idx,
-                    "phrases_rendered": phrases_count,
-                    "regions_count": p.tracks[out_idx].regions.len(),
-                    "status": "synthesized"
-                }))
             }
             "set_transport" => {
                 let action = args["action"].as_str().ok_or("Missing action")?;
@@ -1548,39 +1386,7 @@ mod tests {
         assert_eq!(p.tempo, 102.0);
         assert_eq!(p.name, "Sonare MCP");
 
-        // 6. create_vocal_track
-        let vt_req = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(json!(105)),
-            method: "tools/call".to_string(),
-            params: Some(json!({
-                "name": "create_vocal_track",
-                "arguments": { "name": "Kasane Teto", "voice": "Kasane_Teto" }
-            })),
-        };
-        let vt_resp = McpEngine::handle_request(vt_req, &mut p, &mut s, None);
-        assert!(vt_resp.error.is_none());
-        assert_eq!(p.tracks.len(), 2);
-
-        // 7. set_vocal_notes
-        let vn_req = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(json!(106)),
-            method: "tools/call".to_string(),
-            params: Some(json!({
-                "name": "set_vocal_notes",
-                "arguments": {
-                    "track_index": 0,
-                    "notes": [
-                        { "start_beat": 0.0, "length_beats": 1.0, "key": 56, "lyric": "ね", "velocity": 100 },
-                        { "start_beat": 1.0, "length_beats": 1.0, "key": 58, "lyric": "む", "velocity": 100 }
-                    ]
-                }
-            })),
-        };
-        let vn_resp = McpEngine::handle_request(vn_req, &mut p, &mut s, None);
-        assert!(vn_resp.error.is_none());
-        assert_eq!(p.tracks[0].regions[0].notes.len(), 2);
+        p.add_track(TrackKind::Instrument);
 
         // 8. bounce_project to temp file
         let tmp_wav =

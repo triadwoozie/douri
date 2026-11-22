@@ -107,7 +107,6 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         midi_program: None,
         midi_bank: None,
         midi_fx: Vec::new(),
-        vocal: None,
         au_instrument: None,
         au_effects: Vec::new(),
         summing_stack: false,

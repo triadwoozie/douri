@@ -266,9 +266,6 @@ const TRACK: &[&str] = &[
     "New Aux Track",
     "New VCA Track",
     "New External MIDI Track",
-    "New Vocal Top Line Track",
-    "Vocal Top Line…",
-    "Manage UTAU Singers…",
     "New Pattern Region",
     "New Drummer Region",
     "MIDI FX…",
@@ -800,10 +797,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
-        "Configure Track Header…"
-        | "Show Master Track"
-        | "Show Automation"
-        | "Manage UTAU Singers…" => true,
+        "Configure Track Header…" | "Show Master Track" | "Show Automation" => true,
         "Delete Automation" => p
             .tracks
             .get(p.selected_track)
@@ -914,8 +908,6 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "New Aux Track"
         | "New VCA Track"
         | "New External MIDI Track"
-        | "New Vocal Top Line Track"
-        | "Vocal Top Line…"
         | "Go to Beginning"
         | "Go to End"
         | "Go to Position…"
@@ -1020,8 +1012,6 @@ const ALWAYS: &[&str] = &[
     "New Aux Track",
     "New VCA Track",
     "New External MIDI Track",
-    "New Vocal Top Line Track",
-    "Vocal Top Line…",
     "Go to Beginning",
     "Go to End",
     "Go to Position…",
@@ -1228,12 +1218,8 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         return on;
     }
     match label {
-        "Show Editor" => matches!(
-            s.bottom,
-            Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor
-        ),
+        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor),
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
-        "Vocal Editor" | "Show Vocal Editor" => s.bottom == Bottom::VocalEditor,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,
         "Show Library" => s.show_library,
@@ -1421,13 +1407,6 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 Bottom::PianoRoll
             }
         }
-        "Vocal Editor" | "Show Vocal Editor" => {
-            s.bottom = if s.bottom == Bottom::VocalEditor {
-                Bottom::Mixer
-            } else {
-                Bottom::VocalEditor
-            }
-        }
         "Pitch Editor" | "Show Pitch Editor" => {
             s.bottom = if s.bottom == Bottom::PitchEditor {
                 Bottom::Mixer
@@ -1462,9 +1441,6 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "New External MIDI Track" => {
             p.add_track(TrackKind::ExternalMidi);
         }
-        "New Vocal Top Line Track" => crate::vocal::new_track(p, s),
-        "Vocal Top Line…" => s.vocal.open = !s.vocal.open,
-        "Manage UTAU Singers…" => s.singer_manager.open(),
         "Hide Track" => crate::track_selection::hide_tracks(p, s),
         "Unhide All Tracks" => crate::track_commands::unhide_all(p),
         "Show Hidden Tracks" => s.tracks.show_hidden = !s.tracks.show_hidden,
@@ -2192,8 +2168,6 @@ mod tests {
                     (
                         s.show_groups,
                         s.typing.open,
-                        s.vocal.open,
-                        s.singer_manager.open,
                         s.show_plugin_manager,
                         s.show_multimeter,
                         s.export_all_tracks_cmd,

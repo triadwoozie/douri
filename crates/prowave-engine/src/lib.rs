@@ -48,7 +48,6 @@ pub mod rt_alloc;
 pub mod sample_file;
 pub mod sampler;
 mod sf2;
-pub mod singer;
 mod soundfont;
 pub mod spectral;
 mod synth;
@@ -124,7 +123,6 @@ pub use crate::routing::{
     curve_shape, lane_value, send_gain, AutoLane, AutoPoint, AutoTarget, Route, SendSpec,
     MAX_AUTO_POINTS, MAX_BUSES, MAX_SENDS,
 };
-pub use crate::singer::{SingerClip, SingerPlayer, SingerRemote, SingerScore, SingerStatus};
 pub use crate::soundfont::{
     PresetInfo, SfPlayer, SoundFontBank, MAX_SOUNDFONT_BYTES, PITCH_BEND_CONTROL,
 };

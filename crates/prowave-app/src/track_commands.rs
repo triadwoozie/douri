@@ -292,9 +292,6 @@ pub(crate) fn duplicate_settings_of(p: &mut Project, i: usize) -> Option<usize> 
     copy.hidden = false;
     // There is one Groove Track; the copy follows it as the original does.
     copy.params.groove = false;
-    {
-        copy.vocal = None;
-    }
     // Its own plug-in instances, opened with the same settings.
     for slot in copy
         .au_instrument
@@ -359,10 +356,7 @@ pub(crate) fn delete_unused(p: &mut Project, s: &mut UiState) -> usize {
 /// is showing. With no region selected, the selected track's kind decides.
 pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
     use crate::Bottom;
-    if matches!(
-        s.bottom,
-        Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor
-    ) {
+    if matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor) {
         s.bottom = Bottom::Mixer;
         return;
     }
@@ -386,15 +380,7 @@ pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
         }
         _ => {
             s.piano_window = false;
-            let is_vocal = first.is_some_and(|(t, _)| p.tracks[t].vocal.is_some())
-                || p.tracks
-                    .get(p.selected_track)
-                    .is_some_and(|t| t.vocal.is_some());
-            s.bottom = if is_vocal {
-                Bottom::VocalEditor
-            } else {
-                Bottom::PianoRoll
-            };
+            s.bottom = Bottom::PianoRoll;
         }
     }
 }

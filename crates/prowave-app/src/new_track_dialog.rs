@@ -1,8 +1,8 @@
 //! Logic Pro's card-based "Create New Track" Modal Sheet (`new_track_dialog.rs`).
 //!
 //! Provides the visual track selection sheet matching Apple Logic Pro's layout:
-//! single clean header, 5 distinct cards with bold circular 44x44px colored badges,
-//! generous padding preventing label clipping, sub-selector pills, quick Voicebank selector,
+//! single clean header, 4 distinct cards with bold circular 44x44px colored badges,
+//! generous padding preventing label clipping, sub-selector pills,
 //! collapsible 2-column Details routing drawer, and track count stepper.
 
 use crate::model::{Project, TrackKind};
@@ -24,7 +24,6 @@ pub enum CardChoice {
     Pattern,
     SessionPlayer,
     Audio,
-    VocalUtau,
 }
 
 // Aliases for compatibility
@@ -37,7 +36,6 @@ impl CardChoice {
             Self::Pattern => TrackKind::Drummer,
             Self::SessionPlayer => TrackKind::Drummer,
             Self::Audio => TrackKind::Audio,
-            Self::VocalUtau => TrackKind::Instrument,
         }
     }
 
@@ -47,7 +45,6 @@ impl CardChoice {
             Self::Pattern => "Pattern",
             Self::SessionPlayer => "Session Player",
             Self::Audio => "Audio",
-            Self::VocalUtau => "Vocal / UTAU",
         }
     }
 
@@ -57,7 +54,6 @@ impl CardChoice {
             Self::Pattern => "Step sequencer beats and melodic grids.",
             Self::SessionPlayer => "Intelligent drum, bass, and keys grooves.",
             Self::Audio => "Microphones, line inputs, and guitar amps.",
-            Self::VocalUtau => "OpenUtau synthesized vocal top lines.",
         }
     }
 
@@ -67,7 +63,6 @@ impl CardChoice {
             Self::Pattern => ACCENT_INDIGO,
             Self::SessionPlayer => ACCENT_AMBER,
             Self::Audio => ACCENT_BLUE,
-            Self::VocalUtau => ACCENT_ROSE,
         }
     }
 
@@ -77,7 +72,6 @@ impl CardChoice {
             Self::Pattern => phosphor_egui::regular::GRID_FOUR,
             Self::SessionPlayer => phosphor_egui::regular::METRONOME,
             Self::Audio => phosphor_egui::regular::MICROPHONE_STAGE,
-            Self::VocalUtau => phosphor_egui::regular::MUSIC_NOTES,
         }
     }
 }
@@ -112,7 +106,6 @@ pub struct NewTrackDialog {
     pub midi_sub: MidiSub,
     pub session_sub: SessionPlayerSub,
     pub audio_sub: AudioSub,
-    pub vocal_voicebank: String,
     pub count: u32,
     pub details_open: bool,
     pub open_library: bool,
@@ -130,7 +123,6 @@ impl Default for NewTrackDialog {
             midi_sub: MidiSub::SoftwareInstrument,
             session_sub: SessionPlayerSub::Drummer,
             audio_sub: AudioSub::MicLine,
-            vocal_voicebank: String::new(),
             count: 1,
             details_open: false,
             open_library: true,
@@ -180,12 +172,11 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
 
-                const CARDS: [CardChoice; 5] = [
+                const CARDS: [CardChoice; 4] = [
                     CardChoice::SoftwareInstrument,
                     CardChoice::Pattern,
                     CardChoice::SessionPlayer,
                     CardChoice::Audio,
-                    CardChoice::VocalUtau,
                 ];
 
                 for c in CARDS {
@@ -349,39 +340,6 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                                 s.new_track.choice = c;
                             }
                         }
-                        CardChoice::VocalUtau => {
-                            sub_ui.label(
-                                egui::RichText::new("OpenUtau Synth")
-                                    .size(10.5)
-                                    .color(ui_chrome::TEXT_SECONDARY),
-                            );
-                            let singers = prowave_vocal::discover_singers(&[]);
-                            let cur_singer = if s.new_track.vocal_voicebank.is_empty() {
-                                "Default (Built-in)"
-                            } else {
-                                &s.new_track.vocal_voicebank
-                            };
-                            egui::ComboBox::from_id_salt("card_voicebank_combo")
-                                .selected_text(cur_singer)
-                                .width(115.0)
-                                .show_ui(&mut sub_ui, |ui| {
-                                    if ui
-                                        .selectable_label(
-                                            s.new_track.vocal_voicebank.is_empty(),
-                                            "Default (Built-in)",
-                                        )
-                                        .clicked()
-                                    {
-                                        s.new_track.vocal_voicebank.clear();
-                                    }
-                                    for sng in &singers {
-                                        let sel = s.new_track.vocal_voicebank == sng.name;
-                                        if ui.selectable_label(sel, &sng.name).clicked() {
-                                            s.new_track.vocal_voicebank = sng.name.clone();
-                                        }
-                                    }
-                                });
-                        }
                     }
                 }
             });
@@ -514,12 +472,6 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                                     &mut s.new_track.load_default_patch,
                                     "Load Default Patch",
                                 );
-
-                                if s.new_track.choice == CardChoice::VocalUtau {
-                                    if ui.button("Manage UTAU Singers…").clicked() {
-                                        s.singer_manager.open();
-                                    }
-                                }
                             });
                         });
                     });
@@ -604,24 +556,6 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                         p.tracks[at].icon = Some(crate::track_icons::IconKind::Guitar);
                     }
                 },
-                CardChoice::VocalUtau => {
-                    crate::vocal::new_track(p, s);
-                    let len = p.tracks.len();
-                    if len >= 2 {
-                        if !s.new_track.vocal_voicebank.is_empty() {
-                            if let Some(crate::vocal::VocalRole::Score(set)) =
-                                &mut p.tracks[len - 2].vocal
-                            {
-                                set.voice = s.new_track.vocal_voicebank.clone();
-                                set.singer = crate::vocal::Singer::OpenUtau;
-                            }
-                            p.tracks[len - 2].name =
-                                format!("{} Top Line", s.new_track.vocal_voicebank);
-                            p.tracks[len - 1].name =
-                                format!("{} Vocal", s.new_track.vocal_voicebank);
-                        }
-                    }
-                }
             }
         }
 
@@ -643,17 +577,15 @@ mod tests {
         assert_eq!(CardChoice::Pattern.kind(), TrackKind::Drummer);
         assert_eq!(CardChoice::SessionPlayer.kind(), TrackKind::Drummer);
         assert_eq!(CardChoice::Audio.kind(), TrackKind::Audio);
-        assert_eq!(CardChoice::VocalUtau.kind(), TrackKind::Instrument);
     }
 
     #[test]
     fn each_choice_has_distinct_accent_and_icon() {
-        const CARDS: [CardChoice; 5] = [
+        const CARDS: [CardChoice; 4] = [
             CardChoice::SoftwareInstrument,
             CardChoice::Pattern,
             CardChoice::SessionPlayer,
             CardChoice::Audio,
-            CardChoice::VocalUtau,
         ];
         for c in CARDS {
             assert!(!c.title().is_empty());

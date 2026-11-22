@@ -229,7 +229,6 @@ Per **Section 5 of the GNU General Public License v3**, Dōri explicitly attribu
 - **[fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave)** (GPL-3.0-or-later): Upstream core DAW architecture, real-time lock-free engine, egui user interface, and built-in DSP effects.
 - **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version arranging tools (Marquee selection, snap grid, Option-drag), crash recovery, and 808 Bass synthesizer.
 - **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): Faster-than-realtime offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 True Peak and loudness metering.
-- **[stakira/OpenUtau](https://github.com/stakira/OpenUtau)** (MIT License): Open-source singing voice synthesis platform, phonemizer, and vocal synthesis architecture references.
 - **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.
 - **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Clean vector studio icons via `phosphor-egui`.
 - **Original 3D Artwork**: Blender-rendered Dōri studio app icon and 3D studio visual assets created by **triadwoozie**.

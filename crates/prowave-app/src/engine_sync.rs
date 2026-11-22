@@ -1703,7 +1703,6 @@ mod tests {
             midi_program: None,
             midi_bank: None,
             midi_fx: Vec::new(),
-            vocal: None,
             au_instrument: None,
             au_effects: Vec::new(),
         }

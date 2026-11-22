@@ -30,7 +30,6 @@ Thumbs.db
 references/
 /branding-staging
 branding-staging/
-Cache/utau_renders/*.wav
 Cache/peaks/*.peak
 Cache/
 *.peak

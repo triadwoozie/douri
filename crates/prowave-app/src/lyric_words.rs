@@ -281,7 +281,7 @@ pub fn shown(notes: &[Note]) -> Vec<String> {
     out
 }
 
-/// What each note sings, as the singer takes it (OpenUtau's lyrics): the word on its first
+/// What each note sings, as the engine takes it: the word on its first
 /// note, `+` on each note that continues it (next syllables and held vowels alike; the
 /// phonemizer spreads the word's syllables over them), `la` for a note with no lyric.
 pub fn engine_lyric(lyric: &Lyric) -> String {

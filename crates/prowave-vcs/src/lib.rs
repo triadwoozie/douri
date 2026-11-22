@@ -228,7 +228,6 @@ pub fn scaffold_gitignore(repo_path: &Path) -> std::io::Result<()> {
     let ignore_path = repo_path.join(".gitignore");
     let content = "\
 # Dōri DAW transient audio caches & temp files
-Cache/utau_renders/*.wav
 Cache/peaks/*.peak
 Cache/
 *.douri.tmp
@@ -245,7 +244,6 @@ Thumbs.db
         let existing = std::fs::read_to_string(&ignore_path)?;
         let mut to_append = String::new();
         for line in [
-            "Cache/utau_renders/*.wav",
             "Cache/peaks/*.peak",
             "Cache/",
             "*.douri.tmp",
@@ -1516,7 +1514,6 @@ mod tests {
         scaffold_gitignore(dir.path()).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert!(content.contains("Cache/utau_renders/*.wav"));
         assert!(content.contains("Cache/peaks/*.peak"));
         assert!(content.contains("Cache/"));
         assert!(content.contains("*.peak"));

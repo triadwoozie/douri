@@ -786,7 +786,7 @@ pub fn control_bar(
         _ => {}
     }
     // Smart Controls / Mixer / Editors (Pill 2)
-    let editors_on = matches!(s.bottom, Bottom::PianoRoll | Bottom::VocalEditor);
+    let editors_on = matches!(s.bottom, Bottom::PianoRoll);
     let mid = [
         (icon_smart_controls as IconFn, s.light_menus),
         (icon_mixer, s.show_mixer && s.bottom == Bottom::Mixer),
@@ -810,12 +810,6 @@ pub fn control_bar(
         Some(2) => {
             s.bottom = if editors_on {
                 Bottom::Mixer
-            } else if p
-                .tracks
-                .get(p.selected_track)
-                .is_some_and(|t| t.vocal.is_some())
-            {
-                Bottom::VocalEditor
             } else {
                 Bottom::PianoRoll
             };

@@ -818,8 +818,6 @@ pub struct Track {
     /// that listens to the bus its children send their output to. Its children are the tracks
     /// indented under it, as in a folder stack.
     pub summing_stack: bool,
-    /// Vocal Top Line role and settings.
-    pub vocal: Option<crate::vocal::VocalRole>,
     /// Plug-in instrument slot (AU / Singer).
     pub au_instrument: Option<crate::plugins::PluginSlot>,
     /// Plug-in effect slots.
@@ -927,7 +925,6 @@ impl Track {
             midi_bank: None,
             midi_fx: Vec::new(),
             summing_stack: false,
-            vocal: None,
             au_instrument: None,
             au_effects: Vec::new(),
         }
@@ -1171,7 +1168,6 @@ impl Project {
             hosted_instrument: 0,
             icon: None,
             summing_stack: false,
-            vocal: None,
             au_instrument: None,
             au_effects: Vec::new(),
             midi_channel: 1,
@@ -1246,7 +1242,6 @@ impl Project {
             hosted_instrument: 0,
             icon: None,
             summing_stack: false,
-            vocal: None,
             au_instrument: None,
             au_effects: Vec::new(),
             midi_channel: 1,
