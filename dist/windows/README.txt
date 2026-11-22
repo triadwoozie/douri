@@ -1,31 +1,23 @@
-Pro Wave - Windows x64
-======================
+Dōri - Windows x64
+=================
 
-Pro Wave is a DAW (music production app) in the style of Apple Logic Pro, written in Rust.
-This is an early development build: expect missing features and rough edges.
+Dōri is a digital audio workstation and music production studio in Rust (egui + cpal).
 
 Run it
 ------
 
 1. Unzip the folder anywhere (it needs no installer and writes nothing outside your user
    folders).
-2. Double-click prowave.exe.
+2. Double-click douri.exe.
 
 Windows may show "Windows protected your PC" (SmartScreen) because the program is not code
 signed yet. Choose "More info", then "Run anyway".
 
-Some antivirus programs (for example Norton, Avast, AVG or McAfee) block new unsigned
-programs they have not seen before. Windows then says "Windows cannot access the specified
-device, path or file" or "Access is denied". Restoring the file from the antivirus's
-history is not always enough: add the Pro Wave folder to its exclusions. In Norton: Settings >
-Antivirus > Scans and Risks > "Items to Exclude from Auto-Protect, Script Control, SONAR and
-Download Intelligence Detection" > Configure > Add Folders. Then double-click prowave.exe again.
-
 From a terminal:
-  prowave.exe song.prowave          open a project
-  prowave.exe drums.wav bass.flac   start a new project and import audio files
-  prowave.exe --play                start playing right away
-  prowave.exe --piano               open the Piano Roll on start
+  douri.exe song.douri             open a project
+  douri.exe drums.wav bass.flac    start a new project and import audio files
+  douri.exe --play                 start playing right away
+  douri.exe --piano                open the Piano Roll on start
 
 Audio files supported: WAV, AIFF, FLAC. You can also drag audio files onto the window.
 
@@ -39,8 +31,8 @@ Requirements
 Where it keeps things
 ---------------------
 
-- The list of recent projects: %APPDATA%\prowave\recent.txt
-- Projects you open are unpacked to a temporary folder (%TEMP%\prowave-media) while they are
+- The list of recent projects: %APPDATA%\douri\recent.txt
+- Projects you open are unpacked to a temporary folder (%TEMP%\douri-media) while they are
   open; it is cleaned up when you close the program.
 - If it crashes, it prints the path of a crash report in %TEMP%.
 
