@@ -215,6 +215,7 @@ enum Choice {
 
 /// Queues the File command for `choice`.
 fn choose(choice: Choice, c: &Chooser, s: &mut UiState) {
+    s.chooser = None;
     match choice {
         Choice::Template(t) => {
             s.chooser_details = c.details.clone();
@@ -782,6 +783,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     ui.scope_builder(egui::UiBuilder::new().max_rect(footer_ui), |ui| {
         ui.horizontal_centered(|ui| {
             if ui.button(tr("Open an existing project…")).clicked() {
+                s.chooser = None;
                 s.file_cmd = Some(FileCmd::Open);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -840,9 +842,10 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         }
         return;
     }
-    s.chooser = Some(c.clone());
     if let Some(choice) = chosen {
         choose(choice, &c, s);
+    } else {
+        s.chooser = Some(c.clone());
     }
 }
 
@@ -889,6 +892,19 @@ mod tests {
         c.section = Section::NewProject;
         c.selected = 0;
         choose(choice(&c, &[]).unwrap(), &c, &mut s);
+        assert_eq!(s.file_cmd, Some(FileCmd::NewFrom(Template::Empty)));
+        assert!(s.chooser.is_none(), "chooser must be dismissed on choose");
+    }
+
+    #[test]
+    fn chooser_show_sets_none_and_queues_command_on_choose() {
+        let mut s = UiState::new();
+        s.chooser = Some(Chooser::default());
+        // Simulating choose button click by calling choose
+        let c = s.chooser.clone().unwrap();
+        let ch = choice(&c, &[]).unwrap();
+        choose(ch, &c, &mut s);
+        assert!(s.chooser.is_none());
         assert_eq!(s.file_cmd, Some(FileCmd::NewFrom(Template::Empty)));
     }
 }

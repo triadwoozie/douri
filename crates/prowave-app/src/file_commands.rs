@@ -439,6 +439,8 @@ impl App {
         self.ui.reset_views();
         // Undo stays within one project.
         self.history.reset(&self.project);
+        // A project is open now, so the Project Chooser has done its job.
+        self.ui.chooser = None;
     }
 }
 
