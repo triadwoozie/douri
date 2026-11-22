@@ -114,10 +114,12 @@ struct InstallerApp {
     rx: Receiver<InstallMsg>,
     icon_texture: Option<egui::TextureHandle>,
     cancel_flag: Arc<AtomicBool>,
+    screenshot_path: Option<PathBuf>,
+    screenshot_frames: u32,
 }
 
 impl InstallerApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, screenshot_path: Option<PathBuf>) -> Self {
         install_phosphor_fonts(&cc.egui_ctx);
 
         let (tx, rx) = channel();
@@ -147,6 +149,8 @@ impl InstallerApp {
             rx,
             icon_texture,
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            screenshot_path,
+            screenshot_frames: 0,
         }
     }
 
@@ -499,6 +503,28 @@ impl eframe::App for InstallerApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_messages();
+
+        if let Some(ref path) = self.screenshot_path {
+            self.screenshot_frames += 1;
+            ui.ctx().request_repaint();
+            if self.screenshot_frames == 2 {
+                let path = path.clone();
+                ui.ctx().request_screenshot(move |image| {
+                    let [w, h] = image.size;
+                    let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+                    let _ = image::save_buffer(
+                        &path,
+                        &bytes,
+                        w as u32,
+                        h as u32,
+                        image::ColorType::Rgba8,
+                    );
+                });
+            }
+            if self.screenshot_frames >= 4 {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
 
         // Repaint continuously during installation
         if self.state == InstallState::Installing {
@@ -938,10 +964,15 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let screenshot_path = std::env::args()
+        .position(|a| a == "--screenshot")
+        .and_then(|idx| std::env::args().nth(idx + 1))
+        .map(PathBuf::from);
+
     eframe::run_native(
         "Dōri Setup",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             // Configure custom dark palette
             let mut visuals = egui::Visuals::dark();
             visuals.panel_fill = Color32::from_rgb(0x16, 0x18, 0x1E);
@@ -949,7 +980,7 @@ fn main() -> eframe::Result<()> {
             visuals.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x26, 0x29, 0x32));
             cc.egui_ctx.set_visuals(visuals);
 
-            Ok(Box::new(InstallerApp::new(cc)))
+            Ok(Box::new(InstallerApp::new(cc, screenshot_path)))
         }),
     )
 }
