@@ -200,6 +200,7 @@ pub struct AudioClip {
     /// Next clip-relative frame to play (negative = before the region starts).
     pos: i64,
     underruns: u32,
+    started: bool,
 }
 
 /// Non-destructive region edits (Logic Pro: Region Inspector Gain, Fade In/Out, Reverse).
@@ -281,6 +282,7 @@ impl AudioClip {
             cur: None,
             pos: 0,
             underruns: 0,
+            started: false,
         }
     }
 
@@ -289,6 +291,7 @@ impl AudioClip {
         self.pos = offset;
         self.gen = self.gen.wrapping_add(1);
         self.cur = None;
+        self.started = false;
         let want = self.pos.clamp(0, self.len_frames as i64) as u64;
         self.shared.request(self.gen, want);
     }
@@ -325,10 +328,15 @@ impl AudioClip {
                 self.cur = None;
             }
             match self.rx.pop() {
-                Ok(b) if b.gen == self.gen => self.cur = Some(b),
+                Ok(b) if b.gen == self.gen => {
+                    self.started = true;
+                    self.cur = Some(b);
+                }
                 Ok(_) => {}
                 Err(_) => {
-                    self.underruns += 1;
+                    if self.started {
+                        self.underruns += 1;
+                    }
                     return None;
                 }
             }
@@ -1504,6 +1512,11 @@ impl EngineCore {
     fn run_strip(&mut self, t: usize, out: &mut (f64, f64)) {
         let route = self.routes[t];
         let audible = self.track_audible[t];
+        if !audible && route.bus_in == 0 && route.sends.iter().all(|s| s.bus == 0) {
+            self.in_l[t] = 0.0;
+            self.in_r[t] = 0.0;
+            return;
+        }
         let (mut xl, mut xr) = (self.in_l[t], self.in_r[t]);
         self.in_l[t] = 0.0;
         self.in_r[t] = 0.0;
@@ -2558,18 +2571,19 @@ impl EngineCore {
             let transport_beat = if self.playing { self.beat } else { f64::NAN };
             for &track in &self.plugin_tracks {
                 let t = track as usize;
+                if !self.track_audible[t] {
+                    continue;
+                }
                 if let Some(p) = self.plugins[t].as_mut() {
                     if p.follows_transport() {
                         p.set_beat(self.frame_i, transport_beat);
                     }
                     let (pl, pr) = p.instrument_frame(self.frame_i);
-                    if self.track_audible[t] {
-                        self.in_l[t] += pl as f64;
-                        self.in_r[t] += pr as f64;
-                        if !self.touched[t] {
-                            self.touched[t] = true;
-                            self.dirty.push(track);
-                        }
+                    self.in_l[t] += pl as f64;
+                    self.in_r[t] += pr as f64;
+                    if !self.touched[t] {
+                        self.touched[t] = true;
+                        self.dirty.push(track);
                     }
                 }
             }

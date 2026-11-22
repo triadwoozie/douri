@@ -205,13 +205,30 @@ pub fn slider_h(
 ) -> Option<f32> {
     let cy = rect.center().y;
     let v = value.clamp(0.0, 1.0);
-    let groove = Rect::from_min_max(pos2(rect.left(), cy - 2.0), pos2(rect.right(), cy + 2.0));
-    g.rect_filled(groove, 2.0, Color32::from_gray(0x24));
+    let groove = Rect::from_min_max(pos2(rect.left(), cy - 2.5), pos2(rect.right(), cy + 2.5));
+    g.rect_filled(groove, 2.5, Color32::from_rgb(0x14, 0x15, 0x18));
+    g.rect_stroke(
+        groove,
+        2.5,
+        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38)),
+        egui::StrokeKind::Inside,
+    );
     let knob = pos2(rect.left() + 6.0 + (rect.width() - 12.0) * v, cy);
+    if enabled && v > 0.0 {
+        let active_rail =
+            Rect::from_min_max(pos2(groove.left() + 1.0, cy - 1.5), pos2(knob.x, cy + 1.5));
+        g.rect_filled(active_rail, 1.5, Color32::from_rgb(0x2b, 0x6c, 0xb0));
+    }
     let (fill, edge) = if enabled {
-        (Color32::from_gray(0xc4), Color32::from_gray(0x70))
+        (
+            Color32::from_rgb(0xd0, 0xd4, 0xdc),
+            Color32::from_rgb(0x3e, 0x42, 0x4c),
+        )
     } else {
-        (Color32::from_gray(0x6a), Color32::from_gray(0x50))
+        (
+            Color32::from_rgb(0x6a, 0x70, 0x7a),
+            Color32::from_rgb(0x2e, 0x31, 0x38),
+        )
     };
     g.circle_filled(knob, 6.0, fill);
     g.circle_stroke(knob, 6.0, Stroke::new(1.0, edge));

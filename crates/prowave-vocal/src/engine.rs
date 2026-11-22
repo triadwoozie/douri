@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::cache::PhraseCache;
-use crate::crossfade::{crossfade_phrase, RenderedSegment};
+use crate::crossfade::{crossfade_phrase_with_offset, RenderedSegment};
 use crate::phonemizer::JapaneseVcvPhonemizer;
 use crate::resampler::{run_builtin_resampler, run_external_resampler, ResamplerItem};
 use crate::voicebank::Voicebank;
@@ -140,14 +140,115 @@ impl VocalEngine {
         }
 
         // 3. Crossfade and stitch all segments together
-        let phrase_audio = crossfade_phrase(&segments, sample_rate);
+        let (phrase_audio, time_offset) = crossfade_phrase_with_offset(&segments, sample_rate);
         let sound: Arc<[f32]> = phrase_audio.into();
 
         // Store in cache
         self.cache.insert(cache_key, sound.clone());
 
         Some(SingerClip {
-            origin: first_second,
+            origin: first_second + time_offset,
+            sound,
+        })
+    }
+
+    /// Renders a single phrase where note timings are already in seconds relative to `phrase_origin_secs`:
+    /// `notes`: `(start_sec, dur_sec, tone, lyric)`.
+    pub fn render_phrase_secs(
+        &mut self,
+        voicebank: &Voicebank,
+        notes: &[(f64, f64, u8, String)],
+        phrase_origin_secs: f64,
+        tempo_bpm: f64,
+        sample_rate: u32,
+    ) -> Option<SingerClip> {
+        if notes.is_empty() {
+            return None;
+        }
+
+        let cache_key = PhraseCache::compute_key(&voicebank.name, tempo_bpm, notes);
+        if let Some(sound) = self.cache.get(cache_key) {
+            return Some(SingerClip {
+                origin: phrase_origin_secs,
+                sound,
+            });
+        }
+
+        // 1. Phonemize lyric sequence
+        let phonemes = self.phonemizer.phonemize(notes, voicebank);
+        if phonemes.is_empty() {
+            return None;
+        }
+
+        // 2. Render each phoneme segment
+        let mut segments = Vec::with_capacity(phonemes.len());
+
+        for ph in &phonemes {
+            let rel_sec = ph.beat;
+            let dur_sec = ph.duration_beats;
+            let dur_ms = dur_sec * 1000.0;
+
+            let (oto, wav_path) = match voicebank.find_oto(&ph.alias, Some(ph.tone)) {
+                Some((o, dir)) => (o.clone(), dir.join(&o.wav)),
+                None => continue,
+            };
+
+            let preutter_ms = oto.preutterance;
+            let overlap_ms = oto.overlap;
+
+            let item = ResamplerItem {
+                input_file: wav_path,
+                output_file: PathBuf::new(),
+                tone: ph.tone,
+                velocity: 100,
+                flags: String::new(),
+                offset: oto.offset,
+                dur_required: dur_ms + preutter_ms,
+                consonant: oto.consonant,
+                cutoff: oto.cutoff,
+                volume: 100.0,
+                modulation: 0.0,
+                tempo: tempo_bpm,
+                pitch_bends: Vec::new(),
+            };
+
+            let samples = if let Some(bin) = &self.external_resampler_path {
+                if bin.is_file() {
+                    let mut temp_item = item.clone();
+                    let temp_out = std::env::temp_dir().join(format!("resamp_{}.wav", ph.tone));
+                    temp_item.output_file = temp_out;
+                    run_external_resampler(bin, &temp_item)
+                        .or_else(|_| run_builtin_resampler(&item, ph.tone, sample_rate))
+                        .unwrap_or_default()
+                } else {
+                    run_builtin_resampler(&item, ph.tone, sample_rate).unwrap_or_default()
+                }
+            } else {
+                run_builtin_resampler(&item, ph.tone, sample_rate).unwrap_or_default()
+            };
+
+            if !samples.is_empty() {
+                segments.push(RenderedSegment {
+                    samples,
+                    start_time_secs: rel_sec,
+                    preutterance_secs: preutter_ms / 1000.0,
+                    overlap_secs: overlap_ms / 1000.0,
+                });
+            }
+        }
+
+        if segments.is_empty() {
+            return None;
+        }
+
+        // 3. Crossfade and stitch all segments together
+        let (phrase_audio, time_offset) = crossfade_phrase_with_offset(&segments, sample_rate);
+        let sound: Arc<[f32]> = phrase_audio.into();
+
+        self.cache.insert(cache_key, sound.clone());
+
+        Some(SingerClip {
+            origin: phrase_origin_secs + time_offset,
             sound,
         })
     }

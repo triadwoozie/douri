@@ -543,6 +543,19 @@ impl McpEngine {
                 }
             }),
             json!({
+                "name": "configure_plugin",
+                "description": "Configure an insert plugin parameter on a track.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" },
+                        "slot_index": { "type": "integer" },
+                        "params": { "type": "object", "description": "Key-value map of param_index (as string) to float value" }
+                    },
+                    "required": ["track_index", "slot_index", "params"]
+                }
+            }),
+            json!({
                 "name": "create_midi_clip",
                 "description": "Insert a new MIDI clip/region with notes on a track.",
                 "inputSchema": {
@@ -903,89 +916,23 @@ impl McpEngine {
             }
             "render_vocal_track" => {
                 let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
-                if ti >= p.tracks.len() {
-                    return Err(format!("Track index {ti} out of bounds"));
-                }
-                let Some(crate::vocal::VocalRole::Score(set)) = p.tracks[ti].vocal.clone() else {
-                    return Err("Specified track is not a Vocal Top Line score track".to_string());
-                };
-                let link = set.link;
+                let ctx = egui::Context::default();
+                let phrases_count = crate::vocal::render_score_track_sync(p, ti, &ctx)?;
                 let out_idx = p
                     .tracks
                     .iter()
-                    .position(|t| t.vocal == Some(crate::vocal::VocalRole::Output { link }))
-                    .ok_or("Matching vocal audio output track not found")?;
-
-                let singers = prowave_vocal::discover_singers(&[]);
-                let vb = if !set.voice.is_empty() {
-                    let direct_path = std::path::Path::new(&set.voice);
-                    if direct_path.is_dir() {
-                        prowave_vocal::Voicebank::load(direct_path).unwrap_or_default()
-                    } else if let Some(s) = singers
-                        .iter()
-                        .find(|s| s.name == set.voice || s.id == set.voice)
-                    {
-                        prowave_vocal::Voicebank::load(&s.path).unwrap_or_default()
-                    } else {
-                        prowave_vocal::Voicebank::default()
-                    }
-                } else {
-                    prowave_vocal::Voicebank::default()
-                };
-
-                let tempo_map = p.tempo_map();
-                let mut engine = prowave_vocal::VocalEngine::new();
-                let mut all_phrases_rendered = 0;
-                let ctx = egui::Context::default();
-
-                let score_track = p.tracks[ti].clone();
-                let mut output_regions = Vec::new();
-
-                for r in &score_track.regions {
-                    let phrases =
-                        crate::vocal::region_phrases(p, &tempo_map, &score_track, r, &set);
-                    for ph in phrases {
-                        let notes: Vec<(f64, f64, u8, String)> = ph
-                            .notes
-                            .iter()
-                            .map(|n| (n.start as f64, n.dur as f64, n.pitch, n.lyric.clone()))
-                            .collect();
-                        if let Some(clip) = engine.render_phrase(&vb, &notes, &tempo_map, 44100) {
-                            let cache_dir = crate::vocal::cache_dir();
-                            let _ = std::fs::create_dir_all(&cache_dir);
-                            let wav_path = cache_dir.join(format!("vocal_clip_{}.wav", ph.key));
-                            let _ = crate::vocal::write_wav(&wav_path, &clip.sound, 44100);
-                            if let Ok(file) = prowave_engine::AudioFile::open(&wav_path) {
-                                let audio = crate::import::audio_region(file, &ctx);
-                                let start_beats = tempo_map.beat_at(clip.origin);
-                                let start_bar = (p.beats_to_bar(start_beats) + 1.0) as f32;
-                                let duration_sec = clip.sound.len() as f64 / 44100.0;
-                                let end_beats = tempo_map.beat_at(clip.origin + duration_sec);
-                                let end_bar = (p.beats_to_bar(end_beats) + 1.0) as f32;
-                                let len_bars = (end_bar - start_bar).max(0.1);
-                                output_regions.push(Region {
-                                    name: format!("{} Vocal", score_track.name),
-                                    start_bar,
-                                    len_bars,
-                                    notes: Vec::new(),
-                                    controls: Vec::new(),
-                                    folder: None,
-                                    audio: Some(audio),
-                                    params: RegionParams::default(),
-                                    missing: None,
-                                    generated: None,
-                                });
-                                all_phrases_rendered += 1;
-                            }
+                    .position(|t| {
+                        if let Some(crate::vocal::VocalRole::Score(set)) = &p.tracks[ti].vocal {
+                            t.vocal == Some(crate::vocal::VocalRole::Output { link: set.link })
+                        } else {
+                            false
                         }
-                    }
-                }
-                p.tracks[out_idx].regions = output_regions;
-                p.song_rev += 1;
+                    })
+                    .unwrap_or(ti);
                 Ok(json!({
                     "score_track_index": ti,
                     "audio_track_index": out_idx,
-                    "phrases_rendered": all_phrases_rendered,
+                    "phrases_rendered": phrases_count,
                     "regions_count": p.tracks[out_idx].regions.len(),
                     "status": "synthesized"
                 }))
@@ -1094,6 +1041,49 @@ impl McpEngine {
                     p.tracks[ti].inserts.push(insert);
                 }
                 Ok(json!({ "status": "loaded", "track_index": ti, "plugin": plug_name }))
+            }
+            "configure_plugin" => {
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                if ti >= p.tracks.len() {
+                    return Err(format!("Track index {ti} out of bounds"));
+                }
+                let si = args["slot_index"].as_u64().ok_or("Missing slot_index")? as usize;
+                if si >= p.tracks[ti].inserts.len() {
+                    return Err(format!("Slot index {si} out of bounds on track {ti}"));
+                }
+                let insert = &mut p.tracks[ti].inserts[si];
+                if let Some(params_obj) = args.get("params").and_then(|v| v.as_object()) {
+                    let param_infos = insert.kind.params();
+                    for (k, v) in params_obj {
+                        if let Some(val) = v.as_f64().map(|f| f as f32) {
+                            if let Ok(idx) = k.parse::<usize>() {
+                                if idx < insert.params.len() {
+                                    insert.params[idx] = val;
+                                }
+                            } else {
+                                for (idx, info) in param_infos.iter().enumerate() {
+                                    if info.name.eq_ignore_ascii_case(k) {
+                                        insert.params[idx] = val;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    insert.params = insert.kind.clamp_params(insert.params);
+                } else if let Some(params_arr) = args.get("params").and_then(|v| v.as_array()) {
+                    for (idx, v) in params_arr.iter().enumerate() {
+                        if idx < insert.params.len() {
+                            if let Some(val) = v.as_f64().map(|f| f as f32) {
+                                insert.params[idx] = val;
+                            }
+                        }
+                    }
+                    insert.params = insert.kind.clamp_params(insert.params);
+                }
+                Ok(
+                    json!({ "status": "configured", "track_index": ti, "slot_index": si, "params": insert.params }),
+                )
             }
             "create_midi_clip" => {
                 let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;

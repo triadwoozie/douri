@@ -200,39 +200,51 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
 
                     // Background fill & border
                     let bg_color = if selected {
-                        ui_chrome::CARD_BG_SELECTED
+                        Color32::from_rgb(0x22, 0x25, 0x2b)
                     } else if resp.hovered() {
-                        ui_chrome::CARD_BG_HOVER
+                        Color32::from_rgb(0x24, 0x27, 0x2e)
                     } else {
-                        ui_chrome::CARD_BG
+                        Color32::from_rgb(0x1a, 0x1c, 0x20)
                     };
 
                     let border_stroke = if selected {
-                        Stroke::new(2.0, accent)
+                        Stroke::new(1.5, Color32::from_rgb(0x2b, 0x6c, 0xb0))
                     } else if resp.hovered() {
-                        Stroke::new(1.0, Color32::from_white_alpha(50))
+                        Stroke::new(1.0, Color32::from_rgb(0x3e, 0x42, 0x4c))
                     } else {
-                        Stroke::new(1.0, ui_chrome::RIM_COLOR)
+                        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38))
                     };
 
-                    painter.rect(rect, 10.0, bg_color, border_stroke, StrokeKind::Inside);
+                    painter.rect(rect, 8.0, bg_color, border_stroke, StrokeKind::Inside);
 
-                    // Circular 44x44px colored badge at top center
+                    // Circular 44x44px badge at top center
                     let circle_center = pos2(rect.center().x, rect.top() + 32.0);
-                    painter.circle_filled(circle_center, 22.0, accent);
-                    painter.circle_stroke(
-                        circle_center,
-                        22.0,
-                        Stroke::new(1.0, Color32::from_white_alpha(60)),
-                    );
+                    let badge_bg = if selected {
+                        Color32::from_rgb(0x2b, 0x6c, 0xb0)
+                    } else if resp.hovered() {
+                        Color32::from_rgb(0x28, 0x2b, 0x32)
+                    } else {
+                        Color32::from_rgb(0x20, 0x22, 0x26)
+                    };
+                    let badge_border = if selected {
+                        Color32::from_rgb(0x3b, 0x82, 0xf6)
+                    } else {
+                        Color32::from_rgb(0x2e, 0x31, 0x38)
+                    };
+                    painter.circle_filled(circle_center, 22.0, badge_bg);
+                    painter.circle_stroke(circle_center, 22.0, Stroke::new(1.0, badge_border));
 
-                    // Icon centered inside circular badge
+                    // Monochrome Phosphor icon centered inside circular badge
                     painter.text(
                         circle_center,
                         Align2::CENTER_CENTER,
                         c.icon(),
                         FontId::proportional(22.0),
-                        Color32::WHITE,
+                        if selected {
+                            Color32::WHITE
+                        } else {
+                            Color32::from_rgb(0x9a, 0xa0, 0xac)
+                        },
                     );
 
                     // Title
@@ -594,11 +606,19 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                 },
                 CardChoice::VocalUtau => {
                     crate::vocal::new_track(p, s);
-                    if let Some(track) = p.tracks.last_mut() {
-                        track.color = ACCENT_ROSE;
-                        track.icon = Some(crate::track_icons::IconKind::Mic);
+                    let len = p.tracks.len();
+                    if len >= 2 {
                         if !s.new_track.vocal_voicebank.is_empty() {
-                            track.name = s.new_track.vocal_voicebank.clone();
+                            if let Some(crate::vocal::VocalRole::Score(set)) =
+                                &mut p.tracks[len - 2].vocal
+                            {
+                                set.voice = s.new_track.vocal_voicebank.clone();
+                                set.singer = crate::vocal::Singer::OpenUtau;
+                            }
+                            p.tracks[len - 2].name =
+                                format!("{} Top Line", s.new_track.vocal_voicebank);
+                            p.tracks[len - 1].name =
+                                format!("{} Vocal", s.new_track.vocal_voicebank);
                         }
                     }
                 }

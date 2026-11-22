@@ -1614,17 +1614,12 @@ impl eframe::App for App {
         smart_tempo::poll(&ctx, &mut self.project, &mut self.ui);
         flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
         groove::poll(&ctx, &mut self.project, &mut self.ui);
+        vocal::frame(&ctx, &mut self.project, &mut self.ui);
         if !ctx.egui_wants_keyboard_input() {
-            if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
                 self.project.playing = !self.project.playing;
             } else if self.ui.keymap_prefs.profile == key_commands::KeymapProfile::Reaper {
-                if ctx.input(|i| {
-                    !i.modifiers.command
-                        && !i.modifiers.ctrl
-                        && !i.modifiers.shift
-                        && !i.modifiers.alt
-                        && i.key_pressed(egui::Key::Enter)
-                }) {
+                if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
                     self.project.playing = !self.project.playing;
                 }
             }

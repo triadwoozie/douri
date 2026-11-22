@@ -840,14 +840,14 @@ fn mini_slider(ui: &Ui, g: &Painter, rect: Rect, key: &str, value: f32) -> f32 {
             trough.min,
             pos2(trough.left() + trough.width() * v, trough.bottom()),
         );
-        g.rect_filled(fill, 2.0, Color32::from_rgb(0x6e, 0x75, 0x82));
+        g.rect_filled(fill, 2.0, Color32::from_rgb(0x2b, 0x6c, 0xb0));
     }
     let thumb_c = pos2(rect.left() + rect.width() * v, cy);
-    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xf2, 0xf3, 0xf5));
+    g.circle_filled(thumb_c, 5.5, Color32::from_rgb(0xd0, 0xd4, 0xdc));
     g.circle_stroke(
         thumb_c,
         5.5,
-        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x31, 0x38)),
+        Stroke::new(1.0, Color32::from_rgb(0x3e, 0x42, 0x4c)),
     );
     v
 }

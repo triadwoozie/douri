@@ -28,8 +28,8 @@ const ROW_DIVIDER: Color32 = Color32::from_rgb(0x23, 0x26, 0x2c); // #23262C
 const ROW_BG_EVEN: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c); // #16181C
 const ROW_BG_ODD: Color32 = Color32::from_rgb(0x1b, 0x1d, 0x22); // #1B1D22
 
-const PILL_ACTIVE_BG: Color32 = Color32::from_rgb(0xf2, 0xf3, 0xf5); // #F2F3F5
-const PILL_ACTIVE_TEXT: Color32 = Color32::from_rgb(0x11, 0x12, 0x15); // #111215
+const PILL_ACTIVE_BG: Color32 = Color32::from_rgb(0x2b, 0x6c, 0xb0); // #2B6CB0 (Logic Blue)
+const PILL_ACTIVE_TEXT: Color32 = Color32::WHITE;
 const PILL_INACTIVE_BG: Color32 = Color32::from_rgb(0x20, 0x22, 0x26); // #202226
 const PILL_INACTIVE_TEXT: Color32 = Color32::from_rgb(0x9a, 0xa0, 0xac); // #9AA0AC
 

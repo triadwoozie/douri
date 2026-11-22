@@ -387,6 +387,8 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let grid = Rect::from_min_max(pos2(area.left() + LABEL_W, area.top()), area.max);
     let steps = pat.steps.clamp(1, crate::pattern::MAX_STEPS);
     let cw = ((grid.width() - 12.0) / steps as f32).clamp(10.0, 64.0);
+    let per_beat = pat.rate.per_beat().max(1);
+    let step_len = pat.rate.beats();
     let v = &mut s.steps;
     let overflow = (pat.rows.len() as f32 * ROW_H - area.height() + 8.0).max(0.0);
     let (middle_down, middle_delta, hover) = ui.input(|i| {
@@ -412,10 +414,24 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         )
     };
     let g = ui.painter_at(area);
-    let per_beat = pat.rate.per_beat().max(1);
-    let step_len = pat.rate.beats();
     let now = p.position_beats - origin;
     let current = (now >= 0.0 && now < len_beats).then(|| pat.step_at(now));
+
+    // Interactive scrubbing ruler along the top of the grid
+    let ruler_rect = Rect::from_min_max(
+        pos2(grid.left(), area.top()),
+        pos2(grid.right(), area.top() + 4.0),
+    );
+    let ruler_resp = ui.interact(
+        ruler_rect,
+        egui::Id::unique("pattern_ruler"),
+        Sense::click_and_drag(),
+    );
+    if let Some(pos) = ruler_resp.interact_pointer_pos() {
+        let rel_x = (pos.x - grid.left()).max(0.0);
+        let scrub_step = (rel_x / cw).clamp(0.0, steps as f32);
+        p.position_beats = (origin + scrub_step as f64 * step_len).max(0.0);
+    }
     for (r, row) in pat.rows.iter().enumerate() {
         let y = top + r as f32 * ROW_H;
         if y + ROW_H < area.top() || y > area.bottom() {
@@ -498,6 +514,14 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             Rect::from_min_max(pos2(x, area.top()), pos2(x + cw, area.bottom())),
             0.0,
             Color32::from_white_alpha(22),
+        );
+    }
+    if now >= 0.0 && now < len_beats {
+        let frac_step = now / step_len;
+        let px = grid.left() + frac_step as f32 * cw;
+        g.line_segment(
+            [pos2(px, area.top()), pos2(px, area.bottom())],
+            Stroke::new(1.5, Color32::WHITE),
         );
     }
 
@@ -817,6 +841,16 @@ fn show_drummer(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let lane_h = ((lanes.height() - 12.0) / parts::LIST.len() as f32).clamp(18.0, 40.0);
     let grid = Rect::from_min_max(pos2(lanes.left() + 92.0, lanes.top()), lanes.max);
     let beat_px = ((grid.width() - 12.0) / len_beats.max(1.0) as f32).max(1.0);
+    let grid_resp = ui.interact(
+        grid,
+        egui::Id::unique(("drummer_grid", ti, ri)),
+        Sense::click_and_drag(),
+    );
+    if let Some(pos) = grid_resp.interact_pointer_pos() {
+        let rel_x = (pos.x - grid.left()).max(0.0);
+        let rel_beat = (rel_x / beat_px).clamp(0.0, len_beats as f32);
+        p.position_beats = (origin + rel_beat as f64).max(0.0);
+    }
     let lg = ui.painter_at(lanes);
     for (i, part) in parts::LIST.into_iter().enumerate() {
         let lane = Rect::from_min_size(
@@ -839,6 +873,14 @@ fn show_drummer(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         lg.line_segment(
             [pos2(x, lanes.top()), pos2(x, lanes.top() + lane_h * 6.0)],
             Stroke::new(1.0, crate::theme::BORDER),
+        );
+        let bar_num = (p.beats_to_bar(bar.start) + 1.0).round() as usize;
+        lg.text(
+            pos2(x + 3.0, lanes.top() + 2.0),
+            Align2::LEFT_TOP,
+            bar_num.to_string(),
+            FontId::proportional(10.0),
+            Color32::from_rgb(0x8e, 0x92, 0x9b),
         );
     }
     for n in &p.tracks[ti].regions[ri].notes {

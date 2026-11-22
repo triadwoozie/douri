@@ -683,28 +683,32 @@ pub(crate) fn sing_openutau(
     std::fs::create_dir_all(cache_dir()).map_err(|e| e.to_string())?;
     let total = todo.len();
     let vb = if !_set.voice.is_empty() {
-        let singers = prowave_vocal::discover_singers(&[]);
-        if let Some(s) = singers
-            .iter()
-            .find(|s| s.name == _set.voice || s.id == _set.voice)
-        {
-            prowave_vocal::Voicebank::load(&s.path).unwrap_or_default()
+        let direct_path = std::path::Path::new(&_set.voice);
+        if direct_path.is_dir() {
+            prowave_vocal::Voicebank::load(direct_path).unwrap_or_default()
         } else {
-            prowave_vocal::voicebank::Voicebank::default()
+            let singers = prowave_vocal::discover_singers(&[]);
+            if let Some(s) = singers
+                .iter()
+                .find(|s| s.name == _set.voice || s.id == _set.voice)
+            {
+                prowave_vocal::Voicebank::load(&s.path).unwrap_or_default()
+            } else {
+                prowave_vocal::voicebank::Voicebank::default()
+            }
         }
     } else {
         prowave_vocal::voicebank::Voicebank::default()
     };
-    let tempo_map = prowave_engine::TempoMap::default();
 
     for (i, ph) in todo.iter().enumerate() {
         let mut engine = prowave_vocal::VocalEngine::new();
         let notes: Vec<(f64, f64, u8, String)> = ph
             .notes
             .iter()
-            .map(|n| (n.start as f64, n.dur as f64, n.pitch, n.lyric.clone()))
+            .map(|n| (n.start, n.dur, n.pitch, n.lyric.clone()))
             .collect();
-        let clip = engine.render_phrase(&vb, &notes, &tempo_map, SAMPLE_RATE);
+        let clip = engine.render_phrase_secs(&vb, &notes, ph.origin, 120.0, SAMPLE_RATE);
         let x: Vec<f32> = if let Some(c) = clip {
             c.sound.to_vec()
         } else {
@@ -1132,6 +1136,77 @@ fn place_parts(ctx: &egui::Context, p: &mut Project, done: &Done) {
     }
     p.tracks[ti].regions = regions;
     p.song_rev += 1;
+}
+
+/// Synthesize a score track synchronously on this thread (used by MCP and immediate render tests).
+pub fn render_score_track_sync(
+    p: &mut Project,
+    ti: usize,
+    ctx: &egui::Context,
+) -> Result<usize, String> {
+    if ti >= p.tracks.len() {
+        return Err(format!("Track index {ti} out of bounds"));
+    }
+    let Some(VocalRole::Score(set)) = p.tracks[ti].vocal.clone() else {
+        return Err("Specified track is not a Vocal Top Line score track".to_string());
+    };
+    let parts = parts(p, &p.tracks[ti], &set);
+    let mut todo: Vec<&Phrase> = Vec::new();
+    for part in &parts {
+        for ph in &part.phrases {
+            if !cached(ph.key).is_file() && !todo.iter().any(|t| t.key == ph.key) {
+                todo.push(ph);
+            }
+        }
+    }
+    let progress = Arc::new(Mutex::new(String::new()));
+    if !todo.is_empty() {
+        if set.singer == Singer::OpenUtau {
+            sing_openutau(&set, &todo, &progress)?;
+        } else {
+            sing(&set, &todo, Place::ThisMac, &progress)?;
+        }
+    }
+    let mut out = Vec::new();
+    let mut rendered_count = 0;
+    for part in &parts {
+        if part.phrases.is_empty() {
+            continue;
+        }
+        let file = part_file(set.link, part);
+        if !file.is_file() {
+            let mut sounds = Vec::new();
+            for ph in &part.phrases {
+                let (s, _) = read_wav(&cached(ph.key))?;
+                sounds.push((ph.origin, s));
+            }
+            let mixed = mix_at(part.start_secs, &sounds);
+            write_wav(&file, &mixed, SAMPLE_RATE).map_err(|e| e.to_string())?;
+        }
+        let secs = prowave_engine::AudioFile::open(&file)
+            .map_err(|e| format!("{}: {e}", file.display()))?
+            .duration_secs();
+        out.push(Sung {
+            start_bar: part.start_bar,
+            start_secs: part.start_secs,
+            file,
+            secs,
+        });
+        rendered_count += part.phrases.len();
+    }
+    trim_cache();
+    let done = Done {
+        link: set.link,
+        singer: set.singer,
+        parts: out,
+        place: Some(Place::ThisMac),
+        secs: 0.0,
+        sung_secs: 0.0,
+        phrases: rendered_count,
+    };
+    place_parts(ctx, p, &done);
+    p.song_rev += 1;
+    Ok(rendered_count)
 }
 
 /// Once per frame: notices changes, starts renders after a pause, and places what was sung.

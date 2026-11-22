@@ -20,10 +20,14 @@ pub struct RenderedSegment {
 
 /// Stitches and crossfades multiple segments into a single mono audio buffer.
 ///
+/// Returns the stitched audio buffer along with `time_offset_secs` relative to phrase start (time = 0.0).
 /// `sample_rate`: output sample rate (e.g. 44100 or 48000).
-pub fn crossfade_phrase(segments: &[RenderedSegment], sample_rate: u32) -> Vec<f32> {
+pub fn crossfade_phrase_with_offset(
+    segments: &[RenderedSegment],
+    sample_rate: u32,
+) -> (Vec<f32>, f64) {
     if segments.is_empty() {
-        return Vec::new();
+        return (Vec::new(), 0.0);
     }
 
     let sr = sample_rate as f64;
@@ -112,7 +116,25 @@ pub fn crossfade_phrase(segments: &[RenderedSegment], sample_rate: u32) -> Vec<f
         }
     }
 
-    phrase_buffer
+    // Output gain staging: healthy vocal presence (-12 to -6 dBFS peaks)
+    let max_peak = phrase_buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if max_peak > 0.001 && max_peak < 0.40 {
+        let target_peak = 0.65f32; // ~ -3.7 dBFS healthy vocal peak
+        let scale = target_peak / max_peak;
+        for s in &mut phrase_buffer {
+            *s *= scale;
+        }
+    }
+
+    let time_offset = min_sample_start as f64 / sr;
+    (phrase_buffer, time_offset)
+}
+
+/// Stitches and crossfades multiple segments into a single mono audio buffer.
+///
+/// `sample_rate`: output sample rate (e.g. 44100 or 48000).
+pub fn crossfade_phrase(segments: &[RenderedSegment], sample_rate: u32) -> Vec<f32> {
+    crossfade_phrase_with_offset(segments, sample_rate).0
 }
 
 #[cfg(test)]

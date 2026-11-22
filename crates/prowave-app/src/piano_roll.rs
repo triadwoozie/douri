@@ -603,17 +603,31 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             StrokeKind::Inside,
         );
+        let trk = p.selected_track;
+        let btn_label = if trk < p.tracks.len() && p.tracks[trk].kind == TrackKind::Drummer {
+            "+ Create Pattern Region"
+        } else if trk < p.tracks.len() && p.tracks[trk].vocal.is_some() {
+            "+ Create Vocal Region"
+        } else {
+            "+ Create MIDI Region"
+        };
         g.text(
             btn_r.center(),
             Align2::CENTER_CENTER,
-            "+ Create MIDI Region",
+            btn_label,
             FontId::proportional(12.0),
             Color32::WHITE,
         );
         if resp.clicked() {
-            let trk = p.selected_track;
-            if let Some(new_ri) = p.add_empty_region(trk, 1.0) {
-                s.tracks.select_only(trk, new_ri);
+            let at_bar = (p.beats_to_bar(p.position_beats) + 1.0).max(1.0) as f32;
+            let new_ri = if trk < p.tracks.len() && p.tracks[trk].kind == TrackKind::Drummer {
+                p.add_generated_region(trk, true, at_bar)
+            } else {
+                p.add_empty_region(trk, at_bar)
+            };
+            if let Some(ri) = new_ri {
+                s.tracks.select_only(trk, ri);
+                p.song_rev += 1;
             }
         }
         return;

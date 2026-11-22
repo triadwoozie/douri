@@ -39,7 +39,7 @@ pub fn ring_blocks_for(clips: usize) -> usize {
 }
 const BLOCKS_PER_SERVICE: usize = 8;
 /// How long a clip with nothing to read lets a memory-mapped file go for.
-const RELEASE_AFTER: Duration = Duration::from_secs(1);
+const RELEASE_AFTER: Duration = Duration::from_secs(30);
 // Imports must not drain an unbounded queue before active clips get a refill.
 const MESSAGES_PER_SERVICE: usize = 8;
 // Native-rate frames retained ahead of the next reverse block (~64 KiB stereo).
