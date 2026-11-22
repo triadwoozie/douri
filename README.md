@@ -19,7 +19,6 @@
   </a>
 </p>
 <p align="center">
-  <a href="#download">Download</a> •
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#sound-libraries">Sound Libraries</a> •
