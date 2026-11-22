@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = variklis per 
 the bounce has not finished = bounce dar nesibaigė
 cannot bounce: there is no audio output = negalima atlikti bounce: nėra garso išvesties
 New Project = Naujas projektas
+
+Recent = Naujausi
+Open an existing project… = Atidaryti esamą projektą…
+Choose = Pasirinkti
+Empty Project = Tuščias projektas

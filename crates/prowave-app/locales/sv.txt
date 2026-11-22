@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = motorn tog in
 the bounce has not finished = bounce är inte klar
 cannot bounce: there is no audio output = kan inte bounca: ingen ljudutgång
 New Project = Nytt projekt
+
+Recent = Senaste
+Open an existing project… = Öppna ett befintligt projekt…
+Choose = Välj
+Empty Project = Tomt projekt

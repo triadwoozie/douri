@@ -109,6 +109,7 @@ mod soundfonts;
 mod space_designer_ui;
 pub mod spectrogram_view;
 mod stack_dialog;
+pub mod start_screen;
 mod step_editor;
 mod sync_menu;
 mod sysex;
@@ -317,6 +318,10 @@ pub struct UiState {
     pub hd_load: f32,
     /// Light (white) menu bar and menus, toggled by the Smart Controls button.
     pub light_menus: bool,
+    /// The Project Chooser, while it covers the window (File > New from Template… or at startup).
+    pub chooser: Option<start_screen::Chooser>,
+    /// Project Chooser details (Tempo, Key, Time Sig, Audio Devices, etc.).
+    pub chooser_details: start_screen::ChooserDetails,
     /// The user's interface size (1.0 = 100 %), on top of fitting small windows (`ui_scale`).
     pub ui_scale: f32,
     /// Edit > Undo / Redo picked this frame; run by `App` (which keeps the history).
@@ -490,6 +495,8 @@ impl UiState {
             mcp_port: 38420,
             show_about: false,
             simplified_mode: false,
+            chooser: None,
+            chooser_details: start_screen::ChooserDetails::default(),
             app_settings: project_settings::AppSettings::load(),
             shot_top_menu: None,
             missing_audio: Vec::new(),
@@ -1481,6 +1488,79 @@ impl App {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
     }
+
+    /// The window while the Project Chooser is up: the menu bar and the chooser, with the
+    /// File key commands and prompts still working.
+    fn chooser_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if let Some(menu) = self.native_menu.as_mut() {
+            menu.update(ctx, &mut self.project, &mut self.ui);
+        }
+        if let Some(cmd) = file_commands::pressed(ctx) {
+            self.ui.file_cmd = Some(cmd);
+        }
+        if let Some(sync) = self.sync.as_mut() {
+            sync.sync(&mut self.project);
+        }
+        // Audio files dropped on the chooser go into the open project.
+        let dropped: Vec<std::path::PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        if !dropped.is_empty() {
+            self.ui.chooser = None;
+            for path in dropped {
+                self.import(&path, ctx);
+            }
+        }
+
+        // Keep track of active monitor dimensions for centering and startup sizing
+        if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
+            if let Some(cfg) = crate::recent_files::config_dir() {
+                let path = cfg.join("display.txt");
+                let cur = std::fs::read_to_string(&path).unwrap_or_default();
+                let target = format!("{} {}", mon.x, mon.y);
+                if cur.trim() != target {
+                    let _ = std::fs::write(path, target);
+                }
+            }
+        }
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| start_screen::show(ui, &mut self.ui));
+        // If chooser was dismissed / template chosen, open and maximize main DAW
+        if self.ui.chooser.is_none() {
+            self.transition_to_daw(ctx);
+        }
+        if let Some(cmd) = self.ui.file_cmd.take() {
+            self.run_file_cmd(cmd, ctx);
+            if self.ui.chooser.is_none() {
+                self.transition_to_daw(ctx);
+            }
+        }
+        self.show_save_prompt(ctx);
+        window_chrome::resize_edges(ctx);
+    }
+
+    pub fn transition_to_daw(&self, ctx: &egui::Context) {
+        let mon_size = ctx
+            .input(|i| i.viewport().monitor_size)
+            .unwrap_or(egui::vec2(1600.0, 960.0));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+        #[cfg(target_os = "macos")]
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+        #[cfg(not(target_os = "macos"))]
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+            800.0, 520.0,
+        )));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+    }
 }
 
 impl eframe::App for App {
@@ -1524,6 +1604,15 @@ impl eframe::App for App {
                 }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
+        }
+
+        if self.ui.chooser.is_some() {
+            // Keep native 100% zoom (self.ui.ui_scale) without shrinking by DESIGN_WIDTH (1480px)
+            if (self.ui.ui_scale - ctx.zoom_factor()).abs() > 0.001 {
+                ctx.set_zoom_factor(self.ui.ui_scale);
+            }
+            self.chooser_ui(ui, &ctx);
+            return;
         }
 
         ui_scale::apply(&ctx, self.ui.ui_scale);
@@ -2454,6 +2543,7 @@ fn main() -> eframe::Result {
     }
     // Measuring runs leave the user's settings (recent projects, size) alone.
     let measuring = bench_out.is_some() || shots_dir.is_some() || shot_out.is_some();
+    let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
     // Release builds: on a crash, write a report to the temp folder instead of a raw panic.
     human_panic::setup_panic!(human_panic::Metadata::new(
         "Dōri",
@@ -2463,13 +2553,31 @@ fn main() -> eframe::Result {
     i18n::init();
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
     let mon = detect_initial_monitor_size();
-    let (init_size, init_min_size, init_maximized, init_resizable, init_title) = (
-        egui::vec2(1600.0, 980.0),
-        egui::vec2(800.0, 520.0),
-        true,
-        true,
-        "Dōri",
-    );
+    let has_project_arg = all_args.iter().any(|a| {
+        let p = std::path::Path::new(a.as_os_str());
+        p.extension().is_some_and(|e| {
+            e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+        })
+    });
+    let no_chooser_flag = flag("--no-chooser")
+        || (measuring && scene != "chooser" && scene != "welcome" && scene != "chooser-details")
+        || std::env::var("CI").is_ok()
+        || std::env::var("HEADLESS").is_ok();
+    let start_in_dialog = !has_project_arg && !no_chooser_flag;
+    let (init_size, init_min_size, init_maximized, init_resizable, init_title) = if start_in_dialog
+    {
+        let s = start_screen::chooser_viewport_size(Some(mon));
+        (s, egui::vec2(760.0, 520.0), false, true, "Choose a Project")
+    } else {
+        (
+            egui::vec2(1600.0, 980.0),
+            egui::vec2(800.0, 520.0),
+            true,
+            true,
+            "Dōri",
+        )
+    };
 
     let center_pos = egui::pos2(
         ((mon.x - init_size.x) / 2.0).max(0.0),
@@ -2781,6 +2889,14 @@ fn main() -> eframe::Result {
                 app.ui.ui_scale = ui_scale::load();
             }
             let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
+            if scene == "chooser" {
+                app.ui.chooser = Some(start_screen::Chooser::default());
+            }
+            if scene == "chooser-details" {
+                let mut c = start_screen::Chooser::default();
+                c.details.show_details = true;
+                app.ui.chooser = Some(c);
+            }
             if scene == "updater" {
                 app.updater.show_up_to_date();
             }
@@ -2838,22 +2954,12 @@ fn main() -> eframe::Result {
                     );
                 }
             }
+            let has_project_arg = args.iter().any(|a| is_project(a));
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
-            } else if !measuring
-                && std::env::var("CI").is_err()
-                && std::env::var("HEADLESS").is_err()
-            {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter(
-                        crate::i18n::tr("Dōri & Pro-Wave Projects"),
-                        prowave_project::EXTENSIONS,
-                    )
-                    .add_filter(crate::i18n::tr("Logic Pro Project"), &["logicx"])
-                    .pick_file()
-                {
-                    app.open(&path, &cc.egui_ctx);
-                }
+            }
+            if !no_chooser_flag && !has_project_arg {
+                app.ui.chooser = Some(start_screen::Chooser::default());
             }
             for arg in args.iter().filter(|a| !is_project(a)) {
                 if arg == "--play" {

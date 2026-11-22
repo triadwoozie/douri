@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = エンジン�
 the bounce has not finished = バウンスはまだ終わっていません
 cannot bounce: there is no audio output = バウンスできません: オーディオ出力がありません
 New Project = 新規プロジェクト
+
+Recent = 最近使った項目
+Open an existing project… = 既存のプロジェクトを開く…
+Choose = 選択
+Empty Project = 空のプロジェクト

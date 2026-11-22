@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = hindi tinangg
 the bounce has not finished = hindi pa tapos ang bounce
 cannot bounce: there is no audio output = hindi maaaring mag-bounce: walang audio output
 New Project = Bagong Proyekto
+
+Recent = Kamakailan
+Open an existing project… = Buksan ang isang proyekto…
+Choose = Piliin
+Empty Project = Walang Lamang Proyekto

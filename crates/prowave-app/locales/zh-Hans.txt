@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = 引擎未能�
 the bounce has not finished = 导出尚未完成
 cannot bounce: there is no audio output = 无法导出：没有音频输出
 New Project = 新建项目
+
+Recent = 最近使用
+Open an existing project… = 打开现有项目…
+Choose = 选择
+Empty Project = 空项目

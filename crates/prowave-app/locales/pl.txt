@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = silnik nie pr
 the bounce has not finished = bounce nie został zakończony
 cannot bounce: there is no audio output = nie można zrobić bounce: brak wyjścia audio
 New Project = Nowy projekt
+
+Recent = Ostatnie
+Open an existing project… = Otwórz istniejący projekt…
+Choose = Wybierz
+Empty Project = Pusty projekt

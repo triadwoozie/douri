@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = äänimoottor
 the bounce has not finished = bounce ei ole vielä valmis
 cannot bounce: there is no audio output = bounce ei onnistu: ei äänilähtöä
 New Project = Uusi projekti
+
+Recent = Viimeaikaiset
+Open an existing project… = Avaa olemassa oleva projekti…
+Choose = Valitse
+Empty Project = Tyhjä projekti

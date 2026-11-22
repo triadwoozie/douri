@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = इंजन 
 the bounce has not finished = बाउंस अभी पूरा नहीं हुआ है
 cannot bounce: there is no audio output = बाउंस नहीं हो सकता: कोई ऑडियो आउटपुट नहीं है
 New Project = नया प्रोजेक्ट
+
+Recent = हाल के
+Open an existing project… = कोई मौजूदा प्रोजेक्ट खोलें…
+Choose = चुनें
+Empty Project = खाली प्रोजेक्ट

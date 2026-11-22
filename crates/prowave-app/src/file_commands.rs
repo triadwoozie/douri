@@ -163,8 +163,9 @@ impl App {
         match cmd {
             FileCmd::New | FileCmd::Close => self.replace(Project::empty(), None),
             FileCmd::NewFrom(t) => {
-                let p = t.project();
-                self.replace(p, None)
+                let mut p = t.project();
+                self.ui.chooser_details.apply(&mut p);
+                self.replace(p, None);
             }
             FileCmd::Open => {
                 if let Some(path) = open_dialog().set_title(tr("Open Project")).pick_file() {

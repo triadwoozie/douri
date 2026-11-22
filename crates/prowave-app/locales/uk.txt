@@ -1015,3 +1015,8 @@ the engine did not take the project in time; no file was written = рушій н
 the bounce has not finished = Боунс ще не завершено
 cannot bounce: there is no audio output = неможливо зробити боунс: немає аудіовиходу
 New Project = Новий проєкт
+
+Recent = Недавні
+Open an existing project… = Відкрити наявний проєкт…
+Choose = Вибрати
+Empty Project = Порожній проєкт

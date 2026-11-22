@@ -1414,11 +1414,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 Bottom::PitchEditor
             }
         }
-        "New from Template…" => {
-            s.file_cmd = Some(crate::file_commands::FileCmd::NewFrom(
-                crate::template::Template::Empty,
-            ))
-        }
+        "New from Template…" => s.chooser = Some(crate::start_screen::Chooser::templates()),
         "New Tracks…" => {
             s.track_dialog = Some(track_dialogs::TrackDialog::NewTracks {
                 kind: TrackKind::Instrument,
@@ -2138,6 +2134,7 @@ mod tests {
                 s.bottom == Bottom::Mixer,
                 (
                     s.file_cmd,
+                    s.chooser.is_some(),
                     s.undo_cmd,
                     s.midi_cmd,
                     s.bounce_cmd,
