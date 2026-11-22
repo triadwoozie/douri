@@ -2568,7 +2568,7 @@ fn main() -> eframe::Result {
     let (init_size, init_min_size, init_maximized, init_resizable, init_title) = if start_in_dialog
     {
         let s = start_screen::chooser_viewport_size(Some(mon));
-        (s, egui::vec2(760.0, 520.0), false, true, "Choose a Project")
+        (s, egui::vec2(760.0, 520.0), false, true, "Dōri")
     } else {
         (
             egui::vec2(1600.0, 980.0),
