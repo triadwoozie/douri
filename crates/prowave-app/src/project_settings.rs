@@ -10,7 +10,7 @@
 //! - Metronome: Click level dB, bar beat accent, and Play/Record/Count-in routing.
 //! - Tuning: Reference pitch A4 (415-466 Hz), Scale temperaments, and Root Key.
 //! - Key Commands: Profile selection (Dōri Default vs REAPER), Mac Keyboard layout (Cmd), and searchable shortcuts.
-//! - MCP Server: AI assistant bridge toggle, TCP/stdio port, and live connection status.
+//! - MCP Server: External agent bridge toggle, TCP/stdio port, and live connection status.
 //! - Advanced: Interface mode (Complete vs Simplified), Engine multi-threading, and Reset All Settings.
 
 use crate::audio_prefs::AudioPrefs;
@@ -2127,7 +2127,7 @@ fn mcp_settings(ui: &mut egui::Ui, s: &mut UiState) {
 }"#;
                 ui.ctx().copy_text(config_json.to_string());
             }
-            ui.weak("Allows AI assistants and external tools to query state, automate tracks, and control transport.");
+            ui.weak("Allows agents and external tools to query state, automate tracks, and control transport.");
         },
     );
 }

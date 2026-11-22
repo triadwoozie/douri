@@ -3289,7 +3289,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     let hover = ui.input(|i| i.pointer.hover_pos());
     // Middle-click 2D Panning (Logic Pro Hand tool navigation)
     let (middle_down, middle_delta) = ui.input(|i| (i.pointer.middle_down(), i.pointer.delta()));
-    if middle_down && hover.is_some_and(|pt| lanes.contains(pt) || headers.contains(pt)) {
+    let pointer_in_lanes = hover
+        .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+        .is_some_and(|pt| lanes.contains(pt) || headers.contains(pt));
+    if middle_down && pointer_in_lanes {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         v.scroll_x = (v.scroll_x - middle_delta.x).max(0.0);
         v.scroll_y = (v.scroll_y - middle_delta.y).max(0.0);
@@ -3557,7 +3560,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 v.toggle(ti, ri);
                 p.selected_track = ti;
             } else if (selects && resp.clicked())
-                || (resp.drag_started() && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
+                || (resp.drag_started_by(egui::PointerButton::Primary) && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
                 || context_click(&resp)
             {
                 if !v.is_selected(ti, ri) {
@@ -3612,10 +3615,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             if tool.moves_regions() && (full.right() - rr.right()).abs() < 0.5 {
                 let grip = Rect::from_min_max(pos2(rr.right() - 8.0, full.center().y), rr.max);
                 let er = ui.interact(grip, id(("region_end", ti, ri)), Sense::drag());
-                if er.hovered() || er.dragged() {
+                if er.hovered() || er.dragged_by(egui::PointerButton::Primary) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
-                if let (true, Some(pt)) = (er.dragged(), er.interact_pointer_pos()) {
+                if let (true, Some(pt)) = (er.dragged_by(egui::PointerButton::Primary), er.interact_pointer_pos()) {
                     let end = snap_pos(beat_of(pt.x)).max(orig_start + 1.0 / 64.0);
                     let stretch = ui.input(|i| i.modifiers.alt);
                     v.edge_drag = Some((ti, ri, end, stretch));
@@ -3632,10 +3635,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     pos2(rr.left() + 8.0, rr.bottom()),
                 );
                 let sr = ui.interact(grip, id(("region_start", ti, ri)), Sense::drag());
-                if sr.hovered() || sr.dragged() {
+                if sr.hovered() || sr.dragged_by(egui::PointerButton::Primary) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
-                if let (true, Some(pt)) = (sr.dragged(), sr.interact_pointer_pos()) {
+                if let (true, Some(pt)) = (sr.dragged_by(egui::PointerButton::Primary), sr.interact_pointer_pos()) {
                     let at = snap_pos(beat_of(pt.x)).min(orig_start + orig_len - 1.0 / 64.0);
                     v.start_drag = Some((ti, ri, at));
                 }
@@ -3681,7 +3684,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     .or_else(|| resp.interact_pointer_pos())
                     .and_then(|pt| flex_marker_under(p, ti, ri, full, pt.x))
             };
-            if let (Some((marker, secs)), true) = (flex_hit, resp.drag_started()) {
+            if let (Some((marker, secs)), true) = (flex_hit, resp.drag_started_by(egui::PointerButton::Primary)) {
                 v.flex_drag = Some((ti, ri, marker, secs));
                 s.flex.dragging = true;
             }
@@ -3691,7 +3694,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             if flex_own {
                 // The dragged marker follows the pointer; the sound is made on release.
                 if let (true, Some((_, _, marker, secs)), Some(pt)) =
-                    (resp.dragged(), v.flex_drag, resp.interact_pointer_pos())
+                    (resp.dragged_by(egui::PointerButton::Primary), v.flex_drag, resp.interact_pointer_pos())
                 {
                     if let Some(f) = p.tracks[ti].regions[ri]
                         .audio
@@ -3711,7 +3714,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 let shape_keys = ui.input(|i| i.modifiers.ctrl && i.modifiers.shift);
                 if crate::fade_curve::on_region(ui, p, v, &resp, (ti, ri), shape_keys, &beat_of) {
                     moved = true;
-                } else if resp.drag_started() && !shape_keys {
+                } else if resp.drag_started_by(egui::PointerButton::Primary) && !shape_keys {
                     let from = ui.input(|i| i.pointer.press_origin());
                     if let Some(pt) = from.or(resp.interact_pointer_pos()) {
                         v.fade_drag =
@@ -3719,7 +3722,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                 }
                 if let (true, Some(d), Some(pt)) = (
-                    resp.dragged(),
+                    resp.dragged_by(egui::PointerButton::Primary),
                     v.fade_drag.as_ref(),
                     resp.interact_pointer_pos(),
                 ) {
@@ -3735,7 +3738,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                 }
             } else if tool.moves_regions() {
-                if resp.drag_started() {
+                if resp.drag_started_by(egui::PointerButton::Primary) {
                     if let Some(pt) = resp.interact_pointer_pos() {
                         v.grab_beats = beat_of(pt.x) - start_beat;
                     }
@@ -3754,7 +3757,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                     v.group_drag = group;
                 }
-                if resp.dragged() {
+                if resp.dragged_by(egui::PointerButton::Primary) {
                     let copy = ui.input(|i| i.modifiers.alt);
                     if let Some(pt) = resp.interact_pointer_pos() {
                         let raw = (beat_of(pt.x) - v.grab_beats).max(0.0);
@@ -3847,12 +3850,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                         };
                         let grab =
                             |pt: egui::Pos2| snap_pos((beat_of(pt.x) - start_beat).max(0.0)) as f32;
-                        if resp.drag_started() {
+                        if resp.drag_started_by(egui::PointerButton::Primary) {
                             if let Some(pt) = resp.interact_pointer_pos() {
                                 v.swipe = Some((folder.comp.clone(), grab(pt)));
                             }
                         }
-                        if resp.dragged() {
+                        if resp.dragged_by(egui::PointerButton::Primary) {
                             if let (Some((orig, anchor)), Some(pt)) =
                                 (v.swipe.as_ref(), resp.interact_pointer_pos())
                             {

@@ -1,44 +1,43 @@
-//! Vocal Editor (Musical Editor): a dedicated vocal score editor with lyrics, phonetic symbols,
-//! pitch curves, and control parameter lanes for Vocal Top Line tracks.
+//! Musical Vocal Editor (`vocal_editor.rs`).
 //!
-//! Aligned with the Musical Editor specifications and styled strictly in Dōri's Liquid Glass theme
-//! with 100% phosphor-egui icons.
+//! Provides the primary note, pitch curve, and expression editing interface for Vocal / UTAU
+//! tracks in Dōri. Rendered strictly in Dōri's Liquid Glass design system with 100% phosphor-egui
+//! icons, real interactive piano keyboard (C1-C6), full parameter lane (PITD, Velocity, DYN, etc.),
+//! ML Auto Tune contour prediction, and floating Singer Inspector popover card.
 
-use crate::i18n::{tr, trf};
+use crate::i18n::tr;
 use crate::liquid_glass;
 use crate::lyrics::Lyric;
 use crate::model::{Note, Project, TrackKind};
-use crate::piano_roll::{c_label, is_black, thumb_len, Audition};
-use crate::tracks_area::{snap_step, snap_to, Snap};
-use crate::vocal::{VocalRole, VocalSettings};
-use crate::widgets::{BLUE, TEXT, TEXT_DIM};
-use crate::{Bottom, UiState};
+use crate::piano_roll::Audition;
+use crate::tracks_area::Snap;
+use crate::vocal::{Singer, VocalRole, VocalSettings};
+use crate::widgets::{context_menu, BLUE, TEXT, TEXT_DIM};
+use crate::UiState;
 use egui::{
-    pos2, vec2, Align2, Color32, CornerRadius, FontId, Key, Modifiers, Painter, Pos2, Rect, Sense,
-    Shape, Stroke, StrokeKind, Ui,
+    pos2, vec2, Align2, Color32, CornerRadius, FontId, Key, Painter, Pos2, Rect, Sense, Stroke,
+    StrokeKind, Ui, Vec2,
 };
 use std::collections::HashSet;
 
-const TAB_H: f32 = 26.0;
-const EVENT_BAR_H: f32 = 28.0;
-const TOOLBAR_H: f32 = 32.0;
-const INSPECTOR_W: f32 = 230.0;
-const KEYS_W: f32 = 52.0;
-const RULER_H: f32 = 22.0;
-const PARAM_LANE_H: f32 = 78.0;
-const MIN_THUMB: f32 = 24.0;
+pub const TOOLBAR_H: f32 = 32.0;
+pub const EVENT_BAR_H: f32 = 28.0;
+pub const TAB_H: f32 = 32.0;
+pub const KEYS_W: f32 = 52.0;
+pub const RULER_H: f32 = 20.0;
+pub const PARAM_LANE_H: f32 = 120.0;
 
-// Liquid Glass Palette
-const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24);
-const BORDER_COLOR: Color32 = Color32::from_rgb(0x2e, 0x31, 0x38);
-const ROW_WHITE: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c);
-const ROW_BLACK: Color32 = Color32::from_rgb(0x1b, 0x1d, 0x22);
-const GRID_LINE_BAR: Color32 = Color32::from_rgb(0x2a, 0x2d, 0x35);
-const GRID_LINE_BEAT: Color32 = Color32::from_rgb(0x20, 0x22, 0x27);
-const ACCENT_BLUE: Color32 = Color32::from_rgb(0x2b, 0x6c, 0xb0);
-const ACCENT_BLUE_LIGHT: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
-const PITCH_CURVE_ORANGE: Color32 = Color32::from_rgb(0xff, 0x95, 0x00);
+// Liquid Glass Theme Colors
+pub const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24);
+pub const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
+pub const ROW_WHITE: Color32 = Color32::from_rgb(0x1b, 0x1d, 0x22);
+pub const ROW_BLACK: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c);
+pub const BORDER_COLOR: Color32 = Color32::from_rgb(0x2e, 0x31, 0x38);
+pub const ACCENT_BLUE: Color32 = Color32::from_rgb(0x2b, 0x6c, 0xb0);
+pub const ACCENT_BLUE_LIGHT: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6);
+pub const GRID_LINE_BAR: Color32 = Color32::from_rgb(0x42, 0x46, 0x50);
+pub const GRID_LINE_BEAT: Color32 = Color32::from_rgb(0x28, 0x2b, 0x32);
+pub const PITCH_CURVE_ORANGE: Color32 = Color32::from_rgb(0xff, 0x9f, 0x0a);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VocalTool {
@@ -46,49 +45,54 @@ pub enum VocalTool {
     Pencil,
     Line,
     Scissors,
-    PitchPencil,
-    PitchEraser,
+    Eraser,
     Vibrato,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VocalParamType {
+    Pitd,
     Velocity,
-    Dynamics,
-    PitchBend,
-    PitchBendSensitivity,
+    Dyn,
+    Vel,
+    Vol,
+    Atk,
+    Dec,
+    Genc,
+    Brec,
     VibratoDepth,
     VibratoRate,
-    Brightness,
-    Breathiness,
-    Gender,
 }
 
 impl VocalParamType {
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Pitd => "PITD (Pitch Cent)",
             Self::Velocity => "Velocity",
-            Self::Dynamics => "Dynamics",
-            Self::PitchBend => "Pitch Bend",
-            Self::PitchBendSensitivity => "Pitch Bend Sens",
+            Self::Dyn => "DYN (Dynamics)",
+            Self::Vel => "VEL (Consonant)",
+            Self::Vol => "VOL (Volume)",
+            Self::Atk => "ATK (Attack)",
+            Self::Dec => "DEC (Decay)",
+            Self::Genc => "GENC (Gender)",
+            Self::Brec => "BREC (Breath)",
             Self::VibratoDepth => "Vibrato Depth",
             Self::VibratoRate => "Vibrato Rate",
-            Self::Brightness => "Brightness",
-            Self::Breathiness => "Breathiness",
-            Self::Gender => "Gender",
         }
     }
 
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
+        Self::Pitd,
         Self::Velocity,
-        Self::Dynamics,
-        Self::PitchBend,
-        Self::PitchBendSensitivity,
+        Self::Dyn,
+        Self::Vel,
+        Self::Vol,
+        Self::Atk,
+        Self::Dec,
+        Self::Genc,
+        Self::Brec,
         Self::VibratoDepth,
         Self::VibratoRate,
-        Self::Brightness,
-        Self::Breathiness,
-        Self::Gender,
     ];
 }
 
@@ -110,7 +114,7 @@ pub struct VocalView {
     pub held: Option<u8>,
     pub vel_drag: Option<usize>,
     pub dirty: bool,
-    pub custom_pitch: Vec<(f32, f32)>, // (beat, pitch_delta)
+    pub custom_pitch: Vec<(f32, f32)>, // (beat, pitch_delta_cents)
     drag_state: DragState,
 }
 
@@ -149,9 +153,9 @@ impl Default for VocalView {
             lyric_buffer: String::new(),
             acoustic_feedback: true,
             catch_playhead: true,
-            show_inspector: true,
+            show_inspector: false,
             show_parameters: true,
-            param_type: VocalParamType::Velocity,
+            param_type: VocalParamType::Pitd,
             held: None,
             vel_drag: None,
             dirty: false,
@@ -161,183 +165,99 @@ impl Default for VocalView {
     }
 }
 
-/// Helper phoneme lookup for Japanese syllables to phonetic symbol display.
-fn phoneme_alias(lyric: &str) -> &'static str {
-    match lyric.trim() {
-        "あ" | "ア" | "a" => "a",
-        "い" | "イ" | "i" => "i",
-        "う" | "ウ" | "u" => "u",
-        "え" | "エ" | "e" => "e",
-        "お" | "オ" | "o" => "o",
-        "か" | "カ" => "ka",
-        "き" | "キ" => "ki",
-        "く" | "ク" => "ku",
-        "け" | "ケ" => "ke",
-        "こ" | "コ" => "ko",
-        "さ" | "サ" => "sa",
-        "し" | "シ" => "shi",
-        "す" | "ス" => "su",
-        "せ" | "セ" => "se",
-        "そ" | "ソ" => "so",
-        "た" | "タ" => "ta",
-        "ち" | "チ" => "chi",
-        "つ" | "ツ" => "tsu",
-        "て" | "テ" => "te",
-        "と" | "ト" => "to",
-        "な" | "ナ" => "na",
-        "に" | "ニ" => "ni",
-        "ぬ" | "ヌ" => "nu",
-        "ね" | "ネ" => "ne",
-        "の" | "ノ" => "no",
-        "は" | "ハ" => "ha",
-        "ひ" | "ヒ" => "hi",
-        "ふ" | "フ" => "fu",
-        "へ" | "ヘ" => "he",
-        "ほ" | "ホ" => "ho",
-        "ま" | "マ" => "ma",
-        "み" | "ミ" => "mi",
-        "む" | "ム" => "mu",
-        "め" | "メ" => "me",
-        "も" | "モ" => "mo",
-        "や" | "ヤ" => "ya",
-        "ゆ" | "ユ" => "yu",
-        "よ" | "ヨ" => "yo",
-        "ら" | "ラ" => "ra",
-        "り" | "リ" => "ri",
-        "る" | "ル" => "ru",
-        "れ" | "レ" => "re",
-        "ろ" | "ロ" => "ro",
-        "わ" | "ワ" => "wa",
-        "を" | "ヲ" => "o",
-        "ん" | "ン" => "n",
-        "が" | "ガ" => "ga",
-        "ぎ" | "ギ" => "gi",
-        "ぐ" | "グ" => "gu",
-        "げ" | "ゲ" => "ge",
-        "ご" | "ゴ" => "go",
-        "ざ" | "ザ" => "za",
-        "じ" | "ジ" => "ji",
-        "ず" | "ズ" => "zu",
-        "ぜ" | "ゼ" => "ze",
-        "ぞ" | "ゾ" => "zo",
-        "だ" | "ダ" => "da",
-        "ぢ" | "ヂ" => "ji",
-        "づ" | "ヅ" => "zu",
-        "で" | "デ" => "de",
-        "ど" | "ド" => "do",
-        "ば" | "バ" => "ba",
-        "び" | "ビ" => "bi",
-        "ぶ" | "ブ" => "bu",
-        "べ" | "ベ" => "be",
-        "ぼ" | "ボ" => "bo",
-        "ぱ" | "パ" => "pa",
-        "ぴ" | "ピ" => "pi",
-        "ぷ" | "プ" => "pu",
-        "ぺ" | "ペ" => "pe",
-        "ぽ" | "ポ" => "po",
+fn note_name(pitch: i32) -> &'static str {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let idx = (pitch % 12 + 12) % 12;
+    NAMES[idx as usize]
+}
+
+fn is_black(pitch: i32) -> bool {
+    matches!((pitch % 12 + 12) % 12, 1 | 3 | 6 | 8 | 10)
+}
+
+fn c_label(pitch: i32) -> String {
+    let octave = pitch / 12 - 2;
+    format!("{}{}", note_name(pitch), octave)
+}
+
+fn phoneme_alias(kana: &str) -> &'static str {
+    match kana {
+        "あ" | "a" => "a",
+        "い" | "i" => "i",
+        "う" | "u" => "u",
+        "え" | "e" => "e",
+        "お" | "o" => "o",
+        "か" | "ka" => "k a",
+        "き" | "ki" => "k' i",
+        "く" | "ku" => "k u",
+        "け" | "ke" => "k e",
+        "こ" | "ko" => "k o",
+        "さ" | "sa" => "s a",
+        "し" | "shi" | "si" => "sh i",
+        "す" | "su" => "s u",
+        "せ" | "se" => "s e",
+        "そ" | "so" => "s o",
+        "た" | "ta" => "t a",
+        "ち" | "chi" | "ti" => "ch i",
+        "つ" | "tsu" | "tu" => "ts u",
+        "て" | "te" => "t e",
+        "と" | "to" => "t o",
+        "な" | "na" => "n a",
+        "に" | "ni" => "n' i",
+        "ぬ" | "nu" => "n u",
+        "ね" | "ne" => "n e",
+        "の" | "no" => "n o",
+        "は" | "ha" => "h a",
+        "ひ" | "hi" => "h' i",
+        "ふ" | "fu" | "hu" => "f u",
+        "へ" | "he" => "h e",
+        "ほ" | "ho" => "h o",
+        "ま" | "ma" => "m a",
+        "み" | "mi" => "m' i",
+        "む" | "mu" => "m u",
+        "め" | "me" => "m e",
+        "も" | "mo" => "m o",
+        "ら" | "ra" => "r a",
+        "り" | "ri" => "r' i",
+        "る" | "ru" => "r u",
+        "れ" | "re" => "r e",
+        "ろ" | "ro" => "r o",
+        "わ" | "wa" => "w a",
+        "を" | "wo" => "o",
+        "ん" | "n" => "n",
         "-" => "-",
-        "+" => "+",
         _ => "",
     }
 }
 
-/// Finds the targeted vocal score region (or fallback MIDI region).
-pub fn target_vocal_region(p: &Project, s: &UiState) -> Option<(usize, usize)> {
-    if let Some((t, r)) = s.tracks.selected {
-        if let Some(tr) = p.tracks.get(t) {
-            if tr.kind != TrackKind::Audio && tr.vocal.is_some() && r < tr.regions.len() {
-                return Some((t, r));
-            }
+fn target_vocal_region(p: &Project, s: &UiState) -> Option<(usize, usize)> {
+    if let Some((ti, ri)) = s.tracks.selected {
+        if ti < p.tracks.len() && ri < p.tracks[ti].regions.len() && p.tracks[ti].vocal.is_some() {
+            return Some((ti, ri));
         }
     }
-    if let Some(tr) = p.tracks.get(p.selected_track) {
-        if tr.kind != TrackKind::Audio && tr.vocal.is_some() && !tr.regions.is_empty() {
-            return Some((p.selected_track, 0));
-        }
+    let sel_ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
+    if sel_ti < p.tracks.len() && p.tracks[sel_ti].vocal.is_some() && !p.tracks[sel_ti].regions.is_empty() {
+        return Some((sel_ti, 0));
     }
-    for (ti, tr) in p.tracks.iter().enumerate() {
-        if tr.kind != TrackKind::Audio && tr.vocal.is_some() && !tr.regions.is_empty() {
-            return Some((ti, 0));
-        }
-    }
-    crate::piano_roll::target_region(p, s)
-}
-
-/// Displays the top editor tabs (Piano Roll, Vocal Editor, Step Sequencer).
-pub fn editor_tabs(
-    ui: &Ui,
-    g: &Painter,
-    bar: Rect,
-    active: usize,
-) -> Option<usize> {
-    let mut clicked = None;
-    g.rect_filled(bar, 0.0, TOOLBAR_BG);
-    g.line_segment(
-        [bar.left_bottom(), bar.right_bottom()],
-        Stroke::new(1.0, BORDER_COLOR),
-    );
-
-    let tabs = [tr("Piano Roll"), "Vocal Editor", tr("Step Sequencer")];
-    let font = FontId::proportional(12.0);
-    let widths: Vec<f32> = tabs
+    p.tracks
         .iter()
-        .map(|t| g.layout_no_wrap((*t).into(), font.clone(), TEXT).size().x + 24.0)
-        .collect();
-    let total: f32 = widths.iter().sum();
-    let mut x = bar.center().x - total / 2.0;
-
-    for (i, (t, w)) in tabs.iter().zip(&widths).enumerate() {
-        let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(*w, TAB_H - 6.0));
-        let resp = ui.interact(r, egui::Id::unique(("editor_tab_shared", i)), Sense::click());
-        if resp.hovered() && i != active {
-            g.rect_filled(r, 4.0, Color32::from_white_alpha(15));
-        }
-        if resp.clicked() {
-            clicked = Some(i);
-        }
-        if i == active {
-            g.rect_filled(r, 4.0, ACCENT_BLUE);
-            g.text(r.center(), Align2::CENTER_CENTER, *t, font.clone(), Color32::WHITE);
-        } else {
-            g.text(r.center(), Align2::CENTER_CENTER, *t, font.clone(), TEXT_DIM);
-        }
-        x += *w;
-    }
-    clicked
+        .enumerate()
+        .find(|(_, t)| t.vocal.is_some() && !t.regions.is_empty())
+        .map(|(ti, _)| (ti, 0))
 }
 
-/// Main entry point for the Vocal Editor in the bottom pane.
+/// Standalone entry point when opening the Vocal Editor.
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
-    let g = ui.painter_at(area);
-    g.rect_filled(area, 0.0, WELL_BG);
-
-    // 1. Shared Editor Tab Bar
-    let tab_bar = Rect::from_min_size(area.min, vec2(area.width(), TAB_H));
-    if let Some(i) = editor_tabs(ui, &g, tab_bar, 1) {
-        match i {
-            0 => {
-                s.bottom = Bottom::PianoRoll;
-                s.score_tab = false;
-                return;
-            }
-            1 => {
-                s.bottom = Bottom::VocalEditor;
-            }
-            2 => {
-                s.bottom = Bottom::PianoRoll;
-                s.score_tab = true;
-                return;
-            }
-            _ => {}
-        }
-    }
 
     let target = target_vocal_region(p, s);
     let (ti, ri) = match target {
         Some(t) => t,
         None => {
+            let g = ui.painter_at(area);
+            g.rect_filled(area, 0.0, WELL_BG);
             let msg = "Select a Vocal Track with a MIDI region to edit vocal notes and lyrics";
             g.text(
                 area.center(),
@@ -350,22 +270,37 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
     };
 
-    // 2. Top Event Inspector Bar (Start, End, Length, Pitch, Velocity, Text)
+    show_in_rect(ui, p, s, ti, ri, area);
+}
+
+/// Renders the full Musical Vocal Editor inside the provided rect (called directly by Piano Roll tab when track is vocal).
+pub fn show_in_rect(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    ti: usize,
+    ri: usize,
+    body: Rect,
+) {
+    let g = ui.painter_at(body);
+    g.rect_filled(body, 0.0, WELL_BG);
+
+    // 1. Top Event Inspector Bar (Start, End, Length, Pitch, Velocity, Text)
     let event_bar = Rect::from_min_size(
-        pos2(area.left(), tab_bar.bottom()),
-        vec2(area.width(), EVENT_BAR_H),
+        body.min,
+        vec2(body.width(), EVENT_BAR_H),
     );
     event_inspector_bar(ui, p, s, ti, ri, event_bar);
 
-    // 3. Musical Editor Toolbar (100% phosphor-egui icons)
+    // 2. Musical Editor Toolbar (100% phosphor-egui icons, ML Auto Tune button)
     let tool_bar = Rect::from_min_size(
-        pos2(area.left(), event_bar.bottom()),
-        vec2(area.width(), TOOLBAR_H),
+        pos2(body.left(), event_bar.bottom()),
+        vec2(body.width(), TOOLBAR_H),
     );
     vocal_toolbar(ui, p, s, ti, ri, tool_bar);
 
     // Main workspace below toolbars
-    let work_area = Rect::from_min_max(pos2(area.left(), tool_bar.bottom()), area.max);
+    let work_area = Rect::from_min_max(pos2(body.left(), tool_bar.bottom()), body.max);
 
     // Optional Collapsible Parameter Lane at bottom
     let param_lane_rect = if s.vocal_ed.show_parameters {
@@ -382,28 +317,20 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         pos2(work_area.right(), param_lane_rect.top()),
     );
 
-    // Optional Collapsible Singer Inspector on left
-    let (inspector_rect, canvas_rect) = if s.vocal_ed.show_inspector {
-        let insp = Rect::from_min_size(editor_body.min, vec2(INSPECTOR_W, editor_body.height()));
-        let canv = Rect::from_min_max(
-            pos2(insp.right(), editor_body.top()),
-            editor_body.max,
-        );
-        (Some(insp), canv)
-    } else {
-        (None, editor_body)
-    };
-
-    if let Some(insp) = inspector_rect {
-        singer_inspector_panel(ui, p, s, ti, insp);
-    }
+    // Canvas spans the full width of editor body (piano keys on left, note grid right)
+    let canvas_rect = editor_body;
 
     // Interactive Piano Keyboard + Note Canvas
     vocal_canvas(ui, p, s, ti, ri, canvas_rect);
 
+    // Floating Popover Card for Singer Inspector when toggled
+    if s.vocal_ed.show_inspector {
+        singer_inspector_popover(ui, p, s, ti, canvas_rect);
+    }
+
     // Synced Bottom Control Parameters Lane
     if s.vocal_ed.show_parameters {
-        vocal_parameter_lane(ui, p, s, ti, ri, param_lane_rect, canvas_rect.left());
+        vocal_parameter_lane(ui, p, s, ti, ri, param_lane_rect, canvas_rect.left() + KEYS_W);
     }
 
     // Trigger background synthesis if edits were made
@@ -486,7 +413,7 @@ fn event_inspector_bar(
         };
 
         let (_, start_resp) = draw_cell(ui, &g, "START", &start_str, 95.0, &mut x);
-        if start_resp.dragged() {
+        if start_resp.dragged_by(egui::PointerButton::Primary) {
             let delta = -start_resp.drag_delta().y * 0.05;
             let reg_mut = &mut p.tracks[ti].regions[ri];
             reg_mut.notes[idx].start = (reg_mut.notes[idx].start + delta).max(0.0);
@@ -496,7 +423,7 @@ fn event_inspector_bar(
         let (_, _) = draw_cell(ui, &g, "END", &end_str, 95.0, &mut x);
 
         let (_, len_resp) = draw_cell(ui, &g, "LENGTH", &len_str, 75.0, &mut x);
-        if len_resp.dragged() {
+        if len_resp.dragged_by(egui::PointerButton::Primary) {
             let delta = -len_resp.drag_delta().y * 0.05;
             let reg_mut = &mut p.tracks[ti].regions[ri];
             reg_mut.notes[idx].len = (reg_mut.notes[idx].len + delta).max(0.05);
@@ -504,7 +431,7 @@ fn event_inspector_bar(
         }
 
         let (_, pitch_resp) = draw_cell(ui, &g, "PITCH", &pitch_str, 60.0, &mut x);
-        if pitch_resp.dragged() {
+        if pitch_resp.dragged_by(egui::PointerButton::Primary) {
             let delta = (-pitch_resp.drag_delta().y * 0.2) as i32;
             if delta != 0 {
                 let reg_mut = &mut p.tracks[ti].regions[ri];
@@ -515,7 +442,7 @@ fn event_inspector_bar(
         }
 
         let (_, vel_resp) = draw_cell(ui, &g, "VELOCITY", &vel_str, 65.0, &mut x);
-        if vel_resp.dragged() {
+        if vel_resp.dragged_by(egui::PointerButton::Primary) {
             let delta = (-vel_resp.drag_delta().y * 0.5) as i32;
             if delta != 0 {
                 let reg_mut = &mut p.tracks[ti].regions[ri];
@@ -528,25 +455,100 @@ fn event_inspector_bar(
         // Lyric text input
         let text_rect = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(160.0, bar.height() - 6.0));
         g.text(pos2(text_rect.left() + 4.0, cy - 6.0), Align2::LEFT_CENTER, "LYRIC / PHONEME", font_label.clone(), TEXT_DIM);
-        g.text(pos2(text_rect.left() + 4.0, cy + 5.0), Align2::LEFT_CENTER, &text_str, font_val.clone(), Color32::from_rgb(0xff, 0xd6, 0x0a));
+        g.text(pos2(text_rect.left() + 4.0, cy + 5.0), Align2::LEFT_CENTER, &text_str, font_val.clone(), Color32::WHITE);
     } else {
-        let mut x_dummy = x;
-        draw_cell(ui, &g, "START", "--.--.--.--", 95.0, &mut x_dummy);
-        draw_cell(ui, &g, "END", "--.--.--.--", 95.0, &mut x_dummy);
-        draw_cell(ui, &g, "LENGTH", "--", 75.0, &mut x_dummy);
-        draw_cell(ui, &g, "PITCH", "--", 60.0, &mut x_dummy);
-        draw_cell(ui, &g, "VELOCITY", "--", 65.0, &mut x_dummy);
-        draw_cell(ui, &g, "LYRIC / PHONEME", "--", 160.0, &mut x_dummy);
+        g.text(
+            pos2(x, cy),
+            Align2::LEFT_CENTER,
+            "No note selected (Click a note to inspect and edit)",
+            font_label,
+            TEXT_DIM,
+        );
     }
 }
 
-/// Renders the Musical Editor toolbar using 100% phosphor-egui icons.
+/// Applies phrase-aware ML Auto Tune contour prediction across the selected notes (or whole phrase).
+fn apply_ml_autotune(p: &mut Project, s: &mut UiState, ti: usize, ri: usize) {
+    let bpm = p.tempo;
+    let singer_dir = if let Some(VocalRole::Score(set)) = &p.tracks[ti].vocal {
+        if !set.voice.is_empty() {
+            Some(crate::vocal::vocal_home().join(&set.voice))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let reg = &p.tracks[ti].regions[ri];
+    if reg.notes.is_empty() {
+        return;
+    }
+
+    let ustx_notes: Vec<prowave_vocal::UstxNote> = reg.notes
+        .iter()
+        .map(|n| prowave_vocal::UstxNote {
+            position: (n.start * 480.0).round() as i32,
+            duration: (n.len * 480.0).round() as i32,
+            tone: n.pitch as i32,
+            lyric: n.lyric.as_str().to_string(),
+            pitch: None,
+            vibrato: None,
+        })
+        .collect();
+
+    let pred = prowave_vocal::autotune::predict_contours(
+        &ustx_notes,
+        bpm as f64,
+        singer_dir.as_deref(),
+    );
+
+    let (span_start_tick, span_end_tick) = if !s.vocal_ed.selected.is_empty() {
+        let mut min_t = i32::MAX;
+        let mut max_t = i32::MIN;
+        for &idx in &s.vocal_ed.selected {
+            if let Some(n) = reg.notes.get(idx) {
+                let st = (n.start * 480.0).round() as i32;
+                let et = st + (n.len * 480.0).round() as i32;
+                min_t = min_t.min(st);
+                max_t = max_t.max(et);
+            }
+        }
+        (min_t, max_t)
+    } else {
+        (0, ((reg.len_bars * p.bar_len_at(p.region_start_beats(reg)) as f32) * 480.0).round() as i32)
+    };
+
+    let existing_pitd: Vec<prowave_vocal::CurvePoint> = s.vocal_ed.custom_pitch
+        .iter()
+        .map(|(b, cents)| prowave_vocal::CurvePoint {
+            tick: (b * 480.0).round() as i32,
+            val: cents.round() as i32,
+        })
+        .collect();
+
+    let merged = prowave_vocal::autotune::merge_curve_span(
+        &existing_pitd,
+        &pred.pitd,
+        span_start_tick,
+        span_end_tick,
+    );
+
+    s.vocal_ed.custom_pitch = merged
+        .into_iter()
+        .map(|pt| (pt.tick as f32 / 480.0, pt.val as f32))
+        .collect();
+
+    s.vocal_ed.dirty = true;
+}
+
+/// Renders the primary Musical Editor Toolbar with 100% phosphor-egui icons.
 fn vocal_toolbar(
     ui: &mut Ui,
     p: &mut Project,
     s: &mut UiState,
     ti: usize,
-    _ri: usize,
+    ri: usize,
     bar: Rect,
 ) {
     let g = ui.painter_at(bar);
@@ -559,14 +561,13 @@ fn vocal_toolbar(
     let cy = bar.center().y;
     let mut x = bar.left() + 10.0;
 
-    // Tool Selector Group (Arrow, Pencil, Line, Scissors, Pitch Pencil, Pitch Eraser, Vibrato)
+    // Tool Selector Group (Pointer, Pencil, Line, Scissors, Eraser, Vibrato)
     let tools = [
         (VocalTool::Arrow, phosphor_egui::regular::CURSOR, "Arrow Tool (1)"),
         (VocalTool::Pencil, phosphor_egui::regular::PENCIL_SIMPLE, "Pencil Tool (2)"),
         (VocalTool::Line, phosphor_egui::regular::LINE_SEGMENT, "Line Tool"),
         (VocalTool::Scissors, phosphor_egui::regular::SCISSORS, "Scissors Tool (3)"),
-        (VocalTool::PitchPencil, phosphor_egui::regular::WAVEFORM, "Pitch Pencil (4)"),
-        (VocalTool::PitchEraser, phosphor_egui::regular::ERASER, "Pitch Eraser"),
+        (VocalTool::Eraser, phosphor_egui::regular::ERASER, "Eraser Tool (4)"),
         (VocalTool::Vibrato, phosphor_egui::regular::WAVE_SINE, "Vibrato Tool (5)"),
     ];
 
@@ -668,10 +669,10 @@ fn vocal_toolbar(
     }
     x += btn_w + 6.0;
 
-    // Part / Singer Inspector Toggle
+    // Singer Inspector Floating Popover Toggle
     let insp_r = Rect::from_min_size(pos2(x, cy - btn_h / 2.0), vec2(btn_w, btn_h));
     let insp_resp = ui.interact(insp_r, egui::Id::unique("vocal_insp_toggle"), Sense::click())
-        .on_hover_text("Toggle Singer / Part Inspector");
+        .on_hover_text("Toggle Singer / Part Inspector Card");
     if s.vocal_ed.show_inspector {
         g.rect_filled(insp_r, 4.0, ACCENT_BLUE);
     } else if insp_resp.hovered() {
@@ -687,72 +688,81 @@ fn vocal_toolbar(
     if insp_resp.clicked() {
         s.vocal_ed.show_inspector = !s.vocal_ed.show_inspector;
     }
+    x += btn_w + 12.0;
 
-    // Right side: Render Vocal button and quiet non-intrusive status
-    let right_x = bar.right() - 110.0;
-    let render_r = Rect::from_min_size(pos2(right_x, cy - btn_h / 2.0), vec2(100.0, btn_h));
-    let is_rendering = s.vocal.is_rendering(None);
-    let render_resp = ui.interact(render_r, egui::Id::unique("vocal_render_btn"), Sense::click())
-        .on_hover_text("Render Vocal Score with OpenUtau / Voicebank Engine");
-
-    liquid_glass::paint_glass_pill(ui, render_r, 4.0, s.glass_quality, false, None, None);
-    if render_resp.hovered() {
-        g.rect_filled(render_r, 4.0, Color32::from_white_alpha(20));
-    }
-    let icon_render = if is_rendering {
-        phosphor_egui::regular::ARROWS_CLOCKWISE
+    // ML Auto Tune action button
+    let tune_w = 110.0;
+    let tune_r = Rect::from_min_size(pos2(x, cy - btn_h / 2.0), vec2(tune_w, btn_h));
+    let tune_resp = ui.interact(tune_r, egui::Id::unique("vocal_ml_autotune_btn"), Sense::click())
+        .on_hover_text("ML Auto Tune: Predict phrase-aware pitch and dynamics contours");
+    if tune_resp.hovered() {
+        g.rect_filled(tune_r, 4.0, Color32::from_white_alpha(20));
     } else {
-        phosphor_egui::regular::MICROPHONE_STAGE
-    };
+        g.rect_filled(tune_r, 4.0, Color32::from_rgb(0x20, 0x24, 0x2c));
+    }
+    g.rect_stroke(tune_r, 4.0, Stroke::new(1.0, BORDER_COLOR), StrokeKind::Inside);
     g.text(
-        pos2(render_r.left() + 14.0, cy),
+        pos2(tune_r.left() + 14.0, cy),
         Align2::CENTER_CENTER,
-        icon_render,
+        phosphor_egui::regular::SPARKLE,
         FontId::proportional(13.0),
-        if is_rendering { Color32::from_rgb(0xff, 0xd6, 0x0a) } else { Color32::WHITE },
+        Color32::from_rgb(0x3a, 0x7b, 0xd5),
     );
     g.text(
-        pos2(render_r.left() + 28.0, cy),
+        pos2(tune_r.left() + 28.0, cy),
         Align2::LEFT_CENTER,
-        if is_rendering { "Rendering…" } else { "Render Vocal" },
+        "ML Auto Tune",
         FontId::proportional(11.0),
         Color32::WHITE,
     );
-    if render_resp.clicked() {
-        if let Some(VocalRole::Score(set)) = &p.tracks[ti].vocal {
-            let link = set.link;
-            crate::vocal::trigger_render(s, link);
-        }
+    if tune_resp.clicked() {
+        apply_ml_autotune(p, s, ti, ri);
     }
 }
 
-/// Renders the Singer / Part Inspector panel with voicebank picker and EXP, AIR, CHA, ATK controls.
-fn singer_inspector_panel(
+/// Floating glass popover card over the canvas displaying Singer profile and macro sliders.
+fn singer_inspector_popover(
     ui: &mut Ui,
     p: &mut Project,
     s: &mut UiState,
     ti: usize,
-    rect: Rect,
+    canvas_rect: Rect,
 ) {
-    let g = ui.painter_at(rect);
-    g.rect_filled(rect, 0.0, TOOLBAR_BG);
-    g.line_segment(
-        [rect.right_top(), rect.right_bottom()],
-        Stroke::new(1.0, BORDER_COLOR),
+    let card_w = 260.0;
+    let card_h = 280.0;
+    let card_rect = Rect::from_min_size(
+        pos2(canvas_rect.left() + KEYS_W + 16.0, canvas_rect.top() + 12.0),
+        vec2(card_w, card_h),
     );
 
-    let cy_top = rect.top() + 16.0;
+    let g = ui.painter_at(card_rect);
+    // Dark obsidian glass background with border and shadow
+    g.rect_filled(card_rect, 8.0, Color32::from_rgb(0x18, 0x1a, 0x1f));
+    g.rect_stroke(card_rect, 8.0, Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3d, 0x46)), StrokeKind::Inside);
+
+    // Header with title and close button
+    let cy_top = card_rect.top() + 16.0;
     g.text(
-        pos2(rect.left() + 12.0, cy_top),
+        pos2(card_rect.left() + 12.0, cy_top),
         Align2::LEFT_CENTER,
         "SINGER / PART INSPECTOR",
         FontId::proportional(11.0),
-        TEXT_DIM,
+        Color32::from_rgb(0x3a, 0x7b, 0xd5),
     );
+
+    let close_rect = Rect::from_min_size(pos2(card_rect.right() - 24.0, card_rect.top() + 6.0), vec2(18.0, 18.0));
+    let close_resp = ui.interact(close_rect, egui::Id::unique("vocal_insp_close"), Sense::click());
+    if close_resp.hovered() {
+        g.rect_filled(close_rect, 3.0, Color32::from_white_alpha(20));
+    }
+    g.text(close_rect.center(), Align2::CENTER_CENTER, phosphor_egui::regular::X, FontId::proportional(12.0), TEXT_DIM);
+    if close_resp.clicked() {
+        s.vocal_ed.show_inspector = false;
+    }
 
     let Some(VocalRole::Score(set)) = p.tracks[ti].vocal.as_mut() else {
         g.text(
-            pos2(rect.left() + 12.0, cy_top + 24.0),
+            pos2(card_rect.left() + 12.0, cy_top + 24.0),
             Align2::LEFT_CENTER,
             "Track is not a vocal score track",
             FontId::proportional(11.0),
@@ -765,7 +775,7 @@ fn singer_inspector_panel(
 
     // Voicebank display
     g.text(
-        pos2(rect.left() + 12.0, y),
+        pos2(card_rect.left() + 12.0, y),
         Align2::LEFT_CENTER,
         "Voicebank:",
         FontId::proportional(11.0),
@@ -777,17 +787,17 @@ fn singer_inspector_panel(
         &set.voice
     };
     g.text(
-        pos2(rect.left() + 85.0, y),
+        pos2(card_rect.left() + 85.0, y),
         Align2::LEFT_CENTER,
         voice_label,
         FontId::proportional(11.5),
         Color32::from_rgb(0xff, 0xd6, 0x0a),
     );
-    y += 26.0;
+    y += 24.0;
 
-    // 4 Primary Knobs / Sliders: EXP, AIR, CHA, ATK
+    // 4 Primary Macro Sliders: EXP, AIR, CHA, ATK
     let mut draw_knob = |label: &str, tip: &str, val: &mut f32, min_v: f32, max_v: f32, cur_y: &mut f32| {
-        let label_rect = Rect::from_min_size(pos2(rect.left() + 12.0, *cur_y), vec2(40.0, 18.0));
+        let label_rect = Rect::from_min_size(pos2(card_rect.left() + 12.0, *cur_y), vec2(40.0, 18.0));
         g.text(
             pos2(label_rect.left(), label_rect.center().y),
             Align2::LEFT_CENTER,
@@ -796,7 +806,7 @@ fn singer_inspector_panel(
             Color32::WHITE,
         );
 
-        let slider_rect = Rect::from_min_size(pos2(rect.left() + 55.0, *cur_y + 2.0), vec2(110.0, 14.0));
+        let slider_rect = Rect::from_min_size(pos2(card_rect.left() + 55.0, *cur_y + 2.0), vec2(130.0, 14.0));
         let resp = ui.interact(slider_rect, egui::Id::unique(("insp_param", *cur_y as i32)), Sense::drag()).on_hover_text(tip);
 
         // Groove rail background
@@ -810,7 +820,7 @@ fn singer_inspector_panel(
             g.rect_filled(fill_r, 3.0, ACCENT_BLUE);
         }
 
-        if resp.dragged() {
+        if resp.dragged_by(egui::PointerButton::Primary) {
             let delta = resp.drag_delta().x / slider_rect.width() * (max_v - min_v);
             *val = (*val + delta).clamp(min_v, max_v);
             s.vocal_ed.dirty = true;
@@ -818,14 +828,14 @@ fn singer_inspector_panel(
 
         let val_text = format!("{:.0}", *val);
         g.text(
-            pos2(rect.left() + 175.0, *cur_y + 8.0),
+            pos2(card_rect.left() + 195.0, *cur_y + 8.0),
             Align2::LEFT_CENTER,
             &val_text,
             FontId::monospace(10.5),
             TEXT_DIM,
         );
 
-        *cur_y += 24.0;
+        *cur_y += 22.0;
     };
 
     draw_knob("EXP", "Dynamics / Tension (-100..100)", &mut set.tension, -100.0, 100.0, &mut y);
@@ -833,18 +843,9 @@ fn singer_inspector_panel(
     draw_knob("CHA", "Character / Gender Tone (-100..100)", &mut set.gender, -100.0, 100.0, &mut y);
     draw_knob("ATK", "Attack / Consonant Velocity (0..200)", &mut set.velocity, 0.0, 200.0, &mut y);
 
+    y += 6.0;
+    g.line_segment([pos2(card_rect.left() + 12.0, y), pos2(card_rect.right() - 12.0, y)], Stroke::new(1.0, BORDER_COLOR));
     y += 10.0;
-    g.line_segment([pos2(rect.left() + 12.0, y), pos2(rect.right() - 12.0, y)], Stroke::new(1.0, BORDER_COLOR));
-    y += 14.0;
-
-    g.text(
-        pos2(rect.left() + 12.0, y),
-        Align2::LEFT_CENTER,
-        "Vibrato & Transition",
-        FontId::proportional(11.0),
-        TEXT_DIM,
-    );
-    y += 20.0;
 
     draw_knob("Depth", "Vibrato Depth in cents", &mut set.vibrato_depth, 0.0, 100.0, &mut y);
     draw_knob("Rate", "Vibrato Rate in Hz", &mut set.vibrato_rate, 1.0, 10.0, &mut y);
@@ -896,6 +897,23 @@ fn vocal_canvas(
         if cur_x > grid_rect.right() - 50.0 || cur_x < grid_rect.left() {
             s.vocal_ed.scroll_x = (p.position_beats as f32 - 2.0).max(0.0);
         }
+    }
+
+    // Middle-click 2D Panning (smooth navigation)
+    let (middle_down, middle_delta, hover) = ui.input(|i| {
+        (
+            i.pointer.middle_down(),
+            i.pointer.delta(),
+            i.pointer.hover_pos(),
+        )
+    });
+    let in_canvas = hover
+        .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+        .is_some_and(|pt| rect.contains(pt));
+    if middle_down && in_canvas {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        s.vocal_ed.scroll_x = (s.vocal_ed.scroll_x - middle_delta.x / beat_px).max(0.0);
+        s.vocal_ed.scroll_y = (s.vocal_ed.scroll_y + middle_delta.y).clamp(0.0, 127.0 * key_h);
     }
 
     // Handle scroll wheel on grid
@@ -1072,7 +1090,6 @@ fn vocal_canvas(
             g.rect_filled(edit_rect, 3.0, Color32::from_rgb(0x22, 0x25, 0x2a));
             g.rect_stroke(edit_rect, 3.0, Stroke::new(1.0, ACCENT_BLUE_LIGHT), StrokeKind::Inside);
 
-            let edit_id = egui::Id::unique("inline_lyric_input");
             let mut edit_resp = ui.allocate_rect(edit_rect, Sense::click_and_drag());
             let te = egui::TextEdit::singleline(&mut s.vocal_ed.lyric_buffer)
                 .font(FontId::proportional(11.5))
@@ -1091,7 +1108,6 @@ fn vocal_canvas(
                 reg_mut.notes[edit_idx].lyric = Lyric::new(&s.vocal_ed.lyric_buffer);
                 s.vocal_ed.dirty = true;
                 if ui.input(|i| i.modifiers.shift) {
-                    // Shift+Tab: previous note
                     if edit_idx > 0 {
                         s.vocal_ed.editing_lyric = Some(edit_idx - 1);
                         s.vocal_ed.lyric_buffer = reg_mut.notes[edit_idx - 1].lyric.as_str().to_string();
@@ -1099,7 +1115,6 @@ fn vocal_canvas(
                         s.vocal_ed.editing_lyric = None;
                     }
                 } else {
-                    // Tab: next note
                     if edit_idx + 1 < reg_mut.notes.len() {
                         s.vocal_ed.editing_lyric = Some(edit_idx + 1);
                         s.vocal_ed.lyric_buffer = reg_mut.notes[edit_idx + 1].lyric.as_str().to_string();
@@ -1173,7 +1188,6 @@ fn vocal_canvas(
                 s.vocal_ed.selected.clear();
                 s.vocal_ed.selected.insert(*idx);
             }
-            // Acoustic Feedback audition
             if s.vocal_ed.acoustic_feedback {
                 let note = p.tracks[ti].regions[ri].notes[*idx];
                 s.audition.push(Audition::On {
@@ -1185,7 +1199,7 @@ fn vocal_canvas(
         }
     }
 
-    // 8. Keyboard Shortcuts (Right/Left navigation, Up/Down semitone, Shift+Up/Down octave)
+    // 8. Keyboard Shortcuts
     if !ui.ctx().egui_wants_keyboard_input() && s.vocal_ed.editing_lyric.is_none() {
         let notes_len = p.tracks[ti].regions[ri].notes.len();
         if notes_len > 0 {
@@ -1238,7 +1252,6 @@ fn vocal_canvas(
                 s.vocal_ed.selected.clear();
                 s.vocal_ed.dirty = true;
             } else if ui.input(|i| i.key_pressed(Key::Q)) {
-                // Quantize selected notes
                 let reg_mut = &mut p.tracks[ti].regions[ri];
                 for sel in &s.vocal_ed.selected {
                     if let Some(n) = reg_mut.notes.get_mut(*sel) {
@@ -1264,43 +1277,37 @@ fn vocal_canvas(
 
         let black = is_black(pitch as i32);
         let col = if black { Color32::from_rgb(0x18, 0x19, 0x1c) } else { Color32::from_rgb(0x2a, 0x2d, 0x33) };
-        let resp = ui.interact(key_r, egui::Id::unique(("piano_key", pitch)), Sense::click());
-
-        if resp.is_pointer_button_down_on() {
-            gk.rect_filled(key_r, 0.0, ACCENT_BLUE);
-            if s.vocal_ed.acoustic_feedback {
-                s.audition.push(Audition::On { pitch, vel: 100, track: ti as u16 });
-            }
-        } else if resp.hovered() {
-            gk.rect_filled(key_r, 0.0, Color32::from_white_alpha(15));
-        } else {
-            gk.rect_filled(key_r, 0.0, col);
-        }
+        gk.rect_filled(key_r, 0.0, col);
         gk.line_segment([key_r.left_bottom(), key_r.right_bottom()], Stroke::new(1.0, Color32::from_rgb(0x1a, 0x1c, 0x20)));
 
-        // C labels
         if pitch % 12 == 0 {
             gk.text(
-                pos2(key_r.right() - 6.0, key_r.center().y),
-                Align2::RIGHT_CENTER,
+                pos2(key_r.left() + 4.0, key_r.center().y),
+                Align2::LEFT_CENTER,
                 c_label(pitch as i32),
                 FontId::proportional(10.0),
-                Color32::WHITE,
+                Color32::from_gray(0xa0),
             );
         }
-    }
 
-    // Playhead line
-    let px = x_of(p.position_beats as f32);
-    if px >= grid_rect.left() && px <= grid_rect.right() {
-        g.line_segment(
-            [pos2(px, grid_rect.top()), pos2(px, grid_rect.bottom())],
-            Stroke::new(1.5, crate::tracks_area::playhead_colors(p.recording).0),
-        );
+        let resp = ui.interact(key_r, egui::Id::unique(("vocal_key", pitch)), Sense::click_and_drag());
+        if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+            if s.vocal_ed.held != Some(pitch) {
+                s.audition.push(Audition::On {
+                    pitch,
+                    vel: 100,
+                    track: ti as u16,
+                });
+                s.vocal_ed.held = Some(pitch);
+            }
+        }
+    }
+    if !ui.input(|i| i.pointer.primary_down()) {
+        s.vocal_ed.held = None;
     }
 }
 
-/// Synced Bottom Control Parameters Lane with Velocity Stems and Zoom Controls.
+/// Bottom Parameter Lane for PITD (Pitch Bend Cent), Velocity, DYN, etc.
 fn vocal_parameter_lane(
     ui: &mut Ui,
     p: &mut Project,
@@ -1323,7 +1330,7 @@ fn vocal_parameter_lane(
     // Parameter type label and toggle
     let cy = left_rect.center().y;
     let param_label = s.vocal_ed.param_type.label();
-    let label_rect = Rect::from_min_size(pos2(left_rect.left() + 8.0, cy - 12.0), vec2(left_w - 16.0, 24.0));
+    let label_rect = Rect::from_min_size(pos2(left_rect.left() + 6.0, cy - 12.0), vec2(left_w - 12.0, 24.0));
     let resp = ui.interact(label_rect, egui::Id::unique("vocal_param_selector"), Sense::click())
         .on_hover_text("Click to cycle parameter lane");
     if resp.hovered() {
@@ -1342,13 +1349,14 @@ fn vocal_parameter_lane(
         s.vocal_ed.param_type = all[(cur + 1) % all.len()];
     }
 
-    // Velocity Stems Lane
+    // Lane Drawing Canvas
     let lane_rect = Rect::from_min_max(pos2(canvas_left, rect.top()), rect.max);
     g.rect_filled(lane_rect, 0.0, WELL_BG);
 
     let beat_px = s.vocal_ed.beat_px;
     let scroll_x = s.vocal_ed.scroll_x;
     let x_of = |beat: f32| lane_rect.left() + (beat - scroll_x) * beat_px;
+    let beat_of = |x: f32| ((x - lane_rect.left()) / beat_px + scroll_x).max(0.0);
 
     let start_beat = p.bar_to_beats(p.tracks[ti].regions[ri].start_bar as f64) as f32;
 
@@ -1371,22 +1379,82 @@ fn vocal_parameter_lane(
             let stem_bot = lane_rect.bottom() - 4.0;
             let stem_top = stem_bot - (n_vel as f32 / 127.0) * (lane_rect.height() - 14.0);
 
-            // Stem line
             g.line_segment([pos2(nx, stem_bot), pos2(nx, stem_top)], Stroke::new(1.5, col));
-            // Handle circle
             g.circle_filled(pos2(nx, stem_top), 3.5, if is_sel { Color32::WHITE } else { col });
 
             let handle_rect = Rect::from_center_size(pos2(nx, stem_top), vec2(10.0, 10.0));
             let stem_resp = ui.interact(handle_rect, egui::Id::unique(("vel_stem", idx)), Sense::drag());
-            if stem_resp.dragged() {
+            if stem_resp.dragged_by(egui::PointerButton::Primary) {
                 let delta = (-stem_resp.drag_delta().y / (lane_rect.height() - 14.0) * 127.0) as i32;
                 let reg_mut = &mut p.tracks[ti].regions[ri];
                 reg_mut.notes[idx].vel = (reg_mut.notes[idx].vel as i32 + delta).clamp(1, 127) as u8;
                 s.vocal_ed.dirty = true;
             }
         }
+    } else if s.vocal_ed.param_type == VocalParamType::Pitd {
+        // Continuous Pitch Bend Cent Lane (-1200..+1200 cents, baseline 0)
+        let mid_y = lane_rect.center().y;
+        let scale_y = (lane_rect.height() - 20.0) * 0.5; // distance from center to +/- 200 cents
+
+        // Baseline 0 cents
+        g.line_segment([pos2(lane_rect.left(), mid_y), pos2(lane_rect.right(), mid_y)], Stroke::new(1.0, Color32::from_rgb(0x3e, 0x43, 0x50)));
+        // +100 cents guide line
+        let plus_100_y = mid_y - (100.0 / 200.0) * scale_y;
+        g.line_segment([pos2(lane_rect.left(), plus_100_y), pos2(lane_rect.right(), plus_100_y)], Stroke::new(0.5, Color32::from_rgb(0x22, 0x25, 0x2c)));
+        // -100 cents guide line
+        let minus_100_y = mid_y + (100.0 / 200.0) * scale_y;
+        g.line_segment([pos2(lane_rect.left(), minus_100_y), pos2(lane_rect.right(), minus_100_y)], Stroke::new(0.5, Color32::from_rgb(0x22, 0x25, 0x2c)));
+
+        g.text(pos2(lane_rect.left() + 4.0, mid_y - 8.0), Align2::LEFT_CENTER, "0", FontId::monospace(9.5), TEXT_DIM);
+        g.text(pos2(lane_rect.left() + 4.0, plus_100_y - 8.0), Align2::LEFT_CENTER, "+100c", FontId::monospace(9.5), TEXT_DIM);
+        g.text(pos2(lane_rect.left() + 4.0, minus_100_y - 8.0), Align2::LEFT_CENTER, "-100c", FontId::monospace(9.5), TEXT_DIM);
+
+        // Render curve points
+        if s.vocal_ed.custom_pitch.len() >= 2 {
+            let pts: Vec<Pos2> = s.vocal_ed.custom_pitch
+                .iter()
+                .map(|(b, cents)| {
+                    let px = x_of(start_beat + b);
+                    let py = mid_y - (cents / 200.0) * scale_y;
+                    pos2(px, py)
+                })
+                .collect();
+
+            for pair in pts.windows(2) {
+                let p0 = pair[0];
+                let p1 = pair[1];
+                if (p0.x >= lane_rect.left() && p0.x <= lane_rect.right())
+                    || (p1.x >= lane_rect.left() && p1.x <= lane_rect.right())
+                {
+                    g.line_segment([p0, p1], Stroke::new(1.5, PITCH_CURVE_ORANGE));
+                }
+            }
+
+            for (idx, pt) in pts.iter().enumerate() {
+                if pt.x >= lane_rect.left() && pt.x <= lane_rect.right() {
+                    g.circle_filled(*pt, 2.5, Color32::WHITE);
+                }
+            }
+        }
+
+        // Draw / edit pitch bend curve with mouse
+        let lane_resp = ui.interact(lane_rect, egui::Id::unique("pitd_lane_interact"), Sense::click_and_drag());
+        if lane_resp.dragged_by(egui::PointerButton::Primary) || (lane_resp.clicked() && ui.input(|i| i.pointer.primary_clicked())) {
+            if let Some(pos) = lane_resp.interact_pointer_pos() {
+                let click_beat = (beat_of(pos.x) - start_beat).max(0.0);
+                let cents = -((pos.y - mid_y) / scale_y) * 200.0;
+                let cents = cents.clamp(-1200.0, 1200.0);
+
+                let mut cur = s.vocal_ed.custom_pitch.clone();
+                cur.retain(|(b, _)| (*b - click_beat).abs() > 0.05);
+                cur.push((click_beat, cents));
+                cur.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+                s.vocal_ed.custom_pitch = cur;
+                s.vocal_ed.dirty = true;
+            }
+        }
     } else {
-        // Continuous parameter midline
+        // Other expression parameter lanes
         let mid_y = lane_rect.center().y;
         g.line_segment([pos2(lane_rect.left(), mid_y), pos2(lane_rect.right(), mid_y)], Stroke::new(1.0, BORDER_COLOR));
     }

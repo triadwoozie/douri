@@ -123,7 +123,7 @@ This is exhaustive. Based on Logic Pro 10.7 / 11.
 - Exciter, SubBass (bass synth), Voice Transformer (formant), Limiter, Spectral Gate, EnVerb
 
 **Mastering:**
-- Mastering Assistant (AI in Logic 11): Analyze track, suggest EQ, Dynamics, Stereo Spread, Loudness. We will clone as rule-based + ML (ONNX in Rust via `ort`)
+- Mastering Assistant (ML in Logic 11): Analyze track, suggest EQ, Dynamics, Stereo Spread, Loudness. We will clone as rule-based + ML (ONNX in Rust via `ort`)
 - Stem Splitter (Logic 11): Split mix into Drums, Bass, Vocals, Other using ML (Demucs). We will use `tract` + Demucs model
 
 **MIDI FX (already listed) + Audio FX from Logic's Pedalboard:** 35 guitar pedals (Delay, Distortion, Modulation pedals). Amp Designer: Amp + Cab + Mic modeling (100+ amps/cabs)
@@ -635,9 +635,9 @@ Files, R on instrument tracks, I on audio tracks, and the mixer's Setting and Ou
 ## 4. Future Options / v2.0+ (Not in v1.0 but architect for it)
 
 - **Dolby Atmos / Spatial Audio:** 7.1.4 beds, 128 objects, ADM BWF export, Binaural monitoring, 3D panner UI (like Logic's Atmos panner)
-- **AI Session Players v2:** Bass Player, Keyboard Player, Drummer with style transfer (train small ONNX models in Rust via `burn` or `ort`)
+- **ML Session Players v2:** Bass Player, Keyboard Player, Drummer with style transfer (train small ONNX models in Rust via `burn` or `ort`)
 - **Stem Splitter:** Demucs model via `tract` (separate Drums/Bass/Vocals/Other) — Logic 11 feature
-- **AI Mastering Assistant v2:** Full AI chain with reference track matching
+- **ML Mastering Assistant v2:** Full ML chain with reference track matching
 - **Cloud Collaboration:** Real-time collab with CRDT (y-crdt in Rust), comments, version history
 - **Notation Pro:** Full engraving (like Dorico), MusicXML import/export advanced, tablature editor
 - **MPE / MIDI 2.0 Full:** Per-note expression editing in Piano Roll, MIDI 2.0 Property Exchange

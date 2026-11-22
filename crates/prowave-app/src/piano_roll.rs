@@ -278,7 +278,7 @@ pub(crate) fn target_region(p: &Project, s: &UiState) -> Option<(usize, usize)> 
 fn tabs(ui: &Ui, g: &Painter, bar: Rect, active: usize, switch: bool) -> Option<usize> {
     let mut clicked = None;
     g.rect_filled(bar, 0.0, PANEL_BG);
-    let tabs = [tr("Piano Roll"), "Vocal Editor", tr("Step Sequencer")];
+    let tabs = [tr("Piano Roll"), tr("Step Sequencer")];
     let font = FontId::proportional(12.5);
     let widths: Vec<f32> = tabs
         .iter()
@@ -541,29 +541,39 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     });
     // Ordinary MIDI regions can be shown in Piano Roll or Step Sequencer
     let is_step = generated.is_some() || s.score_tab;
-    let active = if is_step { 2 } else { 0 };
+    let active = if is_step { 1 } else { 0 };
     if let Some(i) = tabs(ui, &g, tab_bar, active, true) {
         match i {
             0 => {
                 s.score_tab = false;
             }
             1 => {
-                s.bottom = crate::Bottom::VocalEditor;
-                return;
-            }
-            2 => {
                 s.score_tab = true;
             }
             _ => {}
         }
     }
-    if let (Some((ti, ri)), true) = (region, active == 2) {
+    if active == 1 {
         s.piano_focus = ui
             .input(|i| i.pointer.hover_pos())
             .is_some_and(|pt| area.contains(pt));
         let body = Rect::from_min_max(pos2(area.left(), tab_bar.bottom()), area.max);
+        let ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
+        let ri = region.map(|(_, r)| r);
         crate::step_editor::show(ui, p, s, ti, ri, body);
         return;
+    }
+
+    // Active tab is Piano Roll: if the track is a Vocal Track, transform into Vocal Editor
+    if let Some((ti, ri)) = region {
+        if p.tracks[ti].vocal.is_some() {
+            s.piano_focus = ui
+                .input(|i| i.pointer.hover_pos())
+                .is_some_and(|pt| area.contains(pt));
+            let body = Rect::from_min_max(pos2(area.left(), tab_bar.bottom()), area.max);
+            crate::vocal_editor::show_in_rect(ui, p, s, ti, ri, body);
+            return;
+        }
     }
     let bar = Rect::from_min_size(
         pos2(area.left(), tab_bar.bottom()),
@@ -775,7 +785,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             i.pointer.hover_pos(),
         )
     });
-    if middle_down && hover.is_some_and(|pt| editor.contains(pt)) {
+    let pointer_in_editor = hover
+        .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+        .is_some_and(|pt| editor.contains(pt));
+    if middle_down && pointer_in_editor {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         v.scroll_x = (v.scroll_x - middle_delta.x).clamp(0.0, (content_w - grid.width()).max(0.0));
         v.scroll_y = (v.scroll_y - middle_delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));
@@ -1033,7 +1046,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             v.dirty = true;
         }
     }
-    if resp.drag_started() && !matches!(v.drag, Drag::Create { .. }) {
+    if resp.drag_started_by(egui::PointerButton::Primary) && !matches!(v.drag, Drag::Create { .. }) {
         let origin = ui.input(|i| i.pointer.press_origin());
         if let Some(pt) = origin.or(resp.interact_pointer_pos()) {
             let (beat, pitch) = (beat_at(pt.x), pitch_at(pt.y));
@@ -1125,7 +1138,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }
         }
     }
-    if resp.dragged() {
+    if resp.dragged_by(egui::PointerButton::Primary) {
         if let Some(pt) = resp.interact_pointer_pos() {
             let (beat, pitch) = (beat_at(pt.x), pitch_at(pt.y));
             match &v.drag {
@@ -1241,7 +1254,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     }
     // ---- Velocity lane (FL Studio style): drag a stem up or down to set that note's velocity.
     let vresp = ui.interact(vel_rect, id("vel_lane"), Sense::click_and_drag());
-    if vresp.drag_started() || vresp.clicked() {
+    if vresp.drag_started_by(egui::PointerButton::Primary)
+        || (vresp.clicked() && ui.input(|i| i.pointer.primary_clicked()))
+    {
         let origin = ui.input(|i| i.pointer.press_origin());
         if let Some(pt) = origin.or(vresp.interact_pointer_pos()) {
             let near = |n: &Note| (x_of(n.start) - pt.x).abs();

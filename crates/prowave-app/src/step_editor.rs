@@ -36,7 +36,7 @@ const PANEL_W: f32 = 330.0;
 /// What a click or drag in the pattern grid sets on a step.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum EditMode {
-    /// Whether the step is on, and how hard.
+    /// Whether the step is on, and how hard (1-127).
     #[default]
     Velocity,
     /// The chance (percent) it plays.
@@ -48,7 +48,12 @@ enum EditMode {
 }
 
 impl EditMode {
-    const ALL: [EditMode; 4] = [Self::Velocity, Self::Chance, Self::Repeat, Self::Tie];
+    const ALL: [EditMode; 4] = [
+        Self::Velocity,
+        Self::Chance,
+        Self::Repeat,
+        Self::Tie,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -120,20 +125,83 @@ fn row_label(pitch: u8, drums: bool, kit: Option<&crate::drum_kit::DrumsUse>) ->
 }
 
 /// Draws the editor for the Pattern or Drummer region `ri` of track `ti` in `body`.
-pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: usize, body: Rect) {
+pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: Option<usize>, body: Rect) {
     let g = ui.painter_at(body);
     g.rect_filled(body, 0.0, BG);
+
+    if ti >= p.tracks.len() {
+        return;
+    }
+
+    // Check if the track has a pattern or drummer region
+    let target_ri = ri
+        .filter(|&r| r < p.tracks[ti].regions.len() && p.tracks[ti].regions[r].generated.is_some())
+        .or_else(|| {
+            p.tracks[ti]
+                .regions
+                .iter()
+                .position(|r| r.generated.is_some())
+        });
+
+    let Some(reg_idx) = target_ri else {
+        show_empty_state(ui, p, s, ti, body);
+        return;
+    };
+
     let drummer = matches!(
-        p.tracks[ti].regions[ri]
+        p.tracks[ti].regions[reg_idx]
             .generated
             .as_ref()
             .map(|g| &g.source),
         Some(Generator::Drummer(_))
     );
     if drummer {
-        show_drummer(ui, p, s, ti, ri, body);
+        show_drummer(ui, p, s, ti, reg_idx, body);
     } else {
-        show_pattern(ui, p, s, ti, ri, body);
+        show_pattern(ui, p, s, ti, reg_idx, body);
+    }
+}
+
+fn show_empty_state(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, body: Rect) {
+    let g = ui.painter_at(body);
+    g.rect_filled(body, 0.0, BG);
+
+    let card_w = 360.0;
+    let card_h = 180.0;
+    let card_rect = Rect::from_center_size(body.center(), vec2(card_w, card_h));
+
+    // Liquid glass card background
+    g.rect_filled(card_rect, 8.0, STRIP_BG);
+    g.rect_stroke(card_rect, 8.0, Stroke::new(1.0, crate::theme::BORDER), StrokeKind::Inside);
+
+    // Phosphor icon: SQUARES_FOUR
+    let icon_pos = pos2(card_rect.center().x, card_rect.top() + 35.0);
+    g.text(icon_pos, Align2::CENTER_CENTER, phosphor_egui::regular::SQUARES_FOUR, FontId::proportional(28.0), Color32::from_rgb(0x3a, 0x7b, 0xd5));
+
+    // Title
+    let title_pos = pos2(card_rect.center().x, card_rect.top() + 70.0);
+    g.text(title_pos, Align2::CENTER_CENTER, "No Pattern Region Selected", FontId::proportional(14.0), TEXT);
+
+    // Subtitle
+    let sub_pos = pos2(card_rect.center().x, card_rect.top() + 92.0);
+    g.text(sub_pos, Align2::CENTER_CENTER, "Step Sequencer requires a Pattern Region on this track.", FontId::proportional(11.0), TEXT_DIM);
+
+    // Button: + Create Pattern Region
+    let btn_rect = Rect::from_center_size(pos2(card_rect.center().x, card_rect.top() + 135.0), vec2(200.0, 32.0));
+    let btn_resp = ui.interact(btn_rect, egui::Id::unique("step_create_pattern_btn"), Sense::click());
+    if btn_resp.hovered() {
+        g.rect_filled(btn_rect, 6.0, Color32::from_rgb(0x4a, 0x8b, 0xe5));
+    } else {
+        g.rect_filled(btn_rect, 6.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
+    }
+    g.text(btn_rect.center(), Align2::CENTER_CENTER, format!("{} {}", phosphor_egui::regular::PLUS, "Create Pattern Region"), FontId::proportional(13.0), Color32::WHITE);
+
+    if btn_resp.clicked() {
+        let at_bar = (p.beats_to_bar(p.position_beats).floor() + 1.0).max(1.0) as f32;
+        if let Some(new_ri) = p.add_generated_region(ti, false, at_bar) {
+            s.tracks.selected = Some((ti, new_ri));
+            p.song_rev += 1;
+        }
     }
 }
 
@@ -302,6 +370,12 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             pat.steps = steps as usize;
             changed = true;
         }
+        for n in [16, 32, 64] {
+            if ui.selectable_label(pat.steps == n, format!("{n}")).clicked() {
+                pat.steps = n;
+                changed = true;
+            }
+        }
         ui.label(tr("Rate:"));
         egui::ComboBox::from_id_salt("pattern_rate")
             .selected_text(pat.rate.name())
@@ -315,11 +389,12 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                 }
             });
         ui.label(tr("Swing:"));
+        let (rail_rect, _) = ui.allocate_exact_size(vec2(60.0, 18.0), Sense::hover());
+        let rail_line = Rect::from_center_size(rail_rect.center(), vec2(rail_rect.width(), 4.0));
+        ui.painter().rect_filled(rail_line, 2.0, Color32::from_rgb(0x2e, 0x31, 0x38));
         let mut swing = (pat.swing * 100.0).round() as u32;
-        if ui
-            .add(egui::DragValue::new(&mut swing).range(0..=50).suffix(" %"))
-            .changed()
-        {
+        let drag = egui::DragValue::new(&mut swing).range(0..=50).suffix(" %");
+        if ui.put(rail_rect, drag).changed() {
             pat.swing = swing as f32 / 100.0;
             changed = true;
         }
@@ -398,7 +473,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             i.pointer.hover_pos(),
         )
     });
-    if middle_down && hover.is_some_and(|pt| area.contains(pt)) {
+    let in_area = hover
+        .or_else(|| ui.input(|i| i.pointer.interact_pos()))
+        .is_some_and(|pt| area.contains(pt));
+    if middle_down && in_area {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         v.scroll_y = (v.scroll_y - middle_delta.y).clamp(0.0, overflow);
     }
@@ -406,7 +484,8 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         v.scroll_y -= ui.input(|i| i.smooth_scroll_delta.y);
     }
     v.scroll_y = v.scroll_y.clamp(0.0, overflow);
-    let top = area.top() + 4.0 - v.scroll_y;
+    let ruler_h = 20.0;
+    let top = area.top() + ruler_h + 4.0 - v.scroll_y;
     let cell = |r: usize, k: usize| {
         Rect::from_min_size(
             pos2(grid.left() + k as f32 * cw, top + r as f32 * ROW_H),
@@ -417,20 +496,44 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let now = p.position_beats - origin;
     let current = (now >= 0.0 && now < len_beats).then(|| pat.step_at(now));
 
-    // Interactive scrubbing ruler along the top of the grid
+    // Interactive 20px scrubbing ruler along the top of the grid
     let ruler_rect = Rect::from_min_max(
         pos2(grid.left(), area.top()),
-        pos2(grid.right(), area.top() + 4.0),
+        pos2(grid.right(), area.top() + ruler_h),
     );
+    g.rect_filled(ruler_rect, 0.0, crate::theme::CARD_BG);
+    g.line_segment([ruler_rect.left_bottom(), ruler_rect.right_bottom()], Stroke::new(1.0, crate::theme::BORDER));
+
+    for k in 0..steps {
+        let x = grid.left() + k as f32 * cw;
+        if k % per_beat == 0 {
+            let beat_num = (k / per_beat) + 1;
+            g.text(
+                pos2(x + cw * 0.5, ruler_rect.center().y),
+                Align2::CENTER_CENTER,
+                format!("{beat_num}"),
+                FontId::proportional(11.0),
+                if current == Some(k) { Color32::WHITE } else { TEXT_DIM },
+            );
+        } else {
+            g.line_segment(
+                [pos2(x, ruler_rect.bottom() - 4.0), pos2(x, ruler_rect.bottom())],
+                Stroke::new(1.0, Color32::from_rgb(0x3e, 0x41, 0x48)),
+            );
+        }
+    }
+
     let ruler_resp = ui.interact(
         ruler_rect,
         egui::Id::unique("pattern_ruler"),
         Sense::click_and_drag(),
     );
     if let Some(pos) = ruler_resp.interact_pointer_pos() {
-        let rel_x = (pos.x - grid.left()).max(0.0);
-        let scrub_step = (rel_x / cw).clamp(0.0, steps as f32);
-        p.position_beats = (origin + scrub_step as f64 * step_len).max(0.0);
+        if ruler_resp.dragged() || ruler_resp.clicked() {
+            let rel_x = (pos.x - grid.left()).max(0.0);
+            let scrub_step = (rel_x / cw).clamp(0.0, steps as f32);
+            p.position_beats = (origin + scrub_step as f64 * step_len).max(0.0);
+        }
     }
     for (r, row) in pat.rows.iter().enumerate() {
         let y = top + r as f32 * ROW_H;
@@ -513,7 +616,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         g.rect_filled(
             Rect::from_min_max(pos2(x, area.top()), pos2(x + cw, area.bottom())),
             0.0,
-            Color32::from_white_alpha(22),
+            Color32::from_rgba_premultiplied(0x3a, 0x7b, 0xd5, 45),
         );
     }
     if now >= 0.0 && now < len_beats {
@@ -680,10 +783,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             .on_hover_text(tr(
                 "Drag to change the pitch; right-click to delete the row",
             ));
-        if resp.drag_started() {
+        if resp.drag_started_by(egui::PointerButton::Primary) {
             v.pitch_drag = 0.0;
         }
-        if resp.dragged() {
+        if resp.dragged_by(egui::PointerButton::Primary) {
             v.pitch_drag -= resp.drag_delta().y;
             let steps = (v.pitch_drag / 8.0).trunc();
             if steps != 0.0 {
@@ -1090,7 +1193,7 @@ mod tests {
         Rect::from_min_size(
             pos2(
                 grid_left + step as f32 * cw,
-                STRIP_H + 4.0 + row as f32 * ROW_H,
+                STRIP_H + 20.0 + 4.0 + row as f32 * ROW_H,
             ),
             vec2(cw, ROW_H),
         )
@@ -1133,22 +1236,22 @@ mod tests {
 
         fn settle(&mut self) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.settle(|ui| show(ui, p, s, t, r, body()));
+            self.h.settle(|ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn click(&mut self, pos: egui::Pos2) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.click(pos, |ui| show(ui, p, s, t, r, body()));
+            self.h.click(pos, |ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn right_click(&mut self, pos: egui::Pos2) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.right_click(pos, |ui| show(ui, p, s, t, r, body()));
+            self.h.right_click(pos, |ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn drag(&mut self, path: &[egui::Pos2], button: PointerButton) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.drag(path, button, |ui| show(ui, p, s, t, r, body()));
+            self.h.drag(path, button, |ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn pattern_params(&self) -> PatternParams {
@@ -1318,11 +1421,11 @@ mod tests {
     fn dragging_a_rows_name_changes_its_pitch_and_it_sounds_while_held() {
         let mut rig = Rig::pattern();
         let before = rig.pattern_params().rows[1].pitch;
-        let y = STRIP_H + 4.0 + 1.0 * ROW_H + ROW_H / 2.0;
+        let y = STRIP_H + 20.0 + 4.0 + 1.0 * ROW_H + ROW_H / 2.0;
         let x = 40.0;
         let (p, s, t, r) = (&mut rig.p, &mut rig.s, rig.t, rig.r);
         rig.h.press(pos2(x, y), PointerButton::Primary, |ui| {
-            show(ui, p, s, t, r, body())
+            show(ui, p, s, t, Some(r), body())
         });
         assert!(
             rig.s
@@ -1335,14 +1438,14 @@ mod tests {
         for dy in [-6.0, -12.0, -20.0] {
             rig.h
                 .frame(vec![egui::Event::PointerMoved(pos2(x, y + dy))], |ui| {
-                    show(ui, p, s, t, r, body())
+                    show(ui, p, s, t, Some(r), body())
                 });
         }
         rig.h
             .release(pos2(x, y - 20.0), PointerButton::Primary, |ui| {
-                show(ui, p, s, t, r, body())
+                show(ui, p, s, t, Some(r), body())
             });
-        rig.h.frame(vec![], |ui| show(ui, p, s, t, r, body()));
+        rig.h.frame(vec![], |ui| show(ui, p, s, t, Some(r), body()));
         // egui starts a drag after a few points of movement, so 20 points up is one or two
         // semitones.
         let moved = rig.pattern_params().rows[1].pitch as i32 - before as i32;
@@ -1411,7 +1514,7 @@ mod tests {
                 let body = Rect::from_min_size(pos2(0.0, 0.0), vec2(w, h));
                 let (p, s, t, r) = (&mut rig.p, &mut rig.s, rig.t, rig.r);
                 for _ in 0..3 {
-                    rig.h.frame(vec![], |ui| show(ui, p, s, t, r, body));
+                    rig.h.frame(vec![], |ui| show(ui, p, s, t, Some(r), body));
                 }
             }
         }

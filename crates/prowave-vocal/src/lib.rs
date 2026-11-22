@@ -8,6 +8,7 @@
 //! - Equal-power phrase crossfader and stitcher
 //! - Background phrase caching and `SingerScore` generation for real-time DAW playback
 
+pub mod autotune;
 pub mod cache;
 pub mod crossfade;
 pub mod engine;
@@ -17,6 +18,10 @@ pub mod ust;
 pub mod ustx;
 pub mod voicebank;
 
+pub use autotune::{
+    find_pitch_model, merge_curve_span, predict_contours, predict_parametric_contours,
+    CurvePoint, PredictedContours,
+};
 pub use cache::PhraseCache;
 pub use crossfade::{crossfade_phrase, RenderedSegment};
 pub use engine::VocalEngine;

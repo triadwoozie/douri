@@ -1079,12 +1079,8 @@ pub fn new_track(p: &mut Project, s: &mut crate::UiState) {
         params: RegionParams::default(),
         generated: None,
     });
-    let mut out = Track::new(trf("{} Vocal", &[&name]), TrackKind::Audio);
-    out.color = egui::Color32::from_rgb(0xb0, 0x48, 0x80);
-    out.vocal = Some(VocalRole::Output { link });
     p.tracks.push(score);
-    p.tracks.push(out);
-    p.selected_track = p.tracks.len() - 2;
+    p.selected_track = p.tracks.len() - 1;
     s.tracks.selected = Some((p.selected_track, 0));
     p.song_rev += 1;
     s.vocal.open = true;
@@ -1094,9 +1090,14 @@ fn output_track(p: &Project, link: u64) -> Option<usize> {
     p.tracks
         .iter()
         .position(|t| t.vocal == Some(VocalRole::Output { link }))
+        .or_else(|| {
+            p.tracks
+                .iter()
+                .position(|t| matches!(&t.vocal, Some(VocalRole::Score(s)) if s.link == link))
+        })
 }
 
-/// Puts the sung parts on the link's audio track (made again if it was deleted).
+/// Puts the sung parts on the vocal score track's regions (and on any legacy output track if present).
 fn place_parts(ctx: &egui::Context, p: &mut Project, done: &Done) {
     let Some(src) = p
         .tracks
@@ -1105,52 +1106,74 @@ fn place_parts(ctx: &egui::Context, p: &mut Project, done: &Done) {
     else {
         return;
     };
-    let ti = match output_track(p, done.link) {
-        Some(i) => i,
-        None => {
-            let mut out = Track::new(trf("{} Vocal", &[&p.tracks[src].name]), TrackKind::Audio);
-            out.vocal = Some(VocalRole::Output { link: done.link });
-            p.tracks.push(out);
-            p.tracks.len() - 1
-        }
-    };
-    let map = p.tempo_map();
-    // Pitch Editor edits of phrases sung again unchanged (the same cached file) stay.
-    let kept: HashMap<PathBuf, crate::flex_edit::FlexEdit> = p.tracks[ti]
+
+    // Attach synthesized stereo PCM buffer directly to the Vocal Score track's regions
+    // so the Vocal Track itself routes its audio through its own channel strip.
+    let kept_src: HashMap<PathBuf, crate::flex_edit::FlexEdit> = p.tracks[src]
         .regions
         .iter()
         .filter_map(|r| r.audio.as_ref()?.flex.clone())
         .map(|f| (f.original.path.clone(), f))
         .collect();
-    let mut regions = Vec::new();
     for part in &done.parts {
         let Ok(file) = prowave_engine::AudioFile::open(&part.file) else {
             continue;
         };
         let mut audio = crate::import::audio_region(file, ctx);
-        if let Some(mut f) = kept.get(&audio.file.path).cloned() {
+        if let Some(mut f) = kept_src.get(&audio.file.path).cloned() {
             f.original = audio.file.clone();
             f.rendered = 0;
             audio.flex = Some(f);
         }
-        // The region covers the sound: its end in beats, then in bars.
-        let end_beats = map.beat_at(part.start_secs + part.secs);
-        let end_bar = p.beats_to_bar(end_beats) + 1.0;
-        let len_bars = ((end_bar - part.start_bar as f64) as f32).max(0.05);
-        regions.push(Region {
-            missing: None,
-            name: p.tracks[src].name.clone(),
-            start_bar: part.start_bar,
-            len_bars,
-            notes: Vec::new(),
-            controls: Vec::new(),
-            folder: None,
-            audio: Some(audio),
-            params: RegionParams::default(),
-            generated: None,
-        });
+        if let Some(reg) = p.tracks[src]
+            .regions
+            .iter_mut()
+            .find(|r| (r.start_bar - part.start_bar).abs() < 1.0)
+        {
+            reg.audio = Some(audio.clone());
+        } else if let Some(first) = p.tracks[src].regions.first_mut() {
+            first.audio = Some(audio.clone());
+        }
     }
-    p.tracks[ti].regions = regions;
+
+    // If an existing legacy output audio track is present in the project, also update it
+    if let Some(ti) = p.tracks.iter().position(|t| t.vocal == Some(VocalRole::Output { link: done.link })) {
+        let map = p.tempo_map();
+        let kept: HashMap<PathBuf, crate::flex_edit::FlexEdit> = p.tracks[ti]
+            .regions
+            .iter()
+            .filter_map(|r| r.audio.as_ref()?.flex.clone())
+            .map(|f| (f.original.path.clone(), f))
+            .collect();
+        let mut regions = Vec::new();
+        for part in &done.parts {
+            let Ok(file) = prowave_engine::AudioFile::open(&part.file) else {
+                continue;
+            };
+            let mut audio = crate::import::audio_region(file, ctx);
+            if let Some(mut f) = kept.get(&audio.file.path).cloned() {
+                f.original = audio.file.clone();
+                f.rendered = 0;
+                audio.flex = Some(f);
+            }
+            let end_beats = map.beat_at(part.start_secs + part.secs);
+            let end_bar = p.beats_to_bar(end_beats) + 1.0;
+            let len_bars = ((end_bar - part.start_bar as f64) as f32).max(0.05);
+            regions.push(Region {
+                missing: None,
+                name: trf("{} Vocal", &[&p.tracks[src].name]),
+                start_bar: part.start_bar,
+                len_bars,
+                notes: Vec::new(),
+                controls: Vec::new(),
+                folder: None,
+                audio: Some(audio),
+                params: RegionParams::default(),
+                generated: None,
+            });
+        }
+        p.tracks[ti].regions = regions;
+    }
     p.song_rev += 1;
 }
 
