@@ -2844,7 +2844,14 @@ fn main() -> eframe::Result {
             // `--play` starts the transport on launch; `--piano` opens the Piano Roll.
             // A benchmark run takes no other arguments.
             let args: Vec<std::ffi::OsString> = if measuring {
-                Vec::new()
+                let is_proj = |a: &std::ffi::OsString| {
+                    let ext = std::path::Path::new(a).extension();
+                    ext.is_some_and(|e| {
+                        e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                            || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+                    })
+                };
+                std::env::args_os().skip(1).filter(is_proj).collect()
             } else {
                 std::env::args_os().skip(1).collect()
             };
