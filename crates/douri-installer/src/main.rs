@@ -496,9 +496,21 @@ fn configure_system_integration(target_dir: &Path, installed_exe: &Path) -> Resu
     Ok(())
 }
 
+fn middle_ellipsize(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len || max_len < 7 {
+        return s.to_string();
+    }
+    let left_chars = (max_len - 3) / 2;
+    let right_chars = max_len - 3 - left_chars;
+    let left_str: String = s.chars().take(left_chars).collect();
+    let right_str: String = s.chars().skip(char_count - right_chars).collect();
+    format!("{left_str}...{right_str}")
+}
+
 impl eframe::App for InstallerApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.086, 0.094, 0.118, 1.0] // #16181E
+        [0.098, 0.106, 0.125, 1.0] // #191B20
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -532,24 +544,32 @@ impl eframe::App for InstallerApp {
                 .request_repaint_after(std::time::Duration::from_millis(50));
         }
 
-        let bg_color = Color32::from_rgb(0x16, 0x18, 0x1E);
-        let border_color = Color32::from_rgb(0x26, 0x29, 0x32);
         let rect = ui.max_rect();
 
-        // Fill background and draw outer rounded border
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(12), bg_color);
+        // 1. Subtle Vertical Background Gradient (#191B20 at top to #121317 at bottom)
+        let mut mesh = egui::Mesh::default();
+        let top_color = Color32::from_rgb(0x19, 0x1B, 0x20); // rgb(25, 27, 32)
+        let bottom_color = Color32::from_rgb(0x12, 0x13, 0x17); // rgb(18, 19, 23)
+        mesh.colored_vertex(rect.left_top(), top_color);
+        mesh.colored_vertex(rect.right_top(), top_color);
+        mesh.colored_vertex(rect.right_bottom(), bottom_color);
+        mesh.colored_vertex(rect.left_bottom(), bottom_color);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        ui.painter().add(mesh);
+
+        // 2. 12px rounded outer corners with crisp 1px border (#252830)
         ui.painter().rect_stroke(
             rect,
             CornerRadius::same(12),
-            Stroke::new(1.0, border_color),
+            Stroke::new(1.0, Color32::from_rgb(0x25, 0x28, 0x30)),
             egui::StrokeKind::Inside,
         );
 
-        // Custom Titlebar
-        let titlebar_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 38.0));
+        // 3. Custom Draggable Titlebar (42px height)
+        let titlebar_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 42.0));
         let free_drag_rect =
-            Rect::from_min_max(rect.min, pos2(rect.max.x - 70.0, rect.min.y + 38.0));
+            Rect::from_min_max(rect.min, pos2(rect.max.x - 85.0, rect.min.y + 42.0));
         let drag_resp = ui.interact(
             free_drag_rect,
             ui.scope_id().with("window_drag"),
@@ -559,10 +579,10 @@ impl eframe::App for InstallerApp {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
 
-        // Top-Left: Icon + Title
+        // Top-Left (16px left margin): 16x16 Dōri icon + Dōri (13px semibold #E5E7EB)
         if let Some(ref tex) = self.icon_texture {
-            let icon_pos = pos2(rect.min.x + 14.0, rect.min.y + 10.0);
-            let icon_rect = Rect::from_min_size(icon_pos, vec2(18.0, 18.0));
+            let icon_pos = pos2(rect.min.x + 16.0, rect.min.y + 13.0);
+            let icon_rect = Rect::from_min_size(icon_pos, vec2(16.0, 16.0));
             ui.painter().image(
                 tex.id(),
                 icon_rect,
@@ -572,77 +592,74 @@ impl eframe::App for InstallerApp {
         }
 
         ui.painter().text(
-            pos2(rect.min.x + 38.0, rect.min.y + 19.0),
+            pos2(rect.min.x + 40.0, rect.min.y + 21.0),
             egui::Align2::LEFT_CENTER,
             "Dōri",
             egui::FontId::proportional(13.0),
             Color32::from_rgb(0xE5, 0xE7, 0xEB),
         );
 
-        // Top-Right: Minimize & Close buttons
-        let close_pos = pos2(rect.max.x - 28.0, rect.min.y + 19.0);
-        let close_rect = Rect::from_center_size(close_pos, vec2(22.0, 22.0));
+        // Top-Right (14px right margin): Two 28x28 circular buttons (#21242B, hover #2B2F38)
+        // with 13px phosphor icons for Minimize (MINUS) and Close (X)
+        let close_pos = pos2(rect.max.x - 28.0, rect.min.y + 21.0);
+        let close_rect = Rect::from_center_size(close_pos, vec2(28.0, 28.0));
         let close_resp = ui.interact(close_rect, ui.scope_id().with("btn_close"), Sense::click());
         let close_hover = close_resp.hovered();
         ui.painter().circle_filled(
             close_pos,
-            11.0,
+            14.0,
             if close_hover {
-                Color32::from_rgb(0xEF, 0x44, 0x44)
+                Color32::from_rgb(0x2B, 0x2F, 0x38)
             } else {
-                Color32::from_rgb(0x23, 0x26, 0x2F)
+                Color32::from_rgb(0x21, 0x24, 0x2B)
             },
         );
         ui.painter().text(
             close_pos,
             egui::Align2::CENTER_CENTER,
             phosphor_egui::regular::X,
-            egui::FontId::proportional(12.0),
-            Color32::from_rgb(0xFA, 0xFA, 0xFA),
+            egui::FontId::proportional(13.0),
+            Color32::from_rgb(0xE5, 0xE7, 0xEB),
         );
         if close_resp.clicked() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
-        let min_pos = pos2(rect.max.x - 56.0, rect.min.y + 19.0);
-        let min_rect = Rect::from_center_size(min_pos, vec2(22.0, 22.0));
+        let min_pos = pos2(rect.max.x - 64.0, rect.min.y + 21.0);
+        let min_rect = Rect::from_center_size(min_pos, vec2(28.0, 28.0));
         let min_resp = ui.interact(min_rect, ui.scope_id().with("btn_min"), Sense::click());
         let min_hover = min_resp.hovered();
         ui.painter().circle_filled(
             min_pos,
-            11.0,
+            14.0,
             if min_hover {
-                Color32::from_rgb(0x2E, 0x32, 0x3E)
+                Color32::from_rgb(0x2B, 0x2F, 0x38)
             } else {
-                Color32::from_rgb(0x23, 0x26, 0x2F)
+                Color32::from_rgb(0x21, 0x24, 0x2B)
             },
         );
         ui.painter().text(
             min_pos,
             egui::Align2::CENTER_CENTER,
             phosphor_egui::regular::MINUS,
-            egui::FontId::proportional(12.0),
-            Color32::from_rgb(0xFA, 0xFA, 0xFA),
+            egui::FontId::proportional(13.0),
+            Color32::from_rgb(0xE5, 0xE7, 0xEB),
         );
         if min_resp.clicked() {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
-        // Hero and main content
+        // Hero and main content centered inside remaining 458px canvas
         let content_rect = Rect::from_min_max(pos2(rect.min.x, titlebar_rect.max.y), rect.max);
 
         ui.allocate_ui(content_rect.size(), |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(10.0);
+                let top_space = if self.show_locale_menu { 48.0 } else { 102.0 };
+                ui.add_space(top_space);
 
-                // Centered 56x56 icon with dark-blue halo
-                let (icon_rect, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());
-                ui.painter().circle_filled(
-                    icon_rect.center(),
-                    38.0,
-                    Color32::from_rgba_unmultiplied(18, 105, 204, 35),
-                );
+                // Dōri App Icon: 48x48 px directly on gradient (no circle, ring, or spotlight disc)
+                let (icon_rect, _) = ui.allocate_exact_size(vec2(48.0, 48.0), Sense::hover());
                 if let Some(ref tex) = self.icon_texture {
                     ui.painter().image(
                         tex.id(),
@@ -652,34 +669,39 @@ impl eframe::App for InstallerApp {
                     );
                 }
 
-                ui.add_space(10.0);
+                // 20px gap below icon
+                ui.add_space(20.0);
 
-                // Headline
+                // Headline: Install Dōri (21px bold #F9FAFB)
                 ui.label(
                     RichText::new("Install Dōri")
-                        .size(22.0)
-                        .color(Color32::from_rgb(0xFF, 0xFF, 0xFF))
+                        .size(21.0)
+                        .color(Color32::from_rgb(0xF9, 0xFA, 0xFB))
                         .strong(),
                 );
 
-                // Subtitle
-                ui.add_space(2.0);
+                // 8px gap below headline
+                ui.add_space(8.0);
+
+                // Subtitle: Set up Dōri Digital Audio Workstation on your system. (13px #8E95A2)
                 ui.label(
                     RichText::new("Set up Dōri Digital Audio Workstation on your system.")
-                        .size(12.0)
-                        .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                        .size(13.0)
+                        .color(Color32::from_rgb(0x8E, 0x95, 0xA2)),
                 );
 
-                ui.add_space(16.0);
+                // 24px gap below subtitle
+                ui.add_space(24.0);
 
-                // Primary Action Button / Progress Area
+                // Primary White Button / Progress Area
                 match &self.state {
                     InstallState::Ready => {
                         let (btn_rect, btn_resp) =
-                            ui.allocate_exact_size(vec2(260.0, 42.0), Sense::click());
-                        let hovered = btn_resp.hovered();
-                        let bg_btn = if hovered {
-                            Color32::from_rgb(0xF3, 0xF4, 0xF6)
+                            ui.allocate_exact_size(vec2(152.0, 38.0), Sense::click());
+                        let bg_btn = if btn_resp.is_pointer_button_down_on() {
+                            Color32::from_rgb(0xDC, 0xDF, 0xE4)
+                        } else if btn_resp.hovered() {
+                            Color32::from_rgb(0xEA, 0xEC, 0xEF)
                         } else {
                             Color32::from_rgb(0xFF, 0xFF, 0xFF)
                         };
@@ -689,18 +711,18 @@ impl eframe::App for InstallerApp {
                         let center_x = btn_rect.center().x;
                         let center_y = btn_rect.center().y;
                         ui.painter().text(
-                            pos2(center_x - 36.0, center_y),
+                            pos2(center_x - 28.0, center_y),
                             egui::Align2::CENTER_CENTER,
                             phosphor_egui::regular::DOWNLOAD_SIMPLE,
-                            egui::FontId::proportional(17.0),
-                            Color32::from_rgb(0x14, 0x15, 0x18),
+                            egui::FontId::proportional(15.0),
+                            Color32::from_rgb(0x11, 0x13, 0x18),
                         );
                         ui.painter().text(
-                            pos2(center_x + 8.0, center_y),
+                            pos2(center_x + 10.0, center_y),
                             egui::Align2::CENTER_CENTER,
                             "Install",
-                            egui::FontId::proportional(15.0),
-                            Color32::from_rgb(0x14, 0x15, 0x18),
+                            egui::FontId::proportional(13.5),
+                            Color32::from_rgb(0x11, 0x13, 0x18),
                         );
 
                         if btn_resp.clicked() {
@@ -708,36 +730,36 @@ impl eframe::App for InstallerApp {
                         }
                     }
                     InstallState::Installing => {
-                        ui.add_space(4.0);
                         let (bar_rect, _) =
-                            ui.allocate_exact_size(vec2(320.0, 8.0), Sense::hover());
+                            ui.allocate_exact_size(vec2(240.0, 6.0), Sense::hover());
                         ui.painter().rect_filled(
                             bar_rect,
-                            CornerRadius::same(4),
-                            Color32::from_rgb(0x26, 0x29, 0x32),
+                            CornerRadius::same(3),
+                            Color32::from_rgb(0x22, 0x25, 0x2D),
                         );
                         let fill_width = bar_rect.width() * self.progress.clamp(0.0, 1.0);
                         let fill_rect =
                             Rect::from_min_size(bar_rect.min, vec2(fill_width, bar_rect.height()));
                         ui.painter().rect_filled(
                             fill_rect,
-                            CornerRadius::same(4),
-                            Color32::from_rgb(0x12, 0x69, 0xCC),
+                            CornerRadius::same(3),
+                            Color32::from_rgb(0xFF, 0xFF, 0xFF),
                         );
 
                         ui.add_space(8.0);
                         ui.label(
                             RichText::new(&self.status_label)
-                                .size(11.0)
-                                .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                                .size(12.0)
+                                .color(Color32::from_rgb(0x8E, 0x95, 0xA2)),
                         );
                     }
                     InstallState::Finished(exe_path) => {
                         let (btn_rect, btn_resp) =
-                            ui.allocate_exact_size(vec2(260.0, 42.0), Sense::click());
-                        let hovered = btn_resp.hovered();
-                        let bg_btn = if hovered {
-                            Color32::from_rgb(0xF3, 0xF4, 0xF6)
+                            ui.allocate_exact_size(vec2(152.0, 38.0), Sense::click());
+                        let bg_btn = if btn_resp.is_pointer_button_down_on() {
+                            Color32::from_rgb(0xDC, 0xDF, 0xE4)
+                        } else if btn_resp.hovered() {
+                            Color32::from_rgb(0xEA, 0xEC, 0xEF)
                         } else {
                             Color32::from_rgb(0xFF, 0xFF, 0xFF)
                         };
@@ -747,18 +769,18 @@ impl eframe::App for InstallerApp {
                         let center_x = btn_rect.center().x;
                         let center_y = btn_rect.center().y;
                         ui.painter().text(
-                            pos2(center_x - 50.0, center_y),
+                            pos2(center_x - 38.0, center_y),
                             egui::Align2::CENTER_CENTER,
                             phosphor_egui::regular::PLAY,
-                            egui::FontId::proportional(16.0),
-                            Color32::from_rgb(0x14, 0x15, 0x18),
+                            egui::FontId::proportional(15.0),
+                            Color32::from_rgb(0x11, 0x13, 0x18),
                         );
                         ui.painter().text(
-                            pos2(center_x + 8.0, center_y),
+                            pos2(center_x + 10.0, center_y),
                             egui::Align2::CENTER_CENTER,
                             "Launch Dōri",
-                            egui::FontId::proportional(15.0),
-                            Color32::from_rgb(0x14, 0x15, 0x18),
+                            egui::FontId::proportional(13.5),
+                            Color32::from_rgb(0x11, 0x13, 0x18),
                         );
 
                         if btn_resp.clicked() {
@@ -786,28 +808,31 @@ impl eframe::App for InstallerApp {
                     }
                 }
 
-                ui.add_space(18.0);
+                // 22px gap below button
+                ui.add_space(22.0);
 
-                // Three Options Panel (Language, Location, Integration)
-                let options_width = 460.0;
+                // Two Compact Centered Option Rows (Language & Location, 8px row spacing)
+                let options_width = 400.0;
                 ui.allocate_ui_with_layout(
-                    vec2(options_width, 100.0),
+                    vec2(options_width, 120.0),
                     egui::Layout::top_down(egui::Align::Center),
                     |ui| {
                         // Option 1: Language
                         ui.horizontal(|ui| {
                             ui.set_width(options_width);
-                            ui.label(
-                                RichText::new("Language")
-                                    .size(12.0)
-                                    .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                            ui.add_sized(
+                                vec2(68.0, 18.0),
+                                egui::Label::new(
+                                    RichText::new("Language")
+                                        .size(12.5)
+                                        .color(Color32::from_rgb(0x6B, 0x72, 0x80)),
+                                ),
                             );
-                            ui.add_space(8.0);
 
                             let cur_locale = LOCALES[self.selected_locale_idx].name;
                             ui.label(
                                 RichText::new(cur_locale)
-                                    .size(12.0)
+                                    .size(12.5)
                                     .color(Color32::from_rgb(0xE5, 0xE7, 0xEB))
                                     .strong(),
                             );
@@ -820,8 +845,9 @@ impl eframe::App for InstallerApp {
                                             .add(
                                                 egui::Button::new(
                                                     RichText::new("Change")
-                                                        .size(11.0)
-                                                        .color(Color32::from_rgb(0x60, 0xA5, 0xFA)),
+                                                        .size(12.5)
+                                                        .color(Color32::from_rgb(0xF3, 0xF4, 0xF6))
+                                                        .strong(),
                                                 )
                                                 .frame(false),
                                             )
@@ -836,13 +862,13 @@ impl eframe::App for InstallerApp {
                         if self.show_locale_menu && self.state == InstallState::Ready {
                             ui.add_space(4.0);
                             egui::Frame::new()
-                                .fill(Color32::from_rgb(0x1F, 0x22, 0x2A))
+                                .fill(Color32::from_rgb(0x1C, 0x1E, 0x24))
                                 .corner_radius(CornerRadius::same(6))
-                                .stroke(Stroke::new(1.0, Color32::from_rgb(0x2E, 0x32, 0x3E)))
+                                .stroke(Stroke::new(1.0, Color32::from_rgb(0x2E, 0x31, 0x38)))
                                 .inner_margin(6.0)
                                 .show(ui, |ui| {
                                     egui::ScrollArea::vertical()
-                                        .max_height(80.0)
+                                        .max_height(88.0)
                                         .show(ui, |ui| {
                                             for (idx, loc) in LOCALES.iter().enumerate() {
                                                 let is_selected = idx == self.selected_locale_idx;
@@ -861,31 +887,40 @@ impl eframe::App for InstallerApp {
                                 });
                         }
 
+                        // 8px row spacing
                         ui.add_space(8.0);
 
                         // Option 2: Location
                         ui.horizontal(|ui| {
                             ui.set_width(options_width);
-                            ui.label(
-                                RichText::new("Location")
-                                    .size(12.0)
-                                    .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                            ui.add_sized(
+                                vec2(68.0, 18.0),
+                                egui::Label::new(
+                                    RichText::new("Location")
+                                        .size(12.5)
+                                        .color(Color32::from_rgb(0x6B, 0x72, 0x80)),
+                                ),
                             );
-                            ui.add_space(8.0);
 
-                            let path_str = self.target_dir.to_string_lossy();
-                            let display_path = if path_str.len() > 36 {
-                                format!("...{}", &path_str[path_str.len() - 33..])
+                            let raw_path = self.target_dir.to_string_lossy();
+                            let display_path = if let Ok(home) = std::env::var("HOME") {
+                                if raw_path.starts_with(&home) {
+                                    format!("~{}", &raw_path[home.len()..])
+                                } else {
+                                    raw_path.to_string()
+                                }
                             } else {
-                                path_str.into_owned()
+                                raw_path.to_string()
                             };
+                            let ellipsized = middle_ellipsize(&display_path, 34);
 
                             ui.label(
-                                RichText::new(display_path)
-                                    .size(12.0)
-                                    .color(Color32::from_rgb(0xE5, 0xE7, 0xEB)),
+                                RichText::new(ellipsized)
+                                    .size(12.5)
+                                    .color(Color32::from_rgb(0xE5, 0xE7, 0xEB))
+                                    .strong(),
                             )
-                            .on_hover_text(self.target_dir.to_string_lossy());
+                            .on_hover_text(self.target_dir.to_string_lossy().as_ref());
 
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -895,8 +930,9 @@ impl eframe::App for InstallerApp {
                                             .add(
                                                 egui::Button::new(
                                                     RichText::new("Change")
-                                                        .size(11.0)
-                                                        .color(Color32::from_rgb(0x60, 0xA5, 0xFA)),
+                                                        .size(12.5)
+                                                        .color(Color32::from_rgb(0xF3, 0xF4, 0xF6))
+                                                        .strong(),
                                                 )
                                                 .frame(false),
                                             )
@@ -912,21 +948,6 @@ impl eframe::App for InstallerApp {
                                 },
                             );
                         });
-
-                        ui.add_space(8.0);
-
-                        // Option 3: Desktop integration toggle
-                        if self.state == InstallState::Ready {
-                            ui.horizontal(|ui| {
-                                ui.set_width(options_width);
-                                ui.checkbox(
-                                    &mut self.create_shortcuts,
-                                    RichText::new("Create desktop shortcut & file associations")
-                                        .size(11.0)
-                                        .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
-                                );
-                            });
-                        }
                     },
                 );
             });
@@ -956,7 +977,7 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 400.0])
+            .with_inner_size([820.0, 500.0])
             .with_resizable(false)
             .with_decorations(false)
             .with_transparent(true),
@@ -975,9 +996,9 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             // Configure custom dark palette
             let mut visuals = egui::Visuals::dark();
-            visuals.panel_fill = Color32::from_rgb(0x16, 0x18, 0x1E);
-            visuals.window_fill = Color32::from_rgb(0x16, 0x18, 0x1E);
-            visuals.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x26, 0x29, 0x32));
+            visuals.panel_fill = Color32::from_rgb(0x19, 0x1B, 0x20);
+            visuals.window_fill = Color32::from_rgb(0x19, 0x1B, 0x20);
+            visuals.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x25, 0x28, 0x30));
             cc.egui_ctx.set_visuals(visuals);
 
             Ok(Box::new(InstallerApp::new(cc, screenshot_path)))
