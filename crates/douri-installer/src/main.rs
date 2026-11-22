@@ -113,6 +113,7 @@ struct InstallerApp {
     tx: Sender<InstallMsg>,
     rx: Receiver<InstallMsg>,
     icon_texture: Option<egui::TextureHandle>,
+    gradient_texture: egui::TextureHandle,
     cancel_flag: Arc<AtomicBool>,
     screenshot_path: Option<PathBuf>,
     screenshot_frames: u32,
@@ -134,6 +135,23 @@ impl InstallerApp {
                 .load_texture("douri_logo", color_image, egui::TextureOptions::LINEAR)
         });
 
+        // Generate tiny 1x256 RGBA gradient texture (#191B20 -> #121317)
+        let gradient_texture = {
+            let mut pixels = Vec::with_capacity(256 * 4);
+            let top = [25u8, 27u8, 32u8, 255u8]; // #191B20
+            let bot = [18u8, 19u8, 23u8, 255u8]; // #121317
+            for i in 0..256 {
+                let t = i as f32 / 255.0;
+                let r = (top[0] as f32 * (1.0 - t) + bot[0] as f32 * t).round() as u8;
+                let g = (top[1] as f32 * (1.0 - t) + bot[1] as f32 * t).round() as u8;
+                let b = (top[2] as f32 * (1.0 - t) + bot[2] as f32 * t).round() as u8;
+                pixels.extend_from_slice(&[r, g, b, 255]);
+            }
+            let img = egui::ColorImage::from_rgba_unmultiplied([1, 256], &pixels);
+            cc.egui_ctx
+                .load_texture("bg_gradient", img, egui::TextureOptions::LINEAR)
+        };
+
         // Set default installation directory according to OS
         let default_dir = default_install_dir();
 
@@ -148,6 +166,7 @@ impl InstallerApp {
             tx,
             rx,
             icon_texture,
+            gradient_texture,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             screenshot_path,
             screenshot_frames: 0,
@@ -510,7 +529,7 @@ fn middle_ellipsize(s: &str, max_len: usize) -> String {
 
 impl eframe::App for InstallerApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.098, 0.106, 0.125, 1.0] // #191B20
+        egui::Rgba::TRANSPARENT.to_array()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -546,16 +565,22 @@ impl eframe::App for InstallerApp {
 
         let rect = ui.max_rect();
 
-        // 1. Subtle Vertical Background Gradient (#191B20 at top to #121317 at bottom)
+        // 1. Round the Gradient Background Fill to Match the 12px Border
         let mut mesh = egui::Mesh::default();
-        let top_color = Color32::from_rgb(0x19, 0x1B, 0x20); // rgb(25, 27, 32)
-        let bottom_color = Color32::from_rgb(0x12, 0x13, 0x17); // rgb(18, 19, 23)
-        mesh.colored_vertex(rect.left_top(), top_color);
-        mesh.colored_vertex(rect.right_top(), top_color);
-        mesh.colored_vertex(rect.right_bottom(), bottom_color);
-        mesh.colored_vertex(rect.left_bottom(), bottom_color);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
+        let mut tessellator = eframe::epaint::Tessellator::new(
+            ui.ctx().pixels_per_point(),
+            eframe::epaint::TessellationOptions::default(),
+            [1, 1],
+            Vec::new(),
+        );
+        let rect_shape =
+            eframe::epaint::RectShape::filled(rect, CornerRadius::same(12), Color32::WHITE);
+        tessellator.tessellate_rect(&rect_shape, &mut mesh);
+        mesh.texture_id = self.gradient_texture.id();
+        for v in &mut mesh.vertices {
+            let t = ((v.pos.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
+            v.uv = pos2(0.5, t);
+        }
         ui.painter().add(mesh);
 
         // 2. 12px rounded outer corners with crisp 1px border (#252830)
@@ -996,8 +1021,8 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             // Configure custom dark palette
             let mut visuals = egui::Visuals::dark();
-            visuals.panel_fill = Color32::from_rgb(0x19, 0x1B, 0x20);
-            visuals.window_fill = Color32::from_rgb(0x19, 0x1B, 0x20);
+            visuals.panel_fill = Color32::TRANSPARENT;
+            visuals.window_fill = Color32::TRANSPARENT;
             visuals.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x25, 0x28, 0x30));
             cc.egui_ctx.set_visuals(visuals);
 
