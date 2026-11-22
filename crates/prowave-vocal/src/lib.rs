@@ -19,8 +19,8 @@ pub mod ustx;
 pub mod voicebank;
 
 pub use autotune::{
-    find_pitch_model, merge_curve_span, predict_contours, predict_parametric_contours,
-    CurvePoint, PredictedContours,
+    find_pitch_model, merge_curve_span, predict_contours, predict_parametric_contours, CurvePoint,
+    PredictedContours,
 };
 pub use cache::PhraseCache;
 pub use crossfade::{crossfade_phrase, RenderedSegment};

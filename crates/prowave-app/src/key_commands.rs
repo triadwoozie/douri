@@ -741,7 +741,6 @@ pub fn handle(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
     if ctx.egui_wants_keyboard_input()
         || ctx.data(|d| d.get_temp::<bool>(typing_id()).unwrap_or(false))
         || s.typing.open
-        || s.chooser.is_some()
         || s.track_dialog.is_some()
         || s.settings_tab.is_some()
         || bounce_dialog_open(s)

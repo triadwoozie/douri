@@ -512,8 +512,12 @@ fn render(
 ) -> Result<Option<Vec<f32>>, String> {
     // Flush any pending vocal synthesis so that unified vocal tracks have their latest audio buffer ready.
     for ti in 0..project.tracks.len() {
-        if matches!(project.tracks[ti].vocal, Some(crate::vocal::VocalRole::Score(_))) {
-            let _ = crate::vocal::render_score_track_sync(&mut project, ti, &egui::Context::default());
+        if matches!(
+            project.tracks[ti].vocal,
+            Some(crate::vocal::VocalRole::Score(_))
+        ) {
+            let _ =
+                crate::vocal::render_score_track_sync(&mut project, ti, &egui::Context::default());
         }
     }
     let engine = Engine::offline(sample_rate).map_err(|e| e.to_string())?;

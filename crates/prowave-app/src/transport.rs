@@ -810,7 +810,11 @@ pub fn control_bar(
         Some(2) => {
             s.bottom = if editors_on {
                 Bottom::Mixer
-            } else if p.tracks.get(p.selected_track).is_some_and(|t| t.vocal.is_some()) {
+            } else if p
+                .tracks
+                .get(p.selected_track)
+                .is_some_and(|t| t.vocal.is_some())
+            {
                 Bottom::VocalEditor
             } else {
                 Bottom::PianoRoll

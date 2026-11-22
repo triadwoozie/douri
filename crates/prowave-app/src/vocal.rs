@@ -1137,7 +1137,11 @@ fn place_parts(ctx: &egui::Context, p: &mut Project, done: &Done) {
     }
 
     // If an existing legacy output audio track is present in the project, also update it
-    if let Some(ti) = p.tracks.iter().position(|t| t.vocal == Some(VocalRole::Output { link: done.link })) {
+    if let Some(ti) = p
+        .tracks
+        .iter()
+        .position(|t| t.vocal == Some(VocalRole::Output { link: done.link }))
+    {
         let map = p.tempo_map();
         let kept: HashMap<PathBuf, crate::flex_edit::FlexEdit> = p.tracks[ti]
             .regions

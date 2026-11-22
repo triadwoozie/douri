@@ -474,7 +474,6 @@ const WINDOW: &[&str] = &[
 const HELP: &[&str] = &[
     "Quick Help",
     "Logic-style Key Commands…",
-    "Show Welcome Screen",
     "-",
     "Language",
     "-",
@@ -963,7 +962,6 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Alternatives"
         | "Check for Updates…"
         | "Check for Updates Automatically"
-        | "Show Welcome Screen"
         | "About Dōri"
         | "Show Tempo Track"
         | "Show Marker Track"
@@ -1230,7 +1228,10 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         return on;
     }
     match label {
-        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor),
+        "Show Editor" => matches!(
+            s.bottom,
+            Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor
+        ),
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
         "Vocal Editor" | "Show Vocal Editor" => s.bottom == Bottom::VocalEditor,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
@@ -1381,7 +1382,6 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             s.update_auto = !s.update_auto;
             crate::updater::set_auto_enabled(s.update_auto);
         }
-        "Show Welcome Screen" => s.show_onboarding = true,
         "About Dōri" => s.show_about = true,
         "Show Tempo Track" => s.tracks.show_tempo = !s.tracks.show_tempo,
         "Show Marker Track" => s.tracks.show_markers = !s.tracks.show_markers,
@@ -1435,7 +1435,11 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 Bottom::PitchEditor
             }
         }
-        "New from Template…" => s.chooser = Some(crate::start_screen::Chooser::templates()),
+        "New from Template…" => {
+            s.file_cmd = Some(crate::file_commands::FileCmd::NewFrom(
+                crate::template::Template::Empty,
+            ))
+        }
         "New Tracks…" => {
             s.track_dialog = Some(track_dialogs::TrackDialog::NewTracks {
                 kind: TrackKind::Instrument,
@@ -2158,7 +2162,6 @@ mod tests {
                 s.bottom == Bottom::Mixer,
                 (
                     s.file_cmd,
-                    s.chooser.is_some(),
                     s.undo_cmd,
                     s.midi_cmd,
                     s.bounce_cmd,
@@ -2195,7 +2198,6 @@ mod tests {
                         s.show_multimeter,
                         s.export_all_tracks_cmd,
                         s.show_about,
-                        s.show_onboarding,
                     )
                 ),
                 (

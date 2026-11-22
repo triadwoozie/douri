@@ -359,7 +359,10 @@ pub(crate) fn delete_unused(p: &mut Project, s: &mut UiState) -> usize {
 /// is showing. With no region selected, the selected track's kind decides.
 pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
     use crate::Bottom;
-    if matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor) {
+    if matches!(
+        s.bottom,
+        Bottom::PianoRoll | Bottom::PitchEditor | Bottom::VocalEditor
+    ) {
         s.bottom = Bottom::Mixer;
         return;
     }
@@ -384,8 +387,14 @@ pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
         _ => {
             s.piano_window = false;
             let is_vocal = first.is_some_and(|(t, _)| p.tracks[t].vocal.is_some())
-                || p.tracks.get(p.selected_track).is_some_and(|t| t.vocal.is_some());
-            s.bottom = if is_vocal { Bottom::VocalEditor } else { Bottom::PianoRoll };
+                || p.tracks
+                    .get(p.selected_track)
+                    .is_some_and(|t| t.vocal.is_some());
+            s.bottom = if is_vocal {
+                Bottom::VocalEditor
+            } else {
+                Bottom::PianoRoll
+            };
         }
     }
 }

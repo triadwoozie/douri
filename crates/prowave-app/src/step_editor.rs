@@ -48,12 +48,7 @@ enum EditMode {
 }
 
 impl EditMode {
-    const ALL: [EditMode; 4] = [
-        Self::Velocity,
-        Self::Chance,
-        Self::Repeat,
-        Self::Tie,
-    ];
+    const ALL: [EditMode; 4] = [Self::Velocity, Self::Chance, Self::Repeat, Self::Tie];
 
     fn name(self) -> &'static str {
         match self {
@@ -125,7 +120,14 @@ fn row_label(pitch: u8, drums: bool, kit: Option<&crate::drum_kit::DrumsUse>) ->
 }
 
 /// Draws the editor for the Pattern or Drummer region `ri` of track `ti` in `body`.
-pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: Option<usize>, body: Rect) {
+pub fn show(
+    ui: &mut Ui,
+    p: &mut Project,
+    s: &mut UiState,
+    ti: usize,
+    ri: Option<usize>,
+    body: Rect,
+) {
     let g = ui.painter_at(body);
     g.rect_filled(body, 0.0, BG);
 
@@ -172,29 +174,69 @@ fn show_empty_state(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, bo
 
     // Liquid glass card background
     g.rect_filled(card_rect, 8.0, STRIP_BG);
-    g.rect_stroke(card_rect, 8.0, Stroke::new(1.0, crate::theme::BORDER), StrokeKind::Inside);
+    g.rect_stroke(
+        card_rect,
+        8.0,
+        Stroke::new(1.0, crate::theme::BORDER),
+        StrokeKind::Inside,
+    );
 
     // Phosphor icon: SQUARES_FOUR
     let icon_pos = pos2(card_rect.center().x, card_rect.top() + 35.0);
-    g.text(icon_pos, Align2::CENTER_CENTER, phosphor_egui::regular::SQUARES_FOUR, FontId::proportional(28.0), Color32::from_rgb(0x3a, 0x7b, 0xd5));
+    g.text(
+        icon_pos,
+        Align2::CENTER_CENTER,
+        phosphor_egui::regular::SQUARES_FOUR,
+        FontId::proportional(28.0),
+        Color32::from_rgb(0x3a, 0x7b, 0xd5),
+    );
 
     // Title
     let title_pos = pos2(card_rect.center().x, card_rect.top() + 70.0);
-    g.text(title_pos, Align2::CENTER_CENTER, "No Pattern Region Selected", FontId::proportional(14.0), TEXT);
+    g.text(
+        title_pos,
+        Align2::CENTER_CENTER,
+        "No Pattern Region Selected",
+        FontId::proportional(14.0),
+        TEXT,
+    );
 
     // Subtitle
     let sub_pos = pos2(card_rect.center().x, card_rect.top() + 92.0);
-    g.text(sub_pos, Align2::CENTER_CENTER, "Step Sequencer requires a Pattern Region on this track.", FontId::proportional(11.0), TEXT_DIM);
+    g.text(
+        sub_pos,
+        Align2::CENTER_CENTER,
+        "Step Sequencer requires a Pattern Region on this track.",
+        FontId::proportional(11.0),
+        TEXT_DIM,
+    );
 
     // Button: + Create Pattern Region
-    let btn_rect = Rect::from_center_size(pos2(card_rect.center().x, card_rect.top() + 135.0), vec2(200.0, 32.0));
-    let btn_resp = ui.interact(btn_rect, egui::Id::unique("step_create_pattern_btn"), Sense::click());
+    let btn_rect = Rect::from_center_size(
+        pos2(card_rect.center().x, card_rect.top() + 135.0),
+        vec2(200.0, 32.0),
+    );
+    let btn_resp = ui.interact(
+        btn_rect,
+        egui::Id::unique("step_create_pattern_btn"),
+        Sense::click(),
+    );
     if btn_resp.hovered() {
         g.rect_filled(btn_rect, 6.0, Color32::from_rgb(0x4a, 0x8b, 0xe5));
     } else {
         g.rect_filled(btn_rect, 6.0, Color32::from_rgb(0x3a, 0x7b, 0xd5));
     }
-    g.text(btn_rect.center(), Align2::CENTER_CENTER, format!("{} {}", phosphor_egui::regular::PLUS, "Create Pattern Region"), FontId::proportional(13.0), Color32::WHITE);
+    g.text(
+        btn_rect.center(),
+        Align2::CENTER_CENTER,
+        format!(
+            "{} {}",
+            phosphor_egui::regular::PLUS,
+            "Create Pattern Region"
+        ),
+        FontId::proportional(13.0),
+        Color32::WHITE,
+    );
 
     if btn_resp.clicked() {
         let at_bar = (p.beats_to_bar(p.position_beats).floor() + 1.0).max(1.0) as f32;
@@ -371,7 +413,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             changed = true;
         }
         for n in [16, 32, 64] {
-            if ui.selectable_label(pat.steps == n, format!("{n}")).clicked() {
+            if ui
+                .selectable_label(pat.steps == n, format!("{n}"))
+                .clicked()
+            {
                 pat.steps = n;
                 changed = true;
             }
@@ -391,7 +436,8 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         ui.label(tr("Swing:"));
         let (rail_rect, _) = ui.allocate_exact_size(vec2(60.0, 18.0), Sense::hover());
         let rail_line = Rect::from_center_size(rail_rect.center(), vec2(rail_rect.width(), 4.0));
-        ui.painter().rect_filled(rail_line, 2.0, Color32::from_rgb(0x2e, 0x31, 0x38));
+        ui.painter()
+            .rect_filled(rail_line, 2.0, Color32::from_rgb(0x2e, 0x31, 0x38));
         let mut swing = (pat.swing * 100.0).round() as u32;
         let drag = egui::DragValue::new(&mut swing).range(0..=50).suffix(" %");
         if ui.put(rail_rect, drag).changed() {
@@ -502,7 +548,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         pos2(grid.right(), area.top() + ruler_h),
     );
     g.rect_filled(ruler_rect, 0.0, crate::theme::CARD_BG);
-    g.line_segment([ruler_rect.left_bottom(), ruler_rect.right_bottom()], Stroke::new(1.0, crate::theme::BORDER));
+    g.line_segment(
+        [ruler_rect.left_bottom(), ruler_rect.right_bottom()],
+        Stroke::new(1.0, crate::theme::BORDER),
+    );
 
     for k in 0..steps {
         let x = grid.left() + k as f32 * cw;
@@ -513,11 +562,18 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                 Align2::CENTER_CENTER,
                 format!("{beat_num}"),
                 FontId::proportional(11.0),
-                if current == Some(k) { Color32::WHITE } else { TEXT_DIM },
+                if current == Some(k) {
+                    Color32::WHITE
+                } else {
+                    TEXT_DIM
+                },
             );
         } else {
             g.line_segment(
-                [pos2(x, ruler_rect.bottom() - 4.0), pos2(x, ruler_rect.bottom())],
+                [
+                    pos2(x, ruler_rect.bottom() - 4.0),
+                    pos2(x, ruler_rect.bottom()),
+                ],
                 Stroke::new(1.0, Color32::from_rgb(0x3e, 0x41, 0x48)),
             );
         }
@@ -1246,12 +1302,14 @@ mod tests {
 
         fn right_click(&mut self, pos: egui::Pos2) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.right_click(pos, |ui| show(ui, p, s, t, Some(r), body()));
+            self.h
+                .right_click(pos, |ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn drag(&mut self, path: &[egui::Pos2], button: PointerButton) {
             let (p, s, t, r) = (&mut self.p, &mut self.s, self.t, self.r);
-            self.h.drag(path, button, |ui| show(ui, p, s, t, Some(r), body()));
+            self.h
+                .drag(path, button, |ui| show(ui, p, s, t, Some(r), body()));
         }
 
         fn pattern_params(&self) -> PatternParams {

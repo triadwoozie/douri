@@ -1008,7 +1008,8 @@ pub fn open_in(v: &mut PitchView, bottom: &mut Bottom, t: usize, r: usize) {
 pub fn target(p: &Project, s: &UiState) -> Option<(usize, usize)> {
     let audio = |(t, r): (usize, usize)| {
         p.tracks.get(t).is_some_and(|tr| {
-            (tr.kind == TrackKind::Audio || tr.vocal.is_some()) && tr.regions.get(r).is_some_and(|x| x.audio.is_some())
+            (tr.kind == TrackKind::Audio || tr.vocal.is_some())
+                && tr.regions.get(r).is_some_and(|x| x.audio.is_some())
         })
     };
     s.pitch_ed

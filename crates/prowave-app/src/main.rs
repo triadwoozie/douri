@@ -51,10 +51,10 @@ mod ir_files;
 pub mod key_commands;
 mod library;
 pub mod liquid_glass;
-pub mod lyrics;
-pub mod lyrics_ui;
 mod logicx;
 mod logicx_import;
+pub mod lyrics;
+pub mod lyrics_ui;
 pub mod marker_edit;
 pub mod marker_number;
 mod marker_track;
@@ -74,7 +74,6 @@ mod musical_typing;
 mod native_menu;
 mod new_track_dialog;
 mod note_edit;
-mod onboarding;
 mod patches;
 mod pattern;
 mod piano_roll;
@@ -112,12 +111,12 @@ mod soundfonts;
 mod space_designer_ui;
 pub mod spectrogram_view;
 mod stack_dialog;
-mod start_screen;
 mod step_editor;
 mod sync_menu;
 mod sysex;
 mod take_pack;
 mod takes;
+pub mod template;
 mod tempo_track;
 mod theme;
 pub mod timeline_viewport;
@@ -137,9 +136,9 @@ mod ui_test;
 mod undo;
 mod undo_history;
 mod updater;
+mod vamp;
 pub mod vocal;
 pub mod vocal_editor;
-mod vamp;
 mod widgets;
 mod window_chrome;
 
@@ -314,8 +313,6 @@ pub struct UiState {
     pub hd_load: f32,
     /// Light (white) menu bar and menus, toggled by the Smart Controls button.
     pub light_menus: bool,
-    /// The Project Chooser, while it covers the window (File > New from Template…).
-    pub chooser: Option<start_screen::Chooser>,
     /// The user's interface size (1.0 = 100 %), on top of fitting small windows (`ui_scale`).
     pub ui_scale: f32,
     /// Edit > Undo / Redo picked this frame; run by `App` (which keeps the history).
@@ -354,12 +351,8 @@ pub struct UiState {
     pub mcp_port: u16,
     /// Help > About Dōri window is open.
     pub show_about: bool,
-    /// First-run Onboarding dialog ("Welcome to Dōri").
-    pub show_onboarding: bool,
     /// Interface mode: Simplified Mode (true) vs Complete Mode (false).
     pub simplified_mode: bool,
-    /// Project Chooser details (Tempo, Key, Time Sig, Audio Devices, etc.).
-    pub chooser_details: start_screen::ChooserDetails,
     /// Force a top-level menu open for verification screenshots.
     pub shot_top_menu: Option<String>,
     /// Vocal Top Line window and background renders.
@@ -471,7 +464,6 @@ impl UiState {
             cpu_load: 0.0,
             hd_load: 0.0,
             light_menus: false,
-            chooser: None,
             ui_scale: 1.0,
             undo_cmd: None,
             can_undo: false,
@@ -494,10 +486,8 @@ impl UiState {
             mcp_server_enabled: true,
             mcp_port: 38420,
             show_about: false,
-            show_onboarding: false,
             simplified_mode: false,
             app_settings: project_settings::AppSettings::load(),
-            chooser_details: start_screen::ChooserDetails::default(),
             shot_top_menu: None,
             vocal: vocal::VocalState::default(),
             singer: singer::SingerUi::default(),
@@ -1488,159 +1478,11 @@ impl App {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
     }
-
-    /// The window while the Project Chooser is up: the menu bar and the chooser, with the
-    /// File key commands and prompts still working.
-    fn chooser_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        if let Some(menu) = self.native_menu.as_mut() {
-            menu.update(ctx, &mut self.project, &mut self.ui);
-        }
-        if let Some(cmd) = file_commands::pressed(ctx) {
-            self.ui.file_cmd = Some(cmd);
-        }
-        if let Some(sync) = self.sync.as_mut() {
-            sync.sync(&mut self.project);
-        }
-        // Audio files dropped on the chooser go into the open project.
-        let dropped: Vec<std::path::PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .map(|f| f.path().to_path_buf())
-                .collect()
-        });
-        if !dropped.is_empty() {
-            for path in dropped {
-                let is_proj = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                    e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-                        || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-                });
-                if is_proj {
-                    self.ui.chooser = None;
-                    self.open(&path, ctx);
-                    continue;
-                }
-                self.ui.chooser = None;
-                self.import(&path, ctx);
-            }
-        }
-
-        // Keep track of active monitor dimensions for centering and startup sizing
-        if let Some(mon) = ctx.input(|i| i.viewport().monitor_size) {
-            if let Some(cfg) = crate::recent_files::config_dir() {
-                let path = cfg.join("display.txt");
-                let cur = std::fs::read_to_string(&path).unwrap_or_default();
-                let target = format!("{} {}", mon.x, mon.y);
-                if cur.trim() != target {
-                    let _ = std::fs::write(path, target);
-                }
-            }
-        }
-
-        // Eliminate rectangular shadow & panel bleeding in borderless dialog mode
-        let mut visuals = ctx.global_style().visuals.clone();
-        visuals.window_shadow = egui::epaint::Shadow::NONE;
-        visuals.popup_shadow = egui::epaint::Shadow::NONE;
-        ctx.set_visuals(visuals);
-
-        let dialog_frame = egui::Frame::NONE
-            .fill(egui::Color32::TRANSPARENT)
-            .inner_margin(egui::Margin::ZERO);
-
-        if self.ui.show_onboarding {
-            egui::CentralPanel::default()
-                .frame(dialog_frame)
-                .show(ui, |ui| {
-                    egui::Frame::new()
-                        .corner_radius(12.0)
-                        .fill(egui::Color32::from_rgb(0x1e, 0x1f, 0x23))
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(46, 49, 56)))
-                        .inner_margin(egui::Margin {
-                            left: 18,
-                            right: 18,
-                            top: 14,
-                            bottom: 12,
-                        })
-                        .show(ui, |ui| {
-                            if let Some(_mode) = onboarding::show_panel(
-                                ui,
-                                &mut self.ui.show_onboarding,
-                                &mut self.ui.simplified_mode,
-                            ) {
-                                // When Welcome dialog is completed, transition viewport to Chooser
-                                let mon = ctx.input(|i| i.viewport().monitor_size);
-                                let s = start_screen::chooser_viewport_size(mon);
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                                    egui::vec2(760.0, 520.0),
-                                ));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(s));
-                                if let Some(m) = mon {
-                                    let center_pos = egui::pos2(
-                                        ((m.x - s.x) / 2.0).max(0.0),
-                                        ((m.y - s.y) / 2.0).max(0.0),
-                                    );
-                                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
-                                        center_pos,
-                                    ));
-                                }
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                                    "Choose a Project".into(),
-                                ));
-                            }
-                        });
-                });
-        } else {
-            egui::CentralPanel::default()
-                .frame(dialog_frame)
-                .show(ui, |ui| start_screen::show(ui, &mut self.ui));
-            // If chooser was dismissed / template chosen, open and maximize main DAW
-            if self.ui.chooser.is_none() {
-                self.transition_to_daw(ctx);
-            }
-        }
-        if let Some(cmd) = self.ui.file_cmd.take() {
-            self.run_file_cmd(cmd, ctx);
-            if self.ui.chooser.is_none() {
-                self.transition_to_daw(ctx);
-            }
-        }
-        self.show_save_prompt(ctx);
-        if !self.ui.show_onboarding {
-            window_chrome::resize_edges(ctx);
-        }
-    }
-
-    pub fn project_selected(&self) -> bool {
-        self.ui.chooser.is_none() && !self.ui.show_onboarding
-    }
-
-    pub fn transition_to_daw(&self, ctx: &egui::Context) {
-        let mon_size = ctx
-            .input(|i| i.viewport().monitor_size)
-            .unwrap_or(egui::vec2(1600.0, 960.0));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-        #[cfg(target_os = "macos")]
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
-        #[cfg(not(target_os = "macos"))]
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-            800.0, 520.0,
-        )));
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
-        crate::theme::apply(ctx);
-    }
 }
 
 impl eframe::App for App {
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        if !self.project_selected() {
-            [0.0, 0.0, 0.0, 0.0]
-        } else {
-            visuals.panel_fill.to_normalized_gamma_f32()
-        }
+        visuals.panel_fill.to_normalized_gamma_f32()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -1681,14 +1523,6 @@ impl eframe::App for App {
             }
         }
 
-        if self.ui.chooser.is_some() || self.ui.show_onboarding {
-            // Keep native 100% zoom (self.ui.ui_scale) without shrinking by DESIGN_WIDTH (1480px)
-            if (self.ui.ui_scale - ctx.zoom_factor()).abs() > 0.001 {
-                ctx.set_zoom_factor(self.ui.ui_scale);
-            }
-            self.chooser_ui(ui, &ctx);
-            return;
-        }
         ui_scale::apply(&ctx, self.ui.ui_scale);
         key_commands::begin_frame(&ctx);
         key_commands::set_active_prefs(self.ui.keymap_prefs.clone());
@@ -1871,7 +1705,11 @@ impl eframe::App for App {
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
-        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor || s.bottom == Bottom::VocalEditor {
+        if s.show_mixer
+            || s.bottom == Bottom::PianoRoll
+            || s.bottom == Bottom::PitchEditor
+            || s.bottom == Bottom::VocalEditor
+        {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
             // a shorter panel cut every strip's fader off at the bottom (issue #36). The Piano
@@ -2035,13 +1873,6 @@ impl eframe::App for App {
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
-        if self.ui.show_onboarding {
-            onboarding::show(
-                &ctx,
-                &mut self.ui.show_onboarding,
-                &mut self.ui.simplified_mode,
-            );
-        }
         show_about_dialog(&ctx, &mut self.ui.show_about);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
@@ -2551,12 +2382,6 @@ fn main() -> eframe::Result {
     }
     // Measuring runs leave the user's settings (recent projects, size) alone.
     let measuring = bench_out.is_some() || shots_dir.is_some() || shot_out.is_some();
-    let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
-    let first_run_flag = flag("--first-run");
-    let no_chooser_flag = flag("--no-chooser")
-        || (measuring && scene != "chooser" && scene != "welcome" && scene != "chooser-details")
-        || std::env::var("CI").is_ok()
-        || std::env::var("HEADLESS").is_ok();
     // Release builds: on a crash, write a report to the temp folder instead of a raw panic.
     human_panic::setup_panic!(human_panic::Metadata::new(
         "Dōri",
@@ -2565,27 +2390,14 @@ fn main() -> eframe::Result {
     init_logging();
     i18n::init();
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
-    let has_project_arg = all_args.iter().any(|a| is_project_path(a.as_os_str()));
-    let start_in_dialog = !has_project_arg && !no_chooser_flag;
     let mon = detect_initial_monitor_size();
-    let (init_size, init_min_size, init_maximized, init_resizable, init_title) = if start_in_dialog
-    {
-        if first_run_flag || !onboarding::has_completed_onboarding() || scene == "welcome" {
-            let s = onboarding::welcome_viewport_size(Some(mon));
-            (s, egui::vec2(460.0, 240.0), false, true, "Welcome to Dōri")
-        } else {
-            let s = start_screen::chooser_viewport_size(Some(mon));
-            (s, egui::vec2(760.0, 520.0), false, true, "Choose a Project")
-        }
-    } else {
-        (
-            egui::vec2(1600.0, 980.0),
-            egui::vec2(800.0, 520.0),
-            true,
-            true,
-            "Dōri",
-        )
-    };
+    let (init_size, init_min_size, init_maximized, init_resizable, init_title) = (
+        egui::vec2(1600.0, 980.0),
+        egui::vec2(800.0, 520.0),
+        true,
+        true,
+        "Dōri",
+    );
 
     let center_pos = egui::pos2(
         ((mon.x - init_size.x) / 2.0).max(0.0),
@@ -2601,7 +2413,7 @@ fn main() -> eframe::Result {
         .with_app_id(window_app_id())
         .with_decorations(cfg!(target_os = "macos"))
         .with_transparent(true)
-        .with_has_shadow(!start_in_dialog)
+        .with_has_shadow(true)
         .with_position(center_pos);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);
@@ -2742,10 +2554,7 @@ fn main() -> eframe::Result {
             if !measuring {
                 app.ui.update_auto = updater::auto_enabled();
                 app.updater.check_at_startup();
-                app.ui.simplified_mode = onboarding::load_simplified_mode();
-                if first_run_flag || !onboarding::has_completed_onboarding() {
-                    app.ui.show_onboarding = true;
-                }
+                app.ui.simplified_mode = project_settings::load_simplified_mode();
             }
             #[cfg(target_os = "macos")]
             {
@@ -2898,18 +2707,6 @@ fn main() -> eframe::Result {
                 app.ui.ui_scale = ui_scale::load();
             }
             let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
-            if scene == "welcome" || first_run_flag {
-                app.ui.show_onboarding = true;
-                app.ui.chooser = Some(start_screen::Chooser::default());
-            }
-            if scene == "chooser" {
-                app.ui.chooser = Some(start_screen::Chooser::default());
-            }
-            if scene == "chooser-details" {
-                let mut c = start_screen::Chooser::default();
-                c.details.show_details = true;
-                app.ui.chooser = Some(c);
-            }
             if scene == "updater" {
                 app.updater.show_up_to_date();
             }
@@ -2967,12 +2764,8 @@ fn main() -> eframe::Result {
                     );
                 }
             }
-            let has_project_arg = args.iter().any(|a| is_project(a));
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
-            }
-            if !no_chooser_flag && !has_project_arg {
-                app.ui.chooser = Some(start_screen::Chooser::default());
             }
             for arg in args.iter().filter(|a| !is_project(a)) {
                 if arg == "--play" {

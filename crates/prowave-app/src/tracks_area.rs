@@ -3560,7 +3560,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 v.toggle(ti, ri);
                 p.selected_track = ti;
             } else if (selects && resp.clicked())
-                || (resp.drag_started_by(egui::PointerButton::Primary) && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
+                || (resp.drag_started_by(egui::PointerButton::Primary)
+                    && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
                 || context_click(&resp)
             {
                 if !v.is_selected(ti, ri) {
@@ -3618,7 +3619,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 if er.hovered() || er.dragged_by(egui::PointerButton::Primary) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
-                if let (true, Some(pt)) = (er.dragged_by(egui::PointerButton::Primary), er.interact_pointer_pos()) {
+                if let (true, Some(pt)) = (
+                    er.dragged_by(egui::PointerButton::Primary),
+                    er.interact_pointer_pos(),
+                ) {
                     let end = snap_pos(beat_of(pt.x)).max(orig_start + 1.0 / 64.0);
                     let stretch = ui.input(|i| i.modifiers.alt);
                     v.edge_drag = Some((ti, ri, end, stretch));
@@ -3638,7 +3642,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 if sr.hovered() || sr.dragged_by(egui::PointerButton::Primary) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
-                if let (true, Some(pt)) = (sr.dragged_by(egui::PointerButton::Primary), sr.interact_pointer_pos()) {
+                if let (true, Some(pt)) = (
+                    sr.dragged_by(egui::PointerButton::Primary),
+                    sr.interact_pointer_pos(),
+                ) {
                     let at = snap_pos(beat_of(pt.x)).min(orig_start + orig_len - 1.0 / 64.0);
                     v.start_drag = Some((ti, ri, at));
                 }
@@ -3684,7 +3691,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     .or_else(|| resp.interact_pointer_pos())
                     .and_then(|pt| flex_marker_under(p, ti, ri, full, pt.x))
             };
-            if let (Some((marker, secs)), true) = (flex_hit, resp.drag_started_by(egui::PointerButton::Primary)) {
+            if let (Some((marker, secs)), true) =
+                (flex_hit, resp.drag_started_by(egui::PointerButton::Primary))
+            {
                 v.flex_drag = Some((ti, ri, marker, secs));
                 s.flex.dragging = true;
             }
@@ -3693,9 +3702,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 .is_some_and(|(dt, dr, _, _)| (dt, dr) == (ti, ri));
             if flex_own {
                 // The dragged marker follows the pointer; the sound is made on release.
-                if let (true, Some((_, _, marker, secs)), Some(pt)) =
-                    (resp.dragged_by(egui::PointerButton::Primary), v.flex_drag, resp.interact_pointer_pos())
-                {
+                if let (true, Some((_, _, marker, secs)), Some(pt)) = (
+                    resp.dragged_by(egui::PointerButton::Primary),
+                    v.flex_drag,
+                    resp.interact_pointer_pos(),
+                ) {
                     if let Some(f) = p.tracks[ti].regions[ri]
                         .audio
                         .as_mut()
@@ -4295,7 +4306,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         && !s.piano_focus
         && !s.typing.open
         && s.track_dialog.is_none()
-        && s.chooser.is_none()
         && s.settings_tab.is_none();
     if keys_free && v.tool_menu.is_none() {
         if let Some(pt) = hover.filter(|pt| full.contains(*pt)) {

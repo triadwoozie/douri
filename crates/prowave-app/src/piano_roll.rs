@@ -1046,7 +1046,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             v.dirty = true;
         }
     }
-    if resp.drag_started_by(egui::PointerButton::Primary) && !matches!(v.drag, Drag::Create { .. }) {
+    if resp.drag_started_by(egui::PointerButton::Primary) && !matches!(v.drag, Drag::Create { .. })
+    {
         let origin = ui.input(|i| i.pointer.press_origin());
         if let Some(pt) = origin.or(resp.interact_pointer_pos()) {
             let (beat, pitch) = (beat_at(pt.x), pitch_at(pt.y));

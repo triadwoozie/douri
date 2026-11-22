@@ -2,7 +2,7 @@
 //! native dialogs (rfd), key commands and the "save changes?" and "revert?" prompts.
 use crate::i18n::{tr, trf};
 use crate::model::Project;
-use crate::start_screen::Template;
+use crate::template::Template;
 use crate::{project_io, App};
 use egui::{Key, KeyboardShortcut, Modifiers};
 use prowave_project::ProjectDoc;
@@ -163,8 +163,7 @@ impl App {
         match cmd {
             FileCmd::New | FileCmd::Close => self.replace(Project::empty(), None),
             FileCmd::NewFrom(t) => {
-                let mut p = t.project();
-                self.ui.chooser_details.apply(&mut p);
+                let p = t.project();
                 self.replace(p, None)
             }
             FileCmd::Open => {
@@ -439,8 +438,6 @@ impl App {
         self.ui.reset_views();
         // Undo stays within one project.
         self.history.reset(&self.project);
-        // A project is open now, so the Project Chooser has done its job.
-        self.ui.chooser = None;
     }
 }
 

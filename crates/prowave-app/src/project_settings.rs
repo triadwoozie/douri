@@ -2182,7 +2182,7 @@ fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
     );
 
     if changed {
-        crate::onboarding::save_simplified_mode(s.simplified_mode);
+        save_simplified_mode(s.simplified_mode);
     }
 
     card_group(
@@ -2190,14 +2190,6 @@ fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
         "First-Launch & Factory Reset",
         Some(phosphor_egui::regular::WRENCH),
         |ui| {
-            ui.horizontal(|ui| {
-                if ui.button(tr("Show Welcome Screen…")).clicked() {
-                    s.show_onboarding = true;
-                }
-                ui.weak("Displays initial onboarding and audio configuration wizard.");
-            });
-            ui.add_space(10.0);
-
             ui.horizontal(|ui| {
                 let reset_btn = egui::Button::new(
                     egui::RichText::new("Reset All Settings Except Key Commands…")
@@ -2220,6 +2212,28 @@ fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
             });
         },
     );
+}
+
+pub const MODE_FILE: &str = "mode.txt";
+
+pub fn load_simplified_mode() -> bool {
+    crate::recent_files::config_dir()
+        .map(|d| d.join(MODE_FILE))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map_or(false, |s| s.trim() == "simplified")
+}
+
+pub fn save_simplified_mode(simplified: bool) {
+    if let Some(path) = crate::recent_files::config_dir().map(|d| d.join(MODE_FILE)) {
+        let _ = std::fs::write(
+            path,
+            if simplified {
+                "simplified\n"
+            } else {
+                "complete\n"
+            },
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

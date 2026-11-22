@@ -343,7 +343,6 @@ pub(crate) mod tests {
         "Quit Dōri",
         "About Dōri",
         "Hide Dōri",
-        "Welcome to Dōri",
         "Complete Mode",
         "Simplified Mode",
         "Learn More…",
@@ -373,8 +372,6 @@ pub(crate) mod tests {
         "Interface Mode",
         "Advanced",
         "Advanced…",
-        "Show Welcome Screen",
-        "Show Welcome Screen…",
         "Automatically check for updates on startup",
         "Install & Restart",
         "808 bass, drum machine and synth lead.",
@@ -524,7 +521,7 @@ pub(crate) mod tests {
         for t in crate::mixer::FILTERS {
             add(t);
         }
-        for t in crate::start_screen::Template::ALL {
+        for t in crate::template::Template::ALL {
             add(t.name());
             add(t.about());
         }

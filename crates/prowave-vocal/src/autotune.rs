@@ -28,7 +28,12 @@ pub struct PredictedContours {
 /// Look up a neural pitch model in the singer folder or global model paths.
 pub fn find_pitch_model(singer_dir: Option<&Path>) -> Option<PathBuf> {
     if let Some(dir) = singer_dir {
-        for candidate in ["pitch.onnx", "model.onnx", "models/pitch.onnx", "onnx/pitch.onnx"] {
+        for candidate in [
+            "pitch.onnx",
+            "model.onnx",
+            "models/pitch.onnx",
+            "onnx/pitch.onnx",
+        ] {
             let p = dir.join(candidate);
             if p.is_file() {
                 return Some(p);
@@ -90,7 +95,11 @@ pub fn predict_parametric_contours(notes: &[UstxNote], bpm: f64) -> PredictedCon
     for i in 0..notes.len() {
         let cur = &notes[i];
         let prev = if i > 0 { Some(&notes[i - 1]) } else { None };
-        let next = if i + 1 < notes.len() { Some(&notes[i + 1]) } else { None };
+        let next = if i + 1 < notes.len() {
+            Some(&notes[i + 1])
+        } else {
+            None
+        };
 
         let note_start = cur.position;
         let note_dur = cur.duration.max(10);
@@ -113,8 +122,12 @@ pub fn predict_parametric_contours(notes: &[UstxNote], bpm: f64) -> PredictedCon
         let vibrato_rate_hz = 5.5;
         let vibrato_depth_cents = 28.0;
 
-            let mut tick = if i > 0 { note_start + sample_step_ticks } else { note_start };
-            while tick <= note_end {
+        let mut tick = if i > 0 {
+            note_start + sample_step_ticks
+        } else {
+            note_start
+        };
+        while tick <= note_end {
             let offset_ticks = tick - note_start;
             let offset_secs = offset_ticks as f64 * secs_per_tick;
             let remaining_secs = (note_end - tick) as f64 * secs_per_tick;
@@ -132,7 +145,10 @@ pub fn predict_parametric_contours(notes: &[UstxNote], bpm: f64) -> PredictedCon
             }
 
             // 2. Natural overshoot after transition (small 6-10 cent rebound)
-            if delta_semitones != 0 && offset_ticks >= portamento_ticks && offset_ticks < portamento_ticks + 30 {
+            if delta_semitones != 0
+                && offset_ticks >= portamento_ticks
+                && offset_ticks < portamento_ticks + 30
+            {
                 let ot = ((offset_ticks - portamento_ticks) as f64 / 30.0).clamp(0.0, 1.0);
                 let overshoot_dir = if delta_semitones > 0 { 1.0 } else { -1.0 };
                 let overshoot_mag = 8.0 * (1.0 - ot) * (ot * std::f64::consts::PI).sin();
@@ -244,12 +260,22 @@ mod tests {
         // Check portamento transition after tick 480 (+4 semitones)
         let at_trans = res.pitd.iter().find(|p| p.tick == 490);
         assert!(at_trans.is_some());
-        assert!(at_trans.unwrap().val < 0, "Portamento should start below pitch target");
+        assert!(
+            at_trans.unwrap().val < 0,
+            "Portamento should start below pitch target"
+        );
 
         // Check vibrato presence on the long sustained second note
-        let late_points: Vec<_> = res.pitd.iter().filter(|p| p.tick > 700 && p.tick < 1400).collect();
+        let late_points: Vec<_> = res
+            .pitd
+            .iter()
+            .filter(|p| p.tick > 700 && p.tick < 1400)
+            .collect();
         let has_variation = late_points.iter().any(|p| p.val.abs() > 5);
-        assert!(has_variation, "Sustained note should develop natural vibrato");
+        assert!(
+            has_variation,
+            "Sustained note should develop natural vibrato"
+        );
     }
 
     #[test]
@@ -258,11 +284,17 @@ mod tests {
             CurvePoint { tick: 100, val: 50 },
             CurvePoint { tick: 200, val: 75 },
             CurvePoint { tick: 600, val: 99 },
-            CurvePoint { tick: 1200, val: -30 },
+            CurvePoint {
+                tick: 1200,
+                val: -30,
+            },
         ];
 
         let predicted = vec![
-            CurvePoint { tick: 480, val: -100 },
+            CurvePoint {
+                tick: 480,
+                val: -100,
+            },
             CurvePoint { tick: 600, val: 12 },
             CurvePoint { tick: 720, val: 5 },
         ];
