@@ -40,7 +40,28 @@
 
 Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave). It is not affiliated with, sponsored by, or endorsed by Apple Inc. Logic Pro is a trademark of Apple Inc., referenced solely for clean-room workflow, UI layout, and parameter alignment. Dōri contains no proprietary Apple code, artwork, or audio assets.
 
+Dōri is an independent open-source project based on [fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave). It is not affiliated with, sponsored by, or endorsed by Apple Inc. Logic Pro is a trademark of Apple Inc., referenced solely for clean-room workflow, UI layout, and parameter alignment. Dōri contains no proprietary Apple code, artwork, or audio assets.
+
 ---
+
+## Status
+
+How much of the app works today, counted from the source: a menu entry is done when it can be
+used, and a roadmap item when it is ticked in [`ROADMAP.md`](ROADMAP.md). Run `cargo xtask status`
+to update this section.
+
+<!-- status:start (made by `cargo xtask status`) -->
+![Dōri status: menu entries and roadmap items, done and to do](docs/status.svg)
+
+| | Done | Started | Total | Done % |
+| --- | ---: | ---: | ---: | ---: |
+| Menu entries | 110 | 0 | 189 | 58.20% |
+| Roadmap items | 25 | 15 | 77 | 32.47% |
+<!-- status:end -->
+
+Dōri does a lot, and aims to do it the way Logic Pro does. It is a full DAW: arranging, recording, editing, mixing and bouncing in one window, on an engine built so the audio thread never waits.
+
+> **Note:** Dōri is alpha software. The project file format may still change, so keep backups. Plug-in instruments, Live Loops and much of Logic's instrument list are still to come: [`ROADMAP.md`](ROADMAP.md) says what.
 
 ## Features
 

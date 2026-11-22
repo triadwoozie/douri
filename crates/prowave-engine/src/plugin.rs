@@ -48,6 +48,11 @@ pub trait BlockEffect: Send {
     fn boxed_clone(&self) -> Option<Box<dyn BlockEffect>> {
         None
     }
+
+    /// Offline rendering (see `EngineCore::set_offline`) is not in real time: a plug-in that runs
+    /// in another process must answer every block instead of letting a late answer pass dry.
+    /// A plug-in that runs on the engine's own thread needs nothing, so the default does nothing.
+    fn set_offline(&mut self, _offline: bool) {}
 }
 
 /// An instrument plug-in (CLAP, VST3, AU), as the engine's track player sees it.
@@ -122,6 +127,13 @@ impl PluginSlot {
     pub(crate) fn set_param(&mut self, index: usize, norm: f32) {
         if let Some(p) = self.plugin.as_mut() {
             p.set_param(index, norm.clamp(0.0, 1.0));
+        }
+    }
+
+    /// Offline rendering on or off for the plug-in (see [`BlockEffect::set_offline`]).
+    pub(crate) fn set_offline(&mut self, offline: bool) {
+        if let Some(p) = self.plugin.as_mut() {
+            p.set_offline(offline);
         }
     }
 

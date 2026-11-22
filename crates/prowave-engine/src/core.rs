@@ -18,6 +18,7 @@ use crate::triple::{triple_buffer, Reader, Writer};
 use rtrb::{Consumer, Producer};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A live MIDI event arriving from an external MIDI controller via a lock-free queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,7 +202,16 @@ pub struct AudioClip {
     pos: i64,
     underruns: u32,
     started: bool,
+    /// An offline render waited out its whole budget for this clip's disk thread once (the
+    /// file cannot be read); from then on the clip only counts underruns, without waiting.
+    gave_up: bool,
 }
+
+/// How long an offline render waits for the disk thread to deliver one frame of a clip:
+/// [`OFFLINE_DISK_STEPS`] sleeps of [`OFFLINE_DISK_STEP`], about half a minute. A live engine
+/// never waits; it plays silence instead.
+const OFFLINE_DISK_STEPS: u32 = 150_000;
+const OFFLINE_DISK_STEP: Duration = Duration::from_micros(200);
 
 /// Non-destructive region edits (Logic Pro: Region Inspector Gain, Fade In/Out, Reverse).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -283,6 +293,7 @@ impl AudioClip {
             pos: 0,
             underruns: 0,
             started: false,
+            gave_up: false,
         }
     }
 
@@ -307,13 +318,17 @@ impl AudioClip {
         }
     }
 
-    fn tick(&mut self) -> Option<(f32, f32)> {
+    /// The clip's frame at the playhead. When the disk thread has not caught up, a live engine
+    /// counts an underrun and plays silence; with `wait` (offline rendering, which is not in
+    /// real time) it waits for the block instead.
+    fn tick(&mut self, wait: bool) -> Option<(f32, f32)> {
         let p = self.pos;
         self.pos += 1;
         if p < 0 || p as u64 >= self.len_frames {
             return None;
         }
         let p = p as u64;
+        let mut waited = 0u32;
         loop {
             if let Some(b) = &self.cur {
                 if b.gen == self.gen {
@@ -334,6 +349,16 @@ impl AudioClip {
                 }
                 Ok(_) => {}
                 Err(_) => {
+                    // A producer that is gone (the file did not open) never delivers again.
+                    let may_wait = wait && !self.gave_up && !self.rx.is_abandoned();
+                    if may_wait {
+                        if waited < OFFLINE_DISK_STEPS {
+                            waited += 1;
+                            std::thread::sleep(OFFLINE_DISK_STEP);
+                            continue;
+                        }
+                        self.gave_up = true;
+                    }
                     if self.started {
                         self.underruns += 1;
                     }
@@ -913,6 +938,9 @@ pub struct EngineCore {
     input: Option<Box<InputFeed>>,
     /// Where the finished master frames go while a bounce is running.
     capture: Option<CaptureSink>,
+    /// Offline rendering: not in real time, so clips and plug-ins wait for their data (see
+    /// [`EngineCore::set_offline`]).
+    offline: bool,
     monitors: [MonitorTrack; MAX_MONITORS],
     monitor_count: usize,
     track_gain_l: Vec<f32>,
@@ -1079,6 +1107,7 @@ impl EngineCore {
             count_step: 1,
             input: None,
             capture: None,
+            offline: false,
             monitors: [MonitorTrack::default(); MAX_MONITORS],
             monitor_count: 0,
             track_gain_l: vec![1.0; MAX_TRACKS],
@@ -1136,6 +1165,20 @@ impl EngineCore {
             test_gain: 0.0,
             test_phase: 0.0,
             loudness: crate::meter::LoudnessMeter::new(sample_rate.max(1) as f32, 2),
+        }
+    }
+
+    /// Offline rendering: the core is driven faster than real time, not by a sound card. A
+    /// streamed region then waits for its disk thread instead of playing silence, and a plug-in
+    /// in its own process waits for every block instead of letting a late one pass dry. Set it
+    /// before the first block; chains installed later get it too.
+    pub fn set_offline(&mut self, offline: bool) {
+        self.offline = offline;
+        if let Some(chain) = self.master_chain.as_mut() {
+            chain.set_offline(offline);
+        }
+        for chain in self.chains.iter_mut().flatten() {
+            chain.set_offline(offline);
         }
     }
 
@@ -1877,9 +1920,10 @@ impl EngineCore {
                         player.set_bass808_params(params);
                     }
                 }
-                Command::SetInserts { track, chain } => {
+                Command::SetInserts { mut chain, track } => {
                     let t = track as usize;
                     if t < MAX_TRACKS {
+                        chain.set_offline(self.offline);
                         let old = self.chains[t].replace(chain);
                         if let Some(old) = old {
                             let _ = self.trash.push(Garbage::Chain(old));
@@ -1901,7 +1945,8 @@ impl EngineCore {
                         let _ = self.trash.push(Garbage::Pdc(pdc));
                     }
                 }
-                Command::SetMasterInserts(chain) => {
+                Command::SetMasterInserts(mut chain) => {
+                    chain.set_offline(self.offline);
                     if let Some(old) = self.master_chain.replace(chain) {
                         let _ = self.trash.push(Garbage::Chain(old));
                     }
@@ -2399,7 +2444,7 @@ impl EngineCore {
                     self.send_control(c);
                 }
                 for c in self.song.clips.iter_mut() {
-                    if let Some((cl, cr)) = c.tick() {
+                    if let Some((cl, cr)) = c.tick(self.offline) {
                         let t = (c.track as usize).min(MAX_TRACKS - 1);
                         if self.track_audible[t] {
                             let edit_gain = c.envelope(sample_beat, c.end_beat);

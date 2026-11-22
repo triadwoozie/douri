@@ -92,7 +92,9 @@ fn save_dialog() -> FileDialog {
 }
 
 fn open_dialog() -> FileDialog {
-    FileDialog::new().add_filter(tr("Dōri & Pro-Wave Projects"), prowave_project::EXTENSIONS)
+    FileDialog::new()
+        .add_filter(tr("Dōri & Pro-Wave Projects"), prowave_project::EXTENSIONS)
+        .add_filter(tr("Logic Pro Project"), &["logicx"])
 }
 
 /// Opens the system's file manager with `path` (the project file) selected.
@@ -307,8 +309,13 @@ impl App {
         }
     }
 
-    /// Opens `path`, replacing the current project (no prompt; callers ask first).
+    /// Opens `path`, replacing the current project (no prompt; callers ask first). A Logic Pro
+    /// bundle opens as a new project that has no file yet.
     pub fn open(&mut self, path: &Path, ctx: &egui::Context) {
+        if crate::logicx::is_bundle(path) {
+            self.open_logicx(path, ctx);
+            return;
+        }
         match project_io::open_project(path, ctx) {
             Ok((p, warnings)) => {
                 self.replace(p, Some(path.to_path_buf()));
@@ -321,6 +328,23 @@ impl App {
                 self.ui.recent.remove(path);
                 self.ui.status = Some(trf("cannot open {}: {}", &[&path.display(), &e]));
             }
+        }
+    }
+
+    /// Makes a new project from a Logic Pro bundle. The project has no file, so Save asks where
+    /// to put it: the bundle is never written to.
+    fn open_logicx(&mut self, path: &Path, ctx: &egui::Context) {
+        match crate::logicx::new_project(path, ctx) {
+            Ok((p, report)) => {
+                let tracks = report.tracks;
+                self.replace(p, None);
+                self.ui.logicx_report = Some(report);
+                self.ui.status = Some(trf(
+                    "imported {} tracks from {}",
+                    &[&tracks, &path.display()],
+                ));
+            }
+            Err(e) => self.ui.status = Some(trf("cannot open {}: {}", &[&path.display(), &e])),
         }
     }
 

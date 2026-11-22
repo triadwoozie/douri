@@ -53,6 +53,8 @@ mod library;
 pub mod liquid_glass;
 pub mod lyrics;
 pub mod lyrics_ui;
+mod logicx;
+mod logicx_import;
 pub mod marker_edit;
 pub mod marker_number;
 mod marker_track;
@@ -90,9 +92,11 @@ mod region_colors;
 mod region_commands;
 mod region_edit;
 mod region_solo;
+mod rex_import;
 mod sampler_load;
 mod score;
 mod score_export;
+mod score_import;
 mod scripter;
 mod section_edit;
 mod select_similar;
@@ -134,6 +138,7 @@ mod undo;
 mod undo_history;
 mod updater;
 pub mod vocal;
+mod vamp;
 mod widgets;
 mod window_chrome;
 
@@ -254,6 +259,8 @@ pub struct UiState {
     pub midi_cmd: Option<midi_file::MidiCmd>,
     /// File > Export > Score as MusicXML… picked this frame.
     pub export_xml_cmd: bool,
+    /// File > Import > MusicXML / Guitar Pro / Hydrogen Song picked this frame.
+    pub import_cmd: Option<score_import::ImportCmd>,
     /// Edit > Undo History… picked this frame: the history window is showing.
     pub show_undo_history: bool,
     /// File > Import > Audio File… picked this frame.
@@ -270,8 +277,10 @@ pub struct UiState {
     pub bounce_cmd: bool,
     /// A bounce is running (greys the Bounce entry).
     pub bouncing: bool,
-    /// File > Import > Other Projects… picked this frame (a GarageBand bundle).
+    /// File > Import > Other Projects… picked this frame (a GarageBand or Logic Pro bundle).
     pub open_band_cmd: bool,
+    /// The Logic Pro Import window, while it is open (see `logicx::show_report`).
+    pub logicx_report: Option<logicx::Report>,
     /// File > Show in File Manager picked this frame.
     pub reveal_cmd: bool,
     /// The project has a file on disk (greys the File Manager entry until it is saved).
@@ -433,6 +442,7 @@ impl UiState {
             groove: groove::GrooveState::default(),
             midi_cmd: None,
             export_xml_cmd: false,
+            import_cmd: None,
             show_undo_history: false,
             import_audio_cmd: false,
             export_track_cmd: false,
@@ -442,6 +452,7 @@ impl UiState {
             bounce_cmd: false,
             bouncing: false,
             open_band_cmd: false,
+            logicx_report: None,
             reveal_cmd: false,
             has_path: false,
             piano_focus: false,
@@ -669,9 +680,58 @@ impl App {
     }
 
     fn import(&mut self, path: &std::path::Path, ctx: &egui::Context) {
+        if logicx::is_bundle(path) {
+            // A Logic Pro project opens as a new project, as File > Open does, after the question
+            // about unsaved changes. Open Recent takes the path from `recent_pick`.
+            self.ui.recent_pick = Some(path.to_path_buf());
+            self.run_file_cmd(file_commands::FileCmd::OpenRecent, ctx);
+            return;
+        }
         if midi_file::is_midi_path(path) {
             self.ui.status = Some(match midi_file::import_path(&mut self.project, path) {
                 Ok(n) => i18n::trf("imported {} tracks from {}", &[&n, &path.display()]),
+                Err(e) => i18n::trf("cannot import {}: {}", &[&path.display(), &e]),
+            });
+            return;
+        }
+        if logicx_import::is_supported_path(path) {
+            self.ui.status = Some(match logicx_import::preview(&mut self.project, path) {
+                Ok(status) => {
+                    self.history.record(&self.project);
+                    status
+                }
+                Err(e) => i18n::trf("cannot import {}: {}", &[&path.display(), &e]),
+            });
+            return;
+        }
+        if rex_import::is_supported_path(path) {
+            self.ui.status = Some(match rex_import::import(&mut self.project, path, ctx) {
+                Ok(status) => {
+                    self.history.record(&self.project);
+                    status
+                }
+                Err(e) => i18n::trf("cannot import {}: {}", &[&path.display(), &e]),
+            });
+            return;
+        }
+        if score_import::is_supported_path(path) {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let result = match ext.as_str() {
+                "mxl" | "xml" | "musicxml" => {
+                    score_import::import_musicxml(&mut self.project, path)
+                }
+                "gp" => score_import::import_guitarpro(&mut self.project, path),
+                _ => score_import::import_hydrogen(&mut self.project, path),
+            };
+            self.ui.status = Some(match result {
+                Ok(n) => {
+                    self.history.record(&self.project);
+                    i18n::trf("imported {} tracks from {}", &[&n, &path.display()])
+                }
                 Err(e) => i18n::trf("cannot import {}: {}", &[&path.display(), &e]),
             });
             return;
@@ -697,6 +757,52 @@ impl App {
         self.ui.status = Some(match score_export::export(&self.project, &path) {
             Ok(notes) => i18n::trf("exported {} notes to {}", &[&notes, &path.display()]),
             Err(e) => e,
+        });
+    }
+
+    /// File > Import entries handled by the format-specific readers.
+    fn run_import_cmd(&mut self, cmd: score_import::ImportCmd, ctx: &egui::Context) {
+        use score_import::ImportCmd;
+        let path = match cmd {
+            ImportCmd::LogicX => rfd::FileDialog::new()
+                .set_title(i18n::tr("LogicX Project (Preview)…"))
+                .pick_folder(),
+            ImportCmd::MusicXml => rfd::FileDialog::new()
+                .set_title(i18n::tr("MusicXML Score…"))
+                .add_filter(i18n::tr("MusicXML"), &["musicxml", "xml", "mxl"])
+                .pick_file(),
+            ImportCmd::GuitarPro => rfd::FileDialog::new()
+                .set_title(i18n::tr("Guitar Pro…"))
+                .add_filter(i18n::tr("Guitar Pro"), &["gp"])
+                .pick_file(),
+            ImportCmd::Hydrogen => rfd::FileDialog::new()
+                .set_title(i18n::tr("Hydrogen Song…"))
+                .add_filter(i18n::tr("Hydrogen Song"), &["h2song"])
+                .pick_file(),
+            ImportCmd::Rex => rfd::FileDialog::new()
+                .set_title(i18n::tr("REX Loop…"))
+                .add_filter(i18n::tr("REX Loop"), &["rx2", "rex"])
+                .pick_file(),
+        };
+        let Some(path) = path else {
+            return;
+        };
+        let result = match cmd {
+            ImportCmd::MusicXml => score_import::import_musicxml(&mut self.project, &path)
+                .map(|n| i18n::trf("imported {} tracks from {}", &[&n, &path.display()])),
+            ImportCmd::GuitarPro => score_import::import_guitarpro(&mut self.project, &path)
+                .map(|n| i18n::trf("imported {} tracks from {}", &[&n, &path.display()])),
+            ImportCmd::Hydrogen => score_import::import_hydrogen(&mut self.project, &path)
+                .map(|n| i18n::trf("imported {} tracks from {}", &[&n, &path.display()])),
+            ImportCmd::Rex => rex_import::import(&mut self.project, &path, ctx),
+            ImportCmd::LogicX => logicx_import::preview(&mut self.project, &path),
+        };
+        self.ui.status = Some(match result {
+            Ok(status) => {
+                self.history.record(&self.project);
+                status
+            }
+            Err(e) => i18n::trf("cannot import {}: {}", &[&path.display(), &e]),
         });
     }
 
@@ -760,49 +866,30 @@ impl App {
         } else {
             path
         };
-        let Some(sync) = self.sync.as_mut() else {
-            self.ui.status = Some("cannot bounce: there is no audio output".to_string());
-            return;
-        };
+        let engine = self.sync.as_mut().map(|s| &mut s.engine);
+        match bounce::Bounce::start(engine, &mut self.project, start, end, path) {
+            Ok(running) => self.begun_bounce(running, None),
+            Err(e) => self.ui.status = Some(e),
+        }
+    }
 
-        let sample_rate = sync.engine.sample_rate();
-        let eng = Some(&sync.engine);
-        match bounce::run_offline_bounce(
-            eng,
-            &self.project,
-            start,
-            end,
-            &path,
-            None,
-            prowave_engine::BitDepth::Pcm24,
-            true,
-            sample_rate,
-        ) {
-            Ok(res) => {
-                let fname = path
-                    .file_name()
-                    .map_or_else(|| "mix".into(), |n| n.to_string_lossy());
-                self.ui.status = Some(format!(
-                    "Bounced {} · Peak: {:.1} dBFS · Integrated LUFS: {:.1} · True Peak: {:.1} dBTP",
-                    fname, res.peak_db, res.lufs_integrated, res.true_peak_db
-                ));
-            }
-            Err(_) => {
-                // Fall back to realtime bounce if offline initialization encounters an error
-                match bounce::Bounce::start(&mut sync.engine, &mut self.project, start, end, path) {
-                    Ok(running) => {
-                        self.bounce = Some(running);
-                        self.region_bounce = None;
-                        sync.sync(&mut self.project);
-                    }
-                    Err(e) => self.ui.status = Some(e),
-                }
+    /// Keeps a bounce that has just started. A real-time bounce sends its seek and Play in this
+    /// same frame, so the engine starts capturing exactly when playback starts (no silent lead-in
+    /// in the file). An offline bounce has nothing to send: it works on a copy of the project.
+    fn begun_bounce(&mut self, running: bounce::Bounce, placed: Option<(usize, Vec<usize>)>) {
+        let realtime = running.is_realtime();
+        self.bounce = Some(running);
+        self.region_bounce = placed;
+        if realtime {
+            if let Some(sync) = self.sync.as_mut() {
+                sync.sync(&mut self.project);
             }
         }
     }
 
-    /// File > Import > Other Projects…: the audio files of a GarageBand bundle become tracks
-    /// (see `garageband`; the arrangement inside the project is not read yet).
+    /// File > Import > Other Projects…: a Logic Pro `.logicx` project adds its tracks, with their
+    /// plug-ins and regions (see `logicx`); otherwise the audio files of a GarageBand bundle
+    /// become tracks (see `garageband`; the arrangement inside the project is not read yet).
     fn import_band(&mut self, ctx: &egui::Context) {
         let Some(path) = rfd::FileDialog::new()
             .set_title(i18n::tr("Other Projects…"))
@@ -810,6 +897,21 @@ impl App {
         else {
             return;
         };
+        if logicx::is_bundle(&path) {
+            match logicx::import_into(&mut self.project, &path, ctx) {
+                Ok(report) => {
+                    self.ui.status = Some(i18n::trf(
+                        "imported {} tracks from {}",
+                        &[&report.tracks, &path.display()],
+                    ));
+                    // The whole import is one undo step.
+                    self.history.record(&self.project);
+                    self.ui.logicx_report = Some(report);
+                }
+                Err(e) => self.ui.status = Some(e),
+            }
+            return;
+        }
         match garageband::import(&mut self.project, &path, ctx) {
             Ok(n) => {
                 self.ui.status = Some(i18n::trf(
@@ -851,26 +953,9 @@ impl App {
         else {
             return;
         };
-        let Some(sync) = self.sync.as_mut() else {
-            self.ui.status = Some("cannot bounce: there is no audio output".to_string());
-            return;
-        };
-        match bounce::Bounce::start_track(
-            &mut sync.engine,
-            &mut self.project,
-            track,
-            0.0,
-            end,
-            path,
-        ) {
-            Ok(running) => {
-                self.bounce = Some(running);
-                self.region_bounce = None;
-                // Seek and Play in this same frame, so the capture starts with the sound.
-                if let Some(sync) = self.sync.as_mut() {
-                    sync.sync(&mut self.project);
-                }
-            }
+        let engine = self.sync.as_mut().map(|s| &mut s.engine);
+        match bounce::Bounce::start_track(engine, &mut self.project, track, 0.0, end, path) {
+            Ok(running) => self.begun_bounce(running, None),
             Err(e) => self.ui.status = Some(e),
         }
     }
@@ -974,12 +1059,9 @@ impl App {
             return;
         }
         let path = bounce::free_path(&dir, &format!("{} {start:.3}", file_name(&name)));
-        let Some(sync) = self.sync.as_mut() else {
-            self.ui.status = Some("cannot bounce: there is no audio output".to_string());
-            return;
-        };
+        let engine = self.sync.as_mut().map(|s| &mut s.engine);
         match bounce::Bounce::start_regions(
-            &mut sync.engine,
+            engine,
             &mut self.project,
             track,
             &regions,
@@ -987,14 +1069,7 @@ impl App {
             end,
             path,
         ) {
-            Ok(running) => {
-                self.bounce = Some(running);
-                self.region_bounce = Some((track, regions));
-                // Seek and Play in this same frame, so the capture starts with the sound.
-                if let Some(sync) = self.sync.as_mut() {
-                    sync.sync(&mut self.project);
-                }
-            }
+            Ok(running) => self.begun_bounce(running, Some((track, regions))),
             Err(e) => self.ui.status = Some(e),
         }
     }
@@ -1058,22 +1133,23 @@ impl App {
             return;
         };
         self.ui.bouncing = true;
-        if running.poll(&self.project) {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            running.cancel(&mut self.project);
+        }
+        if running.advance(&self.project) {
             let percent = (running.progress(&self.project) * 100.0).round();
             self.ui.status = Some(i18n::trf("Bouncing {}%", &[&format!("{percent:.0}")]));
             ctx.request_repaint();
             return;
         }
-        let reached_end = self.project.playing && self.project.position_beats >= running.end_beat;
+        let reached_end = self.project.playing && self.project.position_beats >= running.end_beat();
         let Some(running) = self.bounce.take() else {
             self.ui.bouncing = false;
             return;
         };
         self.ui.bouncing = false;
-        let result = match self.sync.as_mut() {
-            Some(sync) => running.finish(&mut sync.engine, &mut self.project, reached_end),
-            None => Ok(None),
-        };
+        let engine = self.sync.as_mut().map(|s| &mut s.engine);
+        let result = running.finish(engine, &mut self.project, reached_end);
         let placed = self.region_bounce.take();
         match result {
             Ok(Some(done)) => {
@@ -1899,6 +1975,9 @@ impl eframe::App for App {
         if std::mem::take(&mut self.ui.export_xml_cmd) {
             self.export_score();
         }
+        if let Some(cmd) = self.ui.import_cmd.take() {
+            self.run_import_cmd(cmd, &ctx);
+        }
         if std::mem::take(&mut self.ui.import_audio_cmd) {
             self.import_audio_file(&ctx);
         }
@@ -1932,6 +2011,7 @@ impl eframe::App for App {
             self.restart_audio(prefs);
         }
         track_dialogs::show(&ctx, &mut self.project, &mut self.ui);
+        logicx::show_report(&ctx, &mut self.ui.logicx_report);
         new_track_dialog::show(&ctx, &mut self.project, &mut self.ui);
         singer_manager::show(&ctx, &mut self.ui.singer_manager);
         stack_dialog::show(&ctx, &mut self.project, &mut self.ui);
@@ -2347,6 +2427,7 @@ fn print_help() {
     );
     println!("  --scan-ladspa <file>      list the plug-ins in a LADSPA library, then exit (the");
     println!("                            Plugin Manager reads each library in a child process)");
+    println!("  --scan-vamp <file>        list the analysers in a Vamp library, then exit");
     println!();
     println!(
         "A .douri or .prowave path opens that project; other paths are imported as audio files."
@@ -2411,6 +2492,9 @@ fn main() -> eframe::Result {
         if let [_, flag, path] = args.as_slice() {
             if flag == "--scan-ladspa" {
                 std::process::exit(plugins::scan_main(std::path::Path::new(path)));
+            }
+            if flag == "--scan-vamp" {
+                std::process::exit(vamp::scan_main(std::path::Path::new(path)));
             }
         }
     }

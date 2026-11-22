@@ -32,6 +32,10 @@ use std::time::{Duration, Instant};
 pub(crate) const MAX_BLOCK: usize = 1024;
 /// How long the audio thread waits for a block before it passes dry.
 const WAIT: Duration = Duration::from_millis(40);
+/// How long an offline render waits for one block. Offline nothing is real time, so the wait
+/// is as long as the plug-in needs; this cap only stops a plug-in that has hung (without dying)
+/// from holding the render forever. A plug-in that died is given up at once.
+const OFFLINE_WAIT: Duration = Duration::from_secs(30);
 /// How long a plug-in may take to load in its process.
 const START: Duration = Duration::from_secs(30);
 /// How long a request on the pipes may take.
@@ -328,6 +332,9 @@ struct AudioSide {
     changes: [(u32, f32); MAX_CHANGES],
     pending_midi: usize,
     midi_events: [crate::MidiEvent; MAX_MIDI_EVENTS],
+    /// Offline rendering: wait for every answer (see [`OFFLINE_WAIT`]) instead of passing late
+    /// blocks dry.
+    offline: bool,
 }
 
 /// A plug-in running in its own process, seen from Pro Wave.
@@ -476,6 +483,7 @@ impl Remote {
                     note: 0,
                     velocity: 0,
                 }; MAX_MIDI_EVENTS],
+                offline: false,
             }),
         }))
     }
@@ -735,14 +743,24 @@ impl RemoteProcessor {
         remote.wake.post();
 
         // The answer takes about a thread switch: spin, looking at the clock now and then.
+        // Offline, nothing is real time: the wait yields the processor instead, and only a
+        // plug-in that has died (or hung for `OFFLINE_WAIT`) is given up.
         let started = Instant::now();
         let mut spins = 0u32;
+        let offline = audio.offline;
         while shared.done.load(Ordering::Acquire) != asked {
-            std::hint::spin_loop();
+            if offline {
+                std::thread::yield_now();
+            } else {
+                std::hint::spin_loop();
+            }
             spins = spins.wrapping_add(1);
-            if spins.is_multiple_of(256) && (started.elapsed() > WAIT || remote.crashed()) {
-                audio.behind = true;
-                return;
+            if spins.is_multiple_of(256) {
+                let limit = if offline { OFFLINE_WAIT } else { WAIT };
+                if started.elapsed() > limit || remote.crashed() {
+                    audio.behind = true;
+                    return;
+                }
             }
         }
         for (i, (l, r)) in left
@@ -759,6 +777,11 @@ impl RemoteProcessor {
             *l = if a.is_finite() { a } else { 0.0 };
             *r = if b.is_finite() { b } else { 0.0 };
         }
+    }
+
+    /// Offline rendering on or off: see [`AudioSide::offline`].
+    pub(crate) fn set_offline(&mut self, offline: bool) {
+        self.audio().offline = offline;
     }
 
     pub(crate) fn set_param_norm(&mut self, index: usize, norm: f32) {
