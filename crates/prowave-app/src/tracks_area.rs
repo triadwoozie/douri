@@ -96,8 +96,12 @@ impl DragMode {
     }
 }
 
+/// Where the Pencil tool is in [`TOOLS`].
+const PENCIL_TOOL: usize = 1;
 /// Where the Fade tool is in [`TOOLS`].
 const FADE_TOOL: usize = 9;
+/// The shortest region the Pencil draws, in bars (a 16th note of a 4/4 bar).
+const PENCIL_MIN_BARS: f32 = 1.0 / 16.0;
 
 /// What a click with one of the editing tools does, once the regions are drawn.
 #[derive(Clone)]
@@ -226,6 +230,8 @@ type GainDrag = (Vec<(usize, usize, f32)>, f32);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TrackTool {
     Pointer,
+    /// Click or drag on an empty stretch of a MIDI track to draw an empty MIDI region (Logic:
+    /// Pencil tool).
     Pencil,
     Eraser,
     Text,
@@ -314,6 +320,8 @@ pub struct TracksView {
     pub range: crate::marquee::State,
     pub solo_hold: Option<bool>,
     pub drag_origin: Option<Pos2>,
+    /// A Pencil drag in progress: the (track, region) it is drawing.
+    pub pencil_drag: Option<(usize, usize)>,
     pub catch: bool,
     pub show_tempo: bool,
     pub show_markers: bool,
@@ -552,6 +560,7 @@ impl Default for TracksView {
             range: crate::marquee::State::default(),
             solo_hold: None,
             drag_origin: None,
+            pencil_drag: None,
             catch: true,
             show_tempo: false,
             show_markers: false,
@@ -1000,6 +1009,13 @@ fn draw_fade_tool(g: &Painter, at: Pos2, c: Color32) {
     g.line_segment([at + vec2(-6.0, -5.0), at + vec2(6.0, 5.0)], stroke(c));
 }
 
+/// The Pencil tool's icon: a pencil on a diagonal.
+fn draw_pencil_tool(g: &Painter, at: Pos2, c: Color32) {
+    g.line_segment([at + vec2(-5.0, 5.0), at + vec2(4.0, -4.0)], stroke(c));
+    g.line_segment([at + vec2(-5.0, 5.0), at + vec2(-6.0, 6.0)], stroke(c));
+    g.line_segment([at + vec2(4.0, -4.0), at + vec2(6.0, -6.0)], stroke(c));
+}
+
 fn draw_crosshair(g: &Painter, at: Pos2, c: Color32) {
     g.line_segment([at + vec2(-6.0, 0.0), at + vec2(6.0, 0.0)], stroke(c));
     g.line_segment([at + vec2(0.0, -6.0), at + vec2(0.0, 6.0)], stroke(c));
@@ -1426,6 +1442,7 @@ fn tool_menus(ui: &Ui, g: &Painter, v: &mut TracksView, rx: f32, cy: f32) {
         let icon_at = pos2(r.left() + 13.0, cy);
         let active_tool = if i == 0 { v.tool } else { v.cmd_tool };
         match active_tool {
+            TrackTool::Pencil => draw_pencil_tool(g, icon_at, TEXT),
             TrackTool::Fade => draw_fade_tool(g, icon_at, TEXT),
             TrackTool::Pointer => draw_pointer(g, icon_at, TEXT),
             TrackTool::Marquee => draw_crosshair(g, icon_at, TEXT),
@@ -3400,6 +3417,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     }
 
     // Click on an empty lane: select that track, deselect regions.
+    // Drags on empty lanes are for the Pencil; regions are drawn over the lanes and take their
+    // own drags.
     let lane_resp = ui.interact(lanes, id("lanes"), Sense::click_and_drag());
     let mut picked: Option<CtxAction> = None;
     // The tool the pointer has: the Command-click tool while Command is held, and while a
@@ -3507,6 +3526,52 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         mq.read(ui, &lane_resp);
     } else {
         mq.other |= lane_resp.clicked() || lane_resp.drag_started_by(egui::PointerButton::Primary);
+    }
+    // Pencil tool (Logic: draw a MIDI region): a click on an empty stretch of a MIDI track
+    // makes a region one bar long; a drag sets its length, both snapped as the grid is.
+    if tool == TrackTool::Pencil {
+        let pencil_row = |pt: egui::Pos2| {
+            row_at(&rows, pt.y - lanes.top() + scroll_y)
+                .filter(|row| p.tracks[*row].kind.has_regions())
+                .filter(|row| p.tracks[*row].kind != TrackKind::Audio)
+        };
+        if lane_resp.drag_started() || lane_resp.clicked() {
+            if let Some(pt) = lane_resp.interact_pointer_pos() {
+                if let Some(row) = pencil_row(pt) {
+                    let at = snap_pos(beat_of(pt.x).max(0.0));
+                    let start_bar = p.beats_to_bar(at) as f32 + 1.0;
+                    let bar_len = if lane_resp.clicked() {
+                        1.0
+                    } else {
+                        PENCIL_MIN_BARS
+                    };
+                    if let Some(ri) = p.add_midi_region(row, start_bar, bar_len) {
+                        p.selected_track = row;
+                        v.selected = Some((row, ri));
+                        if lane_resp.drag_started() {
+                            v.pencil_drag = Some((row, ri));
+                        } else {
+                            moved = true;
+                        }
+                    }
+                }
+            }
+        }
+        if let (Some((row, ri)), true, Some(pt)) = (
+            v.pencil_drag,
+            lane_resp.dragged(),
+            lane_resp.interact_pointer_pos(),
+        ) {
+            let start = p.region_start_beats(&p.tracks[row].regions[ri]);
+            let end = snap_pos(beat_of(pt.x).max(0.0));
+            let len = (p.beats_to_bar(end) - p.beats_to_bar(start)) as f32;
+            p.tracks[row].regions[ri].len_bars = len.max(PENCIL_MIN_BARS);
+            moved = true;
+        }
+        if lane_resp.drag_stopped() {
+            v.pencil_drag = None;
+            moved = true;
+        }
     }
     for (ti, &(top, row_h)) in rows.iter().enumerate() {
         if row_h <= 0.0 {
@@ -4897,6 +4962,13 @@ mod row_tests {
         wait_for_normalize(&mut p, &mut s);
         assert!(p.tracks[t].regions.is_empty());
         assert_eq!(s.status, None);
+    }
+
+    #[test]
+    fn the_pencil_and_fade_tools_sit_where_their_menu_entries_are() {
+        assert_eq!(TOOLS[PENCIL_TOOL], "Pencil Tool");
+        assert_eq!(TOOLS[FADE_TOOL], "Fade Tool");
+        assert_eq!(TOOLS[0], "Pointer Tool");
     }
 
     #[test]
