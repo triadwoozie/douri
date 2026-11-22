@@ -163,6 +163,18 @@ pub struct UiState {
     pub show_inspector: bool,
     /// Whether the top bar LCD displays SMPTE timecode (true) or Bars/Beats (false).
     pub lcd_smpte: bool,
+    /// Control Bar LCD display mode (Beats & Project, Beats & Time, Beats, Time, Custom).
+    pub lcd_mode: project_settings::LcdMode,
+    /// Customizable LCD items under Custom display mode.
+    pub lcd_custom: project_settings::LcdCustomOptions,
+    /// Whether the LCD display mode popup menu is open.
+    pub show_lcd_menu: bool,
+    /// Whether the "Customize Control Bar and Display" dialog is open.
+    pub show_lcd_customize: bool,
+    /// Live MIDI In activity indicator (0.0..1.0, decays over time).
+    pub midi_in_activity: f32,
+    /// Live MIDI Out activity indicator (0.0..1.0, decays over time).
+    pub midi_out_activity: f32,
     /// List Editors (the Event list on the right).
     pub show_lists: bool,
     pub lists: event_list::ListView,
@@ -366,6 +378,12 @@ impl UiState {
             show_library: true,
             show_inspector: false,
             lcd_smpte: false,
+            lcd_mode: project_settings::LcdMode::default(),
+            lcd_custom: project_settings::LcdCustomOptions::default(),
+            show_lcd_menu: false,
+            show_lcd_customize: false,
+            midi_in_activity: 0.0,
+            midi_out_activity: 0.0,
             show_lists: false,
             lists: event_list::ListView::default(),
             show_collaborate: false,
@@ -1345,6 +1363,9 @@ impl App {
         let typing_input = self.ui.typing.take();
         let mut input = hw_input.clone();
         input.extend(typing_input.clone());
+        if !input.is_empty() {
+            self.ui.midi_in_activity = 1.0;
+        }
         let p = &mut self.project;
         let s = &mut self.ui;
         let track = s.rec.target().map_or(p.selected_track, |(t, _)| t);
@@ -1569,6 +1590,11 @@ impl eframe::App for App {
             self.ui.cpu_load = load.max(self.ui.cpu_load - dt as f32 * 0.8);
             // The HD meter holds its peak for about a second, like the CPU meter.
             self.ui.hd_load = sync.disk_load().max(self.ui.hd_load - dt as f32 * 0.8);
+            self.ui.midi_in_activity = (self.ui.midi_in_activity - dt as f32 * 3.0).max(0.0);
+            self.ui.midi_out_activity = (self.ui.midi_out_activity - dt as f32 * 3.0).max(0.0);
+            if self.project.playing && !self.project.tracks.is_empty() {
+                self.ui.midi_out_activity = (self.ui.midi_out_activity + 0.2).min(1.0);
+            }
             if sync.underruns() > 0 {
                 // Kept in i18n registry without polluting UI status bar
                 let _ = i18n::trf("disk too slow: {} underruns", &[&sync.underruns()]);
@@ -1682,9 +1708,14 @@ impl eframe::App for App {
             // the window, so it is never outside its range when the window shrinks.)
             let room = ui.available_height();
             let usual = (room * 0.48).clamp(160.0, 500.0);
+            let min_h = if s.bottom == Bottom::Mixer {
+                mixer::min_panel_height(p, &s.mixer).clamp(180.0, room * 0.9)
+            } else {
+                140.0
+            };
             let panel = egui::Panel::bottom("bottom")
                 .resizable(true)
-                .min_size(140.0)
+                .min_size(min_h)
                 .max_size(520.0)
                 .default_size(240.0)
                 .frame(egui::Frame::new());
@@ -1837,6 +1868,7 @@ impl eframe::App for App {
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
         show_about_dialog(&ctx, &mut self.ui.show_about);
+        show_lcd_customize_dialog(&ctx, &mut self.ui);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
     }
@@ -1856,16 +1888,27 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
-                if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
-                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                        [icon.width as usize, icon.height as usize],
-                        &icon.rgba,
-                    );
-                    let texture = ctx.load_texture(
-                        "about_douri_icon",
-                        color_image,
-                        egui::TextureOptions::LINEAR,
-                    );
+                let tex_id = egui::Id::unique("about_douri_icon_cached");
+                let texture: Option<egui::TextureHandle> = ctx.data_mut(|d| {
+                    if let Some(tex) = d.get_temp::<egui::TextureHandle>(tex_id) {
+                        Some(tex)
+                    } else if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
+                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                            [icon.width as usize, icon.height as usize],
+                            &icon.rgba,
+                        );
+                        let tex = ctx.load_texture(
+                            "about_douri_icon",
+                            color_image,
+                            egui::TextureOptions::LINEAR,
+                        );
+                        d.insert_temp(tex_id, tex.clone());
+                        Some(tex)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(texture) = texture {
                     ui.add(egui::Image::new(&texture).max_width(96.0).max_height(96.0));
                     ui.add_space(8.0);
                 }
@@ -1910,6 +1953,73 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
         });
     if close {
         *open = false;
+    }
+}
+
+fn show_lcd_customize_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
+    if !ui_state.show_lcd_customize {
+        return;
+    }
+    let mut open = true;
+    crate::liquid_glass::glass_window("Customize Control Bar and Display")
+        .open(&mut open)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .default_width(380.0)
+        .show(ctx, |ui| {
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("LCD Display Options")
+                    .size(13.0)
+                    .strong(),
+            );
+            ui.add_space(6.0);
+            ui.checkbox(
+                &mut ui_state.lcd_custom.show_division_ticks,
+                "Division & Ticks",
+            );
+            ui.checkbox(&mut ui_state.lcd_custom.show_tempo, "Tempo");
+            ui.checkbox(
+                &mut ui_state.lcd_custom.show_time_signature,
+                "Time Signature",
+            );
+            ui.checkbox(&mut ui_state.lcd_custom.show_key_signature, "Key Signature");
+            ui.checkbox(
+                &mut ui_state.lcd_custom.show_performance_meters,
+                "Performance Meters (CPU & HD)",
+            );
+            ui.checkbox(
+                &mut ui_state.lcd_custom.show_midi_activity,
+                "MIDI Activity Indicators (In / Out)",
+            );
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Apply Defaults").clicked() {
+                    ui_state.lcd_custom = project_settings::LcdCustomOptions::default();
+                    ui_state.lcd_mode = project_settings::LcdMode::BeatsAndProject;
+                    ui_state.app_settings.lcd_custom = ui_state.lcd_custom;
+                    ui_state.app_settings.lcd_mode = ui_state.lcd_mode;
+                    ui_state.app_settings.save();
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Done").clicked() {
+                        ui_state.show_lcd_customize = false;
+                        ui_state.app_settings.lcd_custom = ui_state.lcd_custom;
+                        ui_state.app_settings.lcd_mode = ui_state.lcd_mode;
+                        ui_state.app_settings.save();
+                    }
+                });
+            });
+            ui.add_space(4.0);
+        });
+    if !open {
+        ui_state.show_lcd_customize = false;
+        ui_state.app_settings.lcd_custom = ui_state.lcd_custom;
+        ui_state.app_settings.lcd_mode = ui_state.lcd_mode;
+        ui_state.app_settings.save();
     }
 }
 
@@ -2506,6 +2616,8 @@ fn main() -> eframe::Result {
                 plugins: plugins::PluginHost::default(),
                 autosave: autosave::Autosave::default(),
             };
+            app.ui.lcd_mode = app.ui.app_settings.lcd_mode;
+            app.ui.lcd_custom = app.ui.app_settings.lcd_custom;
             if let Some(sync) = app.sync.as_mut() {
                 if let Some(midi) = app.midi.as_mut() {
                     if let Some(tx) = sync.take_live_midi_producer() {

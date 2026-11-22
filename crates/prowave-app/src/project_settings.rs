@@ -388,6 +388,53 @@ impl Temperament {
     }
 }
 
+/// Control Bar LCD display modes matching Apple Logic Pro specification.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum LcdMode {
+    #[default]
+    BeatsAndProject,
+    BeatsAndTime,
+    Beats,
+    Time,
+    Custom,
+}
+
+impl LcdMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::BeatsAndProject => "Beats & Project",
+            Self::BeatsAndTime => "Beats & Time",
+            Self::Beats => "Beats",
+            Self::Time => "Time",
+            Self::Custom => "Custom",
+        }
+    }
+}
+
+/// Customizable items in the LCD Display under `Custom` mode.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LcdCustomOptions {
+    pub show_division_ticks: bool,
+    pub show_tempo: bool,
+    pub show_time_signature: bool,
+    pub show_key_signature: bool,
+    pub show_performance_meters: bool,
+    pub show_midi_activity: bool,
+}
+
+impl Default for LcdCustomOptions {
+    fn default() -> Self {
+        Self {
+            show_division_ticks: true,
+            show_tempo: true,
+            show_time_signature: true,
+            show_key_signature: true,
+            show_performance_meters: true,
+            show_midi_activity: true,
+        }
+    }
+}
+
 /// Unified application and project settings matching Logic Pro's full settings model.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AppSettings {
@@ -441,6 +488,12 @@ pub struct AppSettings {
     // Tuning
     pub temperament: Temperament,
     pub root_key: String,
+
+    // Transport & LCD Display
+    #[serde(default)]
+    pub lcd_mode: LcdMode,
+    #[serde(default)]
+    pub lcd_custom: LcdCustomOptions,
 }
 
 impl Default for AppSettings {
@@ -489,6 +542,9 @@ impl Default for AppSettings {
 
             temperament: Temperament::Equal,
             root_key: "C".to_string(),
+
+            lcd_mode: LcdMode::default(),
+            lcd_custom: LcdCustomOptions::default(),
         }
     }
 }

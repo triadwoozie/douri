@@ -421,9 +421,10 @@ fn fader_and_meter(
     peaks: (f32, f32),
     inactive: bool,
 ) -> Moved {
+    let g = g.with_clip_rect(area);
     let top = area.top() + 8.0;
     let bottom = area.bottom() - 6.0;
-    let h = (bottom - top).max(1.0);
+    let h = (bottom - top).max(MIN_FADER_H);
     let y_of = |f: f32| bottom - f * h;
     let w = area.width();
     let scale_col = Color32::from_gray(0x8e);
@@ -1636,9 +1637,12 @@ pub fn channel_strip(
 
     // Fader + scale + meter.
     let name_h = 22.0;
+    let min_fader_top = r.fader_top;
+    let max_fader_bottom = strip.bottom() - 26.0 - name_h;
+    let fader_bottom = max_fader_bottom.max(min_fader_top + MIN_FADER_H);
     let fader_area = Rect::from_min_max(
-        pos2(sx, r.fader_top),
-        pos2(strip.right() - 4.0, strip.bottom() - 26.0 - name_h),
+        pos2(sx, min_fader_top),
+        pos2(strip.right() - 4.0, fader_bottom),
     );
     let fader_free = match key {
         StripKey::Track(i) => {

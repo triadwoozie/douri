@@ -5,6 +5,7 @@
 //! same on Windows, Linux and macOS.
 use crate::file_browser::Tab;
 use crate::i18n::{tr, trf};
+use crate::project_settings::LcdMode;
 use crate::{
     model::{Project, SigPart},
     Bottom, UiState,
@@ -404,157 +405,478 @@ fn lcd(
     let bot = rect.center().y + 1.0;
     let x0 = rect.left();
 
-    // Column 1: Time display (clickable to toggle between Bar/Beat and SMPTE Timecode)
-    let time_rect = Rect::from_min_size(
-        pos2(x0 + 6.0, rect.top() + 2.0),
-        vec2(184.0, rect.height() - 4.0),
-    );
-    let time_resp = ui
-        .interact(
-            time_rect,
-            egui::Id::unique(("control_bar", "time_display")),
-            Sense::click(),
-        )
-        .on_hover_text(tr("Right-click for the SMPTE and synchronization settings"));
-    crate::widgets::context_menu(&time_resp, |ui| crate::sync_menu::items(ui, p));
-    if time_resp.clicked() {
-        s.lcd_smpte = !s.lcd_smpte;
-    }
+    // Display area according to active LcdMode
+    match s.lcd_mode {
+        LcdMode::BeatsAndProject => {
+            // Column 1: Time display (clickable to toggle between Bar/Beat and SMPTE Timecode)
+            let time_rect = Rect::from_min_size(
+                pos2(x0 + 6.0, rect.top() + 2.0),
+                vec2(184.0, rect.height() - 4.0),
+            );
+            let time_resp = ui
+                .interact(
+                    time_rect,
+                    egui::Id::unique(("control_bar", "time_display")),
+                    Sense::click(),
+                )
+                .on_hover_text(tr("Right-click for the SMPTE and synchronization settings"));
+            crate::widgets::context_menu(&time_resp, |ui| crate::sync_menu::items(ui, p));
+            if time_resp.clicked() {
+                s.lcd_smpte = !s.lcd_smpte;
+            }
 
-    if s.lcd_smpte {
-        // Mode: SMPTE Timecode
-        let mut job = LayoutJob::default();
-        lcd_seg(&mut job, &p.timecode(), 0, 18.0, pal.text, pal.dim);
-        g.galley(pos2(x0 + 12.0, top + 1.0), g.layout_job(job), pal.text);
-        g.text(
-            pos2(x0 + 14.0, bot + 2.0),
-            Align2::LEFT_TOP,
-            "SMPTE TIMECODE (CLICK FOR BARS)",
-            FontId::proportional(8.5),
-            pal.dim,
-        );
-    } else {
-        // Mode: Bar · Beat · Div · Tick
-        let (bar, beat, div, tick) = p.bbdt(p.position_beats);
-        let cols = [
-            (format!("{bar}"), "BAR"),
-            (format!("{beat}"), "BEAT"),
-            (format!("{div}"), "DIV"),
-            (format!("{tick}"), "TICK"),
-        ];
-        let col_w = time_rect.width() / 4.0;
-        for (i, (val, label)) in cols.iter().enumerate() {
-            let cx = time_rect.left() + (i as f32 + 0.5) * col_w;
+            if s.lcd_smpte {
+                let mut job = LayoutJob::default();
+                lcd_seg(&mut job, &p.timecode(), 0, 18.0, pal.text, pal.dim);
+                g.galley(pos2(x0 + 12.0, top + 1.0), g.layout_job(job), pal.text);
+                g.text(
+                    pos2(x0 + 14.0, bot + 2.0),
+                    Align2::LEFT_TOP,
+                    "SMPTE TIMECODE (CLICK FOR BARS)",
+                    FontId::proportional(8.5),
+                    pal.dim,
+                );
+            } else {
+                let (bar, beat, div, tick) = p.bbdt(p.position_beats);
+                let cols = [
+                    (format!("{bar}"), "BAR"),
+                    (format!("{beat}"), "BEAT"),
+                    (format!("{div}"), "DIV"),
+                    (format!("{tick}"), "TICK"),
+                ];
+                let col_w = time_rect.width() / 4.0;
+                for (i, (val, label)) in cols.iter().enumerate() {
+                    let cx = time_rect.left() + (i as f32 + 0.5) * col_w;
+                    g.text(
+                        pos2(cx, top + 1.0),
+                        Align2::CENTER_TOP,
+                        val,
+                        FontId::monospace(17.0),
+                        pal.text,
+                    );
+                    g.text(
+                        pos2(cx, bot + 2.0),
+                        Align2::CENTER_TOP,
+                        *label,
+                        FontId::proportional(8.5),
+                        pal.dim,
+                    );
+                }
+            }
+
+            // Divider line 1
+            g.line_segment(
+                [
+                    pos2(x0 + 196.0, rect.top() + 7.0),
+                    pos2(x0 + 196.0, rect.bottom() - 7.0),
+                ],
+                Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+            );
+
+            // Column 2: Tempo (drag vertically to adjust)
+            let tempo_rect = Rect::from_min_size(
+                pos2(x0 + 204.0, rect.top() + 2.0),
+                vec2(92.0, rect.height() - 4.0),
+            );
+            let resp = ui.interact(
+                tempo_rect,
+                egui::Id::unique(("control_bar", "tempo")),
+                Sense::drag(),
+            );
+            let tempo_now = p.tempo_at(p.position_beats);
+            if resp.dragged() {
+                p.set_tempo_at(p.position_beats, tempo_now - resp.drag_delta().y * 0.5);
+            }
             g.text(
-                pos2(cx, top + 1.0),
+                pos2(tempo_rect.center().x, top + 1.0),
                 Align2::CENTER_TOP,
-                val,
+                format!("{:.1}", p.tempo_at(p.position_beats)),
                 FontId::monospace(17.0),
                 pal.text,
             );
             g.text(
-                pos2(cx, bot + 2.0),
+                pos2(tempo_rect.center().x, bot + 2.0),
                 Align2::CENTER_TOP,
-                *label,
+                tr("Keep Tempo"),
+                FontId::proportional(9.0),
+                pal.mid,
+            );
+
+            // Divider line 2
+            g.line_segment(
+                [
+                    pos2(x0 + 304.0, rect.top() + 7.0),
+                    pos2(x0 + 304.0, rect.bottom() - 7.0),
+                ],
+                Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+            );
+
+            // Column 3: Time Signature (drag numerator or denominator to adjust)
+            let sig_x = x0 + 352.0;
+            let half = vec2(22.0, bot - rect.top());
+            for (part, left) in [
+                (SigPart::Numerator, sig_x - 22.0),
+                (SigPart::Denominator, sig_x),
+            ] {
+                let id = egui::Id::unique(("control_bar", "signature", part as u8));
+                let resp = ui
+                    .interact(
+                        Rect::from_min_size(pos2(left, rect.top() + 2.0), half),
+                        id,
+                        Sense::drag(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::ResizeVertical)
+                    .on_hover_text(tr("Drag to change the time signature"));
+                let mut leftover = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
+                if resp.drag_started() {
+                    leftover = 0.0;
+                }
+                let steps = if resp.dragged() {
+                    take_steps(&mut leftover, -resp.drag_delta().y, SIG_PX_PER_STEP)
+                } else {
+                    0
+                };
+                ui.data_mut(|d| d.insert_temp(id, leftover));
+                if steps != 0 {
+                    let bar0 = p.beats_to_bar(p.position_beats) as u32;
+                    p.step_signature_at(bar0, part, steps);
+                }
+            }
+            let (num, den) = p.signature_of_bar(p.beats_to_bar(p.position_beats) as u32);
+            g.text(
+                pos2(sig_x, top + 1.0),
+                Align2::CENTER_TOP,
+                format!("{num}/{den}"),
+                FontId::monospace(17.0),
+                pal.text,
+            );
+            g.text(
+                pos2(sig_x, bot + 2.0),
+                Align2::CENTER_TOP,
+                "Cmaj /16",
+                FontId::proportional(9.0),
+                pal.mid,
+            );
+        }
+        LcdMode::BeatsAndTime => {
+            // Left: Bars & Beats
+            let time_rect = Rect::from_min_size(
+                pos2(x0 + 6.0, rect.top() + 2.0),
+                vec2(188.0, rect.height() - 4.0),
+            );
+            let (bar, beat, div, tick) = p.bbdt(p.position_beats);
+            let cols = [
+                (format!("{bar}"), "BAR"),
+                (format!("{beat}"), "BEAT"),
+                (format!("{div}"), "DIV"),
+                (format!("{tick}"), "TICK"),
+            ];
+            let col_w = time_rect.width() / 4.0;
+            for (i, (val, label)) in cols.iter().enumerate() {
+                let cx = time_rect.left() + (i as f32 + 0.5) * col_w;
+                g.text(
+                    pos2(cx, top + 1.0),
+                    Align2::CENTER_TOP,
+                    val,
+                    FontId::monospace(17.0),
+                    pal.text,
+                );
+                g.text(
+                    pos2(cx, bot + 2.0),
+                    Align2::CENTER_TOP,
+                    *label,
+                    FontId::proportional(8.5),
+                    pal.dim,
+                );
+            }
+
+            // Divider
+            g.line_segment(
+                [
+                    pos2(x0 + 198.0, rect.top() + 7.0),
+                    pos2(x0 + 198.0, rect.bottom() - 7.0),
+                ],
+                Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+            );
+
+            // Right: Timecode
+            let mut job = LayoutJob::default();
+            lcd_seg(&mut job, &p.timecode(), 0, 18.0, pal.text, pal.dim);
+            g.galley(pos2(x0 + 208.0, top + 1.0), g.layout_job(job), pal.text);
+            g.text(
+                pos2(x0 + 210.0, bot + 2.0),
+                Align2::LEFT_TOP,
+                "SMPTE TIMECODE",
                 FontId::proportional(8.5),
                 pal.dim,
             );
         }
-    }
-
-    // Divider line 1
-    g.line_segment(
-        [
-            pos2(x0 + 196.0, rect.top() + 7.0),
-            pos2(x0 + 196.0, rect.bottom() - 7.0),
-        ],
-        Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
-    );
-
-    // Column 2: Tempo (drag vertically to adjust)
-    let tempo_rect = Rect::from_min_size(
-        pos2(x0 + 204.0, rect.top() + 2.0),
-        vec2(92.0, rect.height() - 4.0),
-    );
-    let resp = ui.interact(
-        tempo_rect,
-        egui::Id::unique(("control_bar", "tempo")),
-        Sense::drag(),
-    );
-    let tempo_now = p.tempo_at(p.position_beats);
-    if resp.dragged() {
-        p.set_tempo_at(p.position_beats, tempo_now - resp.drag_delta().y * 0.5);
-    }
-    g.text(
-        pos2(tempo_rect.center().x, top + 1.0),
-        Align2::CENTER_TOP,
-        format!("{:.1}", p.tempo_at(p.position_beats)),
-        FontId::monospace(17.0),
-        pal.text,
-    );
-    g.text(
-        pos2(tempo_rect.center().x, bot + 2.0),
-        Align2::CENTER_TOP,
-        tr("Keep Tempo"),
-        FontId::proportional(9.0),
-        pal.mid,
-    );
-
-    // Divider line 2
-    g.line_segment(
-        [
-            pos2(x0 + 304.0, rect.top() + 7.0),
-            pos2(x0 + 304.0, rect.bottom() - 7.0),
-        ],
-        Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
-    );
-
-    // Column 3: Time Signature (drag numerator or denominator to adjust)
-    let sig_x = x0 + 352.0;
-    let half = vec2(22.0, bot - rect.top());
-    for (part, left) in [
-        (SigPart::Numerator, sig_x - 22.0),
-        (SigPart::Denominator, sig_x),
-    ] {
-        let id = egui::Id::unique(("control_bar", "signature", part as u8));
-        let resp = ui
-            .interact(
-                Rect::from_min_size(pos2(left, rect.top() + 2.0), half),
-                id,
-                Sense::drag(),
-            )
-            .on_hover_cursor(egui::CursorIcon::ResizeVertical)
-            .on_hover_text(tr("Drag to change the time signature"));
-        let mut leftover = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
-        if resp.drag_started() {
-            leftover = 0.0;
+        LcdMode::Beats => {
+            // Full width musical beats
+            let full_rect = Rect::from_min_size(
+                pos2(x0 + 10.0, rect.top() + 2.0),
+                vec2(380.0, rect.height() - 4.0),
+            );
+            let (bar, beat, div, tick) = p.bbdt(p.position_beats);
+            let cols = [
+                (format!("{bar}"), "BAR"),
+                (format!("{beat}"), "BEAT"),
+                (format!("{div}"), "DIV"),
+                (format!("{tick}"), "TICK"),
+            ];
+            let col_w = full_rect.width() / 4.0;
+            for (i, (val, label)) in cols.iter().enumerate() {
+                let cx = full_rect.left() + (i as f32 + 0.5) * col_w;
+                g.text(
+                    pos2(cx, top),
+                    Align2::CENTER_TOP,
+                    val,
+                    FontId::monospace(19.0),
+                    pal.text,
+                );
+                g.text(
+                    pos2(cx, bot + 2.0),
+                    Align2::CENTER_TOP,
+                    *label,
+                    FontId::proportional(9.0),
+                    pal.dim,
+                );
+            }
         }
-        let steps = if resp.dragged() {
-            take_steps(&mut leftover, -resp.drag_delta().y, SIG_PX_PER_STEP)
-        } else {
-            0
-        };
-        ui.data_mut(|d| d.insert_temp(id, leftover));
-        if steps != 0 {
-            let bar0 = p.beats_to_bar(p.position_beats) as u32;
-            p.step_signature_at(bar0, part, steps);
+        LcdMode::Time => {
+            // Full width SMPTE timecode
+            let mut job = LayoutJob::default();
+            lcd_seg(&mut job, &p.timecode(), 0, 20.0, pal.text, pal.dim);
+            let galley = g.layout_job(job);
+            let gx = x0 + 200.0 - galley.size().x * 0.5;
+            g.galley(pos2(gx, top), galley, pal.text);
+            g.text(
+                pos2(x0 + 200.0, bot + 2.0),
+                Align2::CENTER_TOP,
+                "SMPTE TIMECODE",
+                FontId::proportional(9.0),
+                pal.dim,
+            );
+        }
+        LcdMode::Custom => {
+            // Custom dynamic columns
+            let opt = s.lcd_custom;
+            let (bar, beat, div, tick) = p.bbdt(p.position_beats);
+            let cols = if opt.show_division_ticks {
+                vec![
+                    (format!("{bar}"), "BAR"),
+                    (format!("{beat}"), "BEAT"),
+                    (format!("{div}"), "DIV"),
+                    (format!("{tick}"), "TICK"),
+                ]
+            } else {
+                vec![(format!("{bar}"), "BAR"), (format!("{beat}"), "BEAT")]
+            };
+            let left_w = if opt.show_division_ticks { 156.0 } else { 96.0 };
+            let col_w = left_w / cols.len() as f32;
+            for (i, (val, label)) in cols.iter().enumerate() {
+                let cx = x0 + 8.0 + (i as f32 + 0.5) * col_w;
+                g.text(
+                    pos2(cx, top + 1.0),
+                    Align2::CENTER_TOP,
+                    val,
+                    FontId::monospace(16.0),
+                    pal.text,
+                );
+                g.text(
+                    pos2(cx, bot + 2.0),
+                    Align2::CENTER_TOP,
+                    *label,
+                    FontId::proportional(8.0),
+                    pal.dim,
+                );
+            }
+
+            let mut cur_x = x0 + left_w + 10.0;
+
+            if opt.show_tempo {
+                g.line_segment(
+                    [
+                        pos2(cur_x, rect.top() + 7.0),
+                        pos2(cur_x, rect.bottom() - 7.0),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+                );
+                cur_x += 6.0;
+                let tempo_w = 60.0;
+                let tempo_rect = Rect::from_min_size(
+                    pos2(cur_x, rect.top() + 2.0),
+                    vec2(tempo_w, rect.height() - 4.0),
+                );
+                let resp = ui.interact(
+                    tempo_rect,
+                    egui::Id::unique(("lcd", "tempo_custom")),
+                    Sense::drag(),
+                );
+                let tempo_now = p.tempo_at(p.position_beats);
+                if resp.dragged() {
+                    p.set_tempo_at(p.position_beats, tempo_now - resp.drag_delta().y * 0.5);
+                }
+                g.text(
+                    pos2(cur_x + tempo_w * 0.5, top + 1.0),
+                    Align2::CENTER_TOP,
+                    format!("{:.1}", p.tempo_at(p.position_beats)),
+                    FontId::monospace(15.0),
+                    pal.text,
+                );
+                g.text(
+                    pos2(cur_x + tempo_w * 0.5, bot + 2.0),
+                    Align2::CENTER_TOP,
+                    "BPM",
+                    FontId::proportional(8.5),
+                    pal.mid,
+                );
+                cur_x += tempo_w + 6.0;
+            }
+
+            if opt.show_time_signature || opt.show_key_signature {
+                g.line_segment(
+                    [
+                        pos2(cur_x, rect.top() + 7.0),
+                        pos2(cur_x, rect.bottom() - 7.0),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+                );
+                cur_x += 6.0;
+                let sig_w = 46.0;
+                let (num, den) = p.signature_of_bar(p.beats_to_bar(p.position_beats) as u32);
+                if opt.show_time_signature {
+                    g.text(
+                        pos2(cur_x + sig_w * 0.5, top + 1.0),
+                        Align2::CENTER_TOP,
+                        format!("{num}/{den}"),
+                        FontId::monospace(15.0),
+                        pal.text,
+                    );
+                }
+                if opt.show_key_signature {
+                    g.text(
+                        pos2(cur_x + sig_w * 0.5, bot + 2.0),
+                        Align2::CENTER_TOP,
+                        "Cmaj",
+                        FontId::proportional(8.5),
+                        pal.mid,
+                    );
+                }
+                cur_x += sig_w + 6.0;
+            }
+
+            if opt.show_performance_meters {
+                g.line_segment(
+                    [
+                        pos2(cur_x, rect.top() + 7.0),
+                        pos2(cur_x, rect.bottom() - 7.0),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+                );
+                cur_x += 6.0;
+                let meter_w = 42.0;
+                // CPU meter
+                g.text(
+                    pos2(cur_x, top + 1.0),
+                    Align2::LEFT_TOP,
+                    "CPU",
+                    FontId::proportional(8.0),
+                    pal.mid,
+                );
+                let cpu_bar_r = Rect::from_min_size(pos2(cur_x + 20.0, top + 4.0), vec2(20.0, 5.0));
+                g.rect_filled(cpu_bar_r, 1.0, Color32::from_rgb(0x20, 0x20, 0x24));
+                let cpu_fill_w = cpu_bar_r.width() * s.cpu_load.clamp(0.0, 1.0);
+                if cpu_fill_w > 0.5 {
+                    let col = if s.cpu_load > 0.85 {
+                        Color32::from_rgb(0xff, 0x45, 0x3a)
+                    } else {
+                        Color32::from_rgb(0x30, 0xd1, 0x58)
+                    };
+                    g.rect_filled(
+                        Rect::from_min_size(cpu_bar_r.min, vec2(cpu_fill_w, 5.0)),
+                        1.0,
+                        col,
+                    );
+                }
+
+                // HD meter
+                g.text(
+                    pos2(cur_x, bot + 2.0),
+                    Align2::LEFT_TOP,
+                    "HD",
+                    FontId::proportional(8.0),
+                    pal.mid,
+                );
+                let hd_bar_r = Rect::from_min_size(pos2(cur_x + 20.0, bot + 5.0), vec2(20.0, 5.0));
+                g.rect_filled(hd_bar_r, 1.0, Color32::from_rgb(0x20, 0x20, 0x24));
+                let hd_fill_w = hd_bar_r.width() * s.hd_load.clamp(0.0, 1.0);
+                if hd_fill_w > 0.5 {
+                    let col = if s.hd_load > 0.85 {
+                        Color32::from_rgb(0xff, 0x45, 0x3a)
+                    } else {
+                        Color32::from_rgb(0x0a, 0x84, 0xff)
+                    };
+                    g.rect_filled(
+                        Rect::from_min_size(hd_bar_r.min, vec2(hd_fill_w, 5.0)),
+                        1.0,
+                        col,
+                    );
+                }
+                cur_x += meter_w + 6.0;
+            }
+
+            if opt.show_midi_activity {
+                g.line_segment(
+                    [
+                        pos2(cur_x, rect.top() + 7.0),
+                        pos2(cur_x, rect.bottom() - 7.0),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
+                );
+                cur_x += 6.0;
+                // MIDI In
+                let in_active = s.midi_in_activity > 0.05;
+                let in_dot = pos2(cur_x + 4.0, top + 6.0);
+                g.circle_filled(
+                    in_dot,
+                    3.0,
+                    if in_active {
+                        Color32::from_rgb(0x30, 0xd1, 0x58)
+                    } else {
+                        Color32::from_rgb(0x28, 0x28, 0x2c)
+                    },
+                );
+                g.text(
+                    pos2(cur_x + 10.0, top + 1.0),
+                    Align2::LEFT_TOP,
+                    "IN",
+                    FontId::proportional(7.5),
+                    pal.mid,
+                );
+
+                // MIDI Out
+                let out_active = s.midi_out_activity > 0.05;
+                let out_dot = pos2(cur_x + 4.0, bot + 7.0);
+                g.circle_filled(
+                    out_dot,
+                    3.0,
+                    if out_active {
+                        Color32::from_rgb(0x30, 0xd1, 0x58)
+                    } else {
+                        Color32::from_rgb(0x28, 0x28, 0x2c)
+                    },
+                );
+                g.text(
+                    pos2(cur_x + 10.0, bot + 2.0),
+                    Align2::LEFT_TOP,
+                    "OUT",
+                    FontId::proportional(7.5),
+                    pal.mid,
+                );
+            }
         }
     }
-    let (num, den) = p.signature_of_bar(p.beats_to_bar(p.position_beats) as u32);
-    g.text(
-        pos2(sig_x, top + 1.0),
-        Align2::CENTER_TOP,
-        format!("{num}/{den}"),
-        FontId::monospace(17.0),
-        pal.text,
-    );
-    g.text(
-        pos2(sig_x, bot + 2.0),
-        Align2::CENTER_TOP,
-        "Cmaj /16",
-        FontId::proportional(9.0),
-        pal.mid,
-    );
 
     // Divider line 3
     g.line_segment(
@@ -565,7 +887,7 @@ fn lcd(
         Stroke::new(1.0, Color32::from_rgb(0x28, 0x28, 0x2c)),
     );
 
-    // Column 4: Docked mode buttons (Count-in, Metronome, Tuner)
+    // Column 4: Docked mode buttons (Count-in, Metronome, Tuner / Display Mode)
     let ci_r = Rect::from_center_size(pos2(x0 + 430.0, rect.center().y), vec2(36.0, 24.0));
     let ci_resp = ui.interact(ci_r, egui::Id::unique(("lcd", "ci")), Sense::click());
     if p.count_in {
@@ -638,11 +960,51 @@ fn lcd(
     }
 
     let tun_r = Rect::from_center_size(pos2(x0 + 508.0, rect.center().y), vec2(28.0, 24.0));
-    let tun_resp = ui.interact(tun_r, egui::Id::unique(("lcd", "tuner")), Sense::click());
+    let tun_resp = ui
+        .interact(
+            tun_r,
+            egui::Id::unique(("lcd", "display_mode")),
+            Sense::click(),
+        )
+        .on_hover_text("Display Mode & Customization");
     if tun_resp.hovered() {
         g.rect_filled(tun_r, 4.0, Color32::from_white_alpha(15));
     }
-    icon_tuner(g, tun_r, pal.dim, false);
+    let is_custom_or_alt = s.lcd_mode != LcdMode::BeatsAndProject;
+    let mode_color = if is_custom_or_alt {
+        Color32::from_rgb(0x3B, 0x82, 0xF6)
+    } else {
+        pal.dim
+    };
+    icon_tuner(g, tun_r, mode_color, is_custom_or_alt);
+
+    // Display mode popover menu
+    egui::Popup::menu(&tun_resp).show(|ui| {
+        ui.set_min_width(220.0);
+        for (m, lbl) in [
+            (LcdMode::BeatsAndProject, "Beats & Project"),
+            (LcdMode::BeatsAndTime, "Beats & Time"),
+            (LcdMode::Beats, "Beats"),
+            (LcdMode::Time, "Time"),
+            (LcdMode::Custom, "Custom"),
+        ] {
+            let active = s.lcd_mode == m;
+            let title = if active {
+                format!("✓ {lbl}")
+            } else {
+                format!("   {lbl}")
+            };
+            if ui.selectable_label(active, title).clicked() {
+                s.lcd_mode = m;
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui.button("Customize Control Bar and Display...").clicked() {
+            s.show_lcd_customize = true;
+            ui.close();
+        }
+    });
 }
 
 /// Level (0..1) for a peak amplitude: -60 dB at the left end, +6 dB at the right end.
