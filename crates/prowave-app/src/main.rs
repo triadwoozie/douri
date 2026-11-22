@@ -360,6 +360,8 @@ pub struct UiState {
     pub mcp_port: u16,
     /// Help > About Dōri window is open.
     pub show_about: bool,
+    /// Cached About Dōri app icon texture.
+    pub about_icon: Option<egui::TextureHandle>,
     /// Interface mode: Simplified Mode (true) vs Complete Mode (false).
     pub simplified_mode: bool,
     /// Force a top-level menu open for verification screenshots.
@@ -494,6 +496,7 @@ impl UiState {
             mcp_server_enabled: false,
             mcp_port: 38420,
             show_about: false,
+            about_icon: None,
             simplified_mode: false,
             chooser: None,
             chooser_details: start_screen::ChooserDetails::default(),
@@ -1956,20 +1959,34 @@ impl eframe::App for App {
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
-        show_about_dialog(&ctx, &mut self.ui.show_about);
+        show_about_dialog(&ctx, &mut self.ui);
         show_lcd_customize_dialog(&ctx, &mut self.ui);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
     }
 }
 
-fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
-    if !*open {
+fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
+    if !ui_state.show_about {
         return;
     }
+    if ui_state.about_icon.is_none() {
+        if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
+            let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                [icon.width as usize, icon.height as usize],
+                &icon.rgba,
+            );
+            ui_state.about_icon = Some(ctx.load_texture(
+                "about_douri_icon",
+                color_image,
+                egui::TextureOptions::LINEAR,
+            ));
+        }
+    }
+
     let mut close = false;
     crate::liquid_glass::glass_window("About Dōri")
-        .open(open)
+        .open(&mut ui_state.show_about)
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
@@ -1977,34 +1994,16 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(8.0);
-                let tex_id = egui::Id::unique("about_douri_icon_cached");
-                let texture: Option<egui::TextureHandle> = ctx.data_mut(|d| {
-                    if let Some(tex) = d.get_temp::<egui::TextureHandle>(tex_id) {
-                        Some(tex)
-                    } else if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
-                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                            [icon.width as usize, icon.height as usize],
-                            &icon.rgba,
-                        );
-                        let tex = ctx.load_texture(
-                            "about_douri_icon",
-                            color_image,
-                            egui::TextureOptions::LINEAR,
-                        );
-                        d.insert_temp(tex_id, tex.clone());
-                        Some(tex)
-                    } else {
-                        None
-                    }
-                });
-                if let Some(texture) = texture {
-                    ui.add(egui::Image::new(&texture).max_width(96.0).max_height(96.0));
+                if let Some(texture) = &ui_state.about_icon {
+                    ui.add(egui::Image::new(texture).max_width(96.0).max_height(96.0));
                     ui.add_space(8.0);
                 }
                 ui.heading("Dōri");
                 ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
                 ui.add_space(6.0);
-                ui.label("A pure-Rust digital audio workstation inspired by Logic Pro.");
+                ui.label(
+                    "A pure-Rust digital audio workstation built Linux-first with cross-platform desktop support.",
+                );
                 ui.add_space(10.0);
                 ui.separator();
                 ui.add_space(8.0);
@@ -2041,7 +2040,7 @@ fn show_about_dialog(ctx: &egui::Context, open: &mut bool) {
             });
         });
     if close {
-        *open = false;
+        ui_state.show_about = false;
     }
 }
 
