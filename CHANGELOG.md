@@ -2,6 +2,17 @@
 
 What changed in each Dōri release.
 
+## 0.1.0-alpha.6
+
+### Hydrogen Drum Kit Support
+- **Downloaded `.h2drumkit` Archive Picker**: **Choose Hydrogen Drum Kit…** now accepts direct `.h2drumkit` tar/gzip archives in addition to unpacked `drumkit.xml` files. Dōri unpacks the chosen archive into the user drumkits directory with path-traversal protection and file size limits, loading the kit immediately.
+
+### Audio Recording
+- **Excessive Input Delay Guard**: Audio recording handles hardware devices reporting absurd or erratic input latency, ensuring valid take bounds and preventing recorded audio from being truncated or swallowed.
+
+### Localization
+- **Italian Translation**: Added complete Italian localization (`it.txt`) with custom Dōri branding throughout the UI, menus, dialogs, and error messages.
+
 ## 0.1.0-alpha.5
 
 ### Arranger & Editing Tools

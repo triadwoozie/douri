@@ -442,7 +442,7 @@ fn configure_system_integration(target_dir: &Path, installed_exe: &Path) -> Resu
             hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Dori")
         {
             let _ = uninstall.set_value("DisplayName", &"Dōri");
-            let _ = uninstall.set_value("DisplayVersion", &"0.1.0-alpha.5");
+            let _ = uninstall.set_value("DisplayVersion", &"0.1.0-alpha.6");
             let _ = uninstall.set_value("Publisher", &"triadwoozie");
             let _ = uninstall.set_value("InstallLocation", &target_dir.to_string_lossy().as_ref());
             let _ = uninstall.set_value("DisplayIcon", &exe_str);

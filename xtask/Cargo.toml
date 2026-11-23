@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 edition = "2021"
 publish = false
 description = "Dōri developer tasks: `cargo xtask check`, `wasm-check`, `rt-check`, `bench`, `status`, `package-installers`"
