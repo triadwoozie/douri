@@ -108,14 +108,21 @@ fn menu_groups(menus: &str, file_commands: &str) -> Vec<Group> {
     groups
 }
 
-/// A phase's short name: `### Phase 2: MIDI & Sequencer (Weeks 11-18)` is `2 MIDI & Sequencer`.
+/// A phase's short name: `### Phase 2: MIDI & Sequencer (Weeks 11-18)` is `Phase 2`.
 fn phase_name(heading: &str) -> String {
     if let Some(name) = heading.strip_prefix("### Platform: ") {
         return name.to_string();
     }
-    if let Some(name) = heading.strip_prefix("### Shipped in ") {
-        let name = name.split(" (").next().unwrap_or(name);
-        return format!("Shipped {name}");
+    if heading.starts_with("### Shipped in ") {
+        return "Shipped".to_string();
+    }
+    if let Some(rest) = heading.strip_prefix("### Phase ") {
+        if let Some((num, _)) = rest.split_once(':') {
+            let n = num.trim();
+            if matches!(n, "1" | "2" | "3" | "4") {
+                return format!("Phase {n}");
+            }
+        }
     }
     let text = heading.trim_start_matches("### Phase ");
     let (number, title) = text.split_once(": ").unwrap_or(("", text));

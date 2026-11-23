@@ -116,15 +116,15 @@ def render_category(it, rx, ry, rw, rh):
         cls = {"done": "tile-done", "prog": "tile-prog", "rem": "tile-rem"}[st]
         lines.append(f'      <rect x="{tx}" y="{ty}" width="{tw}" height="{th}" class="{cls}"/>')
 
-    raw_name = it["name"]
-    max_chars = max(int((rw - 10) / 6.2), 1)
-    if len(raw_name) > max_chars and max_chars >= 4:
-        display_name = raw_name[: max_chars - 1].rstrip() + "…"
+    name = it["name"].replace("`", "")
+    max_chars = max(1, int((rw - 14) // 6.1))
+    if len(name) > max_chars:
+        display_name = (name[: max_chars - 1] + "…") if max_chars >= 3 else name[:max_chars]
     else:
-        display_name = raw_name
+        display_name = name
     escaped_name = html.escape(display_name)
 
-    tag_w = min(round(len(display_name) * 6.1 + 10, 1), round(max(rw - 8, 12), 1))
+    tag_w = round(len(display_name) * 6.1 + 10, 1)
     tag_h = 16
     px = round(rx + 3, 1)
     py = round(ry + 3, 1)
@@ -273,10 +273,10 @@ def build_svg(menu_coverage=None, roadmap_progress=None):
       stroke-width: 0.75;
     }}
     .tile-rem {{
-      fill: #13151A;
+      fill: #1C2029;
       fill-opacity: 0.72;
       stroke: #FFFFFF;
-      stroke-opacity: 0.06;
+      stroke-opacity: 0.14;
       stroke-width: 0.75;
     }}
     .cat-tag {{
