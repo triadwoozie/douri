@@ -582,8 +582,15 @@ pub fn export(p: &Project, only: Option<(usize, usize)>) -> MidiFile {
                 continue;
             }
             let origin = p.region_start_beats(r);
-            played.extend(crate::engine_sync::region_notes(t, r, origin, ti as u16));
-            for c in &r.controls {
+            let len = p.region_len_beats(r);
+            played.extend(crate::engine_sync::region_notes(
+                t, r, origin, len, ti as u16,
+            ));
+            for c in r
+                .controls
+                .iter()
+                .filter(|c| c.start >= 0.0 && (c.start as f64) < len)
+            {
                 track.controls.push(FileControl {
                     tick: ticks(origin + f64::from(c.start), ppq),
                     num: c.num,

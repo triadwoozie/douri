@@ -118,6 +118,22 @@ pub struct Region {
 }
 
 impl Region {
+    /// A new MIDI region without take folders, generator or audio.
+    pub fn new_midi(name: impl Into<String>, start_bar: f32, len_bars: f32) -> Self {
+        Self {
+            name: name.into(),
+            start_bar: start_bar.max(1.0),
+            len_bars: len_bars.max(1.0 / 64.0),
+            notes: Vec::new(),
+            controls: Vec::new(),
+            folder: None,
+            audio: None,
+            missing: None,
+            params: RegionParams::default(),
+            generated: None,
+        }
+    }
+
     /// An audio region: one that plays a file, or one whose file is missing.
     pub fn is_audio(&self) -> bool {
         self.audio.is_some() || self.missing.is_some()
@@ -1550,16 +1566,16 @@ impl Project {
         if (at - start).abs() < 1e-9 {
             return false;
         }
-        let rel = (at - start) as f32;
-        let secs = map.seconds_at(at) - map.seconds_at(start);
         let new_bar = self.beats_to_bar(at) as f32 + 1.0;
+        let actual_new_start = self.bar_to_beats(new_bar as f64 - 1.0);
+        let rel = (actual_new_start - start) as f32;
+        let secs = map.seconds_at(actual_new_start) - map.seconds_at(start);
         let mut out = r.clone();
         out.len_bars = (r.start_bar + r.len_bars - new_bar).max(1.0 / 64.0);
         out.start_bar = new_bar;
         out.notes = r
             .notes
             .iter()
-            .filter(|n| n.start >= rel)
             .map(|n| Note {
                 start: n.start - rel,
                 ..n.clone()
@@ -1568,7 +1584,6 @@ impl Project {
         out.controls = r
             .controls
             .iter()
-            .filter(|c| c.start >= rel)
             .map(|c| Control {
                 start: c.start - rel,
                 ..*c

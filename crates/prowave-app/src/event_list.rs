@@ -120,12 +120,14 @@ fn events(p: &Project, s: &UiState) -> Vec<Event> {
     let mut out = Vec::new();
     for (ri, r) in track.regions.iter().enumerate() {
         let offset = p.region_start_beats(r);
-        let dim = selected.is_some_and(|sr| sr != ri);
+        let len = p.region_len_beats(r);
+        let reg_dim = selected.is_some_and(|sr| sr != ri);
         // The bytes of a System Exclusive message are consecutive controls at one start: they are
         // one row.
         let mut i = 0;
         while i < r.controls.len() {
             let c = r.controls[i];
+            let dim = reg_dim || c.start < 0.0 || (c.start as f64) >= len;
             if c.num == SYSEX_BYTE {
                 let mut bytes = Vec::new();
                 while i < r.controls.len()
@@ -172,7 +174,7 @@ fn events(p: &Project, s: &UiState) -> Vec<Event> {
             for n in &r.notes {
                 out.push(Event {
                     beats: offset + n.start as f64,
-                    dim,
+                    dim: reg_dim || n.start < 0.0 || (n.start as f64) >= len,
                     control: false,
                     pitch: n.pitch,
                     vel: n.vel,

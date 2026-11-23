@@ -50,7 +50,11 @@ fn groove_hits(p: &Project) -> Vec<f64> {
         .filter(|r| !r.params.mute)
         .flat_map(|r| {
             let origin = p.region_start_beats(r);
-            r.notes.iter().map(move |n| origin + f64::from(n.start))
+            let len = p.region_len_beats(r);
+            r.notes
+                .iter()
+                .filter(move |n| n.start >= 0.0 && f64::from(n.start) < len)
+                .map(move |n| origin + f64::from(n.start))
         })
         .collect()
 }

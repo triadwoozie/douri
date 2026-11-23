@@ -1657,7 +1657,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
         let selected = v.selected.contains(&i);
         // Logic draws a note with a light edge of its velocity colour around a deeper body.
-        let color = velocity_color(n.vel);
+        let color = if n.mute || n.start < 0.0 || n.start >= len_beats {
+            Color32::from_gray(0x44)
+        } else {
+            velocity_color(n.vel)
+        };
         let (fill, edge) = if selected {
             (NOTE_SEL, Color32::WHITE)
         } else {

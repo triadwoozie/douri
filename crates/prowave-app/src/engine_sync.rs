@@ -390,22 +390,38 @@ fn mixes(p: &Project) -> Vec<Mix> {
 /// Notes of one MIDI region as the engine should play them, with the Region Inspector
 /// (quantize, transpose, velocity) and Track Inspector (transpose, velocity, key and
 /// velocity limits) applied non-destructively, as Logic does on playback.
-pub(crate) fn region_notes(t: &Track, r: &Region, origin: f64, track: u16) -> Vec<NoteEvent> {
+pub(crate) fn region_notes(
+    t: &Track,
+    r: &Region,
+    origin: f64,
+    len_beats: f64,
+    track: u16,
+) -> Vec<NoteEvent> {
     let (rp, tp) = (r.params, t.params);
     r.notes
         .iter()
         .filter_map(|n| {
+            if n.mute || n.start < 0.0 || (n.start as f64) >= len_beats {
+                return None;
+            }
             let start = match rp.quantize {
                 Some(q) if q > 0.0 => (n.start / q).round() * q,
                 _ => n.start,
             };
+            if start < 0.0 || (start as f64) >= len_beats {
+                return None;
+            }
             let pitch = n.pitch as i32 + rp.transpose as i32 + tp.transpose as i32;
             let vel = (n.vel as i32 + rp.velocity as i32 + tp.velocity as i32).clamp(1, 127);
             let in_keys = (tp.key_limit.0 as i32..=tp.key_limit.1 as i32).contains(&pitch);
             let in_vels = (tp.vel_limit.0 as i32..=tp.vel_limit.1 as i32).contains(&vel);
+            let end_beat = (origin + (start + n.len) as f64).min(origin + len_beats);
+            if end_beat <= origin + start as f64 {
+                return None;
+            }
             (in_keys && in_vels && (0..=127).contains(&pitch)).then_some(NoteEvent {
                 start_beat: origin + start as f64,
-                end_beat: origin + (start + n.len) as f64,
+                end_beat,
                 pitch: pitch as u8,
                 vel: vel as u8,
                 track,
@@ -442,14 +458,20 @@ fn song_controls(p: &Project) -> Vec<ControlEvent> {
             let (mut from, mut to) = (f64::MAX, 0.0f64);
             for r in t.regions.iter().filter(|r| !r.params.mute) {
                 let origin = p.region_start_beats(r);
+                let len = p.region_len_beats(r);
                 from = from.min(origin);
                 to = to.max(p.region_end_beats(r));
-                out.extend(r.controls.iter().map(|c| ControlEvent {
-                    beat: origin + f64::from(c.start),
-                    track,
-                    number: c.num.min(127),
-                    value: c.val.min(127),
-                }));
+                out.extend(
+                    r.controls
+                        .iter()
+                        .filter(|c| c.start >= 0.0 && (c.start as f64) < len)
+                        .map(|c| ControlEvent {
+                            beat: origin + f64::from(c.start),
+                            track,
+                            number: c.num.min(127),
+                            value: c.val.min(127),
+                        }),
+                );
             }
             // A Modulator on the track sends its controller along all the regions.
             out.extend(
@@ -490,7 +512,9 @@ fn song_notes(p: &Project) -> Vec<NoteEvent> {
                 .iter()
                 .enumerate()
                 .filter(|(ri, r)| crate::region_solo::heard(p, ti, *ri, *r))
-                .flat_map(|(_, r)| region_notes(t, r, p.region_start_beats(r), track))
+                .flat_map(|(_, r)| {
+                    region_notes(t, r, p.region_start_beats(r), p.region_len_beats(r), track)
+                })
                 .collect();
             if let Some(g) = groove
                 .as_ref()
@@ -1832,7 +1856,7 @@ mod tests {
             ..RegionParams::default()
         };
         t.params.transpose = -2;
-        let out = region_notes(&t, &t.regions[0], 4.0, 3);
+        let out = region_notes(&t, &t.regions[0], 4.0, 4.0, 3);
         assert_eq!(out.len(), 1);
         assert!(
             (out[0].start_beat - 5.0).abs() < 1e-6,
@@ -1851,7 +1875,7 @@ mod tests {
         ]);
         t.params.key_limit = (48, 72);
         t.params.vel_limit = (30, 127);
-        let out = region_notes(&t, &t.regions[0], 0.0, 0);
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].pitch, 60);
         assert!((out[0].start_beat - 1.0).abs() < 1e-6);
@@ -1862,9 +1886,25 @@ mod tests {
         let mut t = track(vec![note(0.0, 120, 120), note(1.0, 60, 120)]);
         t.regions[0].params.transpose = 12;
         t.regions[0].params.velocity = 50;
-        let out = region_notes(&t, &t.regions[0], 0.0, 0);
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
         assert_eq!(out.len(), 1);
         assert_eq!((out[0].pitch, out[0].vel), (72, 127));
+    }
+
+    #[test]
+    fn notes_outside_region_bounds_are_clipped_or_muted() {
+        let t = track(vec![
+            note(-2.0, 60, 100),
+            note(1.0, 62, 100),
+            note(3.5, 64, 100),
+            note(5.0, 65, 100),
+        ]);
+        // Region length is 4.0 beats (from origin 0.0). Note at -2.0 is before start, 5.0 is after end.
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].pitch, 62);
+        assert_eq!(out[1].pitch, 64);
+        assert_eq!(out[1].end_beat, 4.0); // clamped to len_beats
     }
 
     #[test]

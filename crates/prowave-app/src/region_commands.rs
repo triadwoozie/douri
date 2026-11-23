@@ -913,9 +913,16 @@ mod tests {
         );
         assert_eq!(bars(p, 0, 1), (5.0, 2.0), "B is not under the playhead");
         // What plays stays where it was: A's second note (song beat 6.6) was cut away, the one
-        // at 4.1 too; C's notes (8.1, 10.6) - the one at 10.6 is now 0.6 into the region.
-        assert_eq!(p.tracks[1].regions[0].notes.len(), 1);
-        assert!((p.tracks[1].regions[0].notes[0].start - 0.6).abs() < 1e-4);
+        // at 4.1 too; C's notes (8.1, 10.6) - the one at 10.6 is now 0.6 into the region,
+        // while the earlier note at 8.1 (-1.9 local) is non-destructively preserved.
+        assert_eq!(p.tracks[1].regions[0].notes.len(), 2);
+        let active: Vec<_> = p.tracks[1].regions[0]
+            .notes
+            .iter()
+            .filter(|n| n.start >= 0.0)
+            .collect();
+        assert_eq!(active.len(), 1);
+        assert!((active[0].start - 0.6).abs() < 1e-4);
         assert!(history.record(p));
         assert!(history.undo(p));
         assert_eq!(bars(p, 0, 0), (2.0, 2.0));
@@ -1061,6 +1068,91 @@ mod tests {
             (b.len_bars - 1.0 / 64.0).abs() < 1e-6,
             "a 64th of a bar left"
         );
+    }
+
+    #[test]
+    fn left_edge_trim_preserves_absolute_note_positions_and_restores_on_left_extension() {
+        let mut p = Project::empty();
+        let ti = p.add_track(TrackKind::Instrument);
+        // Region starting at bar 1.0 (beat 0.0), length 8 bars (32.0 beats in 4/4)
+        let mut reg = Region::new_midi("MIDI Clip", 1.0, 8.0);
+        reg.notes = vec![
+            Note {
+                start: 4.0,
+                len: 2.0,
+                pitch: 60,
+                vel: 100,
+                ..Note::default()
+            },
+            Note {
+                start: 24.0,
+                len: 2.0,
+                pitch: 72,
+                vel: 100,
+                ..Note::default()
+            },
+        ];
+        p.tracks[ti].regions.push(reg);
+        let mut v = TracksView::default();
+        v.select_only(ti, 0);
+
+        // Trim left edge forward from beat 0.0 to beat 16.0 (Bar 5.0)
+        assert!(resize_starts(&mut p, &v, (ti, 0), 16.0));
+        assert_eq!(p.region_start_beats(&p.tracks[ti].regions[0]), 16.0);
+        assert_eq!(p.tracks[ti].regions[0].start_bar, 5.0);
+        assert_eq!(p.tracks[ti].regions[0].len_bars, 4.0);
+
+        // The note at absolute beat 24.0 must now be at local beat 8.0 (16.0 + 8.0 = 24.0)
+        let n24 = p.tracks[ti].regions[0]
+            .notes
+            .iter()
+            .find(|n| n.pitch == 72)
+            .unwrap();
+        assert_eq!(n24.start, 8.0);
+
+        // The earlier note at absolute beat 4.0 is preserved (at local beat -12.0)
+        let n4 = p.tracks[ti].regions[0]
+            .notes
+            .iter()
+            .find(|n| n.pitch == 60)
+            .unwrap();
+        assert_eq!(n4.start, -12.0);
+
+        // During playback, region_notes only returns notes within [0, len)
+        let played = crate::engine_sync::region_notes(
+            &p.tracks[ti],
+            &p.tracks[ti].regions[0],
+            16.0,
+            16.0,
+            0,
+        );
+        assert_eq!(played.len(), 1);
+        assert_eq!(played[0].pitch, 72);
+        assert_eq!(played[0].start_beat, 24.0);
+
+        // Extend left edge back from beat 16.0 to beat 0.0 (Bar 1.0)
+        assert!(resize_starts(&mut p, &v, (ti, 0), 0.0));
+        assert_eq!(p.region_start_beats(&p.tracks[ti].regions[0]), 0.0);
+        assert_eq!(p.tracks[ti].regions[0].start_bar, 1.0);
+        assert_eq!(p.tracks[ti].regions[0].len_bars, 8.0);
+
+        // Both notes must be restored cleanly to their original offsets
+        let n24_restored = p.tracks[ti].regions[0]
+            .notes
+            .iter()
+            .find(|n| n.pitch == 72)
+            .unwrap();
+        assert_eq!(n24_restored.start, 24.0);
+        let n4_restored = p.tracks[ti].regions[0]
+            .notes
+            .iter()
+            .find(|n| n.pitch == 60)
+            .unwrap();
+        assert_eq!(n4_restored.start, 4.0);
+
+        let played_all =
+            crate::engine_sync::region_notes(&p.tracks[ti], &p.tracks[ti].regions[0], 0.0, 32.0, 0);
+        assert_eq!(played_all.len(), 2);
     }
 
     // ---- 4. Repeat

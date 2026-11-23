@@ -2388,6 +2388,8 @@ fn draw_region(
     g: &Painter,
     rr: Rect,
     full: Rect,
+    content_origin: f32,
+    orig_width: f32,
     track: &Track,
     region: &Region,
     fades: (f32, f32),
@@ -2473,7 +2475,7 @@ fn draw_region(
         // Markers are placed on the result's length, as the pointer is mapped to it.
         let secs = f.length().max(1e-3);
         for m in &f.markers {
-            let x = full.left() + (m.dst / secs) as f32 * full.width();
+            let x = content_origin + (m.dst / secs) as f32 * orig_width;
             if x > inner.left() && x < inner.right() {
                 g.line_segment(
                     [pos2(x, inner.top()), pos2(x, inner.bottom())],
@@ -2497,7 +2499,7 @@ fn draw_region(
         .and_then(|a| Some((a, a.peaks.get()?)))
     {
         let gain = 10f32.powf(region.params.gain_db / 20.0);
-        let full_x = (full.left(), full.width());
+        let full_x = (content_origin, orig_width);
         // A piece of a split draws only the part of the file it plays.
         draw_peaks(
             g,
@@ -2517,7 +2519,7 @@ fn draw_region(
             Stroke::new(1.0, ink),
         );
     } else if track.kind == TrackKind::Audio {
-        fake_waveform(g, inner, full.left(), beat_px, ink, seed);
+        fake_waveform(g, inner, content_origin, beat_px, ink, seed);
     } else if !region.notes.is_empty() {
         let lo = region.notes.iter().map(|n| n.pitch).min().unwrap_or(48) as f32;
         let hi = region.notes.iter().map(|n| n.pitch).max().unwrap_or(72) as f32;
@@ -2525,7 +2527,7 @@ fn draw_region(
         let step = (2.0f32).min((inner.height() - 4.0) / (hi - lo).max(1.0));
         let mid = (lo + hi) / 2.0;
         for n in &region.notes {
-            let nx = full.left() + n.start * beat_px;
+            let nx = content_origin + n.start * beat_px;
             if nx > inner.right() || nx + n.len * beat_px < inner.left() {
                 continue;
             }
@@ -3520,27 +3522,35 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         for ri in 0..p.tracks[ti].regions.len() {
             let orig_start = p.region_start_beats(&p.tracks[ti].regions[ri]);
             let orig_len = p.region_len_beats(&p.tracks[ti].regions[ri]);
-            let (start_beat, len_beats) = if let Some((dt, dr, live_end, _)) = v.edge_drag {
-                if dt == ti && dr == ri {
-                    (orig_start, (live_end - orig_start).max(1.0 / 64.0))
+            let (start_beat, len_beats, content_start, orig_len_b) =
+                if let Some((dt, dr, live_end, _)) = v.edge_drag {
+                    if dt == ti && dr == ri {
+                        (
+                            orig_start,
+                            (live_end - orig_start).max(1.0 / 64.0),
+                            orig_start,
+                            orig_len,
+                        )
+                    } else {
+                        (orig_start, orig_len, orig_start, orig_len)
+                    }
+                } else if let Some((dt, dr, live_start)) = v.start_drag {
+                    if dt == ti && dr == ri {
+                        let end = orig_start + orig_len;
+                        let s = live_start.min(end - 1.0 / 64.0);
+                        (s, end - s, orig_start, orig_len)
+                    } else {
+                        (orig_start, orig_len, orig_start, orig_len)
+                    }
                 } else {
-                    (orig_start, orig_len)
-                }
-            } else if let Some((dt, dr, live_start)) = v.start_drag {
-                if dt == ti && dr == ri {
-                    let end = orig_start + orig_len;
-                    let s = live_start.min(end - 1.0 / 64.0);
-                    (s, end - s)
-                } else {
-                    (orig_start, orig_len)
-                }
-            } else {
-                (orig_start, orig_len)
-            };
+                    (orig_start, orig_len, orig_start, orig_len)
+                };
             let full = Rect::from_min_max(
                 pos2(x_of(start_beat), y + 1.0),
                 pos2(x_of(start_beat + len_beats), y + base_h - 1.0),
             );
+            let content_origin_x = x_of(content_start);
+            let orig_full_w = (orig_len_b as f32 * beat_px).max(1.0);
             let rr = full.intersect(lanes);
             if rr.width() <= 0.0 || rr.height() <= 0.0 {
                 continue;
@@ -3905,6 +3915,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 &g,
                 rr,
                 full,
+                content_origin_x,
+                orig_full_w,
                 tr,
                 &tr.regions[ri],
                 p.effective_fades(ti, ri),
@@ -3941,6 +3953,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     &g,
                     paint,
                     full,
+                    full.left(),
+                    full.width(),
                     &p.tracks[to],
                     region,
                     p.effective_fades(gt, gr),
