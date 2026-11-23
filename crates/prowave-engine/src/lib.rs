@@ -13,6 +13,7 @@ static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisab
 mod analysis;
 pub mod auto_pan;
 pub mod bass808;
+pub mod calibration;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
 mod clock;
@@ -32,6 +33,8 @@ pub mod ir_file;
 mod mapped;
 pub mod melody;
 pub mod meter;
+pub mod modal_voice;
+pub mod modulators;
 mod monitor;
 mod mtc;
 pub mod native_fx;
@@ -52,9 +55,12 @@ mod soundfont;
 pub mod spectral;
 mod synth;
 mod tempo_map;
+pub mod tri_osc;
 mod triple;
 #[cfg(windows)]
 mod wasapi;
+pub mod wave_draw;
+pub mod windows_audio;
 
 pub use crate::analysis::{tempo_curve, Analysis, Analyzer, TempoEstimate, STRENGTH_RATE};
 pub use crate::auto_pan::AutoPanNode;
@@ -64,6 +70,10 @@ pub use crate::bass808::{
     BASS808_DECAY, BASS808_DRIVE, BASS808_GLIDE, BASS808_HIGH_PASS, BASS808_LEGATO, BASS808_LEVEL,
     BASS808_PARAMS, BASS808_PUNCH, BASS808_PUNCH_TIME, BASS808_RELEASE, BASS808_SINE,
     BASS808_SQUARE, BASS808_SUSTAIN, BASS808_TUNE,
+};
+pub use crate::calibration::{
+    analyze as analyze_latency, click_template, Measured as LatencyMeasurement,
+    ProbeError as LatencyProbeError,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::capture::{
@@ -96,6 +106,8 @@ pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
 pub use crate::meter::{
     db_to_gain, gain_to_db, LoudnessMeter, PeakMeter, RmsMeter, MIN_DB as METER_MIN_DB,
 };
+pub use crate::modal_voice::ModalVoice;
+pub use crate::modulators::{LfoController, LfoShape, PeakFollower};
 pub use crate::monitor::{InputFeed, MonitorTrack, MAX_MONITORS};
 pub use crate::mtc::{
     full_frame, quarter_frame_data, rate_code, rate_of_code, MtcDecoder, MtcEvent, MtcGenerator,
@@ -132,3 +144,8 @@ pub use crate::tempo_map::{
     MusicalPosition, SignatureEvent, Smpte, SmpteRate, TempoCurve, TempoEvent, TempoMap, MAX_BPM,
     MIN_BPM,
 };
+pub use crate::tri_osc::{ModAlgo as TriModAlgo, TriOsc, TriWave};
+pub use crate::wave_draw::{
+    InterpolationMode as WaveDrawInterpolation, WaveDraw, WAVETABLE_SIZE as WAVEDRAW_SIZE,
+};
+pub use crate::windows_audio::{enumerate_asio_drivers, pick_wasapi_period, AsioDriverDesc};

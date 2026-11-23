@@ -24,6 +24,7 @@ mod clock_in;
 mod collaborate_panel;
 mod crash_log;
 pub mod cycle_area;
+pub mod diagnostics;
 mod drag_modes;
 mod drum_kit;
 mod drum_machine_ui;
@@ -79,6 +80,7 @@ mod patches;
 mod pattern;
 mod piano_roll;
 mod piano_tools;
+pub mod pipewire_jack;
 mod pitch_editor;
 mod plugin_manager;
 mod plugin_picker;
@@ -94,6 +96,7 @@ mod region_edit;
 mod region_solo;
 mod rex_import;
 mod sampler_load;
+pub mod sampler_ui;
 mod score;
 mod score_export;
 mod score_import;
@@ -363,6 +366,8 @@ pub struct UiState {
     pub show_about: bool,
     /// Dōri Sound Library Manager window is open.
     pub show_sound_library_manager: bool,
+    /// Measured round-trip loopback latency calibration figure.
+    pub measured_roundtrip: Option<prowave_engine::calibration::Measured>,
     /// URL to open in external browser.
     pub open_url: Option<String>,
     /// Cached About Dōri app icon texture.
@@ -502,6 +507,7 @@ impl UiState {
             mcp_port: 38420,
             show_about: false,
             show_sound_library_manager: false,
+            measured_roundtrip: None,
             open_url: None,
             about_icon: None,
             simplified_mode: false,
@@ -2421,6 +2427,7 @@ fn print_help() {
     println!("  --piano                   open the Piano Roll on launch");
     println!("  -h, --help                print this help and exit");
     println!("  -V, --version             print the version and exit");
+    println!("  --report [file]           generate a privacy-scrubbed diagnostic report and exit");
     println!("  --bench <file>            measure startup, memory and DSP load, then exit");
     println!(
         "  --layout-shots <folder>   save pictures of the layout at four window sizes, then exit"
@@ -2534,6 +2541,32 @@ fn main() -> eframe::Result {
     }
     if flag("--help") || flag("-h") {
         print_help();
+        return Ok(());
+    }
+    if flag("--report") {
+        let mut report_path = None;
+        for i in 0..all_args.len() {
+            if all_args[i] == "--report" && i + 1 < all_args.len() {
+                let candidate = &all_args[i + 1];
+                if !candidate.to_string_lossy().starts_with('-') {
+                    report_path = Some(std::path::PathBuf::from(candidate));
+                }
+            }
+        }
+        let devices = prowave_engine::output_devices();
+        let report = diagnostics::generate_report(&devices);
+        if let Some(path) = report_path {
+            if let Err(e) = std::fs::write(&path, &report) {
+                eprintln!(
+                    "Failed to write diagnostic report to {}: {e}",
+                    path.display()
+                );
+                std::process::exit(1);
+            }
+            println!("Diagnostic report saved to {}", path.display());
+        } else {
+            print!("{report}");
+        }
         return Ok(());
     }
     let bench_out = bench::requested(&all_args);

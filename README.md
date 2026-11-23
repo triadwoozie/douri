@@ -53,8 +53,8 @@ to update this section.
 
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
-| Menu entries | 211 | 0 | 311 | 67.85% |
-| Roadmap items | 6 | 0 | 24 | 25.00% |
+| Menu entries | 223 | 0 | 331 | 67.37% |
+| Roadmap items | 8 | 0 | 27 | 29.63% |
 <!-- status:end -->
 
 Dōri handles arranging, recording, editing, mixing, and bouncing in a single window on an engine built so the audio thread never blocks.
@@ -67,6 +67,10 @@ Dōri handles arranging, recording, editing, mixing, and bouncing in a single wi
 - **Lock-free audio engine**: Sample-accurate transport with cycle looping, metronome, count-in, and tempo/time signature mapping (including compound and odd meters like 6/8 and 7/8).
 - **Zero audio-thread allocation**: Audio processing paths enforce `#![forbid(alloc)]` and `assert_no_alloc`, avoiding heap allocations, mutexes, and blocking I/O on the real-time thread.
 - **64-bit float summing & Plug-in Delay Compensation (PDC)**: 64-bit summing bus with automatic sample-accurate delay compensation across tracks and effect chains.
+- **Native Windows ASIO & Low-Latency WASAPI**: Protocol-level Windows ASIO driver enumeration and streaming without proprietary Steinberg SDK headers, alongside `IAudioClient3` shared/exclusive low-latency period selection.
+- **Linux PipeWire-Native JACK & Quantum Diagnostics**: Automatic detection of PipeWire's own `libjack.so.0` eliminating the need for `pw-jack` wrappers, with live buffer, period, and quantum metrics in Settings.
+- **Loopback Round-Trip Latency Calibrator**: Band-limited Hann click pulse emission and normalized cross-correlation peak finding for hardware recording alignment calibration.
+- **Privacy-Scrubbed Diagnostics (`douri --report`)**: CLI command that dumps system, kernel, audio stack, and device facts with home folder and username redaction for GitHub bug reporting.
 
 ### Arranging & Editing
 - **Per-Note Pitch Editor**: Piano-roll pitch and formant editor for monophonic audio regions with cent-level pitch adjustments, entry/exit pitch drift curves, vibrato modulation, note gain leveling, scale snapping, and audio-to-MIDI conversion using pure-Rust PSOLA resynthesis.
@@ -77,7 +81,12 @@ Dōri handles arranging, recording, editing, mixing, and bouncing in a single wi
 - **Multi-Track Arranger**: Audio, Instrument, Drummer, Pattern, Aux, VCA, Folder, and External MIDI tracks with move, repeat, cut, copy, paste, split, join, bounce in place, and infinite undo history.
 
 ### Instruments & Sound Engines
+- **Transient-Slicing Sampler**: Three-tab sampler (`Pads` 4×4 drum grid, `Slices` transient-detection loop slicer, and `Instrument` pitched multi-zone chromatic sampler) with pre-allocated lock-free voice structures.
+- **Modal Voice Synthesizer**: Physical-modeling instrument with impulse, mallet, and noise burst exciters feeding up to 16 resonant bandpass modes with geometry, stiffness, and damping controls.
+- **TripleOscillator (`TriOsc`)**: LMMS-inspired 3-oscillator subtractive synthesizer with Sine, Triangle, Saw, Square, Moog Saw, Exponential, and White Noise waves, per-oscillator coarse/fine detune, stereo phase offsets, and Mix, AM, PM, Sync, and FM modulation modes.
+- **WaveDraw Wavetable Synthesizer**: BitInvader-inspired customizable wavetable synth with a 256-sample lookup table swapped lock-free between the UI and audio engine.
 - **EXS & SFZ Multisample Player**: Multi-zone sample playback for `.exs` and `.sfz` instruments with 4-point cubic resampling, velocity layering, choke groups, and sample resolution across project folders and the user Sound Library path.
+- **Dōri Essential Factory Kit**: Bundled CC-0 single-cycle geometric waveforms (`shapes/`) and electronic percussion one-shots indexed in the Sound Library.
 - **Sound Library Management**: Configurable Sound Library root path under **Project Settings > General** with fallback searches for `.caf`, `.aif`, `.aiff`, `.wav`, and other standard audio formats.
 - **808 Bass Synthesizer**: Sine-drop sub-bass synth with glide, tune, and saturation controls (`bass808.rs`).
 - **SoundFont Player**: Built-in `.sf2` player supporting multi-sampled instruments with velocity layers and filter envelopes.
@@ -87,6 +96,8 @@ Dōri handles arranging, recording, editing, mixing, and bouncing in a single wi
 - **Subtractive Synthesizer**: 48-voice virtual analog polyphonic synthesizer with resonant filters and modulation routing.
 
 ### Built-In DSP Effects & Metering
+- **Native Compressor**: Logarithmic gain reduction compressor with soft knee, stereo-linked sidechain detector, ballistic smoothing, makeup gain, and parallel dry/wet mixing.
+- **Dynamic Modulation Links (Peak Follower & LFO)**: Real-time envelope follower for sidechain ducking and multi-waveform LFO for rhythmic parameter sweeps.
 - **Lemon Studio Dynamics & Color Effects**:
   - **Lemon Limiter**: Lookahead peak limiter with transient punch.
   - **Lemon Soft Clipper**: Saturating soft clipper.
@@ -224,6 +235,8 @@ Dōri is free software: you can redistribute it and/or modify it under the terms
 Per **Section 5 of the GNU General Public License v3**, Dōri attributes and builds upon the following open-source projects:
 
 * **[fabox-os/Pro-Wave](https://github.com/fabox-os/Pro-Wave)** (GPL-3.0-or-later): Upstream core DAW architecture, real-time lock-free engine, egui user interface, and built-in DSP effects.
+* **[transit-audio/transit](https://github.com/transit-audio/transit)** (MIT / Apache-2.0): SDK-free Windows ASIO/WASAPI protocol backends, PipeWire loader discovery, crash-safe privacy-redacted diagnostics, loopback latency calibrator, Modal Voice synthesizer, and dynamics compressor.
+* **[LMMS/lmms](https://github.com/LMMS/lmms)** (GPL-2.0-or-later): TripleOscillator (TriOsc) 3-oscillator synth architecture, BitInvader-inspired WaveDraw wavetable synth, Peak Follower & LFO modulators, and CC-0 single-cycle geometric waveform assets (`shapes/`).
 * **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version arranging tools (Marquee selection, snap grid, Option-drag), crash recovery, and 808 Bass synthesizer.
 * **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): Faster-than-realtime offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 True Peak and loudness metering.
 * **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.

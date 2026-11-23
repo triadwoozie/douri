@@ -202,6 +202,18 @@ pub struct CatalogPack {
 
 pub const CATALOG: &[CatalogPack] = &[
     CatalogPack {
+        id: "dori-essential-factory-kit",
+        name: "Dōri Essential Factory Kit",
+        category: "Electronic & Single-Cycle",
+        format: ".wav / .ogg",
+        size: "15 MB",
+        approx_bytes: 15_728_640,
+        license: "Public Domain (CC-0)",
+        description: "LMMS single-cycle geometric waveforms (shapes) and CC-0 electronic drum one-shots for the Transient Sampler and WaveDraw synth.",
+        is_essential: true,
+        default_for_category: true,
+    },
+    CatalogPack {
         id: "salamander-grand-piano-v3",
         name: "Salamander Grand Piano V3",
         category: "Acoustic Pianos",
@@ -253,6 +265,7 @@ pub const CATALOG: &[CatalogPack] = &[
 
 pub const CATEGORIES: &[&str] = &[
     "All Categories",
+    "Electronic & Single-Cycle",
     "Acoustic Pianos",
     "Drum Kits",
     "Orchestral & Strings",
@@ -1548,8 +1561,11 @@ mod tests {
     }
 
     #[test]
-    fn catalog_contains_all_four_required_packs() {
-        assert_eq!(CATALOG.len(), 4);
+    fn catalog_contains_all_required_packs() {
+        assert_eq!(CATALOG.len(), 5);
+        assert!(CATALOG
+            .iter()
+            .any(|p| p.name == "Dōri Essential Factory Kit"));
         assert!(CATALOG
             .iter()
             .any(|p| p.name == "Salamander Grand Piano V3"));

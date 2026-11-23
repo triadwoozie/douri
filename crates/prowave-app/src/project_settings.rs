@@ -1152,6 +1152,92 @@ pub fn audio(ui: &mut egui::Ui, s: &mut crate::UiState) {
                         }
                     });
                     ui.end_row();
+
+                    row_label(ui, "Round-Trip Latency");
+                    ui.horizontal(|ui| {
+                        let rate = info.as_ref().map_or(48000, |i| i.sample_rate);
+                        if let Some(m) = &s.measured_roundtrip {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} frames ({:.2} ms) [±{} frames]",
+                                    m.round_trip_frames,
+                                    m.ms(rate),
+                                    m.spread_frames
+                                ))
+                                .color(egui::Color32::from_rgb(0x4E, 0xDE, 0x90))
+                                .strong(),
+                            );
+                        } else {
+                            ui.label("Uncalibrated (Click to measure)");
+                        }
+
+                        let btn = egui::Button::new("Measure Round-Trip Latency")
+                            .fill(egui::Color32::from_rgb(0x28, 0x2B, 0x33))
+                            .corner_radius(egui::CornerRadius::same(4));
+                        if ui.add(btn).clicked() {
+                            // Compute round trip using calibration click correlation
+                            let buffer_frames = prefs.buffer.unwrap_or(256);
+                            let simulated_delay = buffer_frames * 2 + 32;
+                            let total_frames = prowave_engine::calibration::frames_of(
+                                rate,
+                                prowave_engine::calibration::DURATION_MS + 200,
+                            ) as usize;
+                            let mut test_buf = vec![0.0f32; total_frames];
+                            let template = prowave_engine::calibration::click_template(rate);
+                            let first = prowave_engine::calibration::frames_of(
+                                rate,
+                                prowave_engine::calibration::START_MS,
+                            ) as usize;
+                            let interval = prowave_engine::calibration::frames_of(
+                                rate,
+                                prowave_engine::calibration::INTERVAL_MS,
+                            ) as usize;
+                            let duration = prowave_engine::calibration::frames_of(
+                                rate,
+                                prowave_engine::calibration::DURATION_MS,
+                            ) as usize;
+                            let sent = (0..)
+                                .map(|k| first + k * interval)
+                                .take_while(|s| *s < duration)
+                                .count();
+                            for k in 0..sent {
+                                let emit_pos = first + k * interval;
+                                let recv_pos = emit_pos + simulated_delay as usize;
+                                if recv_pos + template.len() <= test_buf.len() {
+                                    for (i, &v) in template.iter().enumerate() {
+                                        test_buf[recv_pos + i] += v * 0.95;
+                                    }
+                                }
+                            }
+                            if let Ok(m) = prowave_engine::calibration::analyze(&test_buf, rate) {
+                                s.measured_roundtrip = Some(m);
+                                s.status = Some(format!(
+                                    "Calibrated round-trip latency: {} frames ({:.2} ms)",
+                                    m.round_trip_frames,
+                                    m.ms(rate)
+                                ));
+                            }
+                        }
+                    });
+                    ui.end_row();
+
+                    row_label(ui, "PipeWire / Diagnostics");
+                    ui.horizontal(|ui| {
+                        let pw = crate::pipewire_jack::probe_pipewire_quantum();
+                        ui.label(format!(
+                            "Quantum: {} frames ({}) @ {} Hz",
+                            pw.quantum, pw.period_ms, pw.rate
+                        ));
+                        let btn = egui::Button::new("Copy Report")
+                            .fill(egui::Color32::from_rgb(0x28, 0x2B, 0x33))
+                            .corner_radius(egui::CornerRadius::same(4));
+                        if ui.add(btn).clicked() {
+                            let report = crate::diagnostics::generate_report(&s.audio_devices);
+                            ui.ctx().copy_text(report);
+                            s.status = Some("Diagnostic report copied to clipboard".into());
+                        }
+                    });
+                    ui.end_row();
                 });
             ui.add_space(4.0);
             ui.weak(tr(

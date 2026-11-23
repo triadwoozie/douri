@@ -34,6 +34,112 @@ pub const MAX_ZONES: usize = 4096;
 /// Number of dials.
 pub const PARAMS: usize = 3;
 
+/// The display and playback mode of the Sampler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SamplerMode {
+    /// Standard chromatic pitched sampler instrument across keys.
+    #[default]
+    Instrument,
+    /// 4x4 drum pad layout (16 pads starting at MIDI note 36 / C1).
+    Pads,
+    /// Transient-sliced loop sample mapped across pads/keys.
+    Slices,
+}
+
+/// Detects transient onset points in a mono or interleaved audio buffer.
+/// Returns slice start frame indices in ascending order (including 0).
+pub fn detect_transients(samples: &[f32], sample_rate: u32, sensitivity: f32) -> Vec<usize> {
+    if samples.is_empty() {
+        return vec![0];
+    }
+
+    let sr = sample_rate.max(8_000) as usize;
+    let window_size = (sr / 100).max(128); // ~10 ms window
+    let hop_size = window_size / 2;
+    let min_slice_gap = (sr / 20).max(256); // at least 50 ms between slices
+
+    let sens = sensitivity.clamp(0.01, 1.0);
+    let thresh = 0.05 * (1.1 - sens);
+
+    let mut slices = vec![0];
+    let mut prev_energy = 0.0f32;
+    let mut last_slice = 0;
+
+    let num_windows = samples.len().saturating_sub(window_size) / hop_size;
+    for w in 0..num_windows {
+        let start = w * hop_size;
+        let window = &samples[start..start + window_size];
+        let energy: f32 = window.iter().map(|&x| x * x).sum::<f32>() / window_size as f32;
+
+        let diff = energy - prev_energy;
+        if diff > thresh && (start.saturating_sub(last_slice)) >= min_slice_gap {
+            slices.push(start);
+            last_slice = start;
+        }
+        prev_energy = energy;
+    }
+
+    slices
+}
+
+/// Slices a sample into one-shot zones mapped to consecutive MIDI keys starting at `base_key`.
+pub fn slice_into_zones(
+    sample: Arc<SampleData>,
+    slice_points: &[usize],
+    base_key: u8,
+) -> Vec<Zone> {
+    if slice_points.is_empty() {
+        return vec![Zone::new(sample)];
+    }
+
+    let mut points = slice_points.to_vec();
+    if points[0] != 0 {
+        points.insert(0, 0);
+    }
+    points.sort_unstable();
+    points.dedup();
+
+    let total_frames = sample.frames.len();
+    let mut zones = Vec::with_capacity(points.len());
+
+    for (i, &start) in points.iter().enumerate() {
+        if start >= total_frames {
+            break;
+        }
+        let end = if i + 1 < points.len() {
+            points[i + 1].min(total_frames)
+        } else {
+            total_frames
+        };
+
+        if end <= start {
+            continue;
+        }
+
+        let key = (base_key as usize + i).min(127) as u8;
+        let mut zone = Zone::new(sample.clone());
+        zone.key_low = key;
+        zone.key_high = key;
+        zone.root_key = key;
+        zone.pitch_track = false;
+        zone.start = start;
+        zone.end = end;
+        zone.loop_mode = LoopMode::OneShot;
+        zone.attack = 0.001;
+        zone.decay = 0.1;
+        zone.sustain = 1.0;
+        zone.release = 0.05;
+
+        zones.push(zone);
+    }
+
+    if zones.is_empty() {
+        zones.push(Zone::new(sample));
+    }
+
+    zones
+}
+
 /// Dial numbers.
 pub mod dial {
     pub const LEVEL: usize = 0;
@@ -996,5 +1102,30 @@ mod tests {
         assert_eq!(clamp([f32::NAN; PARAMS]), defaults());
         assert_eq!(clamp([99.0, 99_999.0, -5.0]), [12.0, 2000.0, 0.0]);
         assert_eq!(DIALS[dial::RELEASE].name, "Release");
+    }
+
+    #[test]
+    fn transient_detection_and_slicing_builds_key_mapped_zones() {
+        let sr = 48000;
+        let mut audio = vec![0.0f32; sr * 2]; // 2 seconds
+                                              // Insert 3 burst transients at 0.2s, 0.8s, 1.4s
+        for &t in &[0.2, 0.8, 1.4] {
+            let start = (t * sr as f32) as usize;
+            for i in 0..500 {
+                audio[start + i] = 0.9;
+            }
+        }
+
+        let transients = detect_transients(&audio, sr as u32, 0.7);
+        assert!(transients.len() >= 3);
+
+        let stereo_frames = audio.iter().map(|&s| [s, s]).collect();
+        let data = Arc::new(SampleData::new(stereo_frames, sr as u32));
+
+        let zones = slice_into_zones(data, &transients, 36);
+        assert_eq!(zones.len(), transients.len());
+        assert_eq!(zones[0].key_low, 36);
+        assert_eq!(zones[0].loop_mode, LoopMode::OneShot);
+        assert!(!zones[0].pitch_track);
     }
 }

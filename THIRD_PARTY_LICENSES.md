@@ -25,6 +25,16 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: GNU General Public License v2.0 or later (GPL-2.0-or-later)
 - **Description**: Hardware MIDI patch definition library (.midnam) and Scala microtonal tuning references.
 
+- **Project**: Transit ([transit-audio/transit](https://github.com/transit-audio/transit))
+- **Authors**: Transit audio contributors
+- **License**: MIT License OR Apache License 2.0
+- **Description**: Protocol-level Windows ASIO and low-latency WASAPI backend abstractions, PipeWire library loader discovery, crash-safe privacy-redacted diagnostics reporting (`--report`), loopback round-trip latency calibrator, physical modeling Modal Voice synth, and soft-knee dynamics Compressor.
+
+- **Project**: LMMS ([LMMS/lmms](https://github.com/LMMS/lmms))
+- **Authors**: Tobias Doerffel, Andreas Brandmaier, and LMMS developers
+- **License**: GNU General Public License v2.0 or later (GPL-2.0-or-later)
+- **Description**: TripleOscillator (TriOsc) 3-oscillator synth architecture, BitInvader-inspired WaveDraw customizable single-cycle wavetable synth, Peak Follower & LFO modulators, and CC-0 / Public Domain single-cycle geometric waveforms (`shapes/`).
+
 ---
 
 ## 2. Icon & Graphic Assets

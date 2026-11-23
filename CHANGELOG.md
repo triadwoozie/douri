@@ -2,6 +2,28 @@
 
 What changed in each Dōri release.
 
+## Unreleased (Transit & LMMS Integration)
+
+### Audio Engine & Platform Backends
+- **Native SDK-Free Windows ASIO Backend**: Protocol-level COM implementation for ASIO driver enumeration and streaming without proprietary Steinberg ASIO SDK headers (`windows_audio.rs`).
+- **Low-Latency WASAPI Backend**: Native WASAPI shared and exclusive low-latency period selection via `IAudioClient3`.
+- **Linux PipeWire-Native JACK Detection**: Direct probing of PipeWire's own `libjack.so.0` library, eliminating the need to wrap Dōri with `pw-jack` on modern Linux systems.
+- **PipeWire Quantum Diagnostics**: Live display of PipeWire quantum, period, and sample rate in Project Settings > Audio.
+- **Loopback Round-Trip Latency Calibrator**: Band-limited Hann click pulse generator and normalized cross-correlation peak finding with median and spread calculation, accessible via the interactive **Measure Round-Trip Latency** tool in Settings > Audio.
+- **Privacy-Scrubbed Diagnostics (`douri --report`)**: CLI diagnostics flag that generates a technical machine report (OS, kernel, CPU, cores, audio stack, and device IDs) with automatic case-insensitive redaction of `$HOME` and user names.
+
+### Built-in Instruments & Synths
+- **Transient-Slicing Sampler**: Three-tab interface with `Pads` (4×4 drum pad grid triggering MIDI notes 36–51), `Slices` (energy-flux transient detection and loop slicing), and `Instrument` (pitched multi-zone chromatic sampler) backed by `#![forbid(alloc)]` lock-free voice structures.
+- **Modal Voice Synthesizer**: Physical-modeling instrument adapted from Transit featuring impulse/mallet/noise exciters feeding up to 16 resonant bandpass modes with stiffness, geometry, damping, and brightness controls.
+- **TripleOscillator (`TriOsc`)**: Subtractive synthesizer adapted from LMMS with three oscillators (Sine, Triangle, Saw, Square, Moog Saw, Exponential, White Noise), per-oscillator coarse/fine detune, stereo phase offsets, and Mix, AM, PM, Sync, and FM inter-oscillator modulation modes.
+- **WaveDraw Synthesizer**: BitInvader-inspired customizable single-cycle wavetable synth with a 256-sample lookup table swapped lock-free between UI and audio threads.
+- **Dōri Essential Factory Kit**: Bundled and cataloged CC-0 single-cycle geometric waveforms (`shapes/`) and electronic percussion one-shots indexed in the Dōri Sound Library.
+
+### Built-in Dynamics & Modulators
+- **Native Dynamics Compressor**: Logarithmic gain reduction soft-knee compressor with stereo-linked peak detection, ballistic attack/release smoothing, makeup gain, and parallel dry/wet mixing.
+- **Peak Follower**: Real-time audio envelope follower for sidechain ducking and parameter modulation.
+- **LFO Controller**: Multi-waveform low-frequency oscillator (Sine, Triangle, Saw, Square, Sample & Hold) for rhythmic parameter sweeps.
+
 ## 0.1.0-alpha.6
 
 ### Hydrogen Drum Kit Support

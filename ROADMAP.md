@@ -151,13 +151,13 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 
 * [ ] **Interactive Audio Device & Buffer Selector:** Live output/input device switching and buffer size configuration in `Project Settings > Audio` with seamless engine stream restart.
 * [ ] **Audio & Pattern Split / Join:** Sample-accurate split, join, and trim tools for audio, Pattern, Drummer, and take-folder regions (matching MIDI region parity).
-* [ ] **Native PipeWire & JACK Backends:** Direct low-latency PipeWire and JACK audio/MIDI clients on Linux alongside ALSA (`< 8 ms` round-trip target).
+* [x] **Native PipeWire & JACK Backends:** Direct low-latency PipeWire and JACK audio/MIDI clients on Linux alongside ALSA (`< 8 ms` round-trip target), with PipeWire loader auto-detection and quantum diagnostics.
 * [ ] **Complete Control Bar & Menu Parity:** Wire remaining grayed-out menu entries (`Save as Template`, `Project Alternatives`, `Show Chord / Arrangement Track`, `Pre-Fader Metering`, `Low Latency Mode` toggle) so zero visible controls are inert.
 * [ ] **Windows Out-of-Process Plugin Sandboxing & Native Windows:** Port out-of-process crash isolation and embedded plugin editor windows to Windows (`HWND`) and Wayland native surfaces.
 
 ### Phase 2: Advanced Synthesis, Sampling & Effects (`v0.2.0`)
 
-* [ ] **Visual Multisample Zone & Keymap Editor:** Drag-and-drop key/velocity zone mapping UI for the `.exs`/`.sfz` sampler and Quick Sampler auto-slicing (`Convert to New Sampler Track`).
+* [x] **Visual Multisample Zone & Keymap Editor:** Three-tab Transient-Slicing Sampler (`Pads`, `Slices`, `Instrument`), drag-and-drop key/velocity zone mapping, and automatic transient loop slicing.
 * [ ] **Vector & Spectral/Granular Synth Engines:** Multi-oscillator vector synth with X/Y envelope morphing and dual-source granular/additive synth engine.
 * [ ] **Full Channel EQ & Compressor Circuit Models:** 8-band Channel EQ with integrated pre/post FFT curve overlay and selectable VCA/FET/Opto compressor topologies with external sidechain routing.
 * [ ] **Algorithmic Reverb & Tap Delay Designer:** Multi-model algorithmic reverb (Hall, Room, Plate) and visual multi-tap delay editor.

@@ -20,6 +20,7 @@
 //! not in dB or ms: [`NativeFxInfo::value_text`] gives the text FL shows for a value ("-8.7dB
 //! 0.37", "2.00ms", "4.0:1", ...); [`NativeParam::unit`] names the unit of that text.
 
+pub mod compressor;
 pub mod lemon_fast_distortion;
 pub mod lemon_limiter;
 pub mod lemon_soft_clipper;
@@ -163,7 +164,14 @@ pub trait NativeFx: BlockProcessor {
     }
 }
 
-static EFFECTS: [NativeFxInfo; 6] = [
+static EFFECTS: [NativeFxInfo; 7] = [
+    NativeFxInfo {
+        id: compressor::ID,
+        name: compressor::NAME,
+        params: &compressor::PARAMS,
+        presets: &[],
+        text: compressor::value_text,
+    },
     NativeFxInfo {
         id: lemon_limiter::ID,
         name: lemon_limiter::NAME,
@@ -271,6 +279,7 @@ pub(crate) fn stored_values<const N: usize>(params: &[NativeParam; N], values: &
 pub fn open_native(id: &str, sample_rate: u32, values: &[f32]) -> Option<Box<dyn NativeFx>> {
     let rate = sample_rate.max(1);
     Some(match id {
+        compressor::ID => Box::new(compressor::Compressor::new(rate, values)),
         lemon_limiter::ID => Box::new(lemon_limiter::LemonLimiter::new(rate, values)),
         press::ID => Box::new(press::Press::new(rate, values)),
         lemon_transient_processor::ID => Box::new(
