@@ -2343,6 +2343,7 @@ impl Project {
             controls: Vec::new(),
             folder: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
             generated: None,
         });
