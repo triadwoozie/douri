@@ -253,6 +253,10 @@ impl Svf {
 }
 
 /// Turns a note on a drum-kit track into a drum voice: its own patch and frequency.
+///
+/// General MIDI drum layout (Kick 35/36, Snare 38/40, Clap 37/39, Closed/Pedal Hat 42/44,
+/// Open Hat 46, Toms 41/43/45/47/48/50, Crash 49/57, Ride 51/59) synthesized with DSP
+/// modeling inspired by Soundcraft (storytold/soundcraft, dual MIT / Apache-2.0).
 pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
     let electronic = base.kit == Kit::Electronic;
     let mut p = SynthPatch {
@@ -264,8 +268,8 @@ pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
     p.sustain = 0.0;
     p.level_b = 0.0;
     let hz = match pitch {
-        0..=37 => {
-            // Kick
+        0..=36 => {
+            // Kick (35/36 standard GM)
             p.wave_a = Wave::Sine;
             p.noise = 0.04;
             p.pitch_drop = if electronic { 30.0 } else { 18.0 };
@@ -279,8 +283,20 @@ pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
                 52.0
             }
         }
-        38..=40 => {
-            // Snare / clap
+        37 | 39 => {
+            // Clap / Side Stick (37/39 GM)
+            p.wave_a = Wave::Triangle;
+            p.level_a = 0.18;
+            p.noise = 0.95;
+            p.cutoff = 1150.0;
+            p.resonance = 0.4;
+            p.decay = if electronic { 0.18 } else { 0.12 };
+            p.release = 0.05;
+            p.gain *= 1.35;
+            350.0
+        }
+        38 | 40 => {
+            // Snare (38/40 GM)
             p.wave_a = if electronic {
                 Wave::Square
             } else {
@@ -295,31 +311,78 @@ pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
             p.cutoff = 9_000.0;
             185.0
         }
-        42 | 44 | 46 | 49 | 51..=59 => {
-            // Hats and cymbals: high-passed noise; some pitches ring longer.
-            let open = matches!(pitch, 46 | 49 | 51..=59);
+        42 | 44 => {
+            // Closed Hat / Pedal Hat (42/44 GM)
             p.level_a = 0.0;
             p.noise = 0.7;
             p.highpass = true;
-            p.cutoff = 6_500.0;
-            p.resonance = 0.1;
-            p.decay = match (open, electronic) {
-                (true, _) => 0.4,
-                (false, true) => 0.03,
-                (false, false) => 0.06,
-            };
-            p.release = 0.03;
+            p.cutoff = 7_000.0;
+            p.resonance = 0.15;
+            p.decay = if electronic { 0.03 } else { 0.05 };
+            p.release = 0.02;
             440.0
         }
-        _ => {
-            // Toms
+        46 => {
+            // Open Hat (46 GM)
+            p.level_a = 0.0;
+            p.noise = 0.75;
+            p.highpass = true;
+            p.cutoff = 6_500.0;
+            p.resonance = 0.1;
+            p.decay = 0.35;
+            p.release = 0.04;
+            440.0
+        }
+        49 | 57 => {
+            // Crash Cymbal (49/57 GM)
+            p.level_a = 0.0;
+            p.noise = 0.9;
+            p.highpass = true;
+            p.cutoff = 4_500.0;
+            p.resonance = 0.1;
+            p.decay = 0.75;
+            p.release = 0.1;
+            p.gain *= 1.1;
+            440.0
+        }
+        51 | 59 => {
+            // Ride Cymbal (51/59 GM)
+            p.level_a = 0.15;
+            p.wave_a = Wave::Sine;
+            p.noise = 0.55;
+            p.highpass = true;
+            p.cutoff = 5_500.0;
+            p.resonance = 0.2;
+            p.decay = 0.65;
+            p.release = 0.08;
+            845.0
+        }
+        41 | 43 | 45 | 47 | 48 | 50 => {
+            // Toms: floor tom (41/43), low tom (45), mid tom (47/48), high tom (50)
             p.wave_a = Wave::Sine;
             p.pitch_drop = if electronic { 14.0 } else { 8.0 };
             p.pitch_decay = 0.09;
             p.decay = 0.3;
             p.release = 0.08;
             p.gain *= 1.2;
-            70.0 + (pitch.clamp(41, 50) as f32 - 41.0) * 14.0
+            match pitch {
+                41 | 43 => 82.0,
+                45 => 110.0,
+                47 | 48 => 147.0,
+                50 => 196.0,
+                _ => 120.0,
+            }
+        }
+        _ => {
+            // Any other MIDI note: play a crisp percussion tap
+            p.wave_a = Wave::Sine;
+            p.noise = 0.25;
+            p.pitch_drop = 6.0;
+            p.pitch_decay = 0.04;
+            p.decay = 0.2;
+            p.release = 0.05;
+            p.gain *= 1.1;
+            100.0 + (pitch as f32) * 8.0
         }
     };
     (p, hz)

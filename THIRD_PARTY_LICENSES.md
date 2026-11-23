@@ -18,7 +18,7 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **Project**: Soundcraft ([storytold/soundcraft](https://github.com/storytold/soundcraft))
 - **Authors**: storytold contributors
 - **License**: MIT License / Apache License 2.0
-- **Description**: Offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 metering.
+- **Description**: Offline mixdown architecture, TPDF dither generator, ITU-R BS.1770 / EBU R128 metering, General MIDI synthesized drum voices, and subtractive synthesizer preset DSP mappings.
 
 - **Project**: Ardour ([Ardour](https://github.com/Ardour/ardour))
 - **Authors**: Ardour contributors

@@ -2,6 +2,21 @@
 
 What changed in each Dōri release.
 
+## 0.1.0-alpha.4
+
+### Playback & DSP Polyphony
+- **Smooth 128-Voice Polyphony & Smart Voice Stealing**: Upgraded the engine's voice pool from 48 to 128 voices and implemented an intelligent quietest-envelope releasing allocator, eliminating playback choppiness, note truncation, and clicks during dense multi-track playback.
+- **Fast Voice Release Threshold**: Inaudible released voices below -66 dB (`v.env <= 0.0005`) are returned immediately to the free pool so long decay tails never choke subsequent chords or drum hits.
+
+### Soundcraft DSP Integration & Active Library Presets
+- **Active Built-In Synthesizer Presets**: Wired distinct, fully functioning DSP synthesis models across every single Library category (Pianos, Keyboards, Mallets, Bass, Strings, Brass, Drum Kits, Synths, Organ, Clav, Mellotron, World, Arpeggiator, Cinematic, Legacy).
+- **Soundcraft Drum DSP & GM Layout**: Implemented General MIDI drum mapping with authentic synthesized voices (Kick, Snare, Clap/Rimshot, Closed/Open Hats, Toms, Crash, Ride) adapted from Soundcraft with zero audio-thread allocations.
+- **Library Patch Loading & Overrides**: Loading any library patch clears stale or empty sample engines so the patch sounds immediately upon MIDI note-on, while saving full instrument and sampler state for accurate Revert.
+- **Auto-Audition & Audition Previews**: Clicking library patches or toggling audition automatically triggers immediate note preview playback on the active track.
+- **Interactive Key & Scale LCD Selector**: Top control bar LCD key signature readout opens a compact, bounded (~280×300 px) dual-column popup allowing instant switching of root notes and scales/modes with undo/redo and project synchronization.
+- **High-Resolution Linux Icon**: Embedded 1024×1024 icon for Linux window managers, docks, and taskbars for crisp HiDPI rendering.
+- **Recaptured Workspace Visuals**: Updated official documentation screenshots showing the full multi-pane workspace layout (Library, Arranger, Piano Roll with velocity lane, and Event List).
+
 ## 0.3.0 (Milestone 4)
 
 ### Vulkan (`wgpu`) Graphics Backend & Liquid Glass UI

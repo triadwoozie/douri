@@ -1127,7 +1127,7 @@ fn lcg(seed: &mut u32) -> u32 {
     *seed >> 8
 }
 
-fn demo_notes(seed: u32, bars: f32, lo: u8, hi: u8) -> Vec<Note> {
+pub(crate) fn demo_notes(seed: u32, bars: f32, lo: u8, hi: u8) -> Vec<Note> {
     let mut s = seed;
     let mut out = Vec::new();
     let mut t = 0.0;

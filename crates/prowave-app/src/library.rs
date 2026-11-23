@@ -276,6 +276,12 @@ struct Saved {
     instrument: Option<&'static str>,
     inserts: Vec<crate::model::Insert>,
     category: Option<&'static str>,
+    soundfont: Option<crate::model::SoundFontUse>,
+    sampler: Option<crate::model::SamplerUse>,
+    epiano: Option<crate::model::EPianoUse>,
+    drums: Option<crate::drum_kit::DrumsUse>,
+    bass808: Option<prowave_engine::Bass808Spec>,
+    hosted_instrument: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -426,6 +432,12 @@ fn load_patch(p: &mut Project, v: &mut LibraryView, cat: usize, patch: usize) {
             instrument: t.instrument,
             inserts: t.inserts.clone(),
             category: t.category,
+            soundfont: t.soundfont.clone(),
+            sampler: t.sampler.clone(),
+            epiano: t.epiano,
+            drums: t.drums.clone(),
+            bass808: t.bass808.clone(),
+            hosted_instrument: t.hosted_instrument,
         });
     }
     t.name = (*name).to_string();
@@ -434,6 +446,12 @@ fn load_patch(p: &mut Project, v: &mut LibraryView, cat: usize, patch: usize) {
     if matches!(t.kind, TrackKind::Instrument | TrackKind::Drummer) {
         t.instrument = c.instrument;
     }
+    t.soundfont = None;
+    t.sampler = None;
+    t.epiano = None;
+    t.drums = None;
+    t.bass808 = None;
+    t.hosted_instrument = 0;
     v.loaded = Some((cat, patch));
 }
 
@@ -444,6 +462,12 @@ fn revert(p: &mut Project, v: &mut LibraryView) {
             t.instrument = s.instrument;
             t.inserts = s.inserts;
             t.category = s.category;
+            t.soundfont = s.soundfont;
+            t.sampler = s.sampler;
+            t.epiano = s.epiano;
+            t.drums = s.drums;
+            t.bass808 = s.bass808;
+            t.hosted_instrument = s.hosted_instrument;
         }
         v.loaded = None;
     }
@@ -1007,6 +1031,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 Some(&patch_badges),
             ) {
                 load_patch(p, v, sel_cat, pi);
+                if v.audition_auto {
+                    let cat_name = CATEGORIES.get(sel_cat).map(|c| c.name).unwrap_or("");
+                    let pitch = if cat_name.contains("Drum") || cat_name.contains("Percussion") {
+                        36
+                    } else if cat_name.contains("Bass") {
+                        38
+                    } else {
+                        60
+                    };
+                    s.audition.push(crate::piano_roll::Audition::On {
+                        pitch,
+                        vel: 96,
+                        track: p.selected_track as u16,
+                    });
+                }
             }
         }
     }
@@ -1094,6 +1133,27 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let play_resp = ui.interact(play_r, id("audition_play"), Sense::click());
     if play_resp.clicked() {
         v.audition_playing = !v.audition_playing;
+        let cat_name = v
+            .category
+            .and_then(|ci| CATEGORIES.get(ci))
+            .map(|c| c.name)
+            .unwrap_or("");
+        let pitch = if cat_name.contains("Drum") || cat_name.contains("Percussion") {
+            36
+        } else if cat_name.contains("Bass") {
+            38
+        } else {
+            60
+        };
+        if v.audition_playing {
+            s.audition.push(crate::piano_roll::Audition::On {
+                pitch,
+                vel: 96,
+                track: p.selected_track as u16,
+            });
+        } else {
+            s.audition.push(crate::piano_roll::Audition::Off { pitch });
+        }
     }
     g.rect_filled(
         play_r,

@@ -55,7 +55,7 @@ pub const MAX_TRACKS: usize = 1024;
 /// The `track` number that addresses the master bus (the Stereo Out strip) in
 /// [`Command::SetFx`] and [`Command::SetConvolver`].
 pub const MASTER_TRACK: u16 = u16::MAX;
-const MAX_VOICES: usize = 48;
+const MAX_VOICES: usize = 128;
 /// Samples between two readings of the automation (0.7 ms at 48 kHz).
 const AUTO_BLOCK: u32 = 32;
 
@@ -922,6 +922,7 @@ pub struct EngineCore {
     cycle: Option<(f64, f64)>,
     master: GainRamp,
     voices: [Voice; MAX_VOICES],
+    next_steal: usize,
     click_remaining: u32,
     click_phase: f32,
     click_freq: f32,
@@ -1095,6 +1096,7 @@ impl EngineCore {
             cycle: None,
             master: GainRamp::new(0.8),
             voices: [Voice::default(); MAX_VOICES],
+            next_steal: 0,
             click_remaining: 0,
             click_phase: 0.0,
             click_freq: 1000.0,
@@ -2069,6 +2071,42 @@ impl EngineCore {
         }
     }
 
+    /// Finds an available voice slot, or steals the quietest releasing / lowest envelope voice.
+    fn find_voice_slot(&mut self) -> usize {
+        // 1. Inactive voice (completely free)
+        if let Some(idx) = self.voices.iter().position(|v| !v.active) {
+            return idx;
+        }
+
+        // 2. Releasing voice with lowest envelope (quietest tail)
+        let releasing = self
+            .voices
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.releasing || v.stage == 3)
+            .min_by(|(_, a), (_, b)| a.env.total_cmp(&b.env));
+
+        if let Some((idx, _)) = releasing {
+            return idx;
+        }
+
+        // 3. Any active voice with lowest envelope (e.g. decay tail)
+        let lowest_env = self
+            .voices
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.env.total_cmp(&b.env));
+
+        if let Some((idx, _)) = lowest_env {
+            return idx;
+        }
+
+        // 4. Fallback round-robin so we never starve any single voice
+        let idx = self.next_steal % MAX_VOICES;
+        self.next_steal = (self.next_steal + 1) % MAX_VOICES;
+        idx
+    }
+
     fn trigger(&mut self, n: NoteEvent) -> usize {
         if self.plays_elsewhere(n.track) {
             // An external instrument or plug-in instrument makes its own sound.
@@ -2080,12 +2118,7 @@ impl EngineCore {
             self.sf_note_on(sf_track, n.pitch, n.vel, n.end_beat, false);
             return 0;
         }
-        // No free voice: steal the first one.
-        let idx = self
-            .voices
-            .iter()
-            .position(|v| !v.active)
-            .unwrap_or_default();
+        let idx = self.find_voice_slot();
         let track = n.track.min(MAX_TRACKS as u16 - 1);
         let mut patch = self.track_patch[track as usize];
         let mut base_hz = midi_hz(n.pitch, self.tuning_hz);
@@ -2500,7 +2533,7 @@ impl EngineCore {
                     2 => {}
                     _ => {
                         v.env -= v.rel_step;
-                        if v.env <= 0.0 {
+                        if v.env <= 0.0005 {
                             v.active = false;
                             continue;
                         }

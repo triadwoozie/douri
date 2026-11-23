@@ -1063,51 +1063,70 @@ fn lcd(
 
 fn key_scale_popup_menu(ui: &Ui, resp: &egui::Response, p: &mut Project, s: &mut UiState) {
     egui::Popup::menu(resp).show(|ui| {
-        ui.set_min_width(280.0);
+        ui.set_max_width(280.0);
+        ui.set_min_width(240.0);
         let cur_bar = (p.beats_to_bar(p.position_beats).floor() as u32 + 1).max(1);
         let (active_root, active_scale) = p.key_at(p.position_beats);
 
-        ui.horizontal(|ui| {
-            // Left column: Root Note
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new("Root note").strong());
-                ui.separator();
-                for (i, name) in crate::note_edit::ROOTS.iter().enumerate() {
-                    let is_active = active_root == i as u8;
-                    let text = if is_active {
-                        format!("✓ {name}")
-                    } else {
-                        format!("   {name}")
-                    };
-                    if ui.selectable_label(is_active, text).clicked() {
-                        p.set_key_at(cur_bar, i as u8, active_scale);
-                        s.piano.scale_root = Some(i as u8);
-                        s.piano.scale_mode = active_scale as usize;
-                    }
-                }
-            });
+        egui::ScrollArea::vertical()
+            .max_height(240.0)
+            .auto_shrink([true, true])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.spacing_mut().button_padding = egui::vec2(4.0, 1.5);
 
-            ui.separator();
+                ui.horizontal_top(|ui| {
+                    // Left column: Root Note (compact ~88px)
+                    ui.vertical(|ui| {
+                        ui.set_max_width(88.0);
+                        ui.set_min_width(80.0);
+                        ui.label(egui::RichText::new("Root note").strong().small());
+                        ui.separator();
+                        for (i, name) in crate::note_edit::ROOTS.iter().enumerate() {
+                            let is_active = active_root == i as u8;
+                            let text = if is_active {
+                                format!("✓ {name}")
+                            } else {
+                                format!("  {name}")
+                            };
+                            if ui
+                                .selectable_label(is_active, egui::RichText::new(text).small())
+                                .clicked()
+                            {
+                                p.set_key_at(cur_bar, i as u8, active_scale);
+                                s.piano.scale_root = Some(i as u8);
+                                s.piano.scale_mode = active_scale as usize;
+                            }
+                        }
+                    });
 
-            // Right column: Scale / Mode
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new("Scale / Mode").strong());
-                ui.separator();
-                for (i, (name, _)) in crate::note_edit::MODES.iter().enumerate() {
-                    let is_active = active_scale == i as u8;
-                    let text = if is_active {
-                        format!("✓ {name}")
-                    } else {
-                        format!("   {name}")
-                    };
-                    if ui.selectable_label(is_active, text).clicked() {
-                        p.set_key_at(cur_bar, active_root, i as u8);
-                        s.piano.scale_root = Some(active_root);
-                        s.piano.scale_mode = i;
-                    }
-                }
+                    ui.separator();
+
+                    // Right column: Scale / Mode (compact ~165px)
+                    ui.vertical(|ui| {
+                        ui.set_max_width(165.0);
+                        ui.set_min_width(135.0);
+                        ui.label(egui::RichText::new("Scale / Mode").strong().small());
+                        ui.separator();
+                        for (i, (name, _)) in crate::note_edit::MODES.iter().enumerate() {
+                            let is_active = active_scale == i as u8;
+                            let text = if is_active {
+                                format!("✓ {name}")
+                            } else {
+                                format!("  {name}")
+                            };
+                            if ui
+                                .selectable_label(is_active, egui::RichText::new(text).small())
+                                .clicked()
+                            {
+                                p.set_key_at(cur_bar, active_root, i as u8);
+                                s.piano.scale_root = Some(active_root);
+                                s.piano.scale_mode = i;
+                            }
+                        }
+                    });
+                });
             });
-        });
 
         ui.separator();
         let display = format!(

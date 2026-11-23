@@ -343,6 +343,193 @@ fn kit(kind: Kit) -> SynthPatch {
     }
 }
 
+fn piano_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = piano();
+    if n.contains("felt") || n.contains("intimate") || n.contains("mellow") {
+        p.cutoff = 2200.0;
+        p.filter_env = 0.45;
+        p.attack = 0.005;
+        p.decay = 1.0;
+    } else if n.contains("bright") || n.contains("pop") || n.contains("rock") {
+        p.cutoff = 5500.0;
+        p.filter_env = 0.85;
+        p.level_b = 0.55;
+        p.detune_b = 3.5;
+    } else if n.contains("honky") {
+        p.detune_b = 14.0;
+        p.cutoff = 4500.0;
+        p.level_b = 0.6;
+    }
+    p
+}
+
+fn electric_piano_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = electric_piano();
+    if n.contains("reed") || n.contains("wurlitzer") {
+        p.wave_a = Wave::Square;
+        p.pulse_width = 0.35;
+        p.level_a = 0.65;
+        p.wave_b = Wave::Triangle;
+        p.level_b = 0.45;
+        p.cutoff = 2800.0;
+        p.resonance = 0.2;
+    } else if n.contains("bright") || n.contains("glassy") || n.contains("tine") {
+        p.wave_b = Wave::Sine;
+        p.semi_b = 24.0;
+        p.level_b = 0.4;
+        p.cutoff = 4800.0;
+    } else if n.contains("dark") || n.contains("velvet") {
+        p.cutoff = 1800.0;
+        p.decay = 1.2;
+    } else if n.contains("tremolo") || n.contains("suitcase") || n.contains("phased") {
+        p.vibrato_hz = 5.0;
+        p.vibrato_cents = 6.0;
+    }
+    p
+}
+
+fn mallet_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = mallet();
+    if n.contains("marimba") || n.contains("xylophone") {
+        p.wave_b = Wave::Triangle;
+        p.semi_b = 12.0;
+        p.decay = 0.38;
+        p.release = 0.25;
+        p.cutoff = 3200.0;
+    } else if n.contains("glockenspiel") || n.contains("toy") || n.contains("music box") {
+        p.semi_b = 24.0;
+        p.cutoff = 7500.0;
+        p.decay = 0.85;
+        p.release = 0.7;
+    } else if n.contains("vibraphone") {
+        p.vibrato_hz = 5.2;
+        p.vibrato_cents = 9.0;
+        p.decay = 1.1;
+        p.release = 0.8;
+    }
+    p
+}
+
+fn bass_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = bass();
+    if n.contains("sub") {
+        p.wave_a = Wave::Sine;
+        p.wave_b = Wave::Square;
+        p.level_a = 1.0;
+        p.level_b = 0.25;
+        p.cutoff = 320.0;
+        p.filter_env = 0.2;
+    } else if n.contains("slap") {
+        p.wave_a = Wave::Saw;
+        p.wave_b = Wave::Square;
+        p.cutoff = 1800.0;
+        p.filter_env = 1.1;
+        p.resonance = 0.35;
+        p.attack = 0.001;
+    } else if n.contains("upright") || n.contains("round") {
+        p.wave_a = Wave::Triangle;
+        p.wave_b = Wave::Saw;
+        p.level_a = 0.8;
+        p.level_b = 0.3;
+        p.cutoff = 550.0;
+        p.resonance = 0.15;
+    } else if n.contains("picked") || n.contains("rock") {
+        p.cutoff = 1200.0;
+        p.resonance = 0.3;
+        p.filter_env = 0.7;
+    } else if n.contains("fretless") {
+        p.vibrato_hz = 4.8;
+        p.vibrato_cents = 7.0;
+        p.attack = 0.015;
+    }
+    p
+}
+
+fn strings_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = strings();
+    if n.contains("pizzicato") || n.contains("spiccato") {
+        p.attack = 0.002;
+        p.decay = 0.25;
+        p.sustain = 0.0;
+        p.release = 0.15;
+        p.cutoff = 3400.0;
+        p.filter_env = 0.8;
+        p.vibrato_cents = 0.0;
+    } else if n.contains("cello") || n.contains("bass") {
+        p.semi_b = -12.0;
+        p.cutoff = 1600.0;
+        p.attack = 0.18;
+    } else if n.contains("chamber") || n.contains("quartet") {
+        p.detune_b = 6.0;
+        p.cutoff = 2600.0;
+    }
+    p
+}
+
+fn horns_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = horns();
+    if n.contains("fanfare") || n.contains("stabs") || n.contains("brass section") {
+        p.attack = 0.02;
+        p.cutoff = 2600.0;
+        p.filter_env = 1.0;
+        p.decay = 0.25;
+    } else if n.contains("flugelhorn") || n.contains("french horn") || n.contains("swell") {
+        p.attack = 0.16;
+        p.cutoff = 1200.0;
+        p.filter_env = 0.4;
+    } else if n.contains("sax") {
+        p.wave_b = Wave::Saw;
+        p.cutoff = 1800.0;
+        p.vibrato_hz = 5.2;
+        p.vibrato_cents = 8.0;
+    } else if n.contains("trombone") {
+        p.semi_b = -12.0;
+        p.cutoff = 1400.0;
+    }
+    p
+}
+
+fn organ_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = organ();
+    if n.contains("rock") {
+        p.drawbars = [8, 8, 8, 8, 8, 8, 8, 8, 8];
+        p.key_click = 0.4;
+        p.leslie = 2;
+    } else if n.contains("gospel") {
+        p.drawbars = [8, 8, 8, 8, 0, 0, 0, 0, 8];
+        p.percussion = 2;
+        p.percussion_level = 0.5;
+    } else if n.contains("ballad") || n.contains("soft") {
+        p.drawbars = [0, 0, 8, 0, 0, 0, 0, 0, 0];
+        p.percussion = 0;
+        p.key_click = 0.1;
+        p.leslie = 1;
+    }
+    p
+}
+
+fn pluck_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    let mut p = pluck();
+    if n.contains("nylon") || n.contains("warm") || n.contains("jazz") {
+        p.cutoff = 1800.0;
+        p.filter_env = 0.5;
+        p.wave_b = Wave::Sine;
+    } else if n.contains("steel") || n.contains("bright") || n.contains("twelve") {
+        p.cutoff = 3800.0;
+        p.filter_env = 1.0;
+        p.detune_b = 9.0;
+    }
+    p
+}
+
 /// Synthesizer patches pick a sub-type from words in the patch name.
 fn synth_for(name: &str) -> SynthPatch {
     let n = name.to_lowercase();
@@ -350,11 +537,11 @@ fn synth_for(name: &str) -> SynthPatch {
     if has(&["lead", "mono"]) {
         synth_lead()
     } else if has(&["bass"]) {
-        bass()
+        bass_for(name)
     } else if has(&["arp", "pluck"]) {
         arp_pluck()
     } else if has(&["brass"]) {
-        horns()
+        horns_for(name)
     } else {
         supersaw_pad()
     }
@@ -362,20 +549,25 @@ fn synth_for(name: &str) -> SynthPatch {
 
 fn by_category(category: &str, name: &str) -> SynthPatch {
     match category {
-        "Bass" => bass(),
+        "Bass" => bass_for(name),
         "Drum Kit" | "Percussion" => kit(Kit::Acoustic),
         "Electronic Drum Kit" => kit(Kit::Electronic),
-        "Guitar" | "Guitar Amp" | "World" => pluck(),
-        "Keyboards" | "Vintage Electric Piano" => electric_piano(),
-        "Mallet" => mallet(),
-        "Orchestral" | "Studio Strings" => strings(),
-        "Studio Horns" => horns(),
-        "Piano" => piano(),
+        "Guitar" | "Guitar Amp" => pluck_for(name),
+        "Keyboards" | "Vintage Electric Piano" => electric_piano_for(name),
+        "Mallet" => mallet_for(name),
+        "Orchestral" | "Studio Strings" => strings_for(name),
+        "Studio Horns" => horns_for(name),
+        "Piano" => piano_for(name),
         "Quick Sampler" => pulse_sampler(),
         "Synthesizer" => synth_for(name),
-        "Vintage B3 Organ" => organ(),
+        "Vintage B3 Organ" => organ_for(name),
         "Vintage Clav" => clav(),
         "Vintage Mellotron" => mellotron(),
+        "World" => match name.to_lowercase().as_str() {
+            n if n.contains("kalimba") => mallet_for("Kalimba"),
+            n if n.contains("steel drum") => mallet_for("Toy Glockenspiel"),
+            _ => pluck_for(name),
+        },
         "Arpeggiator" => arp_pluck(),
         "Cinematic" => cinematic(),
         "Legacy" => legacy(),
@@ -510,5 +702,75 @@ mod tests {
         let patch = synth_patch(&track_with("Vintage B3 Organ", "Drawbar Organ"));
         assert_eq!(patch.voice, VoiceKind::DrawbarOrgan);
         assert!(patch.drawbars.iter().any(|&level| level > 0));
+    }
+
+    #[test]
+    fn every_library_category_produces_finite_non_zero_audio_without_allocations() {
+        use prowave_engine::{Command, EngineCore, Shared, Song, TrackMix};
+        use std::sync::Arc;
+
+        for cat in CATEGORIES {
+            if cat.patches.is_empty() {
+                continue;
+            }
+            let first_patch = cat.patches[0];
+            let patch = synth_patch(&track_with(cat.name, first_patch));
+
+            let (mut tx, rx) = rtrb::RingBuffer::new(32);
+            let (gtx, _grx) = rtrb::RingBuffer::new(8);
+            let mut core = EngineCore::new(48_000, rx, gtx, Arc::new(Shared::new()));
+
+            let tracks = vec![TrackMix::default()];
+            assert!(tx
+                .push(Command::SetSong(Box::new(Song::new(vec![], tracks))))
+                .is_ok());
+            assert!(tx.push(Command::SetTrackPatch { track: 0, patch }).is_ok());
+
+            let pitch = if cat.name.contains("Drum") || cat.name.contains("Percussion") {
+                36
+            } else if cat.name.contains("Bass") {
+                38
+            } else {
+                60
+            };
+
+            assert!(tx
+                .push(Command::NoteOn {
+                    pitch,
+                    vel: 100,
+                    track: 0,
+                })
+                .is_ok());
+
+            let mut audio = vec![0.0f32; 4800]; // 50 ms stereo block (2400 frames)
+            assert_no_alloc::assert_no_alloc(|| core.process(&mut audio));
+
+            // Verify non-zero, finite, and bounded
+            let peak = audio.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            assert!(
+                peak > 0.0001,
+                "Category '{}' ({first_patch}) produced silence (peak = {peak})",
+                cat.name
+            );
+            assert!(
+                peak <= 1.05,
+                "Category '{}' ({first_patch}) clipped or blew up (peak = {peak})",
+                cat.name
+            );
+            assert!(
+                audio.iter().all(|x| x.is_finite()),
+                "Category '{}' ({first_patch}) produced NaN or Inf",
+                cat.name
+            );
+
+            // Test Note-Off release
+            assert!(tx.push(Command::NoteOffTrack { pitch, track: 0 }).is_ok());
+            assert_no_alloc::assert_no_alloc(|| core.process(&mut audio));
+            assert!(
+                audio.iter().all(|x| x.is_finite()),
+                "Category '{}' ({first_patch}) Note-Off produced NaN or Inf",
+                cat.name
+            );
+        }
     }
 }

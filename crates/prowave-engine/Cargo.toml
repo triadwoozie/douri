@@ -1,6 +1,6 @@
 [package]
 name = "prowave-engine"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2021"
 description = "ProWave Studio real-time engine: lock-free transport, voices and cpal output"
 license = "GPL-3.0-or-later"

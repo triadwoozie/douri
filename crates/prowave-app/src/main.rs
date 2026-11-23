@@ -2163,7 +2163,7 @@ fn init_logging() {
 }
 
 /// The Dōri logo, 256×256 with transparency (generated from dist/icons/douri-2048.png).
-pub const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
+pub const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon-1024.png");
 
 /// The Flex and Smart Tempo layout pictures (`PROWAVE_SHOT_SCENE=flex…`): a drum loop on an
 /// audio track, made in the temporary folder, with Flex markers, a Flex Pitch MIDI track and
@@ -2895,21 +2895,6 @@ fn main() -> eframe::Result {
                 app.ui.show_multimeter = true;
                 app.ui.shot_top_menu = Some("Track".to_string());
             }
-            if scene == "piano-roll" {
-                app.ui.bottom = Bottom::PianoRoll;
-                app.ui.score_tab = false;
-            }
-            if scene == "step-sequencer" {
-                app.ui.bottom = Bottom::PianoRoll;
-                app.ui.score_tab = true;
-            }
-            if scene == "patches" {
-                app.ui.library.category = Some(1); // Bass category with badges
-            }
-            // `prowave song.prowave` opens a project; `prowave song.wav drums.aiff` imports each
-            // file as an audio track (into the opened project, if any).
-            // `--play` starts the transport on launch; `--piano` opens the Piano Roll.
-            // A benchmark run takes no other arguments.
             let is_project = |a: &std::ffi::OsString| is_project_path(a.as_os_str());
             let args: Vec<std::ffi::OsString> = if measuring {
                 std::env::args_os().skip(1).filter(is_project).collect()
@@ -2935,6 +2920,61 @@ fn main() -> eframe::Result {
             let has_project_arg = args.iter().any(|a| is_project(a));
             if let Some(file) = args.iter().find(|a| is_project(a)) {
                 app.open(std::path::Path::new(file), &cc.egui_ctx);
+            }
+            if scene == "workspace" || scene == "tracks-and-mixer" {
+                app.ui.show_library = true;
+                app.ui.show_inspector = false;
+                app.ui.show_lists = true;
+                app.ui.bottom = Bottom::PianoRoll;
+                app.ui.score_tab = false;
+                app.ui.tracks.bar_w = 30.0;
+                app.ui.tracks.scroll_x = 0.0;
+                app.project.position_beats = 40.0;
+
+                if !has_project_arg {
+                    let green = egui::Color32::from_rgb(0x4e, 0xb0, 0x4a);
+                    let blue = egui::Color32::from_rgb(0x2f, 0x70, 0xd0);
+
+                    if let Some(t) = app.project.tracks.get_mut(0) {
+                        t.color = green;
+                    }
+                    if let Some(t) = app.project.tracks.get_mut(1) {
+                        t.color = green;
+                    }
+                    if let Some(t) = app.project.tracks.get_mut(2) {
+                        t.color = green;
+                    }
+                    if let Some(t) = app.project.tracks.get_mut(3) {
+                        t.color = blue;
+                        t.name = "Drum Pattern".to_string();
+                    }
+                    if let Some(t) = app.project.tracks.get_mut(4) {
+                        t.color = blue;
+                        t.name = "Synth Bass".to_string();
+                    }
+
+                    for (ti, t) in app.project.tracks.iter_mut().enumerate() {
+                        if let Some(r) = t.regions.first_mut() {
+                            r.len_bars = 22.0;
+                            if !r.notes.is_empty() {
+                                r.notes = model::demo_notes((ti + 1) as u32, 22.0, 48, 76);
+                            }
+                        }
+                    }
+                }
+            }
+            if scene == "playback" {
+                app.ui.show_library = false;
+                app.ui.show_mixer = true;
+                app.ui.bottom = Bottom::Mixer;
+                app.project.playing = true;
+                app.project.position_beats = 24.0;
+            }
+            if scene == "piano-roll" {
+                app.ui.show_library = false;
+                app.ui.bottom = Bottom::PianoRoll;
+                app.ui.score_tab = false;
+                app.project.position_beats = 16.0;
             }
             if !no_chooser_flag && !has_project_arg {
                 app.ui.chooser = Some(start_screen::Chooser::default());
@@ -2992,7 +3032,8 @@ mod tests {
     #[test]
     fn app_icon_decodes_as_a_square_rgba_image() {
         let icon = eframe::icon_data::from_png_bytes(super::APP_ICON_PNG).unwrap();
-        assert_eq!((icon.width, icon.height), (256, 256));
-        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
+        assert_eq!(icon.width, icon.height);
+        assert!(icon.width >= 256);
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
     }
 }
