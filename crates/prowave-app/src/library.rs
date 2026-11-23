@@ -319,6 +319,7 @@ pub struct LibraryView {
     pub audition_playing: bool,
     pub audition_volume: f32,
     pub audition_auto: bool,
+    pub audition_off_at: Option<(std::time::Instant, u8)>,
 }
 
 impl Default for LibraryView {
@@ -338,6 +339,7 @@ impl Default for LibraryView {
             audition_playing: false,
             audition_volume: 0.8,
             audition_auto: true,
+            audition_off_at: None,
         }
     }
 }
@@ -452,6 +454,28 @@ fn load_patch(p: &mut Project, v: &mut LibraryView, cat: usize, patch: usize) {
     t.drums = None;
     t.bass808 = None;
     t.hosted_instrument = 0;
+
+    // Resolve default or installed .sfz / .sf2 pack in sound_library.json
+    if matches!(t.kind, TrackKind::Instrument | TrackKind::Drummer) {
+        if let Some(resolved) = crate::sound_library::resolve_library_patch(c.name, name) {
+            match resolved {
+                crate::sound_library::ResolvedPatch::Sfz(sfz_path) => {
+                    t.sampler = Some(crate::model::SamplerUse::new(
+                        crate::sampler_load::SamplerSource::Sfz(sfz_path),
+                    ));
+                    t.instrument = Some("Sampler");
+                }
+                crate::sound_library::ResolvedPatch::SoundFont(sf2_path) => {
+                    t.soundfont = Some(crate::model::SoundFontUse {
+                        path: sf2_path.to_string_lossy().to_string(),
+                        bank: 0,
+                        program: 0,
+                    });
+                    t.instrument = Some("SoundFont");
+                }
+            }
+        }
+    }
     v.loaded = Some((cat, patch));
 }
 
@@ -651,6 +675,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
     let v = &mut s.library;
+
+    if let Some((off_at, pitch)) = v.audition_off_at {
+        if std::time::Instant::now() >= off_at {
+            s.audition.push(crate::piano_roll::Audition::Off { pitch });
+            v.audition_off_at = None;
+        } else {
+            ui.ctx().request_repaint();
+        }
+    }
 
     let left = panel.left();
     let right = panel.right();
@@ -1030,8 +1063,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 false,
                 Some(&patch_badges),
             ) {
+                if let Some((_, old_pitch)) = v.audition_off_at.take() {
+                    s.audition
+                        .push(crate::piano_roll::Audition::Off { pitch: old_pitch });
+                }
                 load_patch(p, v, sel_cat, pi);
-                if v.audition_auto {
+                if v.audition_auto && !p.playing {
                     let cat_name = CATEGORIES.get(sel_cat).map(|c| c.name).unwrap_or("");
                     let pitch = if cat_name.contains("Drum") || cat_name.contains("Percussion") {
                         36
@@ -1045,6 +1082,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         vel: 96,
                         track: p.selected_track as u16,
                     });
+                    v.audition_off_at = Some((
+                        std::time::Instant::now() + std::time::Duration::from_millis(350),
+                        pitch,
+                    ));
+                    ui.ctx().request_repaint();
                 }
             }
         }

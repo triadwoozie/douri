@@ -1884,6 +1884,7 @@ impl EngineCore {
                 Command::SetTrackSoundFont { track, player } => {
                     let t = track as usize;
                     if t < MAX_TRACKS {
+                        self.all_notes_off(Some(track));
                         self.sf_stop_track(track);
                         let old = std::mem::replace(&mut self.sf[t], player);
                         if let Some(mut old) = old {
