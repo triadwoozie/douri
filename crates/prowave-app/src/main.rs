@@ -1650,10 +1650,7 @@ impl eframe::App for App {
                 .collect()
         });
         for path in dropped {
-            let is_proj = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-                    || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-            });
+            let is_proj = is_project_path(path.as_os_str());
             if is_proj {
                 self.open(&path, &ctx);
                 continue;
@@ -2431,11 +2428,12 @@ fn print_help() {
 }
 
 fn is_project_path(a: &std::ffi::OsStr) -> bool {
-    let ext = std::path::Path::new(a).extension();
-    ext.is_some_and(|e| {
-        e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-            || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-    })
+    let p = std::path::Path::new(a);
+    crate::logicx::is_bundle(p)
+        || p.extension().is_some_and(|e| {
+            e.eq_ignore_ascii_case(prowave_project::EXTENSION)
+                || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
+        })
 }
 
 fn detect_initial_monitor_size() -> egui::Vec2 {
@@ -2552,13 +2550,7 @@ fn main() -> eframe::Result {
     i18n::init();
     project_io::remove_stale_media(std::time::Duration::from_secs(7 * 24 * 3600));
     let mon = detect_initial_monitor_size();
-    let has_project_arg = all_args.iter().any(|a| {
-        let p = std::path::Path::new(a.as_os_str());
-        p.extension().is_some_and(|e| {
-            e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-                || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-        })
-    });
+    let has_project_arg = all_args.iter().any(|a| is_project_path(a.as_os_str()));
     let no_chooser_flag = flag("--no-chooser")
         || (measuring && scene != "chooser" && scene != "welcome" && scene != "chooser-details")
         || std::env::var("CI").is_ok()
@@ -2918,24 +2910,11 @@ fn main() -> eframe::Result {
             // file as an audio track (into the opened project, if any).
             // `--play` starts the transport on launch; `--piano` opens the Piano Roll.
             // A benchmark run takes no other arguments.
+            let is_project = |a: &std::ffi::OsString| is_project_path(a.as_os_str());
             let args: Vec<std::ffi::OsString> = if measuring {
-                let is_proj = |a: &std::ffi::OsString| {
-                    let ext = std::path::Path::new(a).extension();
-                    ext.is_some_and(|e| {
-                        e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-                            || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-                    })
-                };
-                std::env::args_os().skip(1).filter(is_proj).collect()
+                std::env::args_os().skip(1).filter(is_project).collect()
             } else {
                 std::env::args_os().skip(1).collect()
-            };
-            let is_project = |a: &std::ffi::OsString| {
-                let ext = std::path::Path::new(a).extension();
-                ext.is_some_and(|e| {
-                    e.eq_ignore_ascii_case(prowave_project::EXTENSION)
-                        || e.eq_ignore_ascii_case(prowave_project::LEGACY_EXTENSION)
-                })
             };
             if !measuring {
                 recovery::session_dir();

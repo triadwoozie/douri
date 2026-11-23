@@ -17,7 +17,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const MAX_BLOCK_FRAMES: usize = 8192;
-const GARBAGE_CAPACITY: usize = 32;
+const COMMAND_CAPACITY: usize = 8192;
+const GARBAGE_CAPACITY: usize = 4096;
 
 /// UI-side queue accounting: each accepted state replacement reserves one return slot.
 struct CommandQueue {
@@ -407,7 +408,7 @@ impl Engine {
     /// its audio as fast as the processor allows, with the same commands, streams and readers as
     /// a device engine. Nothing plays. It can be made on any thread, and needs no device.
     pub fn offline(sample_rate: u32) -> Result<Self, EngineError> {
-        let (tx, rx) = RingBuffer::<Command>::new(1024);
+        let (tx, rx) = RingBuffer::<Command>::new(COMMAND_CAPACITY);
         let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
         let shared = Arc::new(Shared::new());
         let mut core = EngineCore::new(sample_rate, rx, gtx, shared.clone());
@@ -465,7 +466,7 @@ impl Engine {
 
     #[cfg(windows)]
     fn start_wasapi(buffer_frames: Option<u32>) -> Result<Self, EngineError> {
-        let (tx, rx) = RingBuffer::<Command>::new(1024);
+        let (tx, rx) = RingBuffer::<Command>::new(COMMAND_CAPACITY);
         let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
         let (live_tx, live_rx) = RingBuffer::<crate::core::LiveMidiEvent>::new(2048);
         let armed_track = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -583,7 +584,7 @@ impl Engine {
         }
         let sample_rate = config.sample_rate;
 
-        let (tx, rx) = RingBuffer::<Command>::new(1024);
+        let (tx, rx) = RingBuffer::<Command>::new(COMMAND_CAPACITY);
         let (gtx, grx) = RingBuffer::<Garbage>::new(GARBAGE_CAPACITY);
         let (live_tx, live_rx) = RingBuffer::<crate::core::LiveMidiEvent>::new(2048);
         let armed_track = Arc::new(std::sync::atomic::AtomicUsize::new(0));
