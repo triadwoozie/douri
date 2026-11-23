@@ -1076,6 +1076,8 @@ pub struct Project {
     /// MIDI input port (by name) whose clock the song follows, if any.
     pub midi_clock_in: Option<String>,
     pub key: &'static str,
+    pub key_root: u8,
+    pub key_scale: u8,
     pub tracks: Vec<Track>,
     pub playing: bool,
     pub recording: bool,
@@ -1337,6 +1339,8 @@ impl Project {
             tempo: 120.0,
             sig: (4, 4),
             key: "Cmaj",
+            key_root: 0,
+            key_scale: 0,
             tracks,
             playing: false,
             recording: false,
@@ -2003,17 +2007,27 @@ impl Project {
         let bar = bar.clamp(1, MAX_SIG_BAR);
         let sig = (sig.0.clamp(1, 99), valid_denominator(sig.1));
         let before = (self.sig, self.sig_changes.clone());
-        let change = SigChange {
-            bar,
-            num: sig.0,
-            den: sig.1,
-        };
         if bar == 1 {
             self.sig = sig;
         } else {
             match self.sig_changes.binary_search_by_key(&bar, |c| c.bar) {
-                Ok(i) => self.sig_changes[i] = change,
-                Err(i) => self.sig_changes.insert(i, change),
+                Ok(i) => {
+                    self.sig_changes[i].num = sig.0;
+                    self.sig_changes[i].den = sig.1;
+                }
+                Err(i) => {
+                    let prev_key = self.key_at_bar(bar);
+                    self.sig_changes.insert(
+                        i,
+                        SigChange {
+                            bar,
+                            num: sig.0,
+                            den: sig.1,
+                            key_root: Some(prev_key.0),
+                            key_scale: Some(prev_key.1),
+                        },
+                    );
+                }
             }
         }
         self.tidy_signatures();
@@ -2022,6 +2036,71 @@ impl Project {
             self.song_rev += 1;
         }
         changed
+    }
+
+    /// Sets the key signature (root and scale) from the 1-based `bar` on and returns whether
+    /// anything changed. Bar 1 updates the project's base key signature.
+    pub fn set_key_at(&mut self, bar: u32, root: u8, scale: u8) -> bool {
+        let bar = bar.clamp(1, MAX_SIG_BAR);
+        let root = root.min(11);
+        let scale = scale.min(11);
+        let before = (self.key_root, self.key_scale, self.sig_changes.clone());
+        if bar == 1 {
+            self.key_root = root;
+            self.key_scale = scale;
+            self.key = legacy_key_str(root, scale);
+        } else {
+            match self.sig_changes.binary_search_by_key(&bar, |c| c.bar) {
+                Ok(i) => {
+                    self.sig_changes[i].key_root = Some(root);
+                    self.sig_changes[i].key_scale = Some(scale);
+                }
+                Err(i) => {
+                    let (num, den) = self.signature_of_bar(bar - 1);
+                    self.sig_changes.insert(
+                        i,
+                        SigChange {
+                            bar,
+                            num,
+                            den,
+                            key_root: Some(root),
+                            key_scale: Some(scale),
+                        },
+                    );
+                }
+            }
+        }
+        self.tidy_signatures();
+        let changed = (self.key_root, self.key_scale, self.sig_changes.clone()) != before;
+        if changed {
+            self.song_rev += 1;
+        }
+        changed
+    }
+
+    /// Key signature (root 0..=11, scale 0..=11) in effect at `beats` (quarter notes from song start).
+    pub fn key_at(&self, beats: f64) -> (u8, u8) {
+        let bar = (self.beats_to_bar(beats).floor() as u32 + 1).max(1);
+        self.key_at_bar(bar)
+    }
+
+    /// Key signature (root 0..=11, scale 0..=11) in effect at the 1-based `bar`.
+    pub fn key_at_bar(&self, bar: u32) -> (u8, u8) {
+        let mut root = self.key_root;
+        let mut scale = self.key_scale;
+        for c in &self.sig_changes {
+            if c.bar <= bar {
+                if let Some(r) = c.key_root {
+                    root = r;
+                }
+                if let Some(s) = c.key_scale {
+                    scale = s;
+                }
+            } else {
+                break;
+            }
+        }
+        (root, scale)
     }
 
     /// Removes the signature change that starts at the 1-based `bar` (not bar 1 itself).
@@ -2046,6 +2125,8 @@ impl Project {
         for c in &mut self.sig_changes {
             c.num = c.num.clamp(1, 99);
             c.den = valid_denominator(c.den);
+            c.key_root = c.key_root.map(|r| r.min(11));
+            c.key_scale = c.key_scale.map(|s| s.min(11));
         }
     }
 
@@ -2797,6 +2878,135 @@ pub struct SigChange {
     pub bar: u32,
     pub num: u8,
     pub den: u8,
+    pub key_root: Option<u8>,
+    pub key_scale: Option<u8>,
+}
+
+/// Returns the legacy static string for a given root note (0..11) and scale mode (0..11).
+pub fn legacy_key_str(root: u8, scale: u8) -> &'static str {
+    const LEGACY_KEYS: [[&str; 12]; 12] = [
+        // 0: Major
+        [
+            "Cmaj", "C#maj", "Dmaj", "Ebmaj", "Emaj", "Fmaj", "F#maj", "Gmaj", "Abmaj", "Amaj",
+            "Bbmaj", "Bmaj",
+        ],
+        // 1: Natural Minor
+        [
+            "Cmin", "C#min", "Dmin", "Ebmin", "Emin", "Fmin", "F#min", "Gmin", "Abmin", "Amin",
+            "Bbmin", "Bmin",
+        ],
+        // 2: Harmonic Minor
+        [
+            "Charmmin",
+            "C#harmmin",
+            "Dharmmin",
+            "Ebharmmin",
+            "Eharmmin",
+            "Fharmmin",
+            "F#harmmin",
+            "Gharmmin",
+            "Abharmmin",
+            "Aharmmin",
+            "Bbharmmin",
+            "Bharmmin",
+        ],
+        // 3: Melodic Minor
+        [
+            "Cmelmin", "C#melmin", "Dmelmin", "Ebmelmin", "Emelmin", "Fmelmin", "F#melmin",
+            "Gmelmin", "Abmelmin", "Amelmin", "Bbmelmin", "Bmelmin",
+        ],
+        // 4: Dorian
+        [
+            "Cdor", "C#dor", "Ddor", "Ebdor", "Edor", "Fdor", "F#dor", "Gdor", "Abdor", "Ador",
+            "Bbdor", "Bdor",
+        ],
+        // 5: Phrygian
+        [
+            "Cphr", "C#phr", "Dphr", "Ebphr", "Ephr", "Fphr", "F#phr", "Gphr", "Abphr", "Aphr",
+            "Bbphr", "Bphr",
+        ],
+        // 6: Lydian
+        [
+            "Clyd", "C#lyd", "Dlyd", "Eblyd", "Elyd", "Flyd", "F#lyd", "Glyd", "Ablyd", "Alyd",
+            "Bblyd", "Blyd",
+        ],
+        // 7: Mixolydian
+        [
+            "Cmix", "C#mix", "Dmix", "Ebmix", "Emix", "Fmix", "F#mix", "Gmix", "Abmix", "Amix",
+            "Bbmix", "Bmix",
+        ],
+        // 8: Locrian
+        [
+            "Cloc", "C#loc", "Dloc", "Ebloc", "Eloc", "Floc", "F#loc", "Gloc", "Abloc", "Aloc",
+            "Bbloc", "Bloc",
+        ],
+        // 9: Major Pentatonic
+        [
+            "Cmajpent",
+            "C#majpent",
+            "Dmajpent",
+            "Ebmajpent",
+            "Emajpent",
+            "Fmajpent",
+            "F#majpent",
+            "Gmajpent",
+            "Abmajpent",
+            "Amajpent",
+            "Bbmajpent",
+            "Bmajpent",
+        ],
+        // 10: Minor Pentatonic
+        [
+            "Cminpent",
+            "C#minpent",
+            "Dminpent",
+            "Ebminpent",
+            "Eminpent",
+            "Fminpent",
+            "F#minpent",
+            "Gminpent",
+            "Abminpent",
+            "Aminpent",
+            "Bbminpent",
+            "Bminpent",
+        ],
+        // 11: Chromatic
+        [
+            "Cchrom", "C#chrom", "Dchrom", "Ebchrom", "Echrom", "Fchrom", "F#chrom", "Gchrom",
+            "Abchrom", "Achrom", "Bbchrom", "Bchrom",
+        ],
+    ];
+    LEGACY_KEYS[(scale as usize).min(11)][(root as usize).min(11)]
+}
+
+/// Parses a legacy key signature string (e.g. "Cmaj", "Ebmin") into root and scale indices (0..11).
+pub fn parse_key_str(s: &str) -> (u8, u8) {
+    let s = s.trim();
+    if s.is_empty() {
+        return (0, 0);
+    }
+    let (root_part, scale_part) = if s.len() >= 4 && (s.ends_with("maj") || s.ends_with("min")) {
+        s.split_at(s.len() - 3)
+    } else {
+        (s, "maj")
+    };
+    let root = match root_part {
+        "C" => 0,
+        "C#" | "Db" => 1,
+        "D" => 2,
+        "D#" | "Eb" => 3,
+        "E" => 4,
+        "F" => 5,
+        "F#" | "Gb" => 6,
+        "G" => 7,
+        "G#" | "Ab" => 8,
+        "A" => 9,
+        "A#" | "Bb" => 10,
+        "B" | "Cb" => 11,
+        _ => 0,
+    };
+    let scale = if scale_part == "min" { 1 } else { 0 };
+    (root, scale)
 }
 
 /// The signature track seen from outside the [`Project`]: the first bar's signature and the
@@ -3085,7 +3295,9 @@ mod tests {
             SigChange {
                 bar: 3,
                 num: 3,
-                den: 8
+                den: 8,
+                key_root: Some(0),
+                key_scale: Some(0),
             }
         );
         assert!(p.song_rev > rev, "the engine is asked to follow");
@@ -3113,13 +3325,57 @@ mod tests {
             SigChange {
                 bar: 5,
                 num: 4,
-                den: 4
+                den: 4,
+                key_root: Some(0),
+                key_scale: Some(0),
             }
         );
         // Bar 2 is in the first block.
         assert!(p.step_signature_at(1, SigPart::Denominator, 1));
         assert_eq!(p.sig, (4, 8));
         assert_eq!(p.sig_changes.len(), 1);
+    }
+
+    #[test]
+    fn key_signature_updates_and_lookup_at_playhead() {
+        let mut p = Project::demo();
+        assert_eq!(p.key_at(0.0), (0, 0)); // C Major at start
+        assert_eq!(p.key_at_bar(1), (0, 0));
+
+        // Update Project Key at Bar 1 to D Dorian (root 2, scale 4)
+        assert!(p.set_key_at(1, 2, 4));
+        assert_eq!(p.key_root, 2);
+        assert_eq!(p.key_scale, 4);
+        assert_eq!(p.key, "Ddor");
+        assert_eq!(p.key_at(0.0), (2, 4));
+        assert_eq!(p.key_at_bar(1), (2, 4));
+        assert_eq!(p.key_at_bar(4), (2, 4));
+
+        // Set Key at Bar 5 to Eb Natural Minor (root 3, scale 1)
+        assert!(p.set_key_at(5, 3, 1));
+        assert_eq!(p.sig_changes.len(), 1);
+        assert_eq!(p.sig_changes[0].bar, 5);
+        assert_eq!(p.sig_changes[0].key_root, Some(3));
+        assert_eq!(p.sig_changes[0].key_scale, Some(1));
+
+        // Before Bar 5 stays D Dorian
+        assert_eq!(p.key_at_bar(1), (2, 4));
+        assert_eq!(p.key_at_bar(4), (2, 4));
+        assert_eq!(p.key_at(0.0), (2, 4));
+        assert_eq!(p.key_at(15.9), (2, 4));
+
+        // At and after Bar 5 is Eb Natural Minor
+        assert_eq!(p.key_at_bar(5), (3, 1));
+        assert_eq!(p.key_at_bar(10), (3, 1));
+        assert_eq!(p.key_at(16.0), (3, 1)); // bar 5 starts at beat 16 in 4/4
+        assert_eq!(p.key_at(32.0), (3, 1));
+
+        // Updating Bar 5 again updates the existing signature event without duplicating
+        assert!(p.set_key_at(5, 9, 0)); // A Major
+        assert_eq!(p.sig_changes.len(), 1);
+        assert_eq!(p.sig_changes[0].key_root, Some(9));
+        assert_eq!(p.sig_changes[0].key_scale, Some(0));
+        assert_eq!(p.key_at_bar(5), (9, 0));
     }
 
     #[test]

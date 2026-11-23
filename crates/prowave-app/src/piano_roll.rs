@@ -124,8 +124,8 @@ pub struct PianoView {
     grid: usize,
     strength: f32,
     swing: f32,
-    scale_root: Option<u8>,
-    scale_mode: usize,
+    pub(crate) scale_root: Option<u8>,
+    pub(crate) scale_mode: usize,
     new_velocity: u8,
     drag: Drag,
     centered_for: Option<(usize, usize)>,
@@ -1625,6 +1625,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 [row.left_bottom(), row.right_bottom()],
                 Stroke::new(1.0, Color32::from_gray(0x9a)),
             );
+        }
+        if let Some(root) = v.scale_root {
+            let offsets = MODES.get(v.scale_mode).map_or(MODES[0].1, |m| m.1);
+            let pc = (pitch - root as i32).rem_euclid(12) as u8;
+            if offsets.contains(&pc) {
+                gk.circle_filled(
+                    pos2(keys.right() - 4.0, row.center().y),
+                    2.0,
+                    Color32::from_rgb(0x3b, 0x82, 0xf6),
+                );
+            }
         }
         if v.held == Some(pitch as u8) {
             gk.rect_filled(

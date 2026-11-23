@@ -709,6 +709,8 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
         tempo: p.tempo,
         sig: p.sig,
         key: p.key.to_string(),
+        key_root: Some(p.key_root),
+        key_scale: Some(p.key_scale),
         position_beats: p.position_beats,
         cycle: p.cycle,
         cycle_start: p.cycle_start,
@@ -765,6 +767,8 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                 bar: c.bar,
                 num: c.num,
                 den: c.den,
+                key_root: c.key_root,
+                key_scale: c.key_scale,
             })
             .collect(),
         markers: p
@@ -1082,10 +1086,20 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
             bar: c.bar,
             num: c.num,
             den: c.den,
+            key_root: c.key_root,
+            key_scale: c.key_scale,
         })
         .collect();
     p.tidy_signatures();
     p.key = intern(&doc.key);
+    if let (Some(r), Some(s)) = (doc.key_root, doc.key_scale) {
+        p.key_root = r.min(11);
+        p.key_scale = s.min(11);
+    } else {
+        let (r, s) = crate::model::parse_key_str(&doc.key);
+        p.key_root = r;
+        p.key_scale = s;
+    }
     p.position_beats = doc.position_beats.max(0.0);
     p.cycle = doc.cycle;
     p.cycle_start = doc.cycle_start.max(0.0);
@@ -1955,7 +1969,13 @@ pub(crate) mod tests {
         let mut doc = to_doc(&Project::empty()).0;
         doc.sig_changes = [(9, 7, 8), (1, 5, 4), (3, 0, 3), (3, 6, 8), (100_000, 2, 4)]
             .into_iter()
-            .map(|(bar, num, den)| SigChangeDoc { bar, num, den })
+            .map(|(bar, num, den)| SigChangeDoc {
+                bar,
+                num,
+                den,
+                key_root: None,
+                key_scale: None,
+            })
             .collect();
         let (p, _) = from_doc(&doc, Path::new("."), &egui::Context::default());
         let got: Vec<(u32, u8, u8)> = p
@@ -2595,6 +2615,39 @@ pub(crate) mod tests {
                 ("Rev", TrackKind::Aux, 0, false),
             ]
         );
+    }
+
+    #[test]
+    fn key_signature_serialization_round_trip() {
+        let mut p = Project::demo();
+        p.set_key_at(1, 1, 4); // C# / Db Dorian
+        p.set_key_at(8, 3, 1); // Eb Natural Minor
+
+        let (doc, _) = to_doc(&p);
+        assert_eq!(doc.key_root, Some(1));
+        assert_eq!(doc.key_scale, Some(4));
+        assert_eq!(doc.sig_changes.len(), 1);
+        assert_eq!(doc.sig_changes[0].key_root, Some(3));
+        assert_eq!(doc.sig_changes[0].key_scale, Some(1));
+
+        let (back, _) = from_doc(&doc, Path::new("."), &egui::Context::default());
+        assert_eq!(back.key_root, 1);
+        assert_eq!(back.key_scale, 4);
+        assert_eq!(back.key_at_bar(1), (1, 4));
+        assert_eq!(back.key_at_bar(7), (1, 4));
+        assert_eq!(back.key_at_bar(8), (3, 1));
+        assert_eq!(back.sig_changes.len(), 1);
+        assert_eq!(back.sig_changes[0].key_root, Some(3));
+        assert_eq!(back.sig_changes[0].key_scale, Some(1));
+
+        // Backward compatibility: project doc from earlier versions without key_root / key_scale
+        let legacy_doc = ProjectDoc {
+            key: "Ebmin".into(),
+            ..ProjectDoc::default()
+        };
+        let (legacy_p, _) = from_doc(&legacy_doc, Path::new("."), &egui::Context::default());
+        assert_eq!(legacy_p.key_root, 3); // Eb
+        assert_eq!(legacy_p.key_scale, 1); // Natural Minor
     }
 
     #[test]

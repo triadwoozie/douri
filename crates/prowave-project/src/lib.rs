@@ -586,6 +586,10 @@ pub struct ProjectDoc {
     pub tempo: f32,
     pub sig: (u8, u8),
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_root: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_scale: Option<u8>,
     pub position_beats: f64,
     pub cycle: bool,
     pub cycle_start: f64,
@@ -644,6 +648,10 @@ pub struct SigChangeDoc {
     pub bar: u32,
     pub num: u8,
     pub den: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_root: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_scale: Option<u8>,
 }
 
 /// A marker from `beat` (quarter notes from the start) on.
@@ -673,6 +681,8 @@ impl Default for ProjectDoc {
             tempo: 120.0,
             sig: (4, 4),
             key: "Cmaj".into(),
+            key_root: None,
+            key_scale: None,
             position_beats: 0.0,
             cycle: false,
             cycle_start: 0.0,

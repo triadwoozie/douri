@@ -350,7 +350,13 @@ fn move_signatures(p: &mut Project, edit: SectionEdit, l: f64, r: f64) -> bool {
         while changes.last().is_some_and(|c| c.bar >= bar) {
             changes.pop();
         }
-        changes.push(SigChange { bar, num, den });
+        changes.push(SigChange {
+            bar,
+            num,
+            den,
+            key_root: None,
+            key_scale: None,
+        });
     }
     // A change to the signature already in effect changes nothing.
     let mut prev = first;
@@ -524,6 +530,8 @@ mod tests {
             bar: 10,
             num: 3,
             den: 4,
+            key_root: None,
+            key_scale: None,
         }];
         p.tracks[0].auto.volume = vec![pt(0.0, -6.0), pt(16.0, 0.0), pt(28.0, -12.0)];
         (p.cycle_start, p.cycle_end) = (12.0, 20.0);
@@ -562,7 +570,9 @@ mod tests {
             vec![SigChange {
                 bar: 8,
                 num: 3,
-                den: 4
+                den: 4,
+                key_root: None,
+                key_scale: None,
             }]
         );
         // The automation after the section moves left; the value at the right locator (it was
@@ -598,7 +608,9 @@ mod tests {
             vec![SigChange {
                 bar: 12,
                 num: 3,
-                den: 4
+                den: 4,
+                key_root: None,
+                key_scale: None,
             }]
         );
         let vol = &p.tracks[0].auto.volume;
@@ -638,7 +650,9 @@ mod tests {
             vec![SigChange {
                 bar: 12,
                 num: 3,
-                den: 4
+                den: 4,
+                key_root: None,
+                key_scale: None,
             }]
         );
         // The automation of the section plays again in the copy.

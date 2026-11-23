@@ -550,13 +550,40 @@ fn lcd(
                 FontId::monospace(17.0),
                 pal.text,
             );
+            let (active_root, active_scale) = p.key_at(p.position_beats);
+            let root_str = crate::note_edit::ROOT_SHORTS[active_root.min(11) as usize];
+            let scale_str = crate::note_edit::MODE_SHORTS[active_scale.min(11) as usize];
+            let key_display = format!("{root_str} {scale_str} /16");
+            let key_rect = Rect::from_min_max(
+                pos2(sig_x - 22.0, bot),
+                pos2(sig_x + 22.0, rect.bottom() - 2.0),
+            );
+            let key_resp = ui
+                .interact(
+                    key_rect,
+                    egui::Id::unique(("control_bar", "key_scale_sig")),
+                    Sense::click(),
+                )
+                .on_hover_text(format!(
+                    "Key Signature: {} {}\nClick to change root and scale",
+                    crate::note_edit::ROOTS[active_root.min(11) as usize],
+                    crate::note_edit::MODES[active_scale.min(11) as usize].0
+                ));
+            if key_resp.hovered() {
+                g.rect_filled(key_rect, 2.0, Color32::from_white_alpha(18));
+            }
             g.text(
                 pos2(sig_x, bot + 2.0),
                 Align2::CENTER_TOP,
-                "Cmaj /16",
+                key_display,
                 FontId::proportional(9.0),
-                pal.mid,
+                if key_resp.hovered() {
+                    pal.text
+                } else {
+                    pal.mid
+                },
             );
+            key_scale_popup_menu(ui, &key_resp, p, s);
         }
         LcdMode::BeatsAndTime => {
             // Left: Bars & Beats
@@ -755,13 +782,40 @@ fn lcd(
                     );
                 }
                 if opt.show_key_signature {
+                    let (active_root, active_scale) = p.key_at(p.position_beats);
+                    let root_str = crate::note_edit::ROOT_SHORTS[active_root.min(11) as usize];
+                    let scale_str = crate::note_edit::MODE_SHORTS[active_scale.min(11) as usize];
+                    let key_display = format!("{root_str} {scale_str}");
+                    let key_rect = Rect::from_min_max(
+                        pos2(cur_x, bot),
+                        pos2(cur_x + sig_w, rect.bottom() - 2.0),
+                    );
+                    let key_resp = ui
+                        .interact(
+                            key_rect,
+                            egui::Id::unique(("control_bar", "key_scale_custom")),
+                            Sense::click(),
+                        )
+                        .on_hover_text(format!(
+                            "Key Signature: {} {}\nClick to change root and scale",
+                            crate::note_edit::ROOTS[active_root.min(11) as usize],
+                            crate::note_edit::MODES[active_scale.min(11) as usize].0
+                        ));
+                    if key_resp.hovered() {
+                        g.rect_filled(key_rect, 2.0, Color32::from_white_alpha(18));
+                    }
                     g.text(
                         pos2(cur_x + sig_w * 0.5, bot + 2.0),
                         Align2::CENTER_TOP,
-                        "Cmaj",
+                        key_display,
                         FontId::proportional(8.5),
-                        pal.mid,
+                        if key_resp.hovered() {
+                            pal.text
+                        } else {
+                            pal.mid
+                        },
                     );
+                    key_scale_popup_menu(ui, &key_resp, p, s);
                 }
                 cur_x += sig_w + 6.0;
             }
@@ -1004,6 +1058,73 @@ fn lcd(
             s.show_lcd_customize = true;
             ui.close();
         }
+    });
+}
+
+fn key_scale_popup_menu(ui: &Ui, resp: &egui::Response, p: &mut Project, s: &mut UiState) {
+    egui::Popup::menu(resp).show(|ui| {
+        ui.set_min_width(280.0);
+        let cur_bar = (p.beats_to_bar(p.position_beats).floor() as u32 + 1).max(1);
+        let (active_root, active_scale) = p.key_at(p.position_beats);
+
+        ui.horizontal(|ui| {
+            // Left column: Root Note
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new("Root note").strong());
+                ui.separator();
+                for (i, name) in crate::note_edit::ROOTS.iter().enumerate() {
+                    let is_active = active_root == i as u8;
+                    let text = if is_active {
+                        format!("✓ {name}")
+                    } else {
+                        format!("   {name}")
+                    };
+                    if ui.selectable_label(is_active, text).clicked() {
+                        p.set_key_at(cur_bar, i as u8, active_scale);
+                        s.piano.scale_root = Some(i as u8);
+                        s.piano.scale_mode = active_scale as usize;
+                    }
+                }
+            });
+
+            ui.separator();
+
+            // Right column: Scale / Mode
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new("Scale / Mode").strong());
+                ui.separator();
+                for (i, (name, _)) in crate::note_edit::MODES.iter().enumerate() {
+                    let is_active = active_scale == i as u8;
+                    let text = if is_active {
+                        format!("✓ {name}")
+                    } else {
+                        format!("   {name}")
+                    };
+                    if ui.selectable_label(is_active, text).clicked() {
+                        p.set_key_at(cur_bar, active_root, i as u8);
+                        s.piano.scale_root = Some(active_root);
+                        s.piano.scale_mode = i;
+                    }
+                }
+            });
+        });
+
+        ui.separator();
+        let display = format!(
+            "{} {}",
+            crate::note_edit::ROOTS[active_root.min(11) as usize],
+            crate::note_edit::MODES[active_scale.min(11) as usize].0
+        );
+        let bar_info = if cur_bar == 1 {
+            "Project Key (Bar 1)".to_string()
+        } else {
+            format!("At Bar {cur_bar}")
+        };
+        ui.label(
+            egui::RichText::new(format!("{bar_info}: {display}"))
+                .small()
+                .color(ui.visuals().weak_text_color()),
+        );
     });
 }
 

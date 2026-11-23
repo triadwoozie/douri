@@ -77,10 +77,16 @@ pub fn show(
         Color32::from_gray(0xdc),
     );
     let (num, den) = p.signature_of_bar(p.beats_to_bar(p.position_beats) as u32);
+    let (root, scale) = p.key_at(p.position_beats);
+    let key_str = format!(
+        "{} {}",
+        crate::note_edit::ROOT_SHORTS[root as usize],
+        crate::note_edit::MODE_SHORTS[scale as usize]
+    );
     gh.text(
         pos2(header.right() - 10.0, header.center().y),
         Align2::RIGHT_CENTER,
-        format!("{num}/{den}"),
+        format!("{num}/{den}  {key_str}"),
         FontId::proportional(11.0),
         Color32::from_gray(0xa8),
     );
@@ -165,8 +171,14 @@ pub fn show(
             [pos2(x0, lane.top()), pos2(x0, lane.bottom())],
             Stroke::new(1.5, BLOCK_EDGE),
         );
+        let (root, scale) = p.key_at_bar(b.bar);
+        let key_str = format!(
+            "{} {}",
+            crate::note_edit::ROOT_SHORTS[root as usize],
+            crate::note_edit::MODE_SHORTS[scale as usize]
+        );
         let label = g.layout_no_wrap(
-            format!("{}/{}", b.num, b.den),
+            format!("{}/{}  {key_str}", b.num, b.den),
             FontId::proportional(12.0),
             Color32::WHITE,
         );
@@ -212,6 +224,30 @@ pub fn show(
                                 new_den = d;
                             }
                         }
+                        ui.separator();
+                        let (mut cur_root, mut cur_scale) = p.key_at_bar(bar);
+                        egui::ComboBox::from_id_salt("sig_edit_root")
+                            .selected_text(crate::note_edit::ROOTS[cur_root.min(11) as usize])
+                            .width(80.0)
+                            .show_ui(ui, |ui| {
+                                for (i, r) in crate::note_edit::ROOTS.iter().enumerate() {
+                                    if ui.selectable_label(cur_root == i as u8, *r).clicked() {
+                                        cur_root = i as u8;
+                                        p.set_key_at(bar, cur_root, cur_scale);
+                                    }
+                                }
+                            });
+                        egui::ComboBox::from_id_salt("sig_edit_scale")
+                            .selected_text(crate::note_edit::MODES[cur_scale.min(11) as usize].0)
+                            .width(110.0)
+                            .show_ui(ui, |ui| {
+                                for (i, (m, _)) in crate::note_edit::MODES.iter().enumerate() {
+                                    if ui.selectable_label(cur_scale == i as u8, *m).clicked() {
+                                        cur_scale = i as u8;
+                                        p.set_key_at(bar, cur_root, cur_scale);
+                                    }
+                                }
+                            });
                         if ui.button("OK").clicked() {
                             close = true;
                         }

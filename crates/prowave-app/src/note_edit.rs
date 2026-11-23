@@ -3,18 +3,32 @@
 use crate::model::Note;
 
 /// Scale modes for Scale Quantize: name and semitone offsets from the root.
-pub const MODES: [(&str, &[u8]); 7] = [
+pub const MODES: [(&str, &[u8]); 12] = [
     ("Major", &[0, 2, 4, 5, 7, 9, 11]),
-    ("Minor", &[0, 2, 3, 5, 7, 8, 10]),
+    ("Natural Minor", &[0, 2, 3, 5, 7, 8, 10]),
+    ("Harmonic Minor", &[0, 2, 3, 5, 7, 8, 11]),
+    ("Melodic Minor", &[0, 2, 3, 5, 7, 9, 11]),
     ("Dorian", &[0, 2, 3, 5, 7, 9, 10]),
+    ("Phrygian", &[0, 1, 3, 5, 7, 8, 10]),
+    ("Lydian", &[0, 2, 4, 6, 7, 9, 11]),
     ("Mixolydian", &[0, 2, 4, 5, 7, 9, 10]),
+    ("Locrian", &[0, 1, 3, 5, 6, 8, 10]),
     ("Major Pentatonic", &[0, 2, 4, 7, 9]),
     ("Minor Pentatonic", &[0, 3, 5, 7, 10]),
     ("Chromatic", &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
 ];
 
+pub const MODE_SHORTS: [&str; 12] = [
+    "maj", "min", "harm min", "mel min", "dor", "phr", "lyd", "mix", "loc", "maj pent", "min pent",
+    "chrom",
+];
+
 pub const ROOTS: [&str; 12] = [
-    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    "C", "C# / Db", "D", "Eb", "E", "F", "F# / Gb", "G", "Ab", "A", "Bb", "B",
+];
+
+pub const ROOT_SHORTS: [&str; 12] = [
+    "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
 ];
 
 /// Time Quantize grid choices: label and length in beats.
