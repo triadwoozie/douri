@@ -488,6 +488,7 @@ const LANGUAGE: &[&str] = &[
     "Français",
     "Deutsch",
     "Español",
+    "Italiano",
     "Português (Portugal)",
     "Português (Brasil)",
     "Filipino",
