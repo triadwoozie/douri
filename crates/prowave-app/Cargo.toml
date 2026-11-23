@@ -1,6 +1,6 @@
 [package]
 name = "douri"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition = "2021"
 description = "Dōri desktop app (egui) - clean-room pure-Rust digital audio workstation"
 license = "GPL-3.0-or-later"
@@ -45,21 +45,21 @@ winit = { version = "0.30.13", default-features = false, features = [
 egui = "0.37"
 phosphor-egui = { package = "egui-phosphor", version = "0.14", default-features = false, features = ["regular", "fill", "bold"] }
 human-panic = "2.0.8"
-prowave-engine = { version = "0.1.0-alpha.2", path = "../prowave-engine" }
-prowave-garageband-import = { version = "0.1.0-alpha.2", path = "../prowave-garageband-import" }
-prowave-guitarpro = { version = "0.1.0-alpha.2", path = "../prowave-guitarpro" }
-prowave-hydrogen-import = { version = "0.1.0-alpha.2", path = "../prowave-hydrogen-import" }
-prowave-ladspa = { version = "0.1.0-alpha.2", path = "../prowave-ladspa" }
-prowave-logicx-import = { version = "0.1.0-alpha.2", path = "../prowave-logicx-import" }
-prowave-musicxml = { version = "0.1.0-alpha.2", path = "../prowave-musicxml" }
-prowave-mxl = { version = "0.1.0-alpha.2", path = "../prowave-mxl" }
-prowave-plugin-host = { version = "0.1.0-alpha.2", path = "../prowave-plugin-host" }
-prowave-rex = { version = "0.1.0-alpha.2", path = "../prowave-rex" }
-prowave-project = { version = "0.1.0-alpha.2", path = "../prowave-project" }
-prowave-sfz = { version = "0.1.0-alpha.2", path = "../prowave-sfz" }
-prowave-exs = { version = "0.1.0-alpha.2", path = "../prowave-exs" }
-prowave-vamp = { version = "0.1.0-alpha.2", path = "../prowave-vamp" }
-prowave-vcs = { version = "0.1.0-alpha.2", path = "../prowave-vcs" }
+prowave-engine = { version = "0.1.0-alpha.3", path = "../prowave-engine" }
+prowave-garageband-import = { version = "0.1.0-alpha.3", path = "../prowave-garageband-import" }
+prowave-guitarpro = { version = "0.1.0-alpha.3", path = "../prowave-guitarpro" }
+prowave-hydrogen-import = { version = "0.1.0-alpha.3", path = "../prowave-hydrogen-import" }
+prowave-ladspa = { version = "0.1.0-alpha.3", path = "../prowave-ladspa" }
+prowave-logicx-import = { version = "0.1.0-alpha.3", path = "../prowave-logicx-import" }
+prowave-musicxml = { version = "0.1.0-alpha.3", path = "../prowave-musicxml" }
+prowave-mxl = { version = "0.1.0-alpha.3", path = "../prowave-mxl" }
+prowave-plugin-host = { version = "0.1.0-alpha.3", path = "../prowave-plugin-host" }
+prowave-rex = { version = "0.1.0-alpha.3", path = "../prowave-rex" }
+prowave-project = { version = "0.1.0-alpha.3", path = "../prowave-project" }
+prowave-sfz = { version = "0.1.0-alpha.3", path = "../prowave-sfz" }
+prowave-exs = { version = "0.1.0-alpha.3", path = "../prowave-exs" }
+prowave-vamp = { version = "0.1.0-alpha.3", path = "../prowave-vamp" }
+prowave-vcs = { version = "0.1.0-alpha.3", path = "../prowave-vcs" }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 rfd = "0.17.2"
 rtrb = "0.4.0"

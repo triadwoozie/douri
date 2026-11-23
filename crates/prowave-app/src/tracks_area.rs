@@ -2532,14 +2532,12 @@ fn draw_region(
                 continue;
             }
             let ny = inner.center().y - (n.pitch as f32 - mid) * step;
-            let nr = Rect::from_min_max(
-                pos2(nx.max(inner.left()), ny - 0.75),
-                pos2(
-                    (nx + (n.len * beat_px).max(2.0)).min(inner.right()),
-                    ny + 0.75,
-                ),
-            );
-            g.rect_filled(nr, 0.0, ink);
+            let left_x = nx.max(inner.left());
+            let right_x = (nx + (n.len * beat_px).max(2.0)).min(inner.right());
+            if right_x > left_x {
+                let nr = Rect::from_min_max(pos2(left_x, ny - 0.75), pos2(right_x, ny + 0.75));
+                g.rect_filled(nr, 0.0, ink);
+            }
         }
     }
     if edit {
@@ -3643,7 +3641,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             }
             if tool.moves_regions() && (full.left() - rr.left()).abs() < 0.5 {
                 let grip = Rect::from_min_max(
-                    pos2(rr.left(), full.center().y),
+                    pos2(rr.left(), full.top()),
                     pos2(rr.left() + 8.0, rr.bottom()),
                 );
                 let sr = ui.interact(grip, id(("region_start", ti, ri)), Sense::drag());
@@ -3757,7 +3755,18 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                 }
             } else if tool.moves_regions() {
-                if resp.drag_started_by(egui::PointerButton::Primary) {
+                let press_pt = ui
+                    .input(|i| i.pointer.press_origin())
+                    .or_else(|| resp.interact_pointer_pos());
+                let on_edge_handle = press_pt.map_or(false, |pt| {
+                    ((full.left() - rr.left()).abs() < 0.5 && pt.x <= rr.left() + 8.0)
+                        || ((full.right() - rr.right()).abs() < 0.5 && pt.x >= rr.right() - 8.0)
+                });
+                if resp.drag_started_by(egui::PointerButton::Primary)
+                    && !on_edge_handle
+                    && v.start_drag.is_none()
+                    && v.edge_drag.is_none()
+                {
                     if let Some(pt) = resp.interact_pointer_pos() {
                         v.grab_beats = beat_of(pt.x) - start_beat;
                     }
@@ -3776,7 +3785,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                     v.group_drag = group;
                 }
-                if resp.dragged_by(egui::PointerButton::Primary) {
+                if resp.dragged_by(egui::PointerButton::Primary)
+                    && !v.group_drag.is_empty()
+                    && v.start_drag.is_none()
+                    && v.edge_drag.is_none()
+                {
                     let copy = ui.input(|i| i.modifiers.alt);
                     if let Some(pt) = resp.interact_pointer_pos() {
                         let raw = (beat_of(pt.x) - v.grab_beats).max(0.0);
@@ -3807,7 +3820,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                         }
                     }
                 }
-                if resp.drag_stopped() {
+                if resp.drag_stopped() && !v.group_drag.is_empty() {
                     let copy = ui.input(|i| i.modifiers.alt);
                     let group = std::mem::take(&mut v.group_drag);
                     let (delta, down) = std::mem::take(&mut v.drag_by);

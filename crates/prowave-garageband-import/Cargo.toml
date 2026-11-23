@@ -1,6 +1,6 @@
 [package]
 name = "prowave-garageband-import"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition = "2021"
 description = "Pro Wave: what is inside a GarageBand .band project (bundle detection, metadata, media list)"
 license = "GPL-3.0-or-later"

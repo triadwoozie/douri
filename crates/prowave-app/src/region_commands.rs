@@ -1155,6 +1155,81 @@ mod tests {
         assert_eq!(played_all.len(), 2);
     }
 
+    #[test]
+    fn left_edge_drag_from_beat_0_to_23_hides_notes_at_1_6_to_14_6_and_restores_on_drag_back() {
+        let mut p = Project::empty();
+        let ti = p.add_track(TrackKind::Instrument);
+        let mut reg = Region::new_midi("Test Trim", 1.0, 9.0); // 9 bars = 36 beats in 4/4
+                                                               // Notes sitting at beats 1.6..14.6
+        reg.notes = vec![
+            Note {
+                start: 1.6,
+                len: 1.0,
+                pitch: 60,
+                vel: 100,
+                ..Note::default()
+            },
+            Note {
+                start: 5.6,
+                len: 1.0,
+                pitch: 64,
+                vel: 100,
+                ..Note::default()
+            },
+            Note {
+                start: 9.6,
+                len: 1.0,
+                pitch: 67,
+                vel: 100,
+                ..Note::default()
+            },
+            Note {
+                start: 14.6,
+                len: 1.0,
+                pitch: 72,
+                vel: 100,
+                ..Note::default()
+            },
+        ];
+        p.tracks[ti].regions.push(reg);
+        let mut v = TracksView::default();
+        v.select_only(ti, 0);
+
+        // Simulate left-edge drag from beat 0.0 to beat 23.0 (Bar 6.75)
+        assert!(resize_starts(&mut p, &v, (ti, 0), 23.0));
+        assert_eq!(p.region_start_beats(&p.tracks[ti].regions[0]), 23.0);
+        assert_eq!(p.tracks[ti].regions[0].start_bar, 6.75);
+
+        // Assert that after the drag, zero notes fall inside [23.0, 35.0] (the region's active playback/timeline span)
+        let played = crate::engine_sync::region_notes(
+            &p.tracks[ti],
+            &p.tracks[ti].regions[0],
+            23.0,
+            12.0, // length covering 23.0..35.0
+            0,
+        );
+        assert_eq!(played.len(), 0, "zero notes fall inside [23.0, 35.0]");
+
+        // And in Region.notes, every note has local start < 0.0 so none fall in [0.0, 12.0)
+        assert!(p.tracks[ti].regions[0].notes.iter().all(|n| n.start < 0.0));
+
+        // Dragging the left edge back to 0.0 reveals all original notes at 1.6..14.6 again
+        assert!(resize_starts(&mut p, &v, (ti, 0), 0.0));
+        assert_eq!(p.region_start_beats(&p.tracks[ti].regions[0]), 0.0);
+        assert_eq!(p.tracks[ti].regions[0].start_bar, 1.0);
+        assert_eq!(p.tracks[ti].regions[0].len_bars, 9.0);
+
+        let played_restored =
+            crate::engine_sync::region_notes(&p.tracks[ti], &p.tracks[ti].regions[0], 0.0, 36.0, 0);
+        assert_eq!(played_restored.len(), 4);
+        let expected_starts = [1.6, 5.6, 9.6, 14.6];
+        let expected_pitches = [60, 64, 67, 72];
+        for (i, note) in played_restored.iter().enumerate() {
+            assert!((note.start_beat - expected_starts[i]).abs() < 1e-5);
+            assert_eq!(note.pitch, expected_pitches[i]);
+        }
+    }
+
     // ---- 4. Repeat
 
     #[test]
