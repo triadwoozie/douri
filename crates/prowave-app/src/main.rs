@@ -43,6 +43,7 @@ mod groups;
 mod hosted_plugins;
 pub mod hw;
 pub mod hw_vocal;
+mod hydrogen_archive;
 mod i18n;
 mod icons;
 mod import;
