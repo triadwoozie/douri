@@ -2,6 +2,21 @@
 
 What changed in each Dōri release.
 
+## 0.1.0-alpha.5
+
+### Arranger & Editing Tools
+- **Pencil Tool MIDI Region Drawing**: Enabled the Pencil tool in the Tracks area left-click tool menu. Click on empty space in a MIDI/Instrument track to draw a 1-bar empty MIDI region, or drag to set its length, snapped to the active timeline grid.
+- **Audio Region Reverse Engine Rebuild**: Toggling Reverse on an audio region now marks the project song revision dirty, ensuring the engine immediately rebuilds and plays back the reversed clip.
+
+### Plug-in Hosting & Discovery
+- **Scrollable Plug-in Picker Viewports**: Long manufacturer and category menus now scroll within a clean, bounded viewport (up to 360 px), preventing off-screen menu overflow when opening massive third-party plug-in bundles.
+- **Persistent Plug-in Search Field**: Clicking into the Audio FX search input keeps the popup menu open until an effect is selected or the user clicks outside.
+- **VST3 Bundle Architecture Discovery**: Added fallback detection for `.vst3` bundles where the binary name differs from the folder stem (e.g. `Dragonfly.vst3` containing `libdragonfly.so`).
+
+### Upstream Sync & Core Maintenance
+- **Dependency Advisory Updates**: Updated `url` (2.5.9), `async-executor` (1.14.1), and `clipboard-win` (5.4.3).
+- **Safe Struct Initialization**: Synchronized `Region.missing` audio file recovery field across all dynamic MIDI region construction paths.
+
 ## 0.1.0-alpha.4
 
 ### Playback & DSP Polyphony

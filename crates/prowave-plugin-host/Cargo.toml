@@ -1,6 +1,6 @@
 [package]
 name = "prowave-plugin-host"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2021"
 description = "Pro Wave: CLAP, VST3 and Audio Unit plug-in hosting"
 license = "GPL-3.0-or-later"

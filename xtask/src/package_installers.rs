@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-const VERSION: &str = "0.1.0-alpha.4";
+const VERSION: &str = "0.1.0-alpha.5";
 
 fn run_cmd(mut cmd: Command, desc: &str) -> bool {
     println!("\n==> {desc} ({:?})", cmd);

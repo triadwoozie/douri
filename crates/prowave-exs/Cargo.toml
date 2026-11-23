@@ -1,6 +1,6 @@
 [package]
 name = "prowave-exs"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2021"
 description = "Pro Wave: EXS24 sampler instrument reading (the Sampler's Logic format)"
 license = "GPL-3.0-or-later"
