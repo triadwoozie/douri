@@ -177,6 +177,20 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 * [ ] **MPE & MIDI 2.0 Property Exchange:** Full per-note pitch/pressure/timbre expression lanes inside the Piano Roll.
 * [ ] **Spatial Audio / Multi-Channel Bed Mixing:** Surround/7.1.4 bed routing, 3D panner UI, and ADM BWF export.
 
+### Phase 5: Eclipsa Audio (IAMF) Spatial Mixing & UI (`v0.5.0+`)
+
+* [ ] **Spatial Engine & Format Support (`#![forbid(alloc)]`):**
+  * Open-source Eclipsa Audio / IAMF spatial rendering pipeline (BSD-3-Clause Clear / royalty-free AOMedia spec, keeping Dōri strictly MIT / Apache-2.0).
+  * Pre-allocated 7.1.4 Bed accumulator, 3D Object VBAP/elevation gain tables, and real-time Binaural HRIR downmixer with zero audio-thread heap allocations.
+  * Offline faster-than-real-time Bounce export to `.iamf` alongside stereo/surround WAV and FLAC.
+* [ ] **Mixer & Track Header Spatial Controls:**
+  * Channel strip `Output` selector supporting `Stereo Out`, `Surround` (7.1.4 Bed), and `Object` (3D Audio Object).
+  * Inline Mixer `Pan` widgets and Track Header badges: `4×4` 3D Object XY grid + vertical Elevation slider for `Object` tracks, and circular speaker-ring radar + LFE level slider for `Surround` bed tracks.
+  * Floating **3D Object Panner** and **Surround Panner** windows with coordinate/spread controls, per-speaker mute toggles (for isolated LFE aux bed routing), and user presets (`Save As…`, `Save As Default`).
+* [ ] **Spatial Automation & Multi-Channel Metering:**
+  * Automation parameter pop-up under `Main ▸` exposing `Object Position Left/Right`, `Object Position Back/Front`, `Object Position Elevation`, `Object Size`, and `Surr. Spread`.
+  * Master channel strip `Eclipsa` renderer slot (monitoring modes: `Binaural Headphones`, `4.0 Quad`, `5.1`, `7.1.4`) and a 12-channel `7.1.4` (`Ls`, `Lm`, `L`, `C`, `R`, `Rm`, `Rs`, `LFE`, `Lts`, `Lt`, `Rt`, `Rts`) peak/RMS **Level Meter** window.
+
 ---
 
 ## 4. Performance Targets & Verification Gates
