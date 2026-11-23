@@ -136,7 +136,7 @@ fn media_dir(path: &Path) -> Option<PathBuf> {
 /// Whether a channel strip becomes a track: an active instrument, audio or aux strip. Masters,
 /// outputs, inputs, busses and the unused default strips do not.
 fn importable(track: &logic::Track) -> bool {
-    track.active
+    (track.active || !track.audio_regions.is_empty() || !track.midi_regions.is_empty())
         && matches!(
             track.kind,
             logic::TrackKind::Instrument | logic::TrackKind::Audio | logic::TrackKind::Aux
@@ -224,6 +224,23 @@ fn map_into(
             ));
         }
         if kind == TrackKind::Instrument {
+            let lower = strip.name.to_lowercase();
+            if lower.contains("drum")
+                || lower.contains("circuit")
+                || lower.contains("beat")
+                || lower.contains("perc")
+            {
+                track.instrument = Some("Drum Kit");
+            } else if lower.contains("synth") || lower.contains("retro") || lower.contains("gliss")
+            {
+                track.instrument = Some("Retro Synth");
+            } else if lower.contains("piano") || lower.contains("keys") {
+                track.instrument = Some("Vintage Electric Piano");
+            } else if lower.contains("bass") || lower.contains("808") {
+                track.instrument = Some("808 Bass");
+            } else {
+                track.instrument = Some("Sampler");
+            }
             track.regions = midi_regions(p, strip, tpq, &mut unread);
         }
         for record in &strip.audio_regions {
@@ -579,13 +596,55 @@ fn file_stem(rel: &str) -> String {
 /// The file `rel` names inside `dir`, when it is a plain relative path that stays inside `dir`
 /// (a project from elsewhere must not point the import at other files).
 fn safe_media_file(dir: &Path, rel: &str) -> Option<PathBuf> {
-    let rel = Path::new(rel);
-    if rel.as_os_str().is_empty() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
+    let rel_path = Path::new(rel);
+    if rel.is_empty()
+        || rel_path
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
         return None;
     }
     let root = std::fs::canonicalize(dir).ok()?;
-    let target = std::fs::canonicalize(dir.join(rel)).ok()?;
-    target.starts_with(&root).then_some(target)
+
+    if let Ok(target) = std::fs::canonicalize(dir.join(rel_path)) {
+        if target.starts_with(&root) && target.is_file() {
+            return Some(target);
+        }
+    }
+
+    let trimmed = rel
+        .trim_start_matches("Audio Files/")
+        .trim_start_matches("Audio Files\\");
+    if let Ok(target) = std::fs::canonicalize(dir.join("Audio Files").join(trimmed)) {
+        if target.starts_with(&root) && target.is_file() {
+            return Some(target);
+        }
+    }
+
+    let stem = file_stem(rel);
+    for search_dir in [dir.to_path_buf(), dir.join("Audio Files")] {
+        if let Ok(entries) = std::fs::read_dir(search_dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Some(s) = p.file_stem().and_then(|s| s.to_str()) {
+                        if s.eq_ignore_ascii_case(&stem)
+                            || s.starts_with(&stem)
+                            || stem.starts_with(s)
+                        {
+                            if let Ok(target) = std::fs::canonicalize(&p) {
+                                if target.starts_with(&root) {
+                                    return Some(target);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Quarter notes for a time in ticks, at the reader's ticks per quarter note.
@@ -1353,5 +1412,58 @@ mod tests {
         let (again, _) =
             crate::project_io::open_project(&saved, &ctx).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(check(&again), state, "the same after saving and reloading");
+    }
+
+    #[test]
+    fn test_billie_eilish_project_import() {
+        let path = Path::new("/home/triadwoozie/Documents/Douri/references/93ACRES_LogicProProject_BillieEilish_BOAF/93ACRES_BillieEilish_BOAF.logicx");
+        if !path.exists() {
+            return;
+        }
+        let ctx = egui::Context::default();
+        let (p, report) =
+            new_project(path, &ctx).unwrap_or_else(|e| panic!("failed to import: {e}"));
+        println!("Imported Billie Eilish project:");
+        println!("  Project name: {}", p.name);
+        println!("  Tempo: {}", p.tempo);
+        println!("  Time sig: {}/{}", p.sig.0, p.sig.1);
+        println!("  Tracks count: {}", p.tracks.len());
+        println!(
+            "  Report tracks: {}, with_settings: {}",
+            report.tracks, report.with_settings
+        );
+        let mut total_regions = 0;
+        let mut total_audio = 0;
+        let mut total_midi = 0;
+        for t in &p.tracks {
+            total_regions += t.regions.len();
+            for r in &t.regions {
+                if r.audio.is_some() {
+                    total_audio += 1;
+                } else if !r.notes.is_empty() {
+                    total_midi += 1;
+                }
+            }
+            if !t.regions.is_empty() {
+                println!(
+                    "  Track '{}' (kind: {:?}, instrument: {:?}): {} regions",
+                    t.name,
+                    t.kind,
+                    t.instrument,
+                    t.regions.len()
+                );
+            }
+        }
+        println!(
+            "Total tracks: {}, total regions: {} (audio: {}, midi: {})",
+            p.tracks.len(),
+            total_regions,
+            total_audio,
+            total_midi
+        );
+        println!("Report notes (first 20):");
+        for n in report.notes.iter().take(20) {
+            println!("    {}", n);
+        }
     }
 }

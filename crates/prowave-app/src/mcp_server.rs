@@ -130,7 +130,7 @@ impl McpEngine {
                     },
                     "serverInfo": {
                         "name": "douri-mcp-server",
-                        "version": "0.1.0-alpha.1"
+                        "version": "0.1.0-alpha.2"
                     }
                 }),
             ),

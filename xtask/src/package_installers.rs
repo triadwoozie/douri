@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-const VERSION: &str = "0.1.0-alpha.1";
+const VERSION: &str = "0.1.0-alpha.2";
 
 fn run_cmd(mut cmd: Command, desc: &str) -> bool {
     println!("\n==> {desc} ({:?})", cmd);
@@ -223,20 +223,29 @@ Categories=AudioVideo;Audio;AudioVideoEditing;\n";
         appdir.join("io.github.triadwoozie.douri.png"),
     )
     .unwrap();
-    fs::copy(
-        root.join("dist")
-            .join("linux")
-            .join("io.github.triadwoozie.douri.png"),
-        appdir
+    for size in ["1024x1024", "512x512", "256x256"] {
+        let size_dir = appdir
             .join("usr")
             .join("share")
             .join("icons")
             .join("hicolor")
-            .join("512x512")
-            .join("apps")
-            .join("io.github.triadwoozie.douri.png"),
-    )
-    .unwrap();
+            .join(size)
+            .join("apps");
+        fs::create_dir_all(&size_dir).unwrap();
+        fs::copy(
+            root.join("dist")
+                .join("linux")
+                .join("io.github.triadwoozie.douri.png"),
+            size_dir.join("io.github.triadwoozie.douri.png"),
+        )
+        .unwrap();
+        let _ = fs::copy(
+            root.join("dist")
+                .join("linux")
+                .join("io.github.triadwoozie.douri.png"),
+            size_dir.join("douri.png"),
+        );
+    }
 
     let apprun_content = "#!/bin/sh\n\
 SELF=$(readlink -f \"$0\")\n\

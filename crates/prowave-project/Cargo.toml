@@ -1,6 +1,6 @@
 [package]
 name = "prowave-project"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2021"
 description = "Pro Wave project file (.prowave): zip with project.json and media/"
 license = "GPL-3.0-or-later"

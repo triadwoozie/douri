@@ -8,7 +8,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 /// Embedded application icon (256x256 PNG).
-const ICON_BYTES: &[u8] = include_bytes!("../../prowave-app/assets/icon-256.png");
+const ICON_BYTES: &[u8] = include_bytes!("../../prowave-app/assets/icon-1024.png");
 
 /// Embedded installer payload (zip file created by xtask package-installers).
 /// Falls back to an empty zip when building standalone.
@@ -442,7 +442,7 @@ fn configure_system_integration(target_dir: &Path, installed_exe: &Path) -> Resu
             hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Dori")
         {
             let _ = uninstall.set_value("DisplayName", &"Dōri");
-            let _ = uninstall.set_value("DisplayVersion", &"0.1.0-alpha.1");
+            let _ = uninstall.set_value("DisplayVersion", &"0.1.0-alpha.2");
             let _ = uninstall.set_value("Publisher", &"triadwoozie");
             let _ = uninstall.set_value("InstallLocation", &target_dir.to_string_lossy().as_ref());
             let _ = uninstall.set_value("DisplayIcon", &exe_str);
@@ -483,17 +483,23 @@ fn configure_system_integration(target_dir: &Path, installed_exe: &Path) -> Resu
             );
             let _ = std::fs::write(&desktop_path, desktop_content);
 
-            // 3. Install icon to ~/.local/share/icons/hicolor/512x512/apps/
-            let icon_dir = home_path
+            // 3. Install icons to ~/.local/share/icons/hicolor/{1024x1024,512x512,256x256}/apps/ and pixmaps/
+            let hicolor = home_path
                 .join(".local")
                 .join("share")
                 .join("icons")
-                .join("hicolor")
-                .join("512x512")
-                .join("apps");
-            let _ = std::fs::create_dir_all(&icon_dir);
-            let _ = std::fs::write(icon_dir.join("io.github.triadwoozie.douri.png"), ICON_BYTES);
-            let _ = std::fs::write(icon_dir.join("douri.png"), ICON_BYTES);
+                .join("hicolor");
+            for size in ["1024x1024", "512x512", "256x256"] {
+                let size_dir = hicolor.join(size).join("apps");
+                let _ = std::fs::create_dir_all(&size_dir);
+                let _ =
+                    std::fs::write(size_dir.join("io.github.triadwoozie.douri.png"), ICON_BYTES);
+                let _ = std::fs::write(size_dir.join("douri.png"), ICON_BYTES);
+            }
+            let pixmaps = home_path.join(".local").join("share").join("pixmaps");
+            let _ = std::fs::create_dir_all(&pixmaps);
+            let _ = std::fs::write(pixmaps.join("io.github.triadwoozie.douri.png"), ICON_BYTES);
+            let _ = std::fs::write(pixmaps.join("douri.png"), ICON_BYTES);
 
             // 4. Update desktop database & icon cache if available
             let _ = std::process::Command::new("update-desktop-database")

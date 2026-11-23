@@ -21,7 +21,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
 mod model;
-mod project_data;
+pub mod project_data;
 
 pub use model::{
     AudioRegion, FullProject, MidiNote, MidiRegion, PluginFormat, PluginSlot, Track, TrackKind,
@@ -130,11 +130,25 @@ pub fn read(path: &Path) -> Result<Project, Error> {
         .join(format!("{alternative:03}"));
     let metadata = read_plist(&bundle, &alternative_dir.join("MetaData.plist"))?;
     let project_data_bytes = check_project_data(&bundle, &alternative_dir.join("ProjectData"))?;
+    let tempo = number(&metadata, "BeatsPerMinute")
+        .or_else(|| number(&metadata, "tempo"))
+        .unwrap_or(DEFAULT_TEMPO);
+    let time_signature = string(&metadata, "timeSignature").or_else(|| {
+        let num = integer(&metadata, "SongSignatureNumerator")?;
+        let den = integer(&metadata, "SongSignatureDenominator")?;
+        Some(format!("{num}/{den}"))
+    });
+    let key_signature = string(&metadata, "keySignature").or_else(|| {
+        let key = string(&metadata, "SongKey")?;
+        let gender = string(&metadata, "SongGenderKey").unwrap_or_default();
+        let combined = format!("{key} {gender}").trim().to_string();
+        (!combined.is_empty()).then_some(combined)
+    });
     Ok(Project {
         name,
-        tempo: number(&metadata, "tempo").unwrap_or(DEFAULT_TEMPO),
-        key_signature: string(&metadata, "keySignature"),
-        time_signature: string(&metadata, "timeSignature"),
+        tempo,
+        key_signature,
+        time_signature,
         sample_rate: number(&metadata, "sampleRate"),
         channels: integer(&metadata, "channelCount"),
         alternative,

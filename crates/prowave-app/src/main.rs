@@ -2165,7 +2165,7 @@ fn init_logging() {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
-/// The Pro Wave logo, 256×256 with transparency (generated from dist/icons/prowave-1024.png).
+/// The Dōri logo, 256×256 with transparency (generated from dist/icons/douri-2048.png).
 pub const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
 
 /// The Flex and Smart Tempo layout pictures (`PROWAVE_SHOT_SCENE=flex…`): a drum loop on an
