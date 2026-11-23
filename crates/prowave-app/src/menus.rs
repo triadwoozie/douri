@@ -49,6 +49,33 @@ const FILE: &[&str] = &[
 /// Entries that open a submenu (▸), as in Logic, and what is in each. "Open Recent" is filled
 /// with the remembered projects instead.
 const SUBMENUS: &[(&str, &[&str])] = &[
+    (
+        "Settings",
+        &[
+            "General…",
+            "Audio…",
+            "MIDI…",
+            "Recording…",
+            "Metronome…",
+            "Display…",
+            "Open Settings…",
+        ],
+    ),
+    (
+        "Control Surfaces",
+        &["Setup…", "MIDI Controllers…", "Rebuild Defaults"],
+    ),
+    ("Key Commands", &["Edit Assignments…", "Reset to Defaults"]),
+    (
+        "Sound Library",
+        &[
+            "Download Essential Sounds",
+            "Download All Available Sounds",
+            "Reinstall Sound Library",
+            "Open Sound Library Manager…",
+            "Relocate Sound Library…",
+        ],
+    ),
     ("Revert to", &["Revert to Saved"]),
     (
         "Alternatives",
@@ -502,8 +529,22 @@ const LANGUAGE: &[&str] = &[
     "Lietuvių",
 ];
 
+const DORI: &[&str] = &[
+    "About Dōri",
+    "-",
+    "Settings",
+    "Control Surfaces",
+    "Key Commands",
+    "-",
+    "Sound Library",
+    "Provide Dōri Feedback",
+    "-",
+    "Quit Dōri",
+];
+
 /// The menus in bar order, used by the in-window bar and the macOS menu bar.
-pub(crate) const MENUS: [(&str, &[&str]); 11] = [
+pub(crate) const MENUS: [(&str, &[&str]); 12] = [
+    ("Dōri", DORI),
     ("File", FILE),
     ("Edit", EDIT),
     ("Track", TRACK),
@@ -768,6 +809,21 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
     }
     if SettingsTab::from_menu(label).is_some() {
         return true;
+    }
+    match label {
+        "Download Essential Sounds" => return !crate::sound_library::essential_sounds_installed(),
+        "Download All Available Sounds" => return !crate::sound_library::all_sounds_installed(),
+        "Reinstall Sound Library"
+        | "Open Sound Library Manager…"
+        | "Relocate Sound Library…"
+        | "Provide Dōri Feedback"
+        | "About Dōri"
+        | "Quit Dōri"
+        | "Setup…"
+        | "MIDI Controllers…"
+        | "Rebuild Defaults"
+        | "Reset to Defaults" => return true,
+        _ => {}
     }
     match label {
         "Undo" => s.can_undo,
@@ -1724,12 +1780,84 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             }
         }
         "Go to Beginning" => p.position_beats = 0.0,
-        "Record" => p.recording = !p.recording,
+        "Record" => trigger_record(p, s),
+        "Download Essential Sounds" => crate::sound_library::download_essential_sounds(s),
+        "Download All Available Sounds" => crate::sound_library::download_all_sounds(s),
+        "Reinstall Sound Library" => crate::sound_library::reinstall_sound_library(s),
+        "Open Sound Library Manager…" => s.show_sound_library_manager = true,
+        "Relocate Sound Library…" => crate::sound_library::relocate_sound_library_interactive(s),
+        "Provide Dōri Feedback" => {
+            s.open_url = Some("https://github.com/triadwoozie/douri/issues/new".to_string());
+        }
+        "Quit Dōri" => s.file_cmd = Some(FileCmd::Quit),
+        "Setup…" => s.status = Some(tr("No external control surface detected.").to_string()),
+        "MIDI Controllers…" => s.settings_tab = Some(SettingsTab::Midi),
+        "Rebuild Defaults" => s.status = Some(tr("Control surface defaults rebuilt.").to_string()),
+        "Reset to Defaults" => {
+            s.keymap_prefs = crate::key_commands::KeymapPrefs::default();
+            s.keymap_prefs.save();
+            crate::key_commands::set_active_prefs(s.keymap_prefs.clone());
+            s.status = Some(tr("Key commands reset to defaults.").to_string());
+        }
         _ => {
             if let Some(cmd) = FileCmd::from_menu(label) {
                 s.file_cmd = Some(cmd);
             }
         }
+    }
+}
+
+/// Triggers immediate recording on R or the Transport Record button.
+pub fn trigger_record(p: &mut Project, s: &mut crate::UiState) {
+    let is_midi = |t: &crate::model::Track| {
+        matches!(
+            t.kind,
+            crate::model::TrackKind::Instrument
+                | crate::model::TrackKind::Drummer
+                | crate::model::TrackKind::ExternalMidi
+        )
+    };
+
+    if p.recording && p.playing {
+        p.recording = false;
+        return;
+    }
+
+    if p.playing {
+        let sel_is_midi = p.tracks.get(p.selected_track).is_some_and(is_midi);
+        let any_armed = p.tracks.iter().any(|t| t.rec);
+        if sel_is_midi {
+            if let Some(t) = p.tracks.get_mut(p.selected_track) {
+                t.rec = true;
+            }
+            p.recording = true;
+        } else if any_armed {
+            p.recording = true;
+        } else {
+            s.status = Some(tr("No track record enabled").to_string());
+        }
+        return;
+    }
+
+    // Transport stopped: start immediate recording
+    let sel_is_midi = p.tracks.get(p.selected_track).is_some_and(is_midi);
+    let any_audio_armed = p
+        .tracks
+        .iter()
+        .any(|t| t.rec && t.kind == crate::model::TrackKind::Audio);
+    let any_midi_armed = p.tracks.iter().any(|t| t.rec && is_midi(t));
+
+    if sel_is_midi {
+        if let Some(t) = p.tracks.get_mut(p.selected_track) {
+            t.rec = true;
+        }
+        p.recording = true;
+        p.playing = true;
+    } else if any_audio_armed || any_midi_armed {
+        p.recording = true;
+        p.playing = true;
+    } else {
+        s.status = Some(tr("No track record enabled").to_string());
     }
 }
 
@@ -2034,13 +2162,19 @@ pub fn menu_bar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) -> f
         .style(menu_style(light))
         .config(egui::containers::menu::MenuConfig::new().style(menu_style(light)));
     bar.ui(ui, |ui| {
-        ui.label(
-            egui::RichText::new("Dōri")
-                .strong()
-                .color(look(light).bar_text),
-        );
         for (title, items) in MENUS {
-            menu(ui, title, items, p, s);
+            if title == "Dōri" {
+                let dori_text = egui::RichText::new("Dōri")
+                    .strong()
+                    .color(look(light).bar_text);
+                let (response, _inner) = egui::containers::menu::MenuButton::new(dori_text)
+                    .ui(ui, |ui| entries(ui, items, p, s));
+                if s.shot_top_menu.as_deref() == Some("Dōri") {
+                    egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&response));
+                }
+            } else {
+                menu(ui, title, items, p, s);
+            }
         }
         status_line(ui, p, s);
         ui.cursor().left()
@@ -2182,6 +2316,11 @@ mod tests {
                     s.arrange.colors,
                 ),
                 (i18n::chosen(), i18n::current()),
+                (
+                    s.status.as_deref(),
+                    s.show_sound_library_manager,
+                    s.open_url.as_deref()
+                ),
             )
         )
     }
@@ -2244,6 +2383,10 @@ mod tests {
             // These two may already be where they would take you.
             // These may already be where they would take you.
             let may_stay = [
+                "Relocate Sound Library…",
+                "Setup…",
+                "Rebuild Defaults",
+                "Reset to Defaults",
                 "Go to Previous Region",
                 "Go to Next Region",
                 // The selected region may be the last one on its track.

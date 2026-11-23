@@ -482,6 +482,7 @@ impl AudioRecorder {
             };
             match (open, file) {
                 (true, Ok(file)) => {
+                    let is_silent = file.peak().map_or(false, |peak| peak == 0.0);
                     apply_take(
                         p,
                         take.track,
@@ -494,6 +495,16 @@ impl AudioRecorder {
                     kept = Some((take.track, take.region));
                     if done.is_ok_and(|d| d.lost) {
                         warning = Some(tr("Part of the recording was lost").to_string());
+                    } else if is_silent {
+                        let device = self.capture.as_ref().map_or("", Capture::device_name);
+                        warning = Some(if device.is_empty() {
+                            tr("Input is silent: recorded take contains only silence. Check your microphone or input settings.").to_string()
+                        } else {
+                            trf(
+                                "Input is silent: recorded take contains only silence. Check your microphone or input settings on {}.",
+                                &[&device],
+                            )
+                        });
                     }
                 }
                 (open, file) => {
@@ -658,6 +669,7 @@ mod tests {
             folder: None,
             generated: None,
             audio: None,
+            missing: None,
             params: RegionParams::default(),
         });
         let file = AudioFile::open(&path).unwrap();

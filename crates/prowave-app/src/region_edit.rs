@@ -724,7 +724,7 @@ fn joined_settings(p: &Project, pieces: &[&Region], joined: &Region) -> Option<G
 /// The region that joins the regions `rs` (indexes on track `t`, earliest first). It takes the
 /// earliest region's name and settings, with the notes, audio or takes of all of them. `None`
 /// when the regions cannot be joined.
-fn join_pieces(p: &Project, t: usize, rs: &[usize]) -> Option<Region> {
+pub(crate) fn join_pieces(p: &Project, t: usize, rs: &[usize]) -> Option<Region> {
     let regions = &p.tracks.get(t)?.regions;
     let pieces: Vec<&Region> = rs.iter().map(|&r| regions.get(r)).collect::<Option<_>>()?;
     let first = *pieces.first()?;

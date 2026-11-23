@@ -361,6 +361,10 @@ pub struct UiState {
     pub mcp_port: u16,
     /// Help > About Dōri window is open.
     pub show_about: bool,
+    /// Dōri Sound Library Manager window is open.
+    pub show_sound_library_manager: bool,
+    /// URL to open in external browser.
+    pub open_url: Option<String>,
     /// Cached About Dōri app icon texture.
     pub about_icon: Option<egui::TextureHandle>,
     /// Interface mode: Simplified Mode (true) vs Complete Mode (false).
@@ -497,6 +501,8 @@ impl UiState {
             mcp_server_enabled: false,
             mcp_port: 38420,
             show_about: false,
+            show_sound_library_manager: false,
+            open_url: None,
             about_icon: None,
             simplified_mode: false,
             chooser: None,
@@ -1957,7 +1963,11 @@ impl eframe::App for App {
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
+        if let Some(url) = self.ui.open_url.take() {
+            ctx.open_url(egui::OpenUrl::new_tab(&url));
+        }
         show_about_dialog(&ctx, &mut self.ui);
+        crate::sound_library::show_manager_window(&ctx, &mut self.ui);
         show_lcd_customize_dialog(&ctx, &mut self.ui);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);

@@ -56,17 +56,18 @@ impl SettingsTab {
     /// The tab a menu entry opens ("Metronome…" opens the Metronome tab).
     pub fn from_menu(label: &str) -> Option<Self> {
         Some(match label {
-            "General…" => Self::General,
+            "General…" | "Open Settings…" => Self::General,
             "Audio…" => Self::Audio,
             "Recording…" => Self::Recording,
             "MIDI…" => Self::Midi,
-            "Appearance…" => Self::Appearance,
+            "Appearance…" | "Display…" => Self::Appearance,
             "Synchronization…" => Self::Synchronization,
             "Metronome…" => Self::Metronome,
             "Tuning…" => Self::Tuning,
             "Keymap / Shortcuts…"
             | "Logic-style Key Commands…"
             | "Key Commands…"
+            | "Edit Assignments…"
             | "Keymap…"
             | "Shortcuts…" => Self::Keymap,
             "MCP Server…" => Self::McpServer,

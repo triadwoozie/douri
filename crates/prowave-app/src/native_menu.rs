@@ -252,6 +252,9 @@ mod mac {
             let recent_menu = Submenu::new(tr("Open Recent"), true);
             labels.push(("Open Recent", Label::Sub(recent_menu.clone())));
             for (title, items) in menus::MENUS {
+                if title == "Dōri" {
+                    continue;
+                }
                 let sub = Submenu::new(tr(title), true);
                 labels.push((title, Label::Sub(sub.clone())));
                 for &label in items {

@@ -452,8 +452,48 @@ fn finish(rec: &mut Recorder, p: &mut Project) -> Outcome {
     let region = &mut p.tracks[t].regions[r];
     region.len_bars = end_bars.ceil().max(1.0);
     region.name = region.name.trim_start_matches('*').to_string();
+
+    // Merge with overlapping MIDI regions on this track by default
+    let r_start = region.start_bar;
+    let r_end = r_start + region.len_bars;
+    let mut overlapping = Vec::new();
+    for (i, other) in p.tracks[t].regions.iter().enumerate() {
+        if i == r || other.audio.is_some() {
+            continue;
+        }
+        let o_start = other.start_bar;
+        let o_end = o_start + other.len_bars;
+        if r_start < o_end && o_start < r_end {
+            overlapping.push(i);
+        }
+    }
+    let final_r = if !overlapping.is_empty() {
+        overlapping.push(r);
+        overlapping.sort_unstable_by(|&a, &b| {
+            p.tracks[t].regions[a]
+                .start_bar
+                .total_cmp(&p.tracks[t].regions[b].start_bar)
+        });
+        if let Some(joined) = crate::region_edit::join_pieces(p, t, &overlapping) {
+            let mut rev_indices = overlapping.clone();
+            rev_indices.sort_unstable();
+            for &idx in rev_indices.iter().rev() {
+                p.tracks[t].regions.remove(idx);
+            }
+            let insert_at = rev_indices[0];
+            p.tracks[t].regions.insert(insert_at, joined);
+            insert_at
+        } else {
+            r
+        }
+    } else {
+        r
+    };
+
+    // Ensure the track remains armed
+    p.tracks[t].rec = true;
     p.song_rev += 1;
-    Outcome::Finished(Some((t, r)))
+    Outcome::Finished(Some((t, final_r)))
 }
 
 #[cfg(test)]

@@ -31,9 +31,15 @@ pub enum FileCmd {
 
 impl FileCmd {
     /// Save As before Save: egui ignores an extra Shift when matching Cmd+S.
-    const ALL: [FileCmd; 4] = [FileCmd::SaveAs, FileCmd::Save, FileCmd::Open, FileCmd::New];
+    const ALL: [FileCmd; 5] = [
+        FileCmd::SaveAs,
+        FileCmd::Save,
+        FileCmd::Open,
+        FileCmd::New,
+        FileCmd::Quit,
+    ];
 
-    /// Logic's key commands: Cmd+N, Cmd+O, Cmd+S, Shift+Cmd+S (Ctrl on Windows/Linux). The
+    /// Logic's key commands: Cmd+N, Cmd+O, Cmd+S, Shift+Cmd+S, Cmd+Q (Ctrl on Windows/Linux). The
     /// other commands are menu-only.
     pub fn shortcut(self) -> Option<KeyboardShortcut> {
         let (modifiers, key) = match self {
@@ -41,12 +47,12 @@ impl FileCmd {
             FileCmd::Open => (Modifiers::COMMAND, Key::O),
             FileCmd::Save => (Modifiers::COMMAND, Key::S),
             FileCmd::SaveAs => (Modifiers::COMMAND | Modifiers::SHIFT, Key::S),
+            FileCmd::Quit => (Modifiers::COMMAND, Key::Q),
             FileCmd::Close
             | FileCmd::SaveCopy
             | FileCmd::Revert
             | FileCmd::OpenRecent
-            | FileCmd::NewFrom(_)
-            | FileCmd::Quit => return None,
+            | FileCmd::NewFrom(_) => return None,
         };
         Some(KeyboardShortcut::new(modifiers, key))
     }
@@ -61,6 +67,7 @@ impl FileCmd {
             "Save As…" => Some(FileCmd::SaveAs),
             "Save A Copy As…" => Some(FileCmd::SaveCopy),
             "Revert to Saved" => Some(FileCmd::Revert),
+            "Quit Dōri" => Some(FileCmd::Quit),
             _ => None,
         }
     }

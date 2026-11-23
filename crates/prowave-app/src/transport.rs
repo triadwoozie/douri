@@ -1491,7 +1491,7 @@ pub fn control_bar(
                     icon_record(&g, r, Color32::from_rgb(0xff, 0x45, 0x3a));
                 }
                 if resp.clicked() {
-                    p.recording = !p.recording;
+                    crate::menus::trigger_record(p, s);
                 }
             }
             // 6: ↻ (Cycle, #FFD60A when active)
