@@ -128,6 +128,7 @@ pub struct MusicalTyping {
     sustained: Vec<u8>,
     /// The live notes made since the app last took them.
     pending: Vec<LiveNote>,
+    pub keep_touchpad_active: bool,
 }
 
 impl Default for MusicalTyping {
@@ -149,6 +150,7 @@ impl MusicalTyping {
             down: Vec::new(),
             sustained: Vec::new(),
             pending: Vec::new(),
+            keep_touchpad_active: cfg!(target_os = "linux"),
         }
     }
 
@@ -318,8 +320,9 @@ impl MusicalTyping {
             return;
         }
         let events = ctx.input(|i| i.events.clone());
+        let mut handled_keys = Vec::new();
 
-        for event in events {
+        for event in &events {
             let egui::Event::Key {
                 key,
                 physical_key,
@@ -331,13 +334,13 @@ impl MusicalTyping {
             else {
                 continue;
             };
-            let key = physical_key.unwrap_or(key);
+            let key = physical_key.unwrap_or(*key);
             let Some(action) = action_of(key) else {
                 continue;
             };
-            if pressed {
+            if *pressed {
                 // Ctrl, Cmd and Alt are for the app's own key commands (Ctrl+Z, Cmd+K…).
-                if repeat
+                if *repeat
                     || modifiers.command
                     || modifiers.alt
                     || modifiers.ctrl
@@ -346,9 +349,24 @@ impl MusicalTyping {
                     continue;
                 }
                 self.press(Source::Key(key), action);
+                handled_keys.push(key);
             } else {
                 self.release(Source::Key(key));
+                handled_keys.push(key);
             }
+        }
+        if !handled_keys.is_empty() {
+            ctx.input_mut(|i| {
+                i.events.retain(|e| match e {
+                    egui::Event::Key {
+                        key, physical_key, ..
+                    } => {
+                        let k = physical_key.unwrap_or(*key);
+                        !handled_keys.contains(&k)
+                    }
+                    _ => true,
+                });
+            });
         }
         // A key that was let go while the window had no focus never sends its release: the
         // keys that are no longer down are let go.
@@ -405,7 +423,22 @@ pub fn show(ctx: &egui::Context, typing: &mut MusicalTyping, track_name: Option<
         .id(egui::Id::unique("musical_typing_window"))
         .open(&mut open)
         .resizable(false)
-        .show(ctx, |ui| draw(ui, typing));
+        .show(ctx, |ui| {
+            #[cfg(target_os = "linux")]
+            {
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut typing.keep_touchpad_active,
+                        format!("{} Keep Touchpad Active", phosphor_egui::regular::CURSOR),
+                    )
+                    .on_hover_text(
+                        "Temporarily suspends desktop disable-while-typing while Musical Typing is active, allowing simultaneous keyboard play and touchpad control.",
+                    );
+                });
+                ui.add_space(2.0);
+            }
+            draw(ui, typing);
+        });
     if !open {
         typing.open = false;
         typing.release_all();

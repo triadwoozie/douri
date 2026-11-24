@@ -4,7 +4,7 @@ members = ["crates/douri-installer", "crates/prowave-app", "crates/prowave-dssi"
 
 
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"

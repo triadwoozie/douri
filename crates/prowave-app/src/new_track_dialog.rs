@@ -8,7 +8,7 @@
 
 use crate::model::{Project, TrackKind};
 use crate::UiState;
-use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Sense, Stroke, StrokeKind};
+use egui::{pos2, vec2, Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind};
 
 pub const ACCENT_GREEN: Color32 = Color32::from_rgb(0x10, 0xB9, 0x81);
 pub const ACCENT_BLUE: Color32 = Color32::from_rgb(0x25, 0x63, 0xEB);
@@ -26,9 +26,6 @@ pub enum CardChoice {
     Pattern,
     SessionPlayer,
 }
-
-// Aliases for compatibility
-pub type Choice = CardChoice;
 
 impl CardChoice {
     pub fn kind(self) -> TrackKind {
@@ -181,14 +178,9 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
         .frame(
             egui::Frame::new()
                 .fill(Color32::from_rgb(0x1C, 0x1D, 0x21))
-                .corner_radius(14.0)
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x2E, 0x31, 0x38)))
-                .shadow(egui::Shadow {
-                    offset: [0, 8],
-                    blur: 24,
-                    spread: 2,
-                    color: Color32::from_black_alpha(180),
-                })
+                .corner_radius(CornerRadius::same(2))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)))
+                .shadow(egui::Shadow::NONE)
                 .inner_margin(16.0),
         )
         .show(ctx, |ui| {

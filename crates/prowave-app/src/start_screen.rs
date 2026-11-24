@@ -368,7 +368,7 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         g.rect_filled(full, 0.0, Color32::from_black_alpha(160));
         Rect::from_center_size(full.center(), vec2(modal_w, modal_h))
     };
-    // Modal card with 12px rounded corners and 1px #2E3138 border
+    // Modal card with smooth 12px rounded corners
     let cr = 12.0;
     g.rect_filled(area, cr, BG);
     g.rect_stroke(
@@ -381,16 +381,13 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     // Sidebar: width 170px with rounded left corners matching dialog card
     let side_w = 170.0f32;
     let side = Rect::from_min_size(area.min, vec2(side_w, area.height()));
-    g.rect_filled(
-        side,
-        egui::CornerRadius {
-            nw: 12,
-            ne: 0,
-            sw: 12,
-            se: 0,
-        },
-        SIDEBAR,
-    );
+    let side_cr = egui::CornerRadius {
+        nw: 12,
+        ne: 0,
+        sw: 12,
+        se: 0,
+    };
+    g.rect_filled(side, side_cr, SIDEBAR);
     g.line_segment(
         [side.right_top(), side.right_bottom()],
         Stroke::new(1.0, BORDER),
@@ -761,20 +758,17 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         Stroke::new(1.0, BORDER),
     );
     let footer_bg = Rect::from_min_max(pos2(side.right(), area.bottom() - footer_h), area.max);
-    g.rect_filled(
-        footer_bg,
-        egui::CornerRadius {
-            nw: 0,
-            ne: 0,
-            sw: 0,
-            se: 12,
-        },
-        SIDEBAR,
-    );
+    let footer_cr = egui::CornerRadius {
+        nw: 0,
+        ne: 0,
+        sw: 0,
+        se: 12,
+    };
+    g.rect_filled(footer_bg, footer_cr, SIDEBAR);
     // Ensure the 1px #2E3138 outer border is crisp over all edges
     g.rect_stroke(
         area,
-        12.0,
+        cr,
         Stroke::new(1.0, Color32::from_rgb(46, 49, 56)),
         StrokeKind::Inside,
     );

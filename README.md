@@ -23,7 +23,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#sound-libraries">Sound Libraries</a> •
   <a href="#architecture">Architecture</a> •
-  <a href="AUDIT_AND_PLAN.md">Audit & Plan</a> •
+  <a href="docs/specs/AUDIT_AND_PLAN.md">Audit & Plan</a> •
   <a href="ROADMAP.md">Roadmap</a> •
   <a href="AGENTS.md">Contributing</a> •
   <a href="#credits--license">Credits & License</a>

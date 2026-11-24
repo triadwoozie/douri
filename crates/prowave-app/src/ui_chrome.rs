@@ -4,8 +4,8 @@
 //! and standard controls matching Apple Logic Pro's macOS dark interface.
 
 use egui::{
-    epaint::Shadow, pos2, vec2, Align, Align2, Color32, FontId, Id, Layout, Rect, Response, Sense,
-    Stroke, StrokeKind, Ui, Vec2,
+    epaint::Shadow, pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect,
+    Response, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
 
 // --- Neutral Charcoal & Accent Palette
@@ -53,14 +53,9 @@ pub fn modal_sheet<R>(
         .frame(
             egui::Frame::new()
                 .fill(SURFACE_BG)
-                .corner_radius(12.0)
-                .stroke(RIM_STROKE)
-                .shadow(Shadow {
-                    offset: [0, 8],
-                    blur: 24,
-                    spread: 2,
-                    color: Color32::from_black_alpha(160),
-                })
+                .corner_radius(CornerRadius::same(2))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)))
+                .shadow(Shadow::NONE)
                 .inner_margin(16.0),
         )
         .show(ctx, |ui| {

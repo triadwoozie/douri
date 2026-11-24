@@ -124,6 +124,7 @@ mod tempo_track;
 mod theme;
 pub mod timeline_viewport;
 mod tooltips;
+pub mod touchpad_guard;
 mod track_commands;
 mod track_dialogs;
 mod track_icons;
@@ -588,6 +589,7 @@ struct App {
     updater: updater::Updater,
     /// MCP Server command bridge and receiver.
     mcp_bridge: Option<mcp_server::McpBridge>,
+    touchpad_guard: touchpad_guard::TouchpadGuard,
     mcp_receiver: Option<std::sync::mpsc::Receiver<mcp_server::McpCommand>>,
     pub plugins: plugins::PluginHost,
     pub autosave: autosave::Autosave,
@@ -1548,8 +1550,13 @@ impl App {
             }
         }
 
+        let mut visuals = ctx.global_style().visuals.clone();
+        visuals.window_shadow = egui::epaint::Shadow::NONE;
+        visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        ctx.set_visuals(visuals);
+
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
+            .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
             .show(ui, |ui| start_screen::show(ui, &mut self.ui));
         // If chooser was dismissed / template chosen, open and maximize main DAW
         if self.ui.chooser.is_none() {
@@ -1585,7 +1592,11 @@ impl App {
 
 impl eframe::App for App {
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        visuals.panel_fill.to_normalized_gamma_f32()
+        if self.ui.chooser.is_some() {
+            [0.0, 0.0, 0.0, 0.0]
+        } else {
+            visuals.panel_fill.to_normalized_gamma_f32()
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -1593,6 +1604,9 @@ impl eframe::App for App {
         let _frame_time = bench::frame_timer();
         self.ui.has_path = self.path.is_some();
         let dt = ctx.input(|i| i.stable_dt) as f64;
+        self.touchpad_guard.update(
+            self.ui.typing.open && ctx.input(|i| i.focused) && self.ui.typing.keep_touchpad_active,
+        );
 
         if let Some(probe) = self.bench.as_mut() {
             if probe.frame(&ctx) {
@@ -1759,7 +1773,7 @@ impl eframe::App for App {
             self.ui.status_last_msg = None;
         }
 
-        if crate::sound_library::active_download().is_some() {
+        if self.ui.show_sound_library_manager && crate::sound_library::active_download().is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(rx) = &self.mcp_receiver {
@@ -2659,7 +2673,7 @@ fn main() -> eframe::Result {
         .with_app_id(window_app_id())
         .with_decorations(cfg!(target_os = "macos"))
         .with_transparent(true)
-        .with_has_shadow(true)
+        .with_has_shadow(!start_in_dialog)
         .with_position(center_pos);
     // Title bar / taskbar icon. A broken icon must not stop the app from starting.
     // macOS takes the Dock icon from the app bundle (prowave.icns, on the macOS icon tile);
@@ -2787,6 +2801,7 @@ fn main() -> eframe::Result {
                 updater: updater::Updater::new(),
                 mcp_bridge: Some(mcp_bridge),
                 mcp_receiver: Some(mcp_rx),
+                touchpad_guard: touchpad_guard::TouchpadGuard::new(),
                 plugins: plugins::PluginHost::default(),
                 autosave: autosave::Autosave::default(),
             };

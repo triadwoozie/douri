@@ -226,11 +226,11 @@ pub fn show(ctx: &egui::Context, p: &Project, s: &mut UiState) {
                     Scan::Running(done, total) => {
                         ui.weak(format!("{} {done} / {total}", tr("Scanning plug-ins…")));
                         // The scan runs on another thread: keep drawing until it is done.
-                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                        ui.ctx().request_repaint();
                     }
                     _ if ladspa.scanning || vamp_catalog.scanning => {
                         ui.weak(tr("Scanning plug-ins…"));
-                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                        ui.ctx().request_repaint();
                     }
                     _ => {
                         ui.weak(trf("{} plug-ins installed", &[&catalog.len()]));

@@ -990,6 +990,8 @@ impl SpaceState {
 struct CompState {
     /// The smoothed gain reduction, in dB (0 or more).
     reduction: f32,
+    att_k: f32,
+    rel_k: f32,
 }
 
 /// The Multi-Band Compressor's filters and one gain reduction per band. Each crossover is
@@ -1006,6 +1008,8 @@ struct MultiCompState {
     high: [[Biquad; 2]; 2],
     /// Gain reduction per band (low, mid, high) in dB.
     reduction: [f32; 3],
+    att_k: f32,
+    rel_k: f32,
 }
 
 impl MultiCompState {
@@ -1015,6 +1019,8 @@ impl MultiCompState {
             mid: [[Biquad::unity(); 4]; 2],
             high: [[Biquad::unity(); 2]; 2],
             reduction: [0.0; 3],
+            att_k: 0.0,
+            rel_k: 0.0,
         }
     }
 }
@@ -1065,6 +1071,7 @@ struct DelayState {
 struct ChorusState {
     lines: [Line; 2],
     phase: f32,
+    tone_coeff: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1082,6 +1089,9 @@ struct DriveState {
     // One-pole DC blocker per channel.
     dc_in: [f32; 2],
     dc_out: [f32; 2],
+    drive: f32,
+    level: f32,
+    tone_coeff: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1091,6 +1101,10 @@ struct GateState {
     open: bool,
     hold_left: u32,
     gain: f32,
+    open_at: f32,
+    floor: f32,
+    att_k: f32,
+    rel_k: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -1105,6 +1119,9 @@ struct LimiterState {
     pos: usize,
     /// The gain after the release.
     gain: f32,
+    gain_in: f32,
+    ceiling: f32,
+    release: f32,
 }
 
 impl LimiterState {
@@ -1117,6 +1134,9 @@ impl LimiterState {
             avg_sum: n as f32,
             pos: 0,
             gain: 1.0,
+            gain_in: 1.0,
+            ceiling: 1.0,
+            release: 0.0,
         }
     }
 }
@@ -1513,7 +1533,11 @@ impl Fx {
         };
         let state = match kind {
             FxKind::ChannelEq => State::Eq([[Biquad::unity(); 3]; 2]),
-            FxKind::Compressor => State::Comp(CompState { reduction: 0.0 }),
+            FxKind::Compressor => State::Comp(CompState {
+                reduction: 0.0,
+                att_k: 0.0,
+                rel_k: 0.0,
+            }),
             FxKind::MultiComp => State::MultiComp(Box::new(MultiCompState::new())),
             FxKind::Reverb => {
                 State::Reverb(Box::new(SpaceState::new(sr, &kind.clamp_params(params))))
@@ -1531,6 +1555,7 @@ impl Fx {
                     Line::new((0.05 * sr) as usize),
                 ],
                 phase: 0.0,
+                tone_coeff: 0.0,
             })),
             FxKind::Phaser => State::Phaser(Box::new(PhaserState {
                 x1: [[0.0; 4]; 2],
@@ -1542,6 +1567,9 @@ impl Fx {
                 tone: [0.0; 2],
                 dc_in: [0.0; 2],
                 dc_out: [0.0; 2],
+                drive: 1.0,
+                level: 1.0,
+                tone_coeff: 0.0,
             }),
             FxKind::Filter => State::Filter([Biquad::unity(); 2]),
             FxKind::Gate => State::Gate(GateState {
@@ -1549,6 +1577,10 @@ impl Fx {
                 open: false,
                 hold_left: 0,
                 gain: 0.0,
+                open_at: 0.0,
+                floor: 0.0,
+                att_k: 0.0,
+                rel_k: 0.0,
             }),
             FxKind::Limiter => State::Limiter(Box::new(LimiterState::new(sr))),
             FxKind::MultiEq => State::MultiEq([[Biquad::unity(); 6]; 2]),
@@ -1708,6 +1740,10 @@ impl Fx {
                     }
                 }
             }
+            State::Comp(c) => {
+                c.att_k = 1.0 - (-1.0 / (pr[2].max(0.1) * 0.001 * sr)).exp();
+                c.rel_k = 1.0 - (-1.0 / (pr[3].max(1.0) * 0.001 * sr)).exp();
+            }
             State::MultiComp(s) => {
                 let (low, mid, high) = multicomp_filters(&pr, sr);
                 for ch in 0..2 {
@@ -1733,6 +1769,8 @@ impl Fx {
                         };
                     }
                 }
+                s.att_k = 1.0 - (-1.0 / (pr[11].max(0.1) * 0.001 * sr)).exp();
+                s.rel_k = 1.0 - (-1.0 / (pr[12].max(1.0) * 0.001 * sr)).exp();
             }
             State::Filter(f) => {
                 let shape = match pr[2].round() as i32 {
@@ -1827,6 +1865,25 @@ impl Fx {
                     s.node.set_param(k, *val);
                 }
             }
+            State::Chorus(s) => {
+                s.tone_coeff = 1.0 - (-std::f32::consts::TAU * pr[2] / sr).exp();
+            }
+            State::Drive(s) => {
+                s.drive = 10f32.powf(pr[0] / 20.0);
+                s.level = 10f32.powf(pr[2] / 20.0);
+                s.tone_coeff = 1.0 - (-std::f32::consts::TAU * pr[1] / sr).exp();
+            }
+            State::Gate(s) => {
+                s.open_at = 10f32.powf(pr[0] / 20.0);
+                s.floor = 10f32.powf(pr[1] / 20.0);
+                s.att_k = 1.0 - (-1.0 / (pr[2].max(0.1) * 0.001 * sr)).exp();
+                s.rel_k = 1.0 - (-1.0 / (pr[4].max(1.0) * 0.001 * sr)).exp();
+            }
+            State::Limiter(s) => {
+                s.gain_in = 10f32.powf(pr[0] / 20.0);
+                s.ceiling = 10f32.powf(pr[1] / 20.0);
+                s.release = 1.0 - (-1.0 / (pr[2].max(0.1) * 0.001 * sr)).exp();
+            }
             _ => {}
         }
     }
@@ -1867,8 +1924,11 @@ impl Fx {
                 let level = l.abs().max(r.abs()).max(1e-6);
                 let target = compression_reduction(20.0 * level.log10(), pr[0], pr[1]);
                 // Attack when the reduction grows, release when it falls.
-                let ms = if target > c.reduction { pr[2] } else { pr[3] };
-                let k = 1.0 - (-1.0 / (ms * 0.001 * sr)).exp();
+                let k = if target > c.reduction {
+                    c.att_k
+                } else {
+                    c.rel_k
+                };
                 c.reduction += (target - c.reduction) * k;
                 let g = 10f32.powf((pr[4] - c.reduction) / 20.0);
                 (l * g, r * g)
@@ -1902,12 +1962,11 @@ impl Fx {
                     // Both channels share one reduction, so the stereo image holds.
                     let level = left.abs().max(right.abs()).max(1e-6);
                     let target = compression_reduction(20.0 * level.log10(), threshold, ratio);
-                    let ms = if target > s.reduction[band] {
-                        pr[11]
+                    let k = if target > s.reduction[band] {
+                        s.att_k
                     } else {
-                        pr[12]
+                        s.rel_k
                     };
-                    let k = 1.0 - (-1.0 / (ms * 0.001 * sr)).exp();
                     s.reduction[band] += (target - s.reduction[band]) * k;
                     let g = 10f32.powf((make_up - s.reduction[band]) / 20.0);
                     out[0] += left * g;
@@ -2009,9 +2068,9 @@ impl Fx {
                 (out[0], out[1])
             }
             State::Drive(s) => {
-                let drive = 10f32.powf(pr[0] / 20.0);
-                let level = 10f32.powf(pr[2] / 20.0);
-                let tone = 1.0 - (-TAU * pr[1] / sr).exp();
+                let drive = s.drive;
+                let level = s.level;
+                let tone = s.tone_coeff;
                 let input = [l, r];
                 let mut out = [0f32; 2];
                 for ch in 0..2 {
@@ -2067,7 +2126,7 @@ impl Fx {
                 // About 5 ms of memory in the level, so one low sample of a wave does not
                 // close the gate.
                 s.env = l.abs().max(r.abs()).max(s.env * (1.0 - 200.0 / sr));
-                let open_at = 10f32.powf(pr[0] / 20.0);
+                let open_at = s.open_at;
                 if s.env > open_at {
                     s.open = true;
                     s.hold_left = (pr[3] * 0.001 * sr) as u32;
@@ -2078,18 +2137,14 @@ impl Fx {
                         s.open = false;
                     }
                 }
-                let target = if s.open {
-                    1.0
-                } else {
-                    10f32.powf(pr[1] / 20.0)
-                };
-                let ms = if target > s.gain { pr[2] } else { pr[4] };
-                s.gain += (target - s.gain) * (1.0 - (-1.0 / (ms * 0.001 * sr)).exp());
+                let target = if s.open { 1.0 } else { s.floor };
+                let k = if target > s.gain { s.att_k } else { s.rel_k };
+                s.gain += (target - s.gain) * k;
                 (l * s.gain, r * s.gain)
             }
             State::Limiter(s) => {
-                let gain_in = 10f32.powf(pr[0] / 20.0);
-                let ceiling = 10f32.powf(pr[1] / 20.0);
+                let gain_in = s.gain_in;
+                let ceiling = s.ceiling;
                 let n = s.needs.len();
                 let (xl, xr) = (l * gain_in, r * gain_in);
                 let peak = xl.abs().max(xr.abs());
@@ -2102,7 +2157,7 @@ impl Fx {
                 s.avg_sum += lowest - s.avg[pos];
                 s.avg[pos] = lowest;
                 let smooth = (s.avg_sum / n as f32).clamp(0.0, 1.0);
-                let release = 1.0 - (-1.0 / (pr[2] * 0.001 * sr)).exp();
+                let release = s.release;
                 if smooth < s.gain {
                     s.gain = smooth;
                 } else {

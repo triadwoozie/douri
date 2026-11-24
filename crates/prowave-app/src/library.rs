@@ -677,16 +677,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let v = &mut s.library;
 
     if let Some((off_at, pitch)) = v.audition_off_at {
-        let now = std::time::Instant::now();
-        if now >= off_at {
+        if std::time::Instant::now() >= off_at {
             s.audition.push(crate::piano_roll::Audition::Off { pitch });
             v.audition_off_at = None;
         } else {
-            ui.ctx().request_repaint_after(
-                off_at
-                    .saturating_duration_since(now)
-                    .max(std::time::Duration::from_millis(1)),
-            );
+            ui.ctx().request_repaint();
         }
     }
 

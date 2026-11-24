@@ -522,6 +522,7 @@ pub(crate) mod tests {
             updater: crate::updater::Updater::new(),
             mcp_bridge: None,
             mcp_receiver: None,
+            touchpad_guard: crate::touchpad_guard::TouchpadGuard::new(),
             plugins: crate::plugins::PluginHost::new(),
             autosave: crate::autosave::Autosave::default(),
         }

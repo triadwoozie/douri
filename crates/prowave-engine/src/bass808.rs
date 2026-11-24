@@ -1387,7 +1387,7 @@ mod tests {
 
     /// A fixed performance (notes, slides, a cut note, bend, release), as one number: FNV-1a
     /// over every output sample's bits.
-    #[allow(dead_code)]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     fn performance_hash(b: &mut Bass808) -> u64 {
         let mut out = Vec::new();
         b.midi(0x90, 36, 127, 0);

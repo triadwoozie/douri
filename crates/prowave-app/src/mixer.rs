@@ -17,7 +17,8 @@ use crate::widgets::{
 };
 use crate::UiState;
 use egui::{
-    pos2, vec2, Align2, Color32, FontId, Painter, Rect, Sense, Shape, Stroke, StrokeKind, Ui,
+    pos2, vec2, Align2, Color32, CornerRadius, FontId, Painter, Rect, Sense, Shape, Stroke,
+    StrokeKind, Ui,
 };
 use std::collections::HashMap;
 
@@ -42,13 +43,13 @@ const STRIP_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
 const STRIP_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
 const SLOT_EMPTY: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
 const SLOT_GRAY: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
-const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
+const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x12, 0x69, 0xcc);
 /// A plug-in in a project that is not installed here: its slot keeps its name and passes the
 /// sound through, and the orange says so.
 pub const PLUGIN_NOT_FOUND: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x1c);
 /// A strip that makes no sound (muted, or another track is soloed): instruments, plug-ins
 /// and sends turn grey, and so do the meters.
-const PLUGIN_OFF: Color32 = Color32::from_rgb(0x38, 0x38, 0x3c);
+const PLUGIN_OFF: Color32 = Color32::from_rgb(0x25, 0x25, 0x27);
 const METER_OFF: Color32 = Color32::from_rgb(0x40, 0x40, 0x44);
 const READ_GREEN: Color32 = Color32::from_rgb(0x2e, 0xbd, 0x6b);
 const MUTE_ON: Color32 = Color32::from_rgb(0x3a, 0x7b, 0xd5);
@@ -550,7 +551,8 @@ fn fader_and_meter(
         }
     }
     if levels.0 > -60.0 || levels.1 > -60.0 || hold.0 > -60.0 || hold.1 > -60.0 {
-        ui.ctx().request_repaint();
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(16));
     }
 
     // Fader cap: light grey block with a dark centre groove and fine ridges.
@@ -995,76 +997,178 @@ fn insert_slot(
 ) {
     let have = strip_inserts(p, i).get(k).copied();
     let count = strip_inserts(p, i).len();
-    let off = have.is_some_and(|fx| inactive || fx.bypass);
-    let missing =
-        have.is_some_and(|fx| fx.hosted != 0 && crate::hosted_plugins::missing(fx.hosted));
-    let ink = if off { TEXT_DIM } else { Color32::WHITE };
-    match have {
-        Some(fx) => slot(g, r, fx.name(), insert_fill(off, missing), ink),
-        None => slot(g, r, "", SLOT_EMPTY, TEXT),
-    }
     if k > count || (have.is_none() && count >= prowave_engine::MAX_INSERTS) {
         return;
     }
-    let resp = ui.interact(r, uid, Sense::click());
-    if let (true, Some(fx)) = (missing, have) {
-        resp.clone().on_hover_text(missing_note(fx.hosted));
+
+    let Some(fx) = have else {
+        g.rect_filled(
+            r,
+            CornerRadius::same(2),
+            Color32::from_rgb(0x1c, 0x1c, 0x1e),
+        );
+        g.rect_stroke(
+            r,
+            CornerRadius::same(2),
+            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+            StrokeKind::Inside,
+        );
+        g.text(
+            r.center(),
+            Align2::CENTER_CENTER,
+            "Audio FX",
+            FontId::proportional(10.0),
+            Color32::from_rgb(0x8e, 0x8e, 0x93),
+        );
+        let resp = ui.interact(r, uid, Sense::click());
+        let mut act = None;
+        crate::plugin_picker::popup(&resp).show(|ui| {
+            ui.set_min_width(150.0);
+            if let Some(pick) = crate::plugin_picker::show(ui, &mut v.picker_search) {
+                act = Some(InsertAct::Add(pick_insert(pick)));
+                v.picker_search.clear();
+                ui.close();
+            }
+        });
+        if let Some(act) = act {
+            apply_insert(p, v, i, k, act);
+        }
+        return;
+    };
+
+    let off = inactive || fx.bypass;
+    let missing = fx.hosted != 0 && crate::hosted_plugins::missing(fx.hosted);
+    let bg = insert_fill(off, missing);
+    let stroke = if off {
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c))
+    } else {
+        Stroke::new(1.0, Color32::from_rgb(0x1a, 0x56, 0xa0))
+    };
+
+    g.rect_filled(r, CornerRadius::same(2), bg);
+    g.rect_stroke(r, CornerRadius::same(2), stroke, StrokeKind::Inside);
+
+    // Three-zone Logic Pro style slot layout:
+    // 1. Left power/bypass button
+    let power_w = 16.0;
+    let chev_w = 12.0;
+    let power_r = Rect::from_min_size(r.min, vec2(power_w, r.height()));
+    let chev_r = Rect::from_min_size(pos2(r.right() - chev_w, r.top()), vec2(chev_w, r.height()));
+    let center_r = Rect::from_min_max(
+        pos2(power_r.right(), r.top()),
+        pos2(chev_r.left(), r.bottom()),
+    );
+
+    let power_resp = ui.interact(power_r, uid.with("power"), Sense::click());
+    if power_resp.clicked() {
+        apply_insert(p, v, i, k, InsertAct::Bypass);
     }
-    if have.is_some() && resp.double_clicked() {
+
+    // 1. Crisp left-edge power toggle button (always visible)
+    let p_col = if off {
+        Color32::from_rgb(0x8e, 0x8e, 0x93)
+    } else if power_resp.hovered() {
+        Color32::from_rgb(0xcc, 0xe0, 0xff)
+    } else {
+        Color32::WHITE
+    };
+    g.text(
+        power_r.center(),
+        Align2::CENTER_CENTER,
+        phosphor_egui::regular::POWER,
+        FontId::proportional(10.0),
+        p_col,
+    );
+
+    // 2. Right selector chevron
+    let chev_col = if off {
+        Color32::from_rgb(0x8e, 0x8e, 0x93)
+    } else {
+        Color32::WHITE
+    };
+    g.text(
+        chev_r.center(),
+        Align2::CENTER_CENTER,
+        phosphor_egui::regular::CARET_UP_DOWN,
+        FontId::proportional(9.0),
+        chev_col,
+    );
+
+    // 3. Center plugin name label
+    let text_ink = if off {
+        Color32::from_rgb(0x8e, 0x8e, 0x93)
+    } else {
+        Color32::WHITE
+    };
+    let font_label = FontId::proportional(10.0);
+    let fitted = elide(
+        g,
+        fx.name(),
+        &font_label,
+        (center_r.width() - 2.0).max(10.0),
+    );
+    g.text(
+        center_r.center(),
+        Align2::CENTER_CENTER,
+        fitted,
+        font_label,
+        text_ink,
+    );
+
+    let center_resp = ui.interact(center_r, uid.with("center"), Sense::click());
+    if center_resp.double_clicked() || (center_resp.clicked() && !off) {
         v.fx_window = Some((i, k));
         v.plugin_controls = false;
     }
+    if missing {
+        center_resp.clone().on_hover_text(missing_note(fx.hosted));
+    }
+
+    let chev_resp = ui.interact(chev_r, uid.with("chev"), Sense::click());
     let mut act = None;
-    // Clicks inside the slot's menu, such as on the picker's search field, keep it open; the
-    // items close it themselves when they are chosen.
-    crate::plugin_picker::popup(&resp).show(|ui| {
+    crate::plugin_picker::popup(&chev_resp).show(|ui| {
         ui.set_min_width(150.0);
-        if let Some(fx) = have {
-            if ui.button(tr("Open")).clicked() {
-                act = Some(InsertAct::Open);
-                ui.close();
-            }
-            if fx.hosted != 0 && ui.button(tr("Controls")).clicked() {
-                act = Some(InsertAct::Controls);
-                ui.close();
-            }
-            if ui.selectable_label(fx.bypass, tr("Bypass")).clicked() {
-                act = Some(InsertAct::Bypass);
-                ui.close();
-            }
-            ui.add_enabled_ui(k > 0, |ui| {
-                if ui.button(tr("Move Up")).clicked() {
-                    act = Some(InsertAct::Move(-1));
-                    ui.close();
-                }
-            });
-            ui.add_enabled_ui(k + 1 < count, |ui| {
-                if ui.button(tr("Move Down")).clicked() {
-                    act = Some(InsertAct::Move(1));
-                    ui.close();
-                }
-            });
-            ui.separator();
-            ui.menu_button(tr("Replace With"), |ui| {
-                if let Some(pick) = crate::plugin_picker::show(ui, &mut v.picker_search) {
-                    act = Some(InsertAct::Replace(pick_insert(pick)));
-                    v.picker_search.clear();
-                    ui.close();
-                }
-            });
-            if ui.button(tr("Remove")).clicked() {
-                act = Some(InsertAct::Remove);
-                ui.close();
-            }
-        } else if let Some(pick) = crate::plugin_picker::show(ui, &mut v.picker_search) {
-            act = Some(InsertAct::Add(pick_insert(pick)));
-            v.picker_search.clear();
+        if ui.button(tr("Open")).clicked() {
+            act = Some(InsertAct::Open);
+            ui.close();
         }
-        // The menu stays open for clicks inside it (the search field), so a choice closes it.
+        if fx.hosted != 0 && ui.button(tr("Controls")).clicked() {
+            act = Some(InsertAct::Controls);
+            ui.close();
+        }
+        if ui.selectable_label(fx.bypass, tr("Bypass")).clicked() {
+            act = Some(InsertAct::Bypass);
+            ui.close();
+        }
+        ui.add_enabled_ui(k > 0, |ui| {
+            if ui.button(tr("Move Up")).clicked() {
+                act = Some(InsertAct::Move(-1));
+                ui.close();
+            }
+        });
+        ui.add_enabled_ui(k + 1 < count, |ui| {
+            if ui.button(tr("Move Down")).clicked() {
+                act = Some(InsertAct::Move(1));
+                ui.close();
+            }
+        });
+        ui.separator();
+        ui.menu_button(tr("Replace With"), |ui| {
+            if let Some(pick) = crate::plugin_picker::show(ui, &mut v.picker_search) {
+                act = Some(InsertAct::Replace(pick_insert(pick)));
+                v.picker_search.clear();
+                ui.close();
+            }
+        });
+        if ui.button(tr("Remove")).clicked() {
+            act = Some(InsertAct::Remove);
+            ui.close();
+        }
         if act.is_some() {
             ui.close();
         }
     });
+
     if let Some(act) = act {
         apply_insert(p, v, i, k, act);
     }
@@ -1227,6 +1331,8 @@ pub fn channel_strip(
     ns: &'static str,
     name_style: NameStyle,
 ) {
+    let g_strip = g.with_clip_rect(strip.intersect(g.clip_rect()));
+    let g = &g_strip;
     let selected = matches!(key, StripKey::Track(i) if i == p.selected_track);
     let inactive = matches!(key, StripKey::Track(i)
         if p.is_muted(i) || crate::tracks_area::silenced_by_solo(p, i));
@@ -1572,28 +1678,25 @@ pub fn channel_strip(
     let hold = v.peak_hold.entry(key).or_insert(0.0);
     *hold = hold.max(peaks.0.max(peaks.1));
     let is_master = matches!(key, StripKey::StereoOut | StripKey::Master);
-    let half = (inner_w - 4.0) / 2.0;
-    let vol_r = Rect::from_min_size(pos2(sx, r.db), vec2(half, 14.0));
-    let pk_r = Rect::from_min_size(pos2(sx + half + 4.0, r.db), vec2(half, 14.0));
+    let gap = 4.0;
+    let half = ((inner_w - gap) / 2.0).floor();
+    let vol_r = Rect::from_min_size(pos2(sx, r.db), vec2(half, 15.0));
+    let pk_r = Rect::from_min_size(pos2(sx + half + gap, r.db), vec2(half, 15.0));
 
-    let vol_text = if is_master && meters.master_lufs_integrated > -100.0 {
-        format!("{:.1} I", meters.master_lufs_integrated)
-    } else {
-        format!("{vol_db:.1}")
-    };
-    let font_mono = FontId::monospace(10.0);
-    g.rect_filled(vol_r, 3.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+    let vol_text = format!("{vol_db:.1}");
+    let font_mono = FontId::monospace(9.5);
+    g.rect_filled(
+        vol_r,
+        CornerRadius::same(2),
+        Color32::from_rgb(0x18, 0x18, 0x1a),
+    );
     g.rect_stroke(
         vol_r,
-        3.0,
+        CornerRadius::same(2),
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         StrokeKind::Inside,
     );
-    let vol_col = if is_master && meters.master_lufs_integrated > -100.0 {
-        Color32::from_rgb(0x3a, 0x7b, 0xd5)
-    } else {
-        Color32::from_rgb(0xea, 0xee, 0xf4)
-    };
+    let vol_col = Color32::from_rgb(0xea, 0xee, 0xf4);
     g.text(
         vol_r.center(),
         Align2::CENTER_CENTER,
@@ -1602,14 +1705,8 @@ pub fn channel_strip(
         vol_col,
     );
 
-    let hold_db = if is_master && meters.master_true_peak_db > -100.0 {
-        meters.master_true_peak_db
-    } else {
-        lin_to_db(*hold)
-    };
-    let pk_text = if is_master && meters.master_true_peak_db > -100.0 {
-        format!("{hold_db:.1} TP")
-    } else if *hold <= 1e-5 {
+    let hold_db = lin_to_db(*hold);
+    let pk_text = if *hold <= 1e-5 {
         String::new()
     } else {
         format!("{hold_db:.1}")
@@ -1619,10 +1716,14 @@ pub fn channel_strip(
     } else {
         READ_GREEN
     };
-    g.rect_filled(pk_r, 3.0, Color32::from_rgb(0x18, 0x18, 0x1a));
+    g.rect_filled(
+        pk_r,
+        CornerRadius::same(2),
+        Color32::from_rgb(0x18, 0x18, 0x1a),
+    );
     g.rect_stroke(
         pk_r,
-        3.0,
+        CornerRadius::same(2),
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
         StrokeKind::Inside,
     );
@@ -1633,11 +1734,24 @@ pub fn channel_strip(
         font_mono,
         pk_col,
     );
-    if ui
-        .interact(pk_r, id(ns, (key, "peak")), Sense::click())
-        .clicked()
-    {
+    let pk_resp = ui.interact(pk_r, id(ns, (key, "peak")), Sense::click());
+    if pk_resp.clicked() {
         *hold = 0.0;
+    }
+    if is_master {
+        let lufs_str = if meters.master_lufs_integrated > -100.0 {
+            format!("{:.1} LUFS", meters.master_lufs_integrated)
+        } else {
+            "-∞ LUFS".to_string()
+        };
+        let tp_str = if meters.master_true_peak_db > -100.0 {
+            format!("{:.1} dB TP", meters.master_true_peak_db)
+        } else {
+            "-∞ dB TP".to_string()
+        };
+        pk_resp.on_hover_text(format!(
+            "Master Loudness:\n• Integrated: {lufs_str}\n• True Peak: {tp_str}\n(Click peak pill to reset)"
+        ));
     }
 
     // Fader + scale + meter.
@@ -2484,7 +2598,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     // Which strips, in order.
     let keys = strip_keys(p, v);
 
-    let strip_w = if v.wide { 80.0 } else { 50.0 };
+    let strip_w = if v.wide { 82.0 } else { 66.0 };
     let total_w = keys.len() as f32 * (strip_w + GAP);
     if ui
         .input(|i| i.pointer.hover_pos())
