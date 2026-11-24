@@ -1468,7 +1468,7 @@ impl App {
             }
         }
         if s.rec.active() || !input.is_empty() {
-            ctx.request_repaint();
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 
@@ -1499,7 +1499,7 @@ impl App {
                 .send(prowave_engine::Command::SetInput(Some(feed)));
         }
         if s.audio_rec.active() {
-            ctx.request_repaint();
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         } else if s.audio_rec.listening() {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
@@ -1707,7 +1707,7 @@ impl eframe::App for App {
             self.project.position_beats = map.advance(self.project.position_beats, dt);
         }
         if self.project.playing {
-            ctx.request_repaint();
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
         let master_peaks = self.sync.as_mut().map(|s| s.master_peaks());
         let mut meters = match self.sync.as_mut() {
@@ -1731,6 +1731,13 @@ impl eframe::App for App {
         self.ui
             .audio_rec
             .show_levels(&self.project, &mut meters.tracks);
+        let meters_decaying = self.ui.cpu_load > 0.02
+            || self.ui.midi_in_activity > 0.01
+            || self.ui.midi_out_activity > 0.01
+            || master_peaks.map_or(false, |(l, r)| l > 0.001 || r > 0.001);
+        if meters_decaying || crate::sound_library::active_download().is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
         if let Some(rx) = &self.mcp_receiver {
             while let Ok(cmd) = rx.try_recv() {
                 match cmd {

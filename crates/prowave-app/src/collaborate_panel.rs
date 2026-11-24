@@ -8,10 +8,7 @@
 use crate::i18n::tr;
 use crate::model::Project;
 use crate::UiState;
-use egui::{
-    pos2, vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui, Vec2, ViewportBuilder,
-    ViewportCommand, ViewportId,
-};
+use egui::{vec2, Color32, CornerRadius, RichText, Sense, Stroke, Ui};
 use prowave_vcs::{MusicalChange, VcsTask, VcsUiState};
 use std::path::{Path, PathBuf};
 
@@ -36,26 +33,15 @@ fn format_relative_time(timestamp: i64) -> String {
     format!("{}d ago", diff / 86400)
 }
 
-fn collaborate_viewport_size(monitor: Option<Vec2>) -> (Vec2, Option<egui::Pos2>) {
-    let mon = monitor.unwrap_or(vec2(1920.0, 1080.0));
-    let max_w = (mon.x - 48.0).max(640.0);
-    let max_h = (mon.y - 64.0).max(480.0);
-    let w = (mon.x * 0.58).clamp(760.0, 1120.0).min(max_w);
-    let h = (mon.y * 0.68).clamp(520.0, 760.0).min(max_h);
-    let size = vec2(w, h);
-    let pos = pos2(((mon.x - w) * 0.5).max(24.0), ((mon.y - h) * 0.5).max(32.0));
-    (size, Some(pos))
-}
-
 fn primary_btn(label: &str) -> egui::Button<'static> {
     egui::Button::new(
         RichText::new(label.to_string())
-            .color(Color32::from_rgb(0x11, 0x12, 0x15))
-            .size(12.5)
+            .color(Color32::WHITE)
+            .size(12.0)
             .strong(),
     )
-    .fill(Color32::from_rgb(0xf2, 0xf3, 0xf5))
-    .corner_radius(CornerRadius::same(6))
+    .fill(Color32::from_rgb(0x12, 0x69, 0xcc))
+    .corner_radius(CornerRadius::same(2))
 }
 
 fn secondary_btn(label: &str) -> egui::Button<'static> {
@@ -64,9 +50,9 @@ fn secondary_btn(label: &str) -> egui::Button<'static> {
             .color(Color32::from_rgb(0xe6, 0xe8, 0xec))
             .size(12.0),
     )
-    .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-    .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-    .corner_radius(CornerRadius::same(6))
+    .fill(Color32::from_rgb(0x25, 0x25, 0x26))
+    .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)))
+    .corner_radius(CornerRadius::same(2))
 }
 
 fn compact_secondary_btn(label: &str) -> egui::Button<'static> {
@@ -75,9 +61,9 @@ fn compact_secondary_btn(label: &str) -> egui::Button<'static> {
             .color(Color32::from_rgb(0xe6, 0xe8, 0xec))
             .size(11.0),
     )
-    .fill(Color32::from_rgb(0x22, 0x24, 0x29))
-    .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x39, 0x42)))
-    .corner_radius(CornerRadius::same(6))
+    .fill(Color32::from_rgb(0x25, 0x25, 0x26))
+    .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)))
+    .corner_radius(CornerRadius::same(2))
 }
 
 /// Polls background Collaborate worker events when Collaborate is enabled.
@@ -161,7 +147,7 @@ pub fn quick_snapshot(s: &mut UiState, p: &Project, project_path: Option<&Path>)
     }
 }
 
-/// Dedicated secondary viewport window for Collaborate & Version History.
+/// Dedicated window for Collaborate & Version History.
 pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path: Option<&Path>) {
     update(s, p, project_path);
 
@@ -169,114 +155,96 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
         return;
     }
 
-    let (size, pos) = collaborate_viewport_size(ctx.input(|i| i.viewport().monitor_size));
-    let viewport_id = ViewportId::from_hash_of("douri_collaborate_window");
-    let mut builder = ViewportBuilder::default()
-        .with_inner_size(size)
-        .with_min_inner_size(vec2(760.0, 520.0))
-        .with_resizable(true)
-        .with_decorations(false)
-        .with_transparent(true)
-        .with_has_shadow(false)
-        .with_title("Collaborate");
+    let mut open = s.show_collaborate;
+    let mut close = false;
+    let panel_bg = Color32::from_rgb(0x1e, 0x1e, 0x1e);
+    let card_bg = Color32::from_rgb(0x25, 0x25, 0x26);
+    let border_color = Color32::from_rgb(0x3a, 0x3a, 0x3a);
+    let border_stroke = Stroke::new(1.0, border_color);
 
-    if let Some(p) = pos {
-        builder = builder.with_position(p);
+    egui::Window::new("douri_collaborate_window")
+        .open(&mut open)
+        .title_bar(false)
+        .resizable(true)
+        .collapsible(false)
+        .default_size(vec2(860.0, 580.0))
+        .min_size(vec2(640.0, 420.0))
+        .frame(
+            egui::Frame::new()
+                .fill(panel_bg)
+                .stroke(border_stroke)
+                .corner_radius(CornerRadius::same(2))
+                .inner_margin(16.0),
+        )
+        .show(ctx, |ui| {
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close = true;
+            }
+
+            render_window_chrome(ui, s, &mut close);
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(12.0);
+
+            if !s.collaborate_enabled {
+                render_paused(ui, s, card_bg, border_stroke);
+                return;
+            }
+
+            if project_path.is_none() {
+                render_unsaved_project(ui, s, card_bg, border_stroke);
+                return;
+            }
+
+            let is_repo = s
+                .collaborate_worker
+                .as_ref()
+                .is_some_and(|w| w.latest_state.is_repo);
+
+            if !is_repo {
+                render_uninitialized(ui, s, card_bg, border_stroke);
+            } else {
+                render_active(ui, p, s, project_path, card_bg, border_stroke);
+            }
+        });
+
+    if close {
+        open = false;
     }
-
-    ctx.show_viewport_immediate(viewport_id, builder, |ctx, _class| {
-        let mut visuals = ctx.global_style().visuals.clone();
-        visuals.window_shadow = egui::epaint::Shadow::NONE;
-        visuals.popup_shadow = egui::epaint::Shadow::NONE;
-        ctx.set_visuals(visuals);
-
-        if ctx.input(|i| i.viewport().close_requested()) {
-            s.show_collaborate = false;
-        }
-
-        let panel_bg = Color32::from_rgb(0x1a, 0x1b, 0x1e);
-        let card_bg = Color32::from_rgb(0x20, 0x22, 0x26);
-        let border_color = Color32::from_rgb(0x2e, 0x31, 0x38);
-        let border_stroke = Stroke::new(1.0, border_color);
-
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::NONE
-                    .fill(Color32::TRANSPARENT)
-                    .inner_margin(egui::Margin::ZERO),
-            )
-            .show(ctx, |ui| {
-                egui::Frame::new()
-                    .corner_radius(12.0)
-                    .fill(panel_bg)
-                    .stroke(border_stroke)
-                    .inner_margin(16.0)
-                    .show(ui, |ui| {
-                        render_window_chrome(ui, s);
-
-                        ui.add_space(8.0);
-                        ui.separator();
-                        ui.add_space(12.0);
-
-                        if !s.collaborate_enabled {
-                            render_paused(ui, s, card_bg, border_stroke);
-                            return;
-                        }
-
-                        if project_path.is_none() {
-                            render_unsaved_project(ui, s, card_bg, border_stroke);
-                            return;
-                        }
-
-                        let is_repo = s
-                            .collaborate_worker
-                            .as_ref()
-                            .is_some_and(|w| w.latest_state.is_repo);
-
-                        if !is_repo {
-                            render_uninitialized(ui, s, card_bg, border_stroke);
-                        } else {
-                            render_active(ui, p, s, project_path, card_bg, border_stroke);
-                        }
-                    });
-            });
-    });
+    s.show_collaborate = open;
 }
 
-fn render_window_chrome(ui: &mut Ui, s: &mut UiState) {
+fn render_window_chrome(ui: &mut Ui, s: &mut UiState, close: &mut bool) {
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(phosphor_egui::regular::USERS)
-                .size(18.0)
-                .color(Color32::from_rgb(0xe6, 0xe8, 0xec)),
+                .size(17.0)
+                .color(Color32::from_rgb(0x51, 0xee, 0xfc)),
         );
         ui.add_space(4.0);
         ui.strong(
             RichText::new(tr("Collaborate"))
-                .size(15.0)
-                .color(Color32::from_rgb(0xf2, 0xf3, 0xf5)),
+                .size(14.5)
+                .color(Color32::WHITE),
         );
 
         ui.add_space(16.0);
         ui.checkbox(&mut s.collaborate_enabled, tr("Enable Collaborate"));
 
-        // Draggable window header region
-        let drag_w = (ui.available_width() - 32.0).max(40.0);
-        let (_, drag_resp) = ui.allocate_exact_size(vec2(drag_w, 24.0), Sense::drag());
-        if drag_resp.drag_started() {
-            ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
-        }
-
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let close_btn = egui::Button::new(
-                RichText::new("×")
-                    .size(18.0)
-                    .color(Color32::from_rgb(0x9a, 0x9a, 0xa2)),
-            )
-            .frame(false);
+            let close_resp = ui.add(
+                egui::Button::new(
+                    RichText::new(phosphor_egui::regular::X)
+                        .size(14.0)
+                        .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                )
+                .fill(Color32::TRANSPARENT)
+                .corner_radius(CornerRadius::same(2)),
+            );
 
-            if ui.add(close_btn).on_hover_text("Close Window").clicked() {
-                s.show_collaborate = false;
+            if close_resp.on_hover_text(tr("Close")).clicked() {
+                *close = true;
             }
         });
     });
@@ -287,7 +255,7 @@ fn render_paused(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_stroke: 
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(CornerRadius::same(2))
         .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -327,7 +295,7 @@ fn render_unsaved_project(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(CornerRadius::same(2))
         .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -367,7 +335,7 @@ fn render_uninitialized(ui: &mut Ui, s: &mut UiState, card_bg: Color32, border_s
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(CornerRadius::same(2))
         .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -427,7 +395,7 @@ fn render_active(
         egui::Frame::new()
             .fill(Color32::from_rgb(0x34, 0x19, 0x19))
             .stroke(Stroke::new(1.0, Color32::from_rgb(0x8a, 0x2e, 0x2e)))
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(egui::Margin {
                 left: 10,
                 right: 8,
@@ -480,7 +448,7 @@ fn render_active(
         egui::Frame::new()
             .fill(Color32::from_rgb(0x18, 0x2b, 0x1f))
             .stroke(Stroke::new(1.0, Color32::from_rgb(0x2d, 0x6a, 0x3e)))
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(egui::Margin {
                 left: 10,
                 right: 8,
@@ -667,7 +635,7 @@ fn render_left_column(
         egui::Frame::new()
             .fill(card_bg)
             .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.label(
@@ -730,7 +698,7 @@ fn render_left_column(
         egui::Frame::new()
             .fill(card_bg)
             .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(8.0)
             .show(ui, |ui| {
                 if let Some(ref current_link) = latest_state.remote_url {
@@ -813,7 +781,7 @@ fn render_left_column(
     egui::Frame::new()
         .fill(card_bg)
         .stroke(border_stroke)
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(CornerRadius::same(2))
         .inner_margin(12.0)
         .show(ui, |ui| {
             ui.label(
@@ -919,7 +887,7 @@ fn render_left_column(
         egui::Frame::new()
             .fill(card_bg)
             .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(8.0)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
@@ -979,7 +947,7 @@ fn render_right_column(
         egui::Frame::new()
             .fill(card_bg)
             .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
+            .corner_radius(CornerRadius::same(2))
             .inner_margin(8.0)
             .show(ui, |ui| {
                 let short_rev = &from_rev[..7.min(from_rev.len())];
@@ -1031,7 +999,7 @@ fn render_right_column(
                     egui::Frame::new()
                         .fill(card_bg)
                         .stroke(border_stroke)
-                        .corner_radius(CornerRadius::same(6))
+                        .corner_radius(CornerRadius::same(2))
                         .inner_margin(10.0)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {

@@ -292,6 +292,22 @@ pub struct SoundRegistry {
     pub defaults: HashMap<String, String>,
 }
 
+static REGISTRY_CACHE: OnceLock<Mutex<SoundRegistry>> = OnceLock::new();
+
+pub fn cached_registry() -> &'static Mutex<SoundRegistry> {
+    REGISTRY_CACHE.get_or_init(|| Mutex::new(SoundRegistry::load()))
+}
+
+pub fn get_cached_registry() -> SoundRegistry {
+    cached_registry().lock().unwrap().clone()
+}
+
+pub fn mutate_cached_registry<F: FnOnce(&mut SoundRegistry)>(f: F) {
+    let mut reg = cached_registry().lock().unwrap();
+    f(&mut reg);
+    reg.save();
+}
+
 impl SoundRegistry {
     pub fn load() -> Self {
         let mut reg = Self::default();
@@ -308,11 +324,36 @@ impl SoundRegistry {
             reg.managed_path = sound_library_path().or_else(|| Some(default_sounds_dir()));
         }
 
-        // Scan user directory for manually dropped .sfz/.sf2
+        // Prune any fake/mock placeholder packs (e.g. CustomBass) or packs whose files do not exist on disk
+        let mut changed = false;
+        let before_len = reg.installed.len();
+        reg.installed.retain(|p| {
+            if p.id == "ext-custombass" || p.name == "CustomBass" {
+                return false;
+            }
+            p.main_file.exists() && p.root_path.exists()
+        });
+        if reg.installed.len() != before_len {
+            changed = true;
+        }
+
+        let def_before = reg.defaults.len();
+        reg.defaults
+            .retain(|_cat, pack_id| reg.installed.iter().any(|p| &p.id == pack_id));
+        if reg.defaults.len() != def_before {
+            changed = true;
+        }
+
+        if changed {
+            reg.save();
+        }
+
+        // Scan user directory for manually dropped .sfz/.sf2 only if user directory exists
         if let Some(managed) = &reg.managed_path {
             let user_dir = managed.join("User");
-            let _ = std::fs::create_dir_all(&user_dir);
-            reg.scan_user_dir(&user_dir);
+            if user_dir.is_dir() {
+                reg.scan_user_dir(&user_dir);
+            }
         }
 
         reg
@@ -578,7 +619,7 @@ pub enum ResolvedPatch {
 /// Resolves an instrument patch to an installed `.sfz` or `.sf2` pack.
 /// Returns `None` if no pack is installed, triggering immediate fallback to Dōri DSP presets.
 pub fn resolve_library_patch(category: &str, _patch_name: &str) -> Option<ResolvedPatch> {
-    let reg = SoundRegistry::load();
+    let reg = cached_registry().lock().unwrap();
     let pack = reg.get_default_or_first_for_category(category)?;
     if pack.main_file.is_file() {
         if pack.format.contains("sf2") {
@@ -689,8 +730,8 @@ pub fn start_download(pack: &CatalogPack) {
             }
 
             // Finished: Write pack files to disk and register
-            let mut reg = SoundRegistry::load();
-            let sounds_dir = reg.managed_path.clone().unwrap_or_else(default_sounds_dir);
+            let managed_path = get_cached_registry().managed_path;
+            let sounds_dir = managed_path.unwrap_or_else(default_sounds_dir);
             let pack_dir = sounds_dir.join(&pack_id);
             let _ = std::fs::create_dir_all(&pack_dir);
 
@@ -713,12 +754,13 @@ pub fn start_download(pack: &CatalogPack) {
                 size_mb: total_mb as u64,
             };
 
-            reg.installed.retain(|p| p.id != pack_id);
-            if is_default || !reg.defaults.contains_key(&pack_category) {
-                reg.defaults.insert(pack_category, pack_id);
-            }
-            reg.installed.push(installed);
-            reg.save();
+            mutate_cached_registry(|reg| {
+                reg.installed.retain(|p| p.id != pack_id);
+                if is_default || !reg.defaults.contains_key(&pack_category) {
+                    reg.defaults.insert(pack_category, pack_id);
+                }
+                reg.installed.push(installed);
+            });
 
             if let Ok(mut guard) = downloader().lock() {
                 guard.active = None;
@@ -728,7 +770,7 @@ pub fn start_download(pack: &CatalogPack) {
 }
 
 pub fn essential_sounds_installed() -> bool {
-    let reg = SoundRegistry::load();
+    let reg = cached_registry().lock().unwrap();
     CATALOG
         .iter()
         .filter(|p| p.is_essential)
@@ -736,16 +778,17 @@ pub fn essential_sounds_installed() -> bool {
 }
 
 pub fn all_sounds_installed() -> bool {
-    let reg = SoundRegistry::load();
+    let reg = cached_registry().lock().unwrap();
     CATALOG
         .iter()
         .all(|p| reg.installed.iter().any(|i| i.id == p.id))
 }
 
 pub fn download_essential_sounds(s: &mut UiState) {
-    let reg = SoundRegistry::load();
+    let reg = cached_registry().lock().unwrap();
     for pack in CATALOG.iter().filter(|p| p.is_essential) {
         if !reg.installed.iter().any(|i| i.id == pack.id) {
+            drop(reg);
             start_download(pack);
             s.status = Some(tr("Downloading Essential Sounds…").to_string());
             break;
@@ -754,9 +797,10 @@ pub fn download_essential_sounds(s: &mut UiState) {
 }
 
 pub fn download_all_sounds(s: &mut UiState) {
-    let reg = SoundRegistry::load();
+    let reg = cached_registry().lock().unwrap();
     for pack in CATALOG {
         if !reg.installed.iter().any(|i| i.id == pack.id) {
+            drop(reg);
             start_download(pack);
             s.status = Some(tr("Downloading All Available Sounds…").to_string());
             break;
@@ -782,12 +826,13 @@ pub fn relocate_sound_library_interactive(s: &mut UiState) {
         .set_title("Relocate Sound Library")
         .pick_folder()
     {
-        let mut reg = SoundRegistry::load();
-        if let Err(e) = reg.relocate(&path) {
-            s.status = Some(format!("Failed to relocate Sound Library: {e}"));
-        } else {
-            s.status = Some(format!("Sound Library relocated to {}", path.display()));
-        }
+        mutate_cached_registry(|reg| {
+            if let Err(e) = reg.relocate(&path) {
+                s.status = Some(format!("Failed to relocate Sound Library: {e}"));
+            } else {
+                s.status = Some(format!("Sound Library relocated to {}", path.display()));
+            }
+        });
     }
 }
 
@@ -803,8 +848,7 @@ pub fn import_external_interactive(s: &mut UiState) {
         .add_filter("SFZ / SoundFont", &["sfz", "sf2"])
         .pick_file()
     {
-        let mut reg = SoundRegistry::load();
-        match reg.import_external(path.clone()) {
+        mutate_cached_registry(|reg| match reg.import_external(path.clone()) {
             Ok(_) => {
                 s.status = Some(format!(
                     "Imported {}",
@@ -814,7 +858,7 @@ pub fn import_external_interactive(s: &mut UiState) {
             Err(e) => {
                 s.status = Some(format!("Import failed: {e}"));
             }
-        }
+        });
     }
 }
 
@@ -839,48 +883,62 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
         return;
     }
 
-    let mut open = true;
-    let window_size = vec2(880.0, 520.0);
+    let mut open = s.show_sound_library_manager;
+    let mut close = false;
 
     egui::Window::new("dori_sound_library_manager")
         .open(&mut open)
         .title_bar(false)
-        .resizable(false)
+        .resizable(true)
         .collapsible(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-        .fixed_size(window_size)
+        .default_size(vec2(880.0, 540.0))
+        .min_size(vec2(680.0, 420.0))
         .frame(
             egui::Frame::new()
-                .fill(Color32::from_rgb(0x16, 0x18, 0x1d))
-                .corner_radius(8.0),
+                .fill(Color32::from_rgb(0x1e, 0x1e, 0x1e))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)))
+                .corner_radius(CornerRadius::same(2))
+                .inner_margin(0.0),
         )
         .show(ctx, |ui| {
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close = true;
+            }
+
             let win_rect = ui.max_rect();
 
-            // Header (#1c1f26, height 44)
+            // Paint entire window background opaque to ensure zero bleed-through
+            ui.painter().rect_filled(
+                win_rect,
+                CornerRadius::same(2),
+                Color32::from_rgb(0x1e, 0x1e, 0x1e),
+            );
+
+            // Header (#252526, height 44)
             let header_rect = Rect::from_min_size(win_rect.min, vec2(win_rect.width(), 44.0));
             {
                 let g = ui.painter();
                 g.rect_filled(
                     header_rect,
-                    CornerRadius {
-                        nw: 8,
-                        ne: 8,
-                        sw: 0,
-                        se: 0,
-                    },
-                    Color32::from_rgb(0x1c, 0x1f, 0x26),
+                    CornerRadius::ZERO,
+                    Color32::from_rgb(0x25, 0x25, 0x26),
                 );
                 g.line_segment(
                     [header_rect.left_bottom(), header_rect.right_bottom()],
-                    Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                 );
 
-                // Wave icon + Title
-                let wave_center = pos2(header_rect.left() + 24.0, header_rect.center().y);
-                draw_dori_wave_icon(&g, wave_center);
+                // Phosphor Waveform icon + Title
                 g.text(
-                    pos2(header_rect.left() + 44.0, header_rect.center().y),
+                    pos2(header_rect.left() + 20.0, header_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    phosphor_egui::regular::WAVEFORM,
+                    FontId::proportional(16.0),
+                    Color32::from_rgb(0x51, 0xee, 0xfc),
+                );
+                g.text(
+                    pos2(header_rect.left() + 46.0, header_rect.center().y),
                     Align2::LEFT_CENTER,
                     tr("Dōri Sound Library"),
                     FontId::proportional(13.5),
@@ -888,81 +946,90 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 );
             }
 
-            // Minimize (-) and Close (×) buttons top right
+            // Close (×) and Minimize (–) buttons top right
             let close_rect = Rect::from_center_size(
                 pos2(header_rect.right() - 20.0, header_rect.center().y),
-                vec2(22.0, 22.0),
+                vec2(24.0, 24.0),
             );
             let min_rect = Rect::from_center_size(
                 pos2(header_rect.right() - 48.0, header_rect.center().y),
-                vec2(22.0, 22.0),
+                vec2(24.0, 24.0),
             );
 
             let close_resp = ui.interact(close_rect, egui::Id::unique("sl_close"), Sense::click());
             let min_resp = ui.interact(min_rect, egui::Id::unique("sl_min"), Sense::click());
 
-            let btn_color = |resp: &egui::Response| {
+            let btn_bg = |resp: &egui::Response| {
                 if resp.hovered() {
-                    Color32::from_rgb(0x35, 0x3a, 0x47)
+                    Color32::from_rgb(0x30, 0x30, 0x30)
                 } else {
-                    Color32::from_rgb(0x22, 0x25, 0x2d)
+                    Color32::TRANSPARENT
+                }
+            };
+            let btn_fg = |resp: &egui::Response| {
+                if resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(0x8e, 0x8e, 0x93)
                 }
             };
 
             {
                 let g = ui.painter();
-                g.rect_filled(min_rect, 4.0, btn_color(&min_resp));
+                g.rect_filled(min_rect, CornerRadius::same(2), btn_bg(&min_resp));
                 g.text(
                     min_rect.center(),
                     Align2::CENTER_CENTER,
-                    "–",
-                    FontId::proportional(13.0),
-                    Color32::from_rgb(0xaa, 0xb0, 0xbd),
+                    phosphor_egui::regular::MINUS,
+                    FontId::proportional(14.0),
+                    btn_fg(&min_resp),
                 );
 
-                g.rect_filled(close_rect, 4.0, btn_color(&close_resp));
+                g.rect_filled(close_rect, CornerRadius::same(2), btn_bg(&close_resp));
                 g.text(
                     close_rect.center(),
                     Align2::CENTER_CENTER,
-                    "×",
-                    FontId::proportional(13.0),
-                    Color32::from_rgb(0xaa, 0xb0, 0xbd),
+                    phosphor_egui::regular::X,
+                    FontId::proportional(14.0),
+                    btn_fg(&close_resp),
                 );
             }
 
             if close_resp.clicked() || min_resp.clicked() {
-                s.show_sound_library_manager = false;
+                close = true;
             }
 
             // Body Rect below header
             let body_rect =
                 Rect::from_min_max(pos2(win_rect.left(), header_rect.bottom()), win_rect.max);
 
-            // Left Sidebar (width 320, #1c1f26)
-            let sidebar_rect = Rect::from_min_size(body_rect.min, vec2(320.0, body_rect.height()));
+            // Left Sidebar (width ~35%, #252526)
+            let sidebar_w = (win_rect.width() * 0.35).clamp(280.0, 320.0);
+            let sidebar_rect =
+                Rect::from_min_size(body_rect.min, vec2(sidebar_w, body_rect.height()));
             {
                 let g = ui.painter();
                 g.rect_filled(
                     sidebar_rect,
-                    CornerRadius {
-                        nw: 0,
-                        ne: 0,
-                        sw: 8,
-                        se: 0,
-                    },
-                    Color32::from_rgb(0x1c, 0x1f, 0x26),
+                    CornerRadius::ZERO,
+                    Color32::from_rgb(0x25, 0x25, 0x26),
                 );
                 g.line_segment(
                     [sidebar_rect.right_top(), sidebar_rect.right_bottom()],
-                    Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                 );
             }
 
-            // Right Main Pane
+            // Right Main Pane background: OPAQUE #1e1e1e
             let main_rect =
                 Rect::from_min_max(pos2(sidebar_rect.right(), body_rect.top()), body_rect.max);
+            ui.painter().rect_filled(
+                main_rect,
+                CornerRadius::ZERO,
+                Color32::from_rgb(0x1e, 0x1e, 0x1e),
+            );
 
-            let reg = SoundRegistry::load();
+            let reg = get_cached_registry();
             let active_dl = active_download();
 
             // ---------------------------------------------------------------
@@ -991,21 +1058,23 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 .find(|p| p.id == sel_pack_id)
                 .or_else(|| CATALOG.first());
 
+            let sidebar_inner_w = (sidebar_w - 32.0).max(180.0);
+
             ui.scope_builder(
-                egui::UiBuilder::new().max_rect(sidebar_rect.shrink(18.0)),
+                egui::UiBuilder::new().max_rect(sidebar_rect.shrink(16.0)),
                 |ui| {
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         // Top Section
                         ui.label(
                             egui::RichText::new("FILTER")
                                 .size(10.5)
-                                .color(Color32::from_rgb(0x88, 0x90, 0x9b))
+                                .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
                                 .strong(),
                         );
                         ui.add_space(3.0);
 
                         egui::ComboBox::from_id_salt("cat_filter_cb")
-                            .width(284.0)
+                            .width(sidebar_inner_w)
                             .selected_text(active_cat)
                             .show_ui(ui, |ui| {
                                 for (idx, &cat) in CATEGORIES.iter().enumerate() {
@@ -1022,14 +1091,14 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         ui.label(
                             egui::RichText::new("SELECTED PACK")
                                 .size(10.5)
-                                .color(Color32::from_rgb(0x88, 0x90, 0x9b))
+                                .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
                                 .strong(),
                         );
                         ui.add_space(3.0);
 
                         let pack_name = current_pack.map_or("None", |p| p.name);
                         egui::ComboBox::from_id_salt("pack_sel_cb")
-                            .width(284.0)
+                            .width(sidebar_inner_w)
                             .selected_text(pack_name)
                             .show_ui(ui, |ui| {
                                 for p in &matching_packs {
@@ -1051,16 +1120,17 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         if let Some(pack) = current_pack {
                             let card_rect = ui.available_rect_before_wrap();
                             let card_h = 160.0;
-                            let card_box = Rect::from_min_size(card_rect.min, vec2(284.0, card_h));
+                            let card_box =
+                                Rect::from_min_size(card_rect.min, vec2(sidebar_inner_w, card_h));
                             ui.painter().rect_filled(
                                 card_box,
-                                6.0,
-                                Color32::from_rgb(0x16, 0x18, 0x1d),
+                                CornerRadius::same(2),
+                                Color32::from_rgb(0x30, 0x30, 0x30),
                             );
                             ui.painter().rect_stroke(
                                 card_box,
-                                6.0,
-                                Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                                CornerRadius::same(2),
+                                Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                                 StrokeKind::Inside,
                             );
 
@@ -1081,7 +1151,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                                                 pack.format, pack.size
                                             ))
                                             .size(11.0)
-                                            .color(Color32::from_rgb(0x9c, 0xa3, 0xaf)),
+                                            .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
                                         );
                                         ui.add_space(6.0);
                                         let l_rect = ui.available_rect_before_wrap();
@@ -1091,20 +1161,26 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                                         );
                                         ui.painter().rect_filled(
                                             badge_box,
-                                            3.0,
-                                            Color32::from_rgb(0x18, 0x2c, 0x23),
+                                            CornerRadius::same(2),
+                                            Color32::from_rgb(0x25, 0x25, 0x26),
+                                        );
+                                        ui.painter().rect_stroke(
+                                            badge_box,
+                                            CornerRadius::same(2),
+                                            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                                            StrokeKind::Inside,
                                         );
                                         ui.label(
                                             egui::RichText::new(pack.license)
                                                 .size(10.0)
-                                                .color(Color32::from_rgb(0x34, 0xd3, 0x99)),
+                                                .color(Color32::from_rgb(0x6d, 0x9a, 0xc7)),
                                         );
                                     });
                                     ui.add_space(6.0);
                                     ui.label(
                                         egui::RichText::new(pack.description)
                                             .size(11.0)
-                                            .color(Color32::from_rgb(0xc4, 0xc9, 0xd4)),
+                                            .color(Color32::from_rgb(0xcc, 0xd0, 0xd8)),
                                     );
                                 },
                             );
@@ -1123,7 +1199,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                     if is_installed {
                         let remove_rect = Rect::from_center_size(
                             pos2(sidebar_rect.center().x, bottom_y - 14.0),
-                            vec2(100.0, 22.0),
+                            vec2(120.0, 22.0),
                         );
                         let r_resp =
                             ui.interact(remove_rect, egui::Id::unique("rm_pack"), Sense::click());
@@ -1135,7 +1211,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         ui.painter().text(
                             remove_rect.center(),
                             Align2::CENTER_CENTER,
-                            "🗑  Remove",
+                            format!("{}  {}", phosphor_egui::regular::TRASH, tr("Remove")),
                             FontId::proportional(11.5),
                             r_color,
                         );
@@ -1147,44 +1223,70 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                     }
 
                     let cta_rect = Rect::from_min_size(
-                        pos2(sidebar_rect.left() + 18.0, sidebar_rect.bottom() - 52.0),
-                        vec2(284.0, 34.0),
+                        pos2(sidebar_rect.left() + 16.0, sidebar_rect.bottom() - 50.0),
+                        vec2(sidebar_inner_w, 34.0),
                     );
                     let cta_resp =
                         ui.interact(cta_rect, egui::Id::unique("cta_dl"), Sense::click());
 
                     let (cta_bg, cta_txt, cta_fg) = if is_dl {
                         (
-                            Color32::from_rgb(0x28, 0x30, 0x2b),
-                            "Downloading…",
-                            Color32::from_rgb(0x34, 0xd3, 0x99),
+                            Color32::from_rgb(0x25, 0x25, 0x26),
+                            format!(
+                                "{}  {}",
+                                phosphor_egui::regular::ARROWS_CLOCKWISE,
+                                "Downloading…"
+                            ),
+                            Color32::from_rgb(0x51, 0xee, 0xfc),
                         )
                     } else if is_installed {
                         (
-                            Color32::from_rgb(0x22, 0x28, 0x30),
-                            "Installed ✓",
-                            Color32::from_rgb(0x9c, 0xa3, 0xaf),
+                            Color32::from_rgb(0x25, 0x25, 0x26),
+                            format!("{}  {}", phosphor_egui::regular::CHECK, tr("Installed")),
+                            Color32::from_rgb(0x8e, 0x8e, 0x93),
                         )
                     } else if cta_resp.hovered() {
                         (
-                            Color32::from_rgb(0x1e, 0xa3, 0x6b),
-                            "Download Pack",
+                            Color32::from_rgb(0x18, 0x7b, 0xe5),
+                            format!(
+                                "{}  {}",
+                                phosphor_egui::regular::DOWNLOAD_SIMPLE,
+                                tr("Download Pack")
+                            ),
                             Color32::WHITE,
                         )
                     } else {
                         (
-                            Color32::from_rgb(0x1b, 0x94, 0x60),
-                            "Download Pack",
+                            Color32::from_rgb(0x12, 0x69, 0xcc),
+                            format!(
+                                "{}  {}",
+                                phosphor_egui::regular::DOWNLOAD_SIMPLE,
+                                tr("Download Pack")
+                            ),
                             Color32::WHITE,
                         )
                     };
 
-                    ui.painter().rect_filled(cta_rect, 6.0, cta_bg);
+                    ui.painter()
+                        .rect_filled(cta_rect, CornerRadius::same(2), cta_bg);
+                    ui.painter().rect_stroke(
+                        cta_rect,
+                        CornerRadius::same(2),
+                        Stroke::new(
+                            1.0,
+                            if is_installed || is_dl {
+                                Color32::from_rgb(0x3a, 0x3a, 0x3a)
+                            } else {
+                                cta_bg
+                            },
+                        ),
+                        StrokeKind::Inside,
+                    );
                     ui.painter().text(
                         cta_rect.center(),
                         Align2::CENTER_CENTER,
                         cta_txt,
-                        FontId::proportional(13.0),
+                        FontId::proportional(12.5),
                         cta_fg,
                     );
 
@@ -1202,8 +1304,8 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
             // Render Right Main Pane
             // ---------------------------------------------------------------
             let import_btn_rect = Rect::from_center_size(
-                pos2(main_rect.right() - 84.0, main_rect.top() + 24.0),
-                vec2(132.0, 26.0),
+                pos2(main_rect.right() - 100.0, main_rect.top() + 24.0),
+                vec2(164.0, 26.0),
             );
             let imp_resp = ui.interact(
                 import_btn_rect,
@@ -1216,45 +1318,47 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
 
             let g = ui.painter();
             let imp_bg = if imp_resp.hovered() {
-                Color32::from_rgb(0x2d, 0x32, 0x3d)
+                Color32::from_rgb(0x18, 0x7b, 0xe5)
             } else {
-                Color32::from_rgb(0x20, 0x24, 0x2d)
+                Color32::from_rgb(0x12, 0x69, 0xcc)
             };
-            g.rect_filled(import_btn_rect, 4.0, imp_bg);
-            g.rect_stroke(
-                import_btn_rect,
-                4.0,
-                Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
-                StrokeKind::Inside,
-            );
+            g.rect_filled(import_btn_rect, CornerRadius::same(2), imp_bg);
             g.text(
                 import_btn_rect.center(),
                 Align2::CENTER_CENTER,
-                "Import (.sfz / .sf2)",
+                format!(
+                    "{}  {}",
+                    phosphor_egui::regular::FOLDER_OPEN,
+                    tr("Import (.sfz / .sf2)")
+                ),
                 FontId::proportional(11.5),
-                Color32::from_rgb(0xd1, 0xd5, 0xdb),
+                Color32::WHITE,
             );
 
-            // Vertically centered Installed Packs List
+            // Installed Packs List Area
             let list_area = Rect::from_min_max(
-                pos2(main_rect.left() + 28.0, main_rect.top() + 52.0),
-                pos2(main_rect.right() - 28.0, main_rect.bottom() - 20.0),
+                pos2(main_rect.left() + 24.0, main_rect.top() + 50.0),
+                pos2(main_rect.right() - 24.0, main_rect.bottom() - 16.0),
             );
 
             let has_items = !reg.installed.is_empty() || active_dl.is_some();
 
             if !has_items {
                 // Empty state card centered
-                let empty_rect = Rect::from_center_size(list_area.center(), vec2(380.0, 110.0));
-                g.rect_filled(empty_rect, 6.0, Color32::from_rgb(0x1c, 0x1f, 0x26));
+                let empty_rect = Rect::from_center_size(list_area.center(), vec2(400.0, 110.0));
+                g.rect_filled(
+                    empty_rect,
+                    CornerRadius::same(2),
+                    Color32::from_rgb(0x25, 0x25, 0x26),
+                );
                 g.rect_stroke(
                     empty_rect,
-                    6.0,
-                    Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                    CornerRadius::same(2),
+                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                     StrokeKind::Inside,
                 );
                 g.text(
-                    pos2(empty_rect.center().x, empty_rect.center().y - 12.0),
+                    pos2(empty_rect.center().x, empty_rect.center().y - 14.0),
                     Align2::CENTER_CENTER,
                     tr("No sound packs installed yet."),
                     FontId::proportional(13.0),
@@ -1263,17 +1367,17 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 g.text(
                     pos2(empty_rect.center().x, empty_rect.center().y + 14.0),
                     Align2::CENTER_CENTER,
-                    "Download packs from the sidebar or click Import to add .sfz / .sf2 files.",
+                    "Download packs from the catalog or click Import to add .sfz / .sf2 files.",
                     FontId::proportional(11.0),
-                    Color32::from_rgb(0x88, 0x90, 0x9b),
+                    Color32::from_rgb(0x8e, 0x8e, 0x93),
                 );
             } else {
                 g.text(
                     pos2(list_area.left(), list_area.top() + 4.0),
                     Align2::LEFT_TOP,
-                    "YOUR INSTALLED PACKS",
+                    tr("YOUR INSTALLED PACKS"),
                     FontId::proportional(11.0),
-                    Color32::from_rgb(0x88, 0x90, 0x9b),
+                    Color32::from_rgb(0x8e, 0x8e, 0x93),
                 );
 
                 let mut card_y = list_area.top() + 24.0;
@@ -1283,11 +1387,15 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 if let Some(dl) = &active_dl {
                     let c_rect =
                         Rect::from_min_size(pos2(list_area.left(), card_y), vec2(card_w, 52.0));
-                    g.rect_filled(c_rect, 6.0, Color32::from_rgb(0x20, 0x24, 0x2d));
+                    g.rect_filled(
+                        c_rect,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(0x25, 0x25, 0x26),
+                    );
                     g.rect_stroke(
                         c_rect,
-                        6.0,
-                        Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                        CornerRadius::same(2),
+                        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                         StrokeKind::Inside,
                     );
 
@@ -1304,7 +1412,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         Align2::LEFT_CENTER,
                         format!("{} • {}", dl.category, dl.format),
                         FontId::proportional(10.5),
-                        Color32::from_rgb(0x9c, 0xa3, 0xaf),
+                        Color32::from_rgb(0x8e, 0x8e, 0x93),
                     );
 
                     // Inline progress bar + cancel
@@ -1313,12 +1421,16 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         pos2(c_rect.right() - 210.0, c_rect.center().y - 3.0),
                         vec2(bar_w, 6.0),
                     );
-                    g.rect_filled(bar_rect, 3.0, Color32::from_rgb(0x16, 0x18, 0x1d));
+                    g.rect_filled(
+                        bar_rect,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(0x1e, 0x1e, 0x1e),
+                    );
                     let fill_w = bar_w * dl.percent.clamp(0.0, 1.0);
                     g.rect_filled(
                         Rect::from_min_size(bar_rect.min, vec2(fill_w, 6.0)),
-                        3.0,
-                        Color32::from_rgb(0x1b, 0x94, 0x60),
+                        CornerRadius::same(2),
+                        Color32::from_rgb(0x12, 0x69, 0xcc),
                     );
 
                     let prog_str = format!(
@@ -1332,7 +1444,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         Align2::LEFT_CENTER,
                         prog_str,
                         FontId::proportional(10.0),
-                        Color32::from_rgb(0x88, 0x90, 0x9b),
+                        Color32::from_rgb(0x8e, 0x8e, 0x93),
                     );
 
                     let cancel_rect = Rect::from_center_size(
@@ -1347,7 +1459,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                     g.text(
                         cancel_rect.center(),
                         Align2::CENTER_CENTER,
-                        "×",
+                        phosphor_egui::regular::X,
                         FontId::proportional(13.0),
                         if c_resp.hovered() {
                             Color32::from_rgb(0xff, 0x60, 0x55)
@@ -1370,11 +1482,15 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
 
                     let c_rect =
                         Rect::from_min_size(pos2(list_area.left(), card_y), vec2(card_w, 50.0));
-                    g.rect_filled(c_rect, 6.0, Color32::from_rgb(0x20, 0x24, 0x2d));
+                    g.rect_filled(
+                        c_rect,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(0x25, 0x25, 0x26),
+                    );
                     g.rect_stroke(
                         c_rect,
-                        6.0,
-                        Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                        CornerRadius::same(2),
+                        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                         StrokeKind::Inside,
                     );
 
@@ -1393,44 +1509,56 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         Align2::LEFT_CENTER,
                         info_str,
                         FontId::proportional(10.5),
-                        Color32::from_rgb(0x9c, 0xa3, 0xaf),
+                        Color32::from_rgb(0x8e, 0x8e, 0x93),
                     );
 
                     // Installed Badge
                     let inst_badge_rect = Rect::from_min_size(
-                        pos2(c_rect.right() - 86.0, c_rect.center().y - 10.0),
-                        vec2(72.0, 20.0),
+                        pos2(c_rect.right() - 88.0, c_rect.center().y - 10.0),
+                        vec2(76.0, 20.0),
                     );
-                    g.rect_filled(inst_badge_rect, 4.0, Color32::from_rgb(0x18, 0x2c, 0x23));
+                    g.rect_filled(
+                        inst_badge_rect,
+                        CornerRadius::same(2),
+                        Color32::from_rgb(0x30, 0x30, 0x30),
+                    );
+                    g.rect_stroke(
+                        inst_badge_rect,
+                        CornerRadius::same(2),
+                        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                        StrokeKind::Inside,
+                    );
                     g.text(
                         inst_badge_rect.center(),
                         Align2::CENTER_CENTER,
-                        "Installed ✓",
-                        FontId::proportional(11.0),
-                        Color32::from_rgb(0x34, 0xd3, 0x99),
+                        format!("{}  {}", phosphor_egui::regular::CHECK, tr("Installed")),
+                        FontId::proportional(10.5),
+                        Color32::from_rgb(0x6d, 0x9a, 0xc7),
                     );
 
                     // Default Pill vs Make Default
                     if pack.is_default {
-                        let star_pos = pos2(c_rect.right() - 176.0, c_rect.center().y);
-                        g.text(
-                            star_pos,
-                            Align2::CENTER_CENTER,
-                            "⭐",
-                            FontId::proportional(12.0),
-                            Color32::from_rgb(0xff, 0xd7, 0x00),
-                        );
                         let def_rect = Rect::from_min_size(
-                            pos2(c_rect.right() - 162.0, c_rect.center().y - 10.0),
-                            vec2(64.0, 20.0),
+                            pos2(c_rect.right() - 172.0, c_rect.center().y - 10.0),
+                            vec2(76.0, 20.0),
                         );
-                        g.rect_filled(def_rect, 4.0, Color32::from_rgb(0x2a, 0x2e, 0x38));
+                        g.rect_filled(
+                            def_rect,
+                            CornerRadius::same(2),
+                            Color32::from_rgb(0x30, 0x30, 0x30),
+                        );
+                        g.rect_stroke(
+                            def_rect,
+                            CornerRadius::same(2),
+                            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                            StrokeKind::Inside,
+                        );
                         g.text(
                             def_rect.center(),
                             Align2::CENTER_CENTER,
-                            "Default",
-                            FontId::proportional(11.0),
-                            Color32::from_rgb(0xff, 0xd7, 0x00),
+                            format!("{}  {}", phosphor_egui::regular::STAR, tr("Default")),
+                            FontId::proportional(10.5),
+                            Color32::from_rgb(0x51, 0xee, 0xfc),
                         );
                     } else {
                         let def_btn_rect = Rect::from_min_size(
@@ -1443,23 +1571,23 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                             Sense::click(),
                         );
                         let d_bg = if d_resp.hovered() {
-                            Color32::from_rgb(0x35, 0x3a, 0x47)
+                            Color32::from_rgb(0x38, 0x38, 0x38)
                         } else {
-                            Color32::from_rgb(0x24, 0x28, 0x32)
+                            Color32::from_rgb(0x30, 0x30, 0x30)
                         };
-                        g.rect_filled(def_btn_rect, 4.0, d_bg);
+                        g.rect_filled(def_btn_rect, CornerRadius::same(2), d_bg);
                         g.rect_stroke(
                             def_btn_rect,
-                            4.0,
-                            Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2e, 0x38)),
+                            CornerRadius::same(2),
+                            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                             StrokeKind::Inside,
                         );
                         g.text(
                             def_btn_rect.center(),
                             Align2::CENTER_CENTER,
-                            "Make Default",
+                            tr("Make Default"),
                             FontId::proportional(10.5),
-                            Color32::from_rgb(0xd1, 0xd5, 0xdb),
+                            Color32::from_rgb(0xcc, 0xd0, 0xd8),
                         );
                         if d_resp.clicked() {
                             set_default_pack(&pack.id, &pack.category);
@@ -1471,32 +1599,22 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
             }
         });
 
-    if !open {
-        s.show_sound_library_manager = false;
+    if close {
+        open = false;
     }
+    s.show_sound_library_manager = open;
 }
 
 fn set_default_pack(id: &str, category: &str) {
-    let mut reg = SoundRegistry::load();
-    reg.set_default(id, category);
+    mutate_cached_registry(|reg| {
+        reg.set_default(id, category);
+    });
 }
 
 pub fn remove_installed_pack(id: &str) {
-    let mut reg = SoundRegistry::load();
-    reg.remove(id);
-}
-
-fn draw_dori_wave_icon(g: &Painter, center: Pos2) {
-    let bars = [-6.0, -3.0, 0.0, 3.0, 6.0];
-    let heights = [6.0, 11.0, 16.0, 10.0, 5.0];
-    for (&x_off, &h) in bars.iter().zip(&heights) {
-        let p1 = pos2(center.x + x_off, center.y - h * 0.5);
-        let p2 = pos2(center.x + x_off, center.y + h * 0.5);
-        g.line_segment(
-            [p1, p2],
-            Stroke::new(2.0, Color32::from_rgb(0x34, 0xd3, 0x99)),
-        );
-    }
+    mutate_cached_registry(|reg| {
+        reg.remove(id);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1530,7 +1648,7 @@ mod tests {
 
         let ext_dir = dir.path().join("ExternalLibrary");
         std::fs::create_dir_all(&ext_dir).unwrap();
-        let sfz_file = ext_dir.join("CustomBass.sfz");
+        let sfz_file = ext_dir.join("UserBass.sfz");
         std::fs::write(&sfz_file, b"<region> sample=dummy.wav").unwrap();
 
         let id = reg
@@ -1542,7 +1660,7 @@ mod tests {
         assert_eq!(reg.installed[0].main_file, sfz_file);
 
         // Does not duplicate file on disk
-        assert!(!managed.join("CustomBass.sfz").exists());
+        assert!(!managed.join("UserBass.sfz").exists());
 
         // Category resolution
         let resolved = reg.get_default_or_first_for_category("Imported Sounds");

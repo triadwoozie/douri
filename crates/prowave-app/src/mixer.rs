@@ -550,7 +550,8 @@ fn fader_and_meter(
         }
     }
     if levels.0 > -60.0 || levels.1 > -60.0 || hold.0 > -60.0 || hold.1 > -60.0 {
-        ui.ctx().request_repaint();
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(16));
     }
 
     // Fader cap: light grey block with a dark centre groove and fine ridges.
