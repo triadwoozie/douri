@@ -1,0 +1,16 @@
+# Sound chips and a six-operator FM synthesizer: C++ cores collected by
+# github.com/kyorohiro/tetorica-soundchip-native (commit b4f2543), each under its own licence
+# (see NOTICE and the licence file beside each core in vendor/), built with the cc crate behind
+# a small C interface (shim/). The vendored source is unchanged from that repository.
+[package]
+name = "chip-dsp"
+description = "Sound-chip and FM synthesizer cores (C++), with a C interface for Pro Wave's native instruments"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+links = "pw_chip"
+build = "build.rs"
+
+[build-dependencies]
+cc = "1"

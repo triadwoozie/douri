@@ -14,13 +14,26 @@ is not built. `README.md` has a status count made from the code (`cargo xtask st
 
 | Path | What it is | Main files |
 | :--- | :--- | :--- |
-| `crates/prowave-engine` | The real-time engine and everything that makes or changes sound. | `core.rs` (`EngineCore::process`, the `Command` enum), `output.rs` (cpal stream, the command sender), `duplex.rs` (macOS input and output in one callback), `wasapi.rs` (Windows output), `disk.rs` and `mapped.rs` (audio files streamed from disk), `capture.rs` (recording), `fx.rs`, `convolver.rs` and `native_fx/` (effects), `routing.rs` (sends, buses, automation), `synth.rs`, `soundfont.rs`, `sample_rack.rs` (instruments), `plugin_track.rs`, `au.rs`, `vst3.rs`, `plugin_handle.rs` (plug-in hosting, macOS), `prerender.rs` (playback threads), `tempo_map.rs`, `triple.rs` (lock-free state for the interface), `flex.rs`, `analysis.rs`, `note_render.rs` (offline audio work) |
-| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `autosave.rs` and `recovery.rs` (recovery copies, the session folder), `crash_log.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
+| `crates/prowave-engine` | The real-time engine and everything that makes or changes sound. | `core.rs` (`EngineCore::process`, the `Command` enum), `output.rs` (cpal stream, the command sender), `duplex.rs` (macOS input and output in one callback), `wasapi.rs` (Windows output), `disk.rs` and `mapped.rs` (audio files streamed from disk), `capture.rs` (recording), `fx.rs`, `convolver.rs` and `native_fx/` (effects), `routing.rs` (sends, buses, automation), `synth.rs`, `soundfont.rs`, `sample_rack.rs` (instruments), `arp.rs` (the Arpeggiator's note generator: it makes the notes of a track's regions ahead of time for the app's `midi_fx.rs`, and plays the keys played live inside `core.rs`), `plugin_track.rs`, `au.rs`, `vst3.rs`, `plugin_handle.rs` (plug-in hosting, macOS), `prerender.rs` (playback threads), `tempo_map.rs`, `triple.rs` (lock-free state for the interface), `flex.rs`, `analysis.rs`, `note_render.rs` (offline audio work), `reference_match/` (Match to Reference: the Matchering port; its parity test runs the Python original from `tools/matchering/`) |
+| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `autosave.rs` and `recovery.rs` (recovery copies, the session folder), `crash_log.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `channel_rack.rs` and the Kit Browser on its Kits key (`kit_browser.rs` the window, `kit_library.rs` the index of the library folders, made on a background thread and cached, `kit_files.rs` one kit's files and its SFZ, Hydrogen or DrumGizmo definition, `kit_classify.rs` what a sample is and which channel it goes on), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
 | `crates/prowave-project` | The `.prowave` file format: a zip with `project.json` and `media/`. | `lib.rs` |
 | `xtask` | The checks, run as `cargo xtask <task>`. | `main.rs`, `bench.rs`, `status.rs` |
 
-`crates/chimera` is a vendored voice engine (MIT, not a workspace member, not linted or tested
-as ours): the Singer's and Vocal Top Line's voice (`chimera_singer.rs`).
+The Singer's and Vocal Top Line's voice engines are vendored, not workspace members, and not
+linted or tested as ours: `crates/chimera` (CHIMERA, Rust, MIT, upstream eeb0c19),
+`crates/chimera-09fb776` (the same engine at its first vendored commit, kept for its sound) and
+`crates/novox` (Novox The Robot, C++ built with `cc` behind a small C interface, MIT). Each has a
+NOTICE naming its upstream commit and what was changed. Pro Wave's code around them is
+`chimera_singer.rs` and `novox_singer.rs` in the app, which are linted and tested.
+The native instruments (`crates/prowave-engine/src/native_inst/`) are one table, as the native
+effects are (`native_fx/`): an instrument is a `NativeInst` (notes in, audio out) listed in
+`native_inst/mod.rs`, which also holds what every instrument needs around its sound (the MIDI
+queue `Hosted`, `voices.rs`, `envelope.rs`, and `rate.rs` for an engine built for one sample
+rate). The app's window for all of them is `native_inst_ui.rs`. Their engines that are
+third-party code are vendored the same way as the voice engines, each with a NOTICE:
+`crates/circuit-dsp` and `crates/mi-plaits-dsp` (Rust), `crates/mi-dsp` and `crates/chip-dsp`
+(C++ built with `cc` behind a C interface; not in the wasm build). Instruments ported to Rust
+from GPL programs name their source in the file's header.
 
 The control interface: the running app takes requests on a Unix socket (`control.sock` in the
 settings folder) so that another program on the Mac, such as an AI coding agent, can drive it.

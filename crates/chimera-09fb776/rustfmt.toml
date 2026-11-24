@@ -1,0 +1,2 @@
+# Vendored upstream code (see NOTICE): kept exactly as it was written, not reformatted.
+disable_all_formatting = true

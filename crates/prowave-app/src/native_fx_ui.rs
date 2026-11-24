@@ -1,7 +1,7 @@
 //! The native effects (ports of Lemon Studio's recreations of FL Studio's Fruity Limiter,
-//! Maximus, Transient Processor, Soft Clipper and Fast Dist, and Pro Wave Tune) in the Audio
-//! FX slots: their settings, kept in the slot, and their windows, built as PW-1 hardware
-//! units: a faceplate with the model, sections of knobs and keys with LCD readouts, and a
+//! Maximus, Transient Processor, Soft Clipper and Fast Dist, Pro Wave Tune and Pro Wave
+//! Texture) in the Audio FX slots: their settings, kept in the slot, and their windows,
+//! built as PW-1 hardware units: a faceplate with the model, sections of knobs and keys with LCD readouts, and a
 //! display where the unit has a curve to show.
 use crate::gear::{self, Change, Control};
 use crate::model::Project;
@@ -50,7 +50,7 @@ pub fn encode(values: &[f32]) -> Vec<u8> {
 pub type Edit = (usize, u64, usize, f32);
 
 /// Margin inside the faceplate.
-const PAD: f32 = 26.0;
+pub(crate) const PAD: f32 = 26.0;
 
 /// The model code on a native unit's faceplate.
 fn model_code(id: &str) -> &'static str {
@@ -64,18 +64,22 @@ fn model_code(id: &str) -> &'static str {
         lemon_soft_clipper::ID => "SC-1",
         lemon_fast_distortion::ID => "FD-1",
         prowave_engine::tune::ID => "PT-1",
+        prowave_engine::texture::ID => "TX-1",
+        prowave_engine::native_fx::circuit::ID => "CO-1",
+        prowave_engine::native_fx::resonator_fx::ID => "RS-6F",
+        prowave_engine::native_fx::spectral::ID => "SP-1",
         _ => "FX-1",
     }
 }
 
 /// A section of a unit: its silkscreen label and its parameters, in order.
-struct Section {
-    label: &'static str,
-    params: Vec<usize>,
+pub(crate) struct Section {
+    pub(crate) label: &'static str,
+    pub(crate) params: Vec<usize>,
 }
 
 /// A row of sections side by side.
-type Row = Vec<Section>;
+pub(crate) type Row = Vec<Section>;
 
 fn sec(label: &'static str, params: &[usize]) -> Section {
     Section {
@@ -223,7 +227,7 @@ fn short_label(name: &str) -> String {
 }
 
 /// Parameter `k` as a panel control.
-fn control(info: &NativeFxInfo, k: usize, v: f32, automated: Option<bool>) -> Control {
+pub(crate) fn control(info: &NativeFxInfo, k: usize, v: f32, automated: Option<bool>) -> Control {
     let param = &info.params[k];
     let span = (param.max - param.min).max(1e-6);
     Control {
@@ -255,7 +259,7 @@ pub(crate) fn value_of(info: &NativeFxInfo, ch: &Change) -> f32 {
 }
 
 /// Width of the widest row.
-fn unit_width(rows: &[Row]) -> f32 {
+pub(crate) fn unit_width(rows: &[Row]) -> f32 {
     let cells = rows
         .iter()
         .map(|r| {
@@ -266,7 +270,7 @@ fn unit_width(rows: &[Row]) -> f32 {
 }
 
 /// Height of the rows.
-fn rows_height(rows: &[Row]) -> f32 {
+pub(crate) fn rows_height(rows: &[Row]) -> f32 {
     rows.iter()
         .map(|r| {
             let labelled = r.iter().any(|s| !s.label.is_empty());
@@ -276,7 +280,7 @@ fn rows_height(rows: &[Row]) -> f32 {
 }
 
 /// Lays `rows` out from `top_left`; returns the changes.
-fn draw_rows(
+pub(crate) fn draw_rows(
     ui: &mut Ui,
     top_left: Pos2,
     width: f32,
@@ -543,8 +547,11 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     let band: usize = ctx.data(|d| d.get_temp(band_id)).unwrap_or(0);
     let (rows, display) = layout(info, band);
     let tune_cx = tune.then(|| tune_context(p, ti, uid, &vals));
+    let texture = info.id == prowave_engine::texture::ID;
     let width = if tune {
         crate::tune_ui::WIDTH
+    } else if texture {
+        crate::texture_ui::WIDTH
     } else {
         unit_width(&rows)
     };
@@ -552,6 +559,12 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     let (head, _) = gear::unit_window(ctx, id, width, &plate, Some(!slot.bypass), |ui| {
         if let Some(cx) = &tune_cx {
             crate::tune_ui::body(ui, id, info, cx, &controls, &shown, &mut vals, &mut edits);
+            return;
+        }
+        if texture {
+            crate::texture_ui::body(
+                ui, id, info, ti, uid, &controls, &shown, &mut vals, &mut edits,
+            );
             return;
         }
         let disp_h = if display == Display::None { 0.0 } else { 128.0 };

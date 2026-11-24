@@ -1,5 +1,5 @@
 //! Singer: a built-in instrument (Instrument slot > Singer) that sings its own track's notes
-//! and lyrics, with DiffSinger or CHIMERA, through the track's channel strip.
+//! and lyrics, with DiffSinger, CHIMERA or Novox The Robot, through the track's channel strip.
 //!
 //! A singer needs whole phrases and DiffSinger is slower than real time, so nothing is sung
 //! as it is played: the track's MIDI regions are cut into phrases as Vocal Top Line cuts them
@@ -129,8 +129,8 @@ fn make(
         .map(|ph| ph.notes.last().map_or(0.0, |n| n.start + n.dur))
         .sum();
     let mut place = None;
-    if !sing.is_empty() && set.singer == Singer::Chimera {
-        vocal::sing_chimera(set, &sing, progress)?;
+    if !sing.is_empty() && set.singer.in_process() {
+        vocal::sing_in_process(set, &sing, progress)?;
         place = Some(Place::ThisMac);
     } else if !sing.is_empty() {
         let mut errors = Vec::new();
@@ -283,14 +283,9 @@ impl Runtime {
                         }
                     }
                     run.last = match made.place {
-                        Some(_) if made.singer == Singer::Chimera => trf(
-                            "{} phrases sung by CHIMERA in {} s ({} s of singing)",
-                            &[
-                                &made.sung,
-                                &format!("{:.1}", made.secs),
-                                &format!("{:.1}", made.sung_secs),
-                            ],
-                        ),
+                        Some(_) if made.singer.in_process() => {
+                            vocal::sung_message(made.singer, made.sung, made.secs, made.sung_secs)
+                        }
                         Some(place) => trf(
                             "{} phrases sung on {} in {} s",
                             &[&made.sung, &place.label(), &format!("{:.1}", made.secs)],
@@ -561,7 +556,7 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
         None,
         |ui| {
             let voice = voices.iter().find(|v| v.id == set.voice);
-            let chimera = set.singer == Singer::Chimera;
+            let chimera = set.singer.is_chimera();
             let (line, ready, busy) = with_runtime(|rt| {
                 let run = rt.runs.entry(uid).or_default();
                 let ready = (run.total > 0).then_some((run.ready, run.total));
@@ -575,11 +570,7 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 };
                 (line, ready, run.job.is_some())
             });
-            let voice_name = if chimera {
-                String::new()
-            } else {
-                voice.map_or(set.voice.clone(), |v| v.name.clone())
-            };
+            let voice_name = vocal::voice_name(&set, voice);
             vocal::status_lcd(
                 ui,
                 &vocal::Status {
@@ -622,10 +613,8 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                     bounce = true;
                 }
             });
-            if chimera {
-                vocal::licence(ui, tr("CHIMERA voice model by Jameson Hodge (MIT licence)"));
-            } else if let Some(v) = voice.filter(|v| !v.licence.is_empty()) {
-                vocal::licence(ui, &v.licence);
+            if let Some(text) = vocal::credits(&set, voice) {
+                vocal::licence(ui, &text);
             }
         },
     );
@@ -1100,6 +1089,13 @@ mod tests {
         bounce_sings_the_notes_in_time_and_in_tune(Singer::Chimera, CHIMERA_WORDS);
     }
 
+    /// Novox The Robot through the whole pipeline: sung into the cache at 44.1 kHz, read back at
+    /// the engine's 48 kHz, placed by the engine's player and bounced through the strip.
+    #[test]
+    fn novox_bounce_sings_the_notes_in_time_and_in_tune() {
+        bounce_sings_the_notes_in_time_and_in_tune(Singer::Novox, CHIMERA_WORDS);
+    }
+
     /// With the installed DiffSinger voice (ignored: CI has none).
     #[test]
     #[ignore]
@@ -1157,6 +1153,20 @@ mod tests {
         let back = q.tracks[i].au_instrument.as_ref().unwrap();
         assert!(is_singer(back));
         assert_eq!(settings(back), set);
+        // Novox's voice and knobs too.
+        set.singer = Singer::Novox;
+        set.novox = crate::novox_singer::Voice::preset("female").unwrap();
+        set.novox.grit = 35.0;
+        set.novox.voices = 3.0;
+        set.novox.scoop = -80.0;
+        set.novox.portamento = 150.0;
+        slot.state = Some(encode(&set));
+        p.tracks[i].au_instrument = Some(slot.clone());
+        let (doc, _) = crate::project_io::to_doc(&p);
+        let json = serde_json::to_string(&doc).unwrap();
+        let doc: prowave_project::ProjectDoc = serde_json::from_str(&json).unwrap();
+        let (q, _) = crate::project_io::from_doc(&doc, Path::new("."), &egui::Context::default());
+        assert_eq!(settings(q.tracks[i].au_instrument.as_ref().unwrap()), set);
         // Unreadable state: the defaults.
         slot.state = Some(b"?".to_vec());
         assert_eq!(settings(&slot), VocalSettings::new(0));
@@ -1219,7 +1229,9 @@ mod tests {
         let rate = 48_000;
         for (singer, file) in [
             (Singer::DiffSinger, "singer-instrument-diffsinger-v1.wav"),
-            (Singer::Chimera, "singer-instrument-chimera-v1.wav"),
+            (Singer::Chimera, "singer-instrument-chimera-v2.wav"),
+            (Singer::Chimera09fb776, "singer-instrument-chimera-v1.wav"),
+            (Singer::Novox, "singer-instrument-novox-v1.wav"),
         ] {
             let path = dir.join(file);
             assert!(!path.exists(), "{} exists", path.display());
@@ -1252,14 +1264,19 @@ mod tests {
         }
     }
 
-    /// A picture of the Singer window, partly sung: `MANUAL_PNG_DIR=… cargo test -p prowave-app
-    /// singer_window_picture -- --ignored`.
+    /// Pictures of the Singer window, partly sung, with CHIMERA and with Novox:
+    /// `MANUAL_PNG_DIR=… cargo test -p prowave-app singer_window_picture -- --ignored`.
     #[test]
     #[ignore = "pictures of the window"]
     fn singer_window_picture() {
+        singer_window_picture_of(Singer::Chimera, "singer.png");
+        singer_window_picture_of(Singer::Novox, "singer-novox.png");
+    }
+
+    fn singer_window_picture_of(singer: Singer, file: &str) {
         let mut p = project(
             separate_notes(["row", "row", "row", "your", "boat", "gent"]),
-            Singer::Chimera,
+            singer,
         );
         let ti = ti(&p);
         p.tracks[ti].name = "Lead Vocal".into();
@@ -1270,7 +1287,7 @@ mod tests {
             let run = rt.runs.entry(uid).or_default();
             run.total = 3;
             run.ready = 2;
-            run.last = "2 phrases sung by CHIMERA in 0.8 s".into();
+            run.last = vocal::sung_message(singer, 2, 0.8, 2.4);
         });
         crate::ui_test::render_png(
             500.0,
@@ -1281,7 +1298,7 @@ mod tests {
                 crate::theme::apply(ui.ctx());
                 show_window(ui.ctx(), &mut p, &mut s)
             },
-            &hw_vocal::picture_path("singer.png"),
+            &hw_vocal::picture_path(file),
         )
         .unwrap();
     }

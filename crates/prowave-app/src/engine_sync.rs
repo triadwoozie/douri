@@ -78,6 +78,8 @@ pub struct EngineSync {
     soundfonts: Vec<Option<SoundFontUse>>,
     /// Which tracks the engine was told are external, by track.
     externals: Vec<bool>,
+    /// The Arpeggiator the engine has for the keys played live on each track, by track.
+    arps: Vec<Option<prowave_engine::ArpSettings>>,
     /// The controller changes the engine has.
     controls: Vec<ControlEvent>,
     /// MIDI Time Code as the engine was last told: on, frame rate, project start in frames.
@@ -764,13 +766,23 @@ fn song_notes(p: &Project) -> Vec<NoteEvent> {
         .enumerate()
         .filter_map(|(ti, t)| Some((ti, track_index(ti)?, t)))
         .flat_map(|(ti, track, t)| {
+            // The keys being recorded through an Arpeggiator are already heard through it as
+            // they are played: the take joins the song when the recording ends.
+            let live_arp = p.recording && crate::midi_fx::live_arp(&t.midi_fx).is_some();
+            // Where the track's regions end: a latched Arpeggiator plays on until there.
+            let mut end = 0.0f64;
             let mut notes: Vec<NoteEvent> = t
                 .regions
                 .iter()
                 .enumerate()
                 .filter(|(ri, r)| crate::region_solo::heard(p, ti, *ri, r))
+                .filter(|(_, r)| !(live_arp && r.name.starts_with('*')))
                 .flat_map(|(_, r)| {
-                    plays_of(p, r)
+                    let plays = plays_of(p, r);
+                    for (origin, span) in &plays {
+                        end = end.max(p.region_end_beats(r).max(origin + span.unwrap_or(0.0)));
+                    }
+                    plays
                         .into_iter()
                         .flat_map(move |(origin, span)| played_notes(t, r, origin, span, track))
                 })
@@ -783,7 +795,7 @@ fn song_notes(p: &Project) -> Vec<NoteEvent> {
             }
             // The track's MIDI FX change what it plays.
             if t.midi_fx.iter().any(|s| s.on) {
-                crate::midi_fx::apply(&t.midi_fx, notes)
+                crate::midi_fx::apply_until(&t.midi_fx, notes, end)
             } else {
                 notes
             }
@@ -957,6 +969,7 @@ impl EngineSync {
             patches: Vec::new(),
             soundfonts: Vec::new(),
             externals: Vec::new(),
+            arps: Vec::new(),
             controls: Vec::new(),
             mtc: None,
             song_rev: None,
@@ -1196,6 +1209,25 @@ impl EngineSync {
             self.externals
                 .resize(self.externals.len().max(i + 1), false);
             self.externals[i] = external;
+        }
+        // The Arpeggiator of each track's MIDI FX, for the keys played live on it (the notes
+        // in its regions are arpeggiated in `song_notes`). Tracks that are gone lose theirs.
+        for i in 0..p.tracks.len().max(self.arps.len()).min(MAX_TRACKS) {
+            let arp = p
+                .tracks
+                .get(i)
+                .and_then(|t| crate::midi_fx::live_arp(&t.midi_fx));
+            if self.arps.get(i).copied().flatten() == arp {
+                continue;
+            }
+            if !self.send(Command::SetTrackArp {
+                track: i as u16,
+                arp,
+            }) {
+                break;
+            }
+            self.arps.resize(self.arps.len().max(i + 1), None);
+            self.arps[i] = arp;
         }
         self.sync_strips(p);
         // Mixer moves. Until a song is accepted, its `SetSong` carries the mix instead.

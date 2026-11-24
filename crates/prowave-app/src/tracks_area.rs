@@ -268,6 +268,9 @@ pub struct TracksView {
     pub catch: bool,
     /// Global Tempo track above the tracks (Track > Show Tempo Track).
     pub show_tempo: bool,
+    /// View > Colour Spectrogram: audio regions show their sound's colour spectrogram
+    /// instead of the waveform (`colour_spectrogram`); kept for the next start.
+    pub colour_spectra: bool,
     /// Global Marker track above the tracks (Track > Show Marker Track).
     pub show_markers: bool,
     /// Global Signature track above the tracks (Track > Show Signature Track).
@@ -510,6 +513,7 @@ impl Default for TracksView {
             solo_hold: None,
             catch: true,
             show_tempo: false,
+            colour_spectra: crate::colour_spectrogram::load_on(),
             show_markers: false,
             show_signatures: false,
             selected: None,
@@ -983,7 +987,11 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
         }
         nav_pick = nav_pick.or(crate::arrange_nav::item(ui, p, v, "Scroll in Play"));
         ui.separator();
-        for label in ["Waveform Zoom In", "Waveform Zoom Out"] {
+        for label in [
+            "Waveform Zoom In",
+            "Waveform Zoom Out",
+            "Colour Spectrogram",
+        ] {
             nav_pick = nav_pick.or(crate::arrange_nav::item(ui, p, v, label));
         }
         ui.separator();
@@ -2291,6 +2299,16 @@ impl<'a> AudioSpan<'a> {
         self.map.beat_at(self.start_secs + secs) - self.start_beat
     }
 
+    /// The second of the file heard `u` seconds into the region (`None` outside it).
+    pub(crate) fn file_secs(&self, u: f64) -> Option<f64> {
+        let f = if self.reverse {
+            self.offset + self.len - u
+        } else {
+            self.offset + u
+        };
+        (0.0..=self.len).contains(&u).then_some(f)
+    }
+
     /// Seconds into the region at which the file's second `f` is heard (`None` when the region
     /// does not play it).
     fn region_secs(&self, f: f64) -> Option<f64> {
@@ -2378,10 +2396,44 @@ fn draw_region(
         gb.rect_filled(bare, 0.0, theme::BONE2);
         hw_tracks::hatch(&gb, bare, 1.5, 7.0, theme::INK.gamma_multiply(0.22));
     }
-    // Bar lines inside the region.
+    // View > Colour Spectrogram: the sound's colour spectrogram fills the body inside the
+    // outline instead of the waveform, once it is made (the waveform until then). Each
+    // moment of the file is drawn where the region plays it, as the waveform is.
+    let colour = region.missing.is_none()
+        && !recording
+        && crate::colour_spectrogram::on(g.ctx())
+        && match (region.audio.as_ref(), span) {
+            (Some(a), Some(sp)) if beat_px > 0.0 => {
+                let edge = if selected { 2.0 } else { 1.0 };
+                let screen = Rect::from_min_max(
+                    pos2(rr.left() + edge, body.top()),
+                    pos2(rr.right() - edge, body.bottom() - edge),
+                );
+                let tint = if faded {
+                    Color32::from_gray(105)
+                } else {
+                    Color32::WHITE
+                };
+                let left = full.left();
+                crate::colour_spectrogram::paint(
+                    &gb,
+                    screen,
+                    &a.file,
+                    |x| sp.file_secs(sp.secs_at(f64::from((x - left) / beat_px))),
+                    tint,
+                )
+            }
+            _ => false,
+        };
+    // Bar lines inside the region (faint light ones over a colour spectrogram).
+    let bar_line = if colour {
+        Color32::from_white_alpha(22)
+    } else {
+        material.grid()
+    };
     for &x in bar_xs {
         if x > body.left() + 1.0 && x < body.right() - 1.0 {
-            hw_tracks::time_line(&gb, x, body.y_range(), 1.0, material.grid());
+            hw_tracks::time_line(&gb, x, body.y_range(), 1.0, bar_line);
         }
     }
     if let Some(generated) = &region.generated {
@@ -2431,13 +2483,19 @@ fn draw_region(
     }
     let ink = if recording {
         theme::ORANGE_HI
+    } else if colour {
+        theme::ON_DARK.gamma_multiply(if faded { 0.5 } else { 0.9 })
     } else if faded {
         material.ink().gamma_multiply(0.45)
     } else {
         material.ink()
     };
     let edit = region.audio.is_some() || track.kind == TrackKind::Audio;
-    if let (Some(peaks), Some(span)) = (region.audio.as_ref().and_then(|a| a.peaks.get()), span) {
+    if colour {
+        // The picture is drawn.
+    } else if let (Some(peaks), Some(span)) =
+        (region.audio.as_ref().and_then(|a| a.peaks.get()), span)
+    {
         let gain =
             10f32.powf(region.params.gain_db / 20.0) * crate::arrange_zoom::wave_zoom(g.ctx());
         draw_peaks(&gb, inner, (full.left(), beat_px), span, peaks, gain, ink);
@@ -3218,6 +3276,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     v.lanes_w = lanes.width();
     v.zoom.lanes_h = lanes.height();
     crate::arrange_zoom::publish_wave_zoom(ui.ctx(), v);
+    crate::colour_spectrogram::publish(ui.ctx(), v.colour_spectra);
 
     // ---- wheel: scroll; Shift = horizontal; the zooms (Command, Option, pinch) are in
     // `arrange_zoom::wheel_zoom`
@@ -5549,6 +5608,10 @@ mod pictures {
 /// their start to the pixel edge of their end, with nothing of the background between two
 /// that touch, at any zoom, scroll and screen density. Rendered offscreen and read back pixel
 /// by pixel. `PROWAVE_PNG_DIR=… cargo test -p prowave-app grid_fill` also writes the pictures.
+#[cfg(test)]
+#[path = "colour_spectrogram_pictures.rs"]
+mod colour_spectrogram_pictures;
+
 #[cfg(test)]
 mod grid_fill_tests {
     use super::*;

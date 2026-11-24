@@ -8,9 +8,24 @@ members = [
     # The control API's command-line client and MCP server (docs/CONTROL-API.md).
     "crates/prowavectl",
 ]
-# The CHIMERA voice engine (crates/chimera, vendored, MIT; see its NOTICE) is a path dependency,
-# not a member: its upstream code is built as it is, not linted or tested as ours.
-exclude = ["crates/chimera"]
+# The CHIMERA voice engine (crates/chimera, vendored, MIT; see its NOTICE), its earlier copy
+# (crates/chimera-09fb776) and the Novox The Robot engine (crates/novox, vendored C++, MIT) are
+# path dependencies, not members: their upstream code is built as it is, not linted or tested as
+# ours (Pro Wave's wrapper of Novox, prowave-app/src/novox_singer.rs, is).
+# crates/circuit-dsp is the Circuit Overdrive's circuit solver and crates/mi-plaits-dsp the Macro
+# Oscillator's synthesis models (both vendored Rust, MIT), and crates/mi-dsp the Resonator,
+# Spectral and Digital Oscillator's DSP (vendored C++ behind a C interface, MIT), and
+# crates/chip-dsp the sound-chip and FM cores (vendored C++ behind a C interface, each core
+# under its own licence), on the same terms.
+exclude = [
+    "crates/chimera",
+    "crates/chimera-09fb776",
+    "crates/novox",
+    "crates/circuit-dsp",
+    "crates/mi-plaits-dsp",
+    "crates/mi-dsp",
+    "crates/chip-dsp",
+]
 
 [profile.release]
 lto = true
@@ -22,4 +37,14 @@ opt-level = 3
 # CHIMERA simulates the airway sample by sample (96 kHz inside): unoptimised, a test phrase would
 # take minutes. Debug and test builds optimise it alone.
 [profile.dev.package.chimera]
+opt-level = 3
+[profile.dev.package.chimera-09fb776]
+opt-level = 3
+# The circuit solver runs at 576 kHz or above (crates/circuit-dsp): unoptimised, the effect
+# tests would take minutes.
+[profile.dev.package.circuit-dsp]
+opt-level = 3
+# The Macro Oscillator's models (crates/mi-plaits-dsp) are per-sample synthesis: optimised in
+# debug and test builds for the same reason.
+[profile.dev.package.mi-plaits-dsp]
 opt-level = 3

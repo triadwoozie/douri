@@ -35,6 +35,7 @@ const LABELS: &[&str] = &[
     "Scroll in Play",
     "Waveform Zoom In",
     "Waveform Zoom Out",
+    "Colour Spectrogram",
     "Snap to Grid",
     "Snap Regions to Relative Value",
     "Snap Regions to Absolute Value",
@@ -43,6 +44,7 @@ const LABELS: &[&str] = &[
 /// The entries that show a check mark.
 const CHECKABLE: &[&str] = &[
     "Scroll in Play",
+    "Colour Spectrogram",
     "Snap to Grid",
     "Snap Regions to Relative Value",
     "Snap Regions to Absolute Value",
@@ -57,6 +59,7 @@ pub(crate) fn checkable(label: &str) -> bool {
 pub(crate) fn checked(label: &str, v: &TracksView) -> Option<bool> {
     Some(match label {
         "Scroll in Play" => v.zoom.scroll_in_play,
+        "Colour Spectrogram" => v.colour_spectra,
         "Snap to Grid" => v.grid.on,
         "Snap Regions to Relative Value" => v.grid.relative,
         "Snap Regions to Absolute Value" => !v.grid.relative,
@@ -77,6 +80,7 @@ pub(crate) fn text(label: &str) -> &'static str {
         "Scroll in Play" => tr("Scroll in Play"),
         "Waveform Zoom In" => tr("Waveform Zoom In"),
         "Waveform Zoom Out" => tr("Waveform Zoom Out"),
+        "Colour Spectrogram" => tr("Colour Spectrogram"),
         "Snap to Grid" => tr("Snap to Grid"),
         "Snap Regions to Relative Value" => tr("Snap Regions to Relative Value"),
         "Snap Regions to Absolute Value" => tr("Snap Regions to Absolute Value"),
@@ -145,6 +149,7 @@ fn enabled_v(label: &str, p: &Project, v: &TracksView) -> Option<bool> {
         "Waveform Zoom In" => v.zoom.wave_zoom < zoom::WAVE_MAX,
         "Waveform Zoom Out" => v.zoom.wave_zoom > 1.0,
         "Scroll in Play"
+        | "Colour Spectrogram"
         | "Snap to Grid"
         | "Snap Regions to Relative Value"
         | "Snap Regions to Absolute Value" => true,
@@ -191,6 +196,10 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut UiState) -> bool {
         "Scroll in Play" => v.zoom.scroll_in_play = !v.zoom.scroll_in_play,
         "Waveform Zoom In" => zoom::zoom_wave(v, true),
         "Waveform Zoom Out" => zoom::zoom_wave(v, false),
+        "Colour Spectrogram" => {
+            v.colour_spectra = !v.colour_spectra;
+            crate::colour_spectrogram::save_on(v.colour_spectra);
+        }
         "Snap to Grid" => v.grid.on = !v.grid.on,
         "Snap Regions to Relative Value" => v.grid.relative = true,
         "Snap Regions to Absolute Value" => v.grid.relative = false,

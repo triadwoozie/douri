@@ -1178,6 +1178,11 @@ impl PluginHost {
                 }
                 return prowave_engine::open_native_block(&slot.id, sample_rate, &values);
             }
+            if let Some(info) = crate::native_inst_ui::info_of(slot) {
+                let values = crate::native_fx_ui::values(slot, info);
+                return prowave_engine::open_native_instrument(&slot.id, sample_rate, &values)
+                    .map(|inst| Box::new(inst) as Box<dyn BlockProcessor>);
+            }
             if crate::singer::is_singer(slot) {
                 let (player, remote) = prowave_engine::SingerPlayer::new(sample_rate, max_frames);
                 match self.offline.as_mut() {

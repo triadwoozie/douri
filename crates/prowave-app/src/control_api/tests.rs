@@ -684,6 +684,52 @@ fn tracks_are_added_set_moved_and_removed_and_keep_their_ids() {
     assert!(r.app.project.tracks.iter().any(|t| t.name == "Vox"));
 }
 
+/// The native instruments are listed, go into a track by id or by name, and their parameters
+/// and windows are reached as a native effect's are.
+#[test]
+fn native_instruments_are_listed_set_and_their_parameters_moved() {
+    let mut r = Rig::new();
+    let list = r.call("plugin.list", json!({"kind": "instrument"}));
+    let ids: Vec<&str> = list["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| s(&p["id"]))
+        .collect();
+    for info in prowave_engine::native_instruments() {
+        assert!(ids.contains(&info.id), "{} is not in {ids:?}", info.id);
+        let set = r.call("instrument.set", json!({"track": 1, "id": info.id}));
+        assert_eq!(s(&set["instrument"]["id"]), info.id);
+        let by_name = r.call("instrument.set", json!({"track": 1, "id": info.name}));
+        assert_eq!(s(&by_name["instrument"]["id"]), info.id);
+        let np = r.call("plugin.params", json!({"track": 1, "instrument": true}));
+        let listed = np["devices"][0]["params"].as_array().unwrap();
+        assert_eq!(listed.len(), info.params.len(), "{}", info.id);
+        // The last parameter to the bottom of its range: kept in the slot, and the running
+        // instrument is told.
+        let last = listed.last().unwrap();
+        let target = f(&last["min"]);
+        r.app.ui.native_edits.clear();
+        r.call(
+            "param.set",
+            json!({"track": 1, "param": last["param"], "value": target}),
+        );
+        let slot = r.app.project.tracks[0].au_instrument.as_ref().unwrap();
+        let kept = crate::native_fx_ui::values(slot, info);
+        assert_eq!(
+            f64::from(kept[info.params.len() - 1]),
+            target,
+            "{}",
+            info.id
+        );
+        assert_eq!(r.app.ui.native_edits.len(), 1);
+        assert_eq!(
+            f(&r.call("param.get", json!({"track": 1, "param": last["param"]}))["value"]),
+            target
+        );
+    }
+}
+
 #[test]
 fn instruments_and_effects_are_listed_loaded_ordered_bypassed_and_removed() {
     let mut r = Rig::new();
@@ -2085,4 +2131,192 @@ fn a_socket_left_by_a_run_that_is_gone_is_replaced_and_a_live_one_is_not() {
         .mode();
     assert_eq!(mode & 0o777, 0o700);
     drop(c);
+}
+
+#[test]
+fn midi_fx_and_the_arpeggiator_are_set_by_name_and_undone() {
+    use crate::midi_fx::MidiFx;
+    let mut r = Rig::new();
+    assert_eq!(
+        r.call("midi_fx.list", json!({"track": 1}))["effects"],
+        json!([])
+    );
+    // A track without an Arpeggiator gets one, with what is named set.
+    let a = r.call(
+        "midi_fx.arpeggiator",
+        json!({
+            "track": 1, "rate": "1/8T", "mode": "down_up", "octaves": 3, "gate": 120,
+            "swing": 30, "step_velocity": 40, "latch": true, "trigger": "song_position",
+            "length": 6,
+            "steps": [
+                {"step": 2, "on": false},
+                {"step": 3, "velocity": 127, "tie": true, "transpose": -12},
+                {"step": 6, "chord": true},
+            ],
+        }),
+    );
+    assert_eq!((s(&a["kind"]), f(&a["index"])), ("arpeggiator", 1.0));
+    let arp = &a["arpeggiator"];
+    assert_eq!(
+        (s(&arp["rate"]), s(&arp["mode"]), s(&arp["trigger"])),
+        ("1/8T", "down_up", "song_position")
+    );
+    assert_eq!(arp["steps"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        arp["steps"][2],
+        json!({"step": 3, "on": true, "velocity": 127, "tie": true, "chord": false, "transpose": -12})
+    );
+    let MidiFx::Arpeggiator(set) = r.app.project.tracks[0].midi_fx[0].fx else {
+        panic!("an arpeggiator");
+    };
+    assert_eq!(
+        (
+            set.octaves,
+            set.gate,
+            set.swing,
+            set.step_velocity,
+            set.latch,
+            set.sync,
+            set.length
+        ),
+        (3, 120, 30, 40, true, true, 6)
+    );
+    assert!(!set.steps[1].on && set.steps[5].chord && set.steps[0].on);
+    // Only what is named changes; a preset brings its steps and length.
+    let b = r.call("midi_fx.arpeggiator", json!({"track": 1, "gate": 50}));
+    assert_eq!(f(&b["arpeggiator"]["octaves"]), 3.0);
+    assert_eq!(b["arpeggiator"]["steps"][2]["tie"], json!(true));
+    let c = r.call(
+        "midi_fx.arpeggiator",
+        json!({"track": 1, "preset": "Offbeat"}),
+    );
+    assert_eq!(f(&c["arpeggiator"]["length"]), 8.0);
+    assert_eq!(c["arpeggiator"]["steps"][0]["on"], json!(false));
+    let d = r.call(
+        "midi_fx.arpeggiator",
+        json!({"track": 1, "randomize": true}),
+    );
+    assert_ne!(d["arpeggiator"]["steps"], c["arpeggiator"]["steps"]);
+    // Values outside their ranges and names that do not exist are refused.
+    for bad in [
+        json!({"track": 1, "octaves": 9}),
+        json!({"track": 1, "rate": "1/5"}),
+        json!({"track": 1, "steps": [{"step": 40, "on": true}]}),
+        json!({"track": 1, "steps": [{"step": 1, "transpose": 99}]}),
+        json!({"track": 1, "steps": [{"on": true}]}),
+        json!({"track": 1, "index": 4}),
+    ] {
+        r.err("midi_fx.arpeggiator", bad);
+    }
+    // The chain: add, switch off, set by numbers, remove.
+    let chain = r.call("midi_fx.add", json!({"track": 1, "kind": "transposer"}));
+    assert_eq!(chain["effects"].as_array().unwrap().len(), 2);
+    let t = r.call(
+        "midi_fx.set",
+        json!({"track": 1, "index": 2, "on": false, "settings": [7]}),
+    );
+    assert_eq!(
+        (t["on"].clone(), t["settings"].clone()),
+        (json!(false), json!([7.0]))
+    );
+    r.err("midi_fx.arpeggiator", json!({"track": 1, "index": 2}));
+    r.err("midi_fx.add", json!({"track": 1, "kind": "polka"}));
+    r.err("midi_fx.remove", json!({"track": 1, "index": 3}));
+    let left = r.call("midi_fx.remove", json!({"track": 1, "index": 1}));
+    assert_eq!(left["effects"][0]["kind"], json!("transposer"));
+    assert_eq!(r.app.project.tracks[0].midi_fx.len(), 1);
+    // Each change is an Undo step.
+    assert_eq!(r.call("project.undo", json!({}))["done"], json!(true));
+    assert_eq!(r.app.project.tracks[0].midi_fx.len(), 2);
+}
+
+#[test]
+fn kits_are_found_read_and_loaded_into_a_rack() {
+    let lib = tempfile::tempdir().unwrap();
+    let wav = |rel: &str| {
+        let path = lib.path().join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let tone: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
+        let stereo: Vec<f32> = tone.iter().flat_map(|s| [*s, *s]).collect();
+        prowave_engine::write_wav(&path, &stereo, 44_100).unwrap();
+    };
+    for f in [
+        "BD.wav",
+        "SD.wav",
+        "CP.wav",
+        "CH.wav",
+        "OH.wav",
+        "Loops/90bpm/x.wav",
+    ] {
+        wav(&format!("Machines/Roland TR-808/{f}"));
+    }
+    wav("Machines/LinnDrum/kick.wav");
+    wav("Machines/LinnDrum/snare.wav");
+    let empty = tempfile::tempdir().unwrap();
+    let root = lib.path().to_string_lossy().into_owned();
+    let mut r = Rig::new();
+    // Nothing set: no folders in a test, and no error.
+    let st = r.call("kits.status", json!({}));
+    assert_eq!(st["kits"], 0);
+    let st = r.call(
+        "kits.folders",
+        json!({"folders": ["/Volumes/NOT-MOUNTED-HERE/KITS", root]}),
+    );
+    assert_eq!(st["kits"], 2);
+    assert_eq!(st["folders"][0]["present"], false);
+    assert_eq!(st["folders"][1]["kits"], 2);
+    assert!(st["scan_ms"].as_f64().is_some());
+    let found = r.call("kits.search", json!({"query": "roland 808"}));
+    assert_eq!(found["total"], 1);
+    let path = s(&found["kits"][0]["path"]).to_string();
+    assert_eq!(s(&found["kits"][0]["source"]), "Machines");
+    let kit = r.call("kits.get", json!({"path": path}));
+    assert_eq!(kit["files"], 6);
+    assert_eq!(s(&kit["kind"]), "files");
+    let classes: Vec<&str> = kit["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| s(&c["class"]))
+        .collect();
+    assert_eq!(classes, ["kick", "snare", "clap", "closed_hat", "open_hat"]);
+    // A load makes a rack track; it is one Undo step.
+    let rack = r.call("kits.load", json!({"path": path}));
+    assert_eq!(s(&rack["kit"]), "Roland TR-808");
+    assert_eq!(rack["channels"].as_array().unwrap().len(), 5);
+    assert_eq!(s(&rack["channels"][0]["name"]), "BD");
+    let tracks = r.app.project.tracks.len();
+    // Another kit into the same rack (it is the selected track), then one sample on channel 8.
+    let linn = format!("{root}/Machines/LinnDrum");
+    let rack = r.call("kits.load", json!({"path": linn}));
+    assert_eq!(r.app.project.tracks.len(), tracks, "the same rack");
+    assert_eq!(s(&rack["kit"]), "LinnDrum");
+    let rack = r.call(
+        "kits.assign",
+        json!({"file": format!("{path}/CP.wav"), "channel": 8}),
+    );
+    assert_eq!(rack["channels"].as_array().unwrap().len(), 8);
+    assert_eq!(s(&rack["channels"][7]["name"]), "CP");
+    r.call("project.undo", json!({}));
+    let slot = r.app.project.tracks[tracks - 1]
+        .au_instrument
+        .clone()
+        .unwrap();
+    assert_eq!(crate::channel_rack::decode(&slot.state).len(), 2);
+    // Favourites, and what is refused.
+    r.call("kits.favorite", json!({"path": linn}));
+    assert_eq!(
+        r.call("kits.search", json!({"favorites": true}))["total"],
+        1
+    );
+    assert_eq!(
+        r.err("kits.get", json!({"path": "/no/such/kit"})).code,
+        Code::NotFound
+    );
+    assert_eq!(
+        r.err("kits.load", json!({"path": empty.path()})).code,
+        Code::Failed
+    );
+    r.call("ui.window", json!({"id": "kits", "open": true}));
+    assert!(r.app.ui.kits.open);
 }

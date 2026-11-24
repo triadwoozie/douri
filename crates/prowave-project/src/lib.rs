@@ -90,6 +90,20 @@ pub struct VocalDoc {
     pub chimera_breathiness: f32,
     pub brightness: f32,
     pub ring: f32,
+    /// Novox The Robot's voice preset (empty in files from before Novox: its defaults) and the
+    /// knobs over it, in the units shown: formant (% of an adult man's tract), breathiness and
+    /// grit (0..100), brightness (-100..100), voices (1..8), vibrato depth (cents) and rate
+    /// (Hz), scoop (cents) and portamento (ms).
+    pub novox_preset: String,
+    pub novox_formant: f32,
+    pub novox_breathiness: f32,
+    pub novox_grit: f32,
+    pub novox_brightness: f32,
+    pub novox_voices: f32,
+    pub novox_vibrato_depth: f32,
+    pub novox_vibrato_rate: f32,
+    pub novox_scoop: f32,
+    pub novox_portamento: f32,
 }
 
 /// One take of a take folder.
@@ -522,7 +536,9 @@ pub struct SendDoc {
 }
 
 /// One MIDI FX of a track: its kind ("transposer", "velocity", "scale", "chord", "repeater",
-/// "arpeggiator" or "randomizer"), whether it is on and its settings as numbers.
+/// "step_arpeggiator", "randomizer", "modulator" or "scripter"; "arpeggiator" is the
+/// Arpeggiator of files from before its step pattern), whether it is on and its settings as
+/// numbers.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct MidiFxDoc {

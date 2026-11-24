@@ -344,6 +344,9 @@ fn plugin_list(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     for (id, name, _) in built_in_instruments() {
         out.push(json!({"id": id, "name": name, "maker": "Pro Wave", "kind": "instrument", "format": "built-in"}));
     }
+    for info in prowave_engine::native_instruments() {
+        out.push(json!({"id": info.id, "name": info.name, "maker": "Pro Wave", "kind": "instrument", "format": "built-in"}));
+    }
     for k in FxKind::ALL {
         out.push(json!({"id": format!("builtin:{}", k.name()), "name": k.name(), "maker": "Pro Wave", "kind": "effect", "format": "built-in"}));
     }
@@ -400,6 +403,12 @@ fn slot_for(cx: &Cx, text: &str, instrument: bool) -> Result<PluginSlot, RpcErro
             .find(|(id, name, _)| *id == text || name.to_lowercase() == low)
         {
             return Ok(make());
+        }
+        if let Some(info) = prowave_engine::native_instruments()
+            .iter()
+            .find(|i| i.id == text || i.name.to_lowercase() == low)
+        {
+            return Ok(crate::native_inst_ui::new_slot(info));
         }
     } else if let Some(info) = prowave_engine::native_effects()
         .iter()
@@ -959,7 +968,7 @@ fn param_set(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
             let Some(s) = automation::strip_plugin_slot(pr, strip_of(strip), slot).cloned() else {
                 return Err(RpcError::not_found("that plug-in is gone"));
             };
-            if let Some(info) = prowave_engine::native_info(&s.id) {
+            if let Some(info) = crate::native_inst_ui::any_info(&s.id) {
                 // A native effect keeps its settings in the slot; the running effect hears
                 // of the move the way it does from its window.
                 let mut values = crate::native_fx_ui::values(&s, info);
@@ -1049,7 +1058,7 @@ fn preset_list(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     let strip = state::req_strip(&cx.app.project, &cx.core.ids, params, "track")?;
     let slot = req_slot(cx, strip, params)?;
     let mut current = Value::Null;
-    let presets: Vec<Value> = if let Some(info) = prowave_engine::native_info(&slot.id) {
+    let presets: Vec<Value> = if let Some(info) = crate::native_inst_ui::any_info(&slot.id) {
         info.presets
             .iter()
             .enumerate()
@@ -1094,7 +1103,7 @@ fn preset_load(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
             "give the preset's `name` or its `number` (preset.list gives both)",
         ));
     }
-    if let Some(info) = prowave_engine::native_info(&slot.id) {
+    if let Some(info) = crate::native_inst_ui::any_info(&slot.id) {
         let found = info.presets.iter().enumerate().find(|(n, pre)| {
             want_number == Some(*n as i64)
                 || want_name.as_deref() == Some(pre.name.to_lowercase().as_str())
@@ -1189,6 +1198,9 @@ fn plugin_window(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     } else {
         if cx.app.ui.native_window == Some(slot.uid) {
             cx.app.ui.native_window = None;
+        }
+        if cx.app.ui.native_inst_window == Some(slot.uid) {
+            cx.app.ui.native_inst_window = None;
         }
         cx.app.plugins.close_window(slot.uid);
     }

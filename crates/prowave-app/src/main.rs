@@ -13,6 +13,8 @@ static ALLOC_COUNTER: prowave_engine::rt_alloc::CountingAlloc =
 
 mod alloc_report;
 mod apple_loops;
+mod arp_patterns;
+mod arp_ui;
 #[cfg(test)]
 mod arrange_integration_tests;
 mod arrange_nav;
@@ -30,6 +32,7 @@ mod bounce_ui;
 mod channel_rack;
 mod clock_follow;
 mod clock_in;
+mod colour_spectrogram;
 /// The control interface: another program drives the app over a Unix socket.
 #[cfg(unix)]
 mod control_api;
@@ -60,6 +63,10 @@ mod i18n;
 mod import;
 mod inspector;
 mod key_commands;
+mod kit_browser;
+mod kit_classify;
+mod kit_files;
+mod kit_library;
 mod lyrics;
 mod lyrics_ui;
 #[cfg(test)]
@@ -69,6 +76,7 @@ mod marker_list;
 mod marker_number;
 mod marker_track;
 mod marquee;
+mod master_match;
 mod menus;
 mod midi_draw;
 mod midi_file;
@@ -83,6 +91,7 @@ mod model;
 mod mtc_in;
 mod musical_typing;
 mod native_fx_ui;
+mod native_inst_ui;
 mod native_menu;
 mod note_edit;
 mod paint_image;
@@ -123,6 +132,7 @@ mod sysex;
 mod take_pack;
 mod takes;
 mod tempo_track;
+mod texture_ui;
 mod theme;
 mod track_commands;
 mod track_dialogs;
@@ -141,7 +151,10 @@ mod undo;
 // The private build has no updater: its releases (on the upstream project) are not this
 // program, which is built from its own checkout.
 mod chimera_singer;
+mod effetune_offline;
+mod novox_singer;
 mod singer;
+mod smaf_import;
 mod updater;
 mod vocal;
 mod vst3_scan;
@@ -210,10 +223,14 @@ pub struct UiState {
     pub singer: singer::SingerUi,
     /// The 808's window.
     pub bass808: bass808::Bass808Ui,
+    /// The Kit Browser (the Kits key of the Channel Rack).
+    pub kits: kit_browser::KitBrowser,
     /// File > Bounce: its dialog, the bounce running and how the last one ended.
     pub bounce: bounce_ui::BounceUi,
     /// File > Import > Paint Image to Audio…: its dialog and the paintings running.
     pub paint: paint_image::PaintState,
+    /// Mix > Mastering > Match to Reference…: its window and the match running.
+    pub master_match: master_match::MatchUi,
     /// The Spectrogram window (an audio region's Show Spectrogram).
     pub spectrogram: spectrogram_view::SpectrogramView,
     /// The native effect whose window is open (its slot's uid).
@@ -234,6 +251,12 @@ pub struct UiState {
     pub free_plugins: free_plugins::FreePlugins,
     /// Native effect parameters moved, for the engine.
     pub native_edits: Vec<native_fx_ui::Edit>,
+    /// The native instrument whose window is open (its slot's uid).
+    pub native_inst_window: Option<u64>,
+    /// File > Import > SMAF File…
+    pub smaf: smaf_import::SmafUi,
+    /// File > Bounce > Region through EffeTune Chain…
+    pub effetune: effetune_offline::EffeTuneUi,
     /// Pro Wave Tune's Pitch Correction lane: the stroke being drawn, the audio-track grid.
     pub tune: tune_lane::TuneView,
     /// Record > I/O Buffer Size, in frames.
@@ -352,8 +375,10 @@ impl UiState {
             vocal: vocal::VocalState::default(),
             singer: singer::SingerUi::default(),
             bass808: bass808::Bass808Ui::default(),
+            kits: kit_browser::KitBrowser::default(),
             bounce: bounce_ui::BounceUi::default(),
             paint: paint_image::PaintState::default(),
+            master_match: master_match::MatchUi::new(),
             spectrogram: spectrogram_view::SpectrogramView::default(),
             native_window: None,
             piano_window: false,
@@ -364,6 +389,9 @@ impl UiState {
             midi_monitor: midi_monitor::Monitor::default(),
             free_plugins: free_plugins::FreePlugins::default(),
             native_edits: Vec::new(),
+            native_inst_window: None,
+            smaf: smaf_import::SmafUi::default(),
+            effetune: effetune_offline::EffeTuneUi::default(),
             tune: tune_lane::TuneView::default(),
             io_buffer: 64,
             process_buffer: prowave_engine::PROCESS_BUFFER_SMALL,
@@ -950,6 +978,10 @@ impl eframe::App for App {
         // Pattern and Drummer regions follow their length and the bars under them.
         self.project.refresh_generated();
         if let Some(sync) = self.sync.as_mut() {
+            if panic {
+                // Send All Notes Off also lets go of the keys the Arpeggiators hold.
+                sync.engine.send(prowave_engine::Command::ReleaseArps);
+            }
             sync.software_monitoring = self.ui.software_monitoring;
             sync.low_latency = self.ui.low_latency;
             sync.io_buffer = self.ui.io_buffer;
@@ -997,6 +1029,11 @@ impl eframe::App for App {
                     continue;
                 };
                 let effect = fx.iter().filter(|e| !e.bypass).position(|e| e.uid == uid);
+                // A native instrument's knob: the track's Instrument slot.
+                let effect = effect.or_else(|| {
+                    (native_inst_ui::track_of(&self.project, uid) == Some(ti))
+                        .then_some(usize::from(prowave_engine::INSTRUMENT_PARAM))
+                });
                 let track = if ti == mixer::MASTER_STRIP {
                     prowave_engine::MASTER_TRACK
                 } else {
@@ -1025,6 +1062,14 @@ impl eframe::App for App {
                     self.ui.singer.open = Some(*uid);
                 }
                 !sings
+            });
+            // A native instrument opens its unit.
+            let opened = opened.filter(|(uid, _)| {
+                let native = native_inst_ui::track_of(&self.project, *uid).is_some();
+                if native {
+                    self.ui.native_inst_window = Some(*uid);
+                }
+                !native
             });
             // The 808 opens its own window.
             let opened = opened.filter(|(uid, _)| {
@@ -1203,8 +1248,17 @@ impl eframe::App for App {
         singer::frame(&ctx, &mut self.project, &mut self.ui);
         singer::run_bounce(&mut self.project, &mut self.plugins, &mut self.ui);
         bass808::show(&ctx, &mut self.project, &mut self.ui);
+        native_inst_ui::show(&ctx, &mut self.project, &mut self.ui);
+        smaf_import::frame(&ctx, &mut self.project, &mut self.ui);
+        effetune_offline::frame(&ctx, &mut self.project, &mut self.ui);
+        kit_browser::show(&ctx, &mut self.project, &mut self.ui);
+        kit_browser::pump(
+            &mut self.ui.kits,
+            self.sync.as_mut().and_then(|s| s.engine.audition()),
+        );
         bounce_ui::show(&ctx, &self.project, &mut self.ui);
         paint_image::show(&ctx, &mut self.project, &mut self.ui);
+        master_match::frame(self, &ctx);
         spectrogram_view::show(&ctx, &mut self.ui);
         for path in std::mem::take(&mut self.ui.open_paths) {
             self.import(&path, &ctx);
@@ -1834,12 +1888,12 @@ fn main() -> eframe::Result {
                     app.ui.show_midi_fx = scene == "midifx";
                     app.project.tracks[0].midi_fx = vec![
                         midi_fx::FxSlot {
-                            fx: midi_fx::MidiFx::Arpeggiator {
-                                rate: pattern::StepRate::Eighth,
-                                pattern: midi_fx::ArpPattern::UpDown,
+                            fx: midi_fx::MidiFx::Arpeggiator(prowave_engine::ArpSettings {
+                                rate: prowave_engine::ArpRate::Eighth,
+                                mode: prowave_engine::ArpMode::UpDown,
                                 octaves: 2,
-                                gate: 80,
-                            },
+                                ..Default::default()
+                            }),
                             on: true,
                         },
                         midi_fx::FxSlot {

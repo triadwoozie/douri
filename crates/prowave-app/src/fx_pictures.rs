@@ -150,8 +150,8 @@ fn fx_pictures_midi_fx() {
     let mut s = crate::UiState::new();
     s.show_midi_fx = true;
     crate::ui_test::render_png(
-        840.0,
-        2140.0,
+        940.0,
+        2440.0,
         2.0,
         FLOOR,
         |ui| {
@@ -161,4 +161,57 @@ fn fx_pictures_midi_fx() {
         &out("midi-fx.png"),
     )
     .unwrap();
+}
+
+/// The Arpeggiator alone, as set up in use and as it starts, and switched off.
+#[test]
+#[ignore = "pictures of the effect windows"]
+fn fx_pictures_arpeggiator() {
+    use crate::midi_fx::{FxSlot, MidiFx};
+    use prowave_engine::{ArpMode, ArpRate, ArpSettings};
+    let mut used = ArpSettings {
+        rate: ArpRate::Sixteenth,
+        mode: ArpMode::UpDown,
+        octaves: 2,
+        gate: 70,
+        swing: 18,
+        latch: true,
+        sync: true,
+        length: 24,
+        ..ArpSettings::default()
+    };
+    crate::arp_patterns::randomize(&mut used, 5);
+    used.steps[2].tie = true;
+    used.steps[3].tie = true;
+    used.steps[12].chord = true;
+    for (name, arp, on, playing) in [
+        ("arpeggiator.png", used, true, true),
+        ("arpeggiator-start.png", ArpSettings::default(), true, false),
+        ("arpeggiator-off.png", used, false, false),
+    ] {
+        let mut p = Project::empty();
+        let i = p.add_track(TrackKind::Instrument);
+        p.tracks[i].name = "Classic Electric Piano".into();
+        p.selected_track = i;
+        p.tracks[i].midi_fx = vec![FxSlot {
+            fx: MidiFx::Arpeggiator(arp),
+            on,
+        }];
+        p.playing = playing;
+        p.position_beats = 5.6;
+        let mut s = crate::UiState::new();
+        s.show_midi_fx = true;
+        crate::ui_test::render_png(
+            940.0,
+            720.0,
+            2.0,
+            FLOOR,
+            |ui| {
+                crate::theme::apply(ui.ctx());
+                crate::midi_fx_ui::show(ui.ctx(), &mut p, &mut s)
+            },
+            &out(name),
+        )
+        .unwrap();
+    }
 }

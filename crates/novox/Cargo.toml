@@ -1,0 +1,16 @@
+# Novox The Robot, a formant-synthesis singing voice: the engine's core vendored from
+# github.com/songadaymann/novox-the-robot (engine/src, commit e18d86c, v1.0.1-beta.2) by Jonathan
+# Mann, MIT licence (see LICENSE and NOTICE), built with the cc crate behind a small C interface
+# (shim/). The engine's source is unchanged.
+[package]
+name = "novox"
+description = "Novox The Robot singing-voice engine (C++), with a C interface for Pro Wave's Singer"
+version = "1.0.1"
+edition = "2021"
+license = "MIT"
+publish = false
+links = "novox"
+build = "build.rs"
+
+[build-dependencies]
+cc = "1"

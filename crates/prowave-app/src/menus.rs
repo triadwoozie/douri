@@ -95,6 +95,7 @@ const SUBMENUS: &[(&str, &[&str])] = &[
         &[
             "Audio File…",
             "MIDI File…",
+            "SMAF File…",
             "Paint Image to Audio…",
             "Other Projects…",
             "-",
@@ -116,9 +117,12 @@ const SUBMENUS: &[(&str, &[&str])] = &[
             "Project or Section…",
             "Regions in Place…",
             "Tracks in Place…",
+            "Region through EffeTune Chain…",
         ],
     ),
     ("Share", &["Song to File…", "Song to Mobile Device…"]),
+    // Mix > Mastering (`master_match.rs`).
+    ("Mastering", &["Match to Reference…"]),
     // Edit > Convert (`bounce_in_place.rs`).
     ("Convert", &["Convert Regions to New Audio Files"]),
     // Edit > Nudge Value (Logic: the Set Nudge Value to … key commands).
@@ -423,6 +427,7 @@ const VIEW: &[&str] = &[
     "Show Markers",
     "Show Grid",
     "Show Smart Tempo",
+    "Colour Spectrogram",
     "-",
     "Bigger Interface",
     "Smaller Interface",
@@ -838,6 +843,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
 /// Entries that always work.
 const ALWAYS: &[&str] = &[
     "MIDI Monitor",
+    "Match to Reference…",
     "Get Free Plug-ins",
     // File > Bounce > Project or Section, File > Export > All Tracks as Audio Files.
     "Project or Section…",
@@ -897,6 +903,8 @@ const ALWAYS: &[&str] = &[
     "Show Colors",
     "Show Editor",
     "MIDI File…",
+    "SMAF File…",
+    "Region through EffeTune Chain…",
     "Paint Image to Audio…",
     "MIDI FX…",
     "Selection as MIDI File…",
@@ -1306,6 +1314,9 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         }
         "MIDI File…" => s.midi_cmd = Some(crate::midi_file::MidiCmd::Import),
         "Paint Image to Audio…" => s.paint.pick = true,
+        "SMAF File…" => s.smaf.pick = true,
+        "Region through EffeTune Chain…" => s.effetune.pick = true,
+        "Match to Reference…" => crate::master_match::toggle(s),
         "Selection as MIDI File…" => s.midi_cmd = Some(crate::midi_file::MidiCmd::Export),
         "Project or Section…" => crate::bounce_ui::open(p, s, false),
         "All Tracks as Audio Files…" => crate::bounce_ui::open(p, s, true),
@@ -2017,7 +2028,8 @@ mod tests {
                     s.chooser.is_some(),
                     s.undo_cmd,
                     s.midi_cmd,
-                    s.paint.pick
+                    (s.paint.pick, s.smaf.pick, s.effetune.pick),
+                    s.master_match.open
                 ),
                 (
                     s.ui_scale,
@@ -2046,7 +2058,7 @@ mod tests {
                         (s.tracks.grid, s.tracks.zoom.clone())
                     ),
                     s.tracks.show_hidden,
-                    s.arrange.colors
+                    (s.arrange.colors, s.tracks.colour_spectra)
                 ),
                 (
                     i18n::chosen(),

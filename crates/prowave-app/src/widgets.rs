@@ -41,6 +41,18 @@ pub fn context_menu_shown(resp: &Response, shown: bool, add_contents: impl FnOnc
     });
 }
 
+/// The entries of a menu, scrolled when there are more than the window has room for (the
+/// plug-in makers, one maker's plug-ins): the menu is never taller than the window, and the
+/// wheel or the scroll bar reaches the rest. A menu that fits is drawn as before.
+pub fn menu_scroll<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    // Room for the menu's own frame and its shadow.
+    let max = (ui.ctx().content_rect().height() - 28.0).max(120.0);
+    egui::ScrollArea::vertical()
+        .max_height(max)
+        .show(ui, add_contents)
+        .inner
+}
+
 /// A menu title in mono caps with a small down triangle ("EDIT ▾"). Returns the response and
 /// width.
 pub fn menu_title(
@@ -205,4 +217,72 @@ pub fn rename_field_opened(
 /// Whether [`rename_field`] for `key` is open (the name under it need not be drawn).
 pub fn renaming(ui: &Ui, key: Id) -> bool {
     ui.data(|d| d.get_temp::<String>(key.with("rename_buf")).is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn a_menu_longer_than_the_window_scrolls_to_its_last_entry() {
+        let mut h = crate::ui_test::Harness::new(600.0, 400.0);
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(600.0, 400.0));
+        let (button, menu, last) = (Cell::new(None), Cell::new(None), Cell::new(None));
+        let picked = Cell::new(false);
+        let draw = |ui: &mut Ui| {
+            let resp = ui.button("open");
+            button.set(Some(resp.rect));
+            let shown = egui::Popup::menu(&resp).show(|ui| {
+                menu_scroll(ui, |ui| {
+                    for n in 0..200 {
+                        let r = ui.button(format!("Entry {n}"));
+                        if n == 199 {
+                            last.set(Some(r.rect));
+                            if r.clicked() {
+                                picked.set(true);
+                            }
+                        }
+                    }
+                });
+            });
+            menu.set(shown.map(|s| s.response.rect));
+        };
+        h.settle(draw);
+        let open = button.get().map(|r: Rect| r.center());
+        let Some(open) = open else {
+            panic!("the button was not drawn");
+        };
+        h.click(open, draw);
+        h.settle(draw);
+        let Some(m) = menu.get() else {
+            panic!("the menu did not open");
+        };
+        assert!(
+            screen.contains_rect(m),
+            "the menu {m:?} is inside {screen:?}"
+        );
+        // The last entry starts below the menu; the wheel brings it in.
+        assert!(last.get().is_some_and(|r: Rect| r.bottom() > m.bottom()));
+        h.move_to(m.center(), draw);
+        for _ in 0..40 {
+            let wheel = egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: egui::Modifiers::NONE,
+            };
+            h.frame(vec![wheel], draw);
+        }
+        for _ in 0..30 {
+            h.frame(vec![], draw);
+        }
+        let (Some(m), Some(l)) = (menu.get(), last.get()) else {
+            panic!("the menu closed while scrolling");
+        };
+        assert!(m.contains_rect(l), "the last entry {l:?} is inside {m:?}");
+        h.click(l.center(), draw);
+        assert!(picked.get(), "the last entry takes a click");
+    }
 }

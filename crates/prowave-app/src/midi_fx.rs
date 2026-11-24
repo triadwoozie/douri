@@ -8,47 +8,21 @@
 //! - **Scale Quantizer** moves each note to the nearest note of a scale.
 //! - **Chord Trigger** plays a chord on every note.
 //! - **Note Repeater** repeats each note, at a rate, for as long as it is held.
-//! - **Arpeggiator** plays the notes held together one after the other.
+//! - **Arpeggiator** plays the notes held together one after the other through a pattern of
+//!   up to 32 steps (the generator is the engine's `arp.rs`, which also plays the keys played
+//!   live; its patterns are in `arp_patterns.rs`).
 //! - **Randomizer** shifts pitch, velocity and time by a random amount (the same every time).
 //! - **Modulator** is an LFO that moves each note's velocity or pitch with its place in the
 //!   cycle, or, for an External MIDI track, sends a controller (a filter, a volume) that follows
 //!   the cycle all along the track.
 use crate::pattern::StepRate;
-use prowave_engine::NoteEvent;
+use prowave_engine::{ArpMode, ArpRate, ArpSettings, ArpStep, NoteEvent, ARP_STEPS};
 
 /// Most effects in a chain.
 pub const MAX_FX: usize = 8;
 /// Most notes a track's chain hands on: a repeater or arpeggiator over very many notes stops
 /// here instead of using all the memory.
 pub const MAX_FX_NOTES: usize = 1_000_000;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArpPattern {
-    Up,
-    Down,
-    UpDown,
-    Random,
-    /// The notes in the order they were played (by pitch when they start together).
-    AsPlayed,
-}
-
-impl ArpPattern {
-    pub const ALL: [ArpPattern; 5] = [
-        Self::Up,
-        Self::Down,
-        Self::UpDown,
-        Self::Random,
-        Self::AsPlayed,
-    ];
-
-    pub fn index(self) -> u8 {
-        Self::ALL.iter().position(|p| *p == self).unwrap_or(0) as u8
-    }
-
-    pub fn from_index(i: u8) -> Self {
-        Self::ALL.get(i as usize).copied().unwrap_or(Self::Up)
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChordKind {
@@ -206,13 +180,7 @@ pub enum MidiFx {
     Repeater {
         rate: StepRate,
     },
-    Arpeggiator {
-        rate: StepRate,
-        pattern: ArpPattern,
-        octaves: u8,
-        /// 5 - 100 percent of a step.
-        gate: u8,
-    },
+    Arpeggiator(ArpSettings),
     Randomizer {
         /// Up to this many semitones either way.
         pitch: u8,
@@ -222,11 +190,117 @@ pub enum MidiFx {
         timing: u8,
         seed: u32,
     },
+    /// Swing on the off-beat sixteenths and a random spread of timing and velocity, as
+    /// Hydrogen's song has them (see [`swing_and_humanize`]). Each is 0 to 100 percent.
+    Swing {
+        swing: u8,
+        timing: u8,
+        velocity: u8,
+        seed: u32,
+    },
+    /// A held note played in a Euclidean rhythm: `pulses` hits spread as evenly as they go
+    /// over `steps` steps of `rate`, turned by `rotation` steps (see [`euclidean_rhythm`]).
+    Euclid {
+        rate: StepRate,
+        steps: u8,
+        pulses: u8,
+        rotation: i8,
+    },
+}
+
+/// Most steps of a Euclidean rhythm.
+pub const EUCLID_STEPS: u8 = 32;
+/// The farthest Swing's Timing moves a note, in beats: Hydrogen's 2000 frames at 48 kHz
+/// (41.7 ms), as beats at 120 beats a minute.
+pub const HUMANIZE_BEATS: f64 = 2000.0 / 48000.0 * 2.0;
+/// Hydrogen's standard deviations of the timing and the velocity it adds.
+const HUMANIZE_TIMING_SD: f64 = 0.3;
+const HUMANIZE_VELOCITY_SD: f64 = 0.2;
+
+/// Which steps of a Euclidean rhythm are hits. Ported from Bespoke Synth's
+/// `EuclideanSequencerRing::GetEuclideanRhythm` (Source/EuclideanSequencer.cpp, Copyright (C)
+/// 2021 Ryan Challinor, GPL-3.0-or-later; BespokeSynth at commit 25b1541): a bucket that
+/// overflows every `steps / pulses` steps, turned until a hit is first, then by `rotation`.
+pub fn euclidean_rhythm(pulses: u8, steps: u8, rotation: i8) -> Vec<bool> {
+    let n = usize::from(steps);
+    let mut rhythm = vec![false; n];
+    if pulses == 0 || steps == 0 {
+        return rhythm;
+    }
+    let mut bucket = 0usize;
+    for hit in rhythm.iter_mut() {
+        bucket += usize::from(pulses);
+        if bucket >= n {
+            bucket -= n;
+            *hit = true;
+        }
+    }
+    if let Some(first) = rhythm.iter().position(|h| *h) {
+        rhythm.rotate_left(first);
+    }
+    let turn = usize::from(rotation.unsigned_abs()) % n;
+    if rotation >= 0 {
+        rhythm.rotate_left(turn);
+    } else {
+        rhythm.rotate_right(turn);
+    }
+    rhythm
+}
+
+/// A number from a normal distribution of standard deviation 1, the same every time for the
+/// same `seed`, `a` and `b` (Box and Muller's method on two of [`noise`]'s numbers).
+fn gaussian(seed: u32, a: u64, b: u64) -> f64 {
+    let u1 = (f64::from(noise(seed, a, b)) * 0.5 + 0.5).clamp(1e-9, 1.0);
+    let u2 = f64::from(noise(seed ^ 0x5bd1_e995, a, b)) * 0.5 + 0.5;
+    (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+}
+
+/// Hydrogen's swing and humanize on one note. Ported from Hydrogen's `Note::swing`,
+/// `Note::humanize` and the swing test of its audio engine's note queue
+/// (src/core/Basics/Note.cpp, src/core/AudioEngine/AudioEngine.cpp; Copyright (c) 2002-2008
+/// Alex "Comix" Cominu, 2008-2026 the hydrogen development team; GPL-2.0-or-later, taken here
+/// under GPL-3.0-or-later; hydrogen-music/hydrogen at commit 00509be). A note that starts on
+/// an off-beat sixteenth is delayed by `swing` of a thirty-second note; every note's start
+/// moves by a normal random amount (never more than [`HUMANIZE_BEATS`]) and its velocity by
+/// another. Hydrogen counts the timing in frames; here it is beats, as at 120 beats a minute.
+fn swing_and_humanize(
+    n: NoteEvent,
+    i: usize,
+    swing: u8,
+    timing: u8,
+    velocity: u8,
+    seed: u32,
+) -> NoteEvent {
+    let key = (n.start_beat * 960.0).round() as u64;
+    let id = i as u64 ^ (u64::from(n.pitch) << 40);
+    let mut delay = 0.0;
+    // On a sixteenth, not on an eighth.
+    let sixteenths = n.start_beat * 4.0;
+    let on_grid = (sixteenths - sixteenths.round()).abs() < 1e-6;
+    if on_grid && (sixteenths.round() as i64).rem_euclid(2) == 1 {
+        delay += 0.125 * f64::from(swing) / 100.0;
+    }
+    if timing > 0 {
+        let amount = f64::from(timing) / 100.0 * HUMANIZE_BEATS;
+        delay += (amount * gaussian(seed, key, id) * HUMANIZE_TIMING_SD)
+            .clamp(-HUMANIZE_BEATS, HUMANIZE_BEATS);
+    }
+    let start = (n.start_beat + delay).max(0.0);
+    let mut vel = f64::from(n.vel) / 127.0;
+    if velocity > 0 {
+        vel += f64::from(velocity) / 100.0 * gaussian(seed ^ 1, key, id) * HUMANIZE_VELOCITY_SD;
+    }
+    NoteEvent {
+        start_beat: start,
+        end_beat: (n.end_beat + (start - n.start_beat)).max(start + 1e-3),
+        vel: (vel * 127.0).round().clamp(1.0, 127.0) as u8,
+        ..n
+    }
 }
 
 impl MidiFx {
     /// Every kind with its settings at their start values, in the order a menu lists them.
-    pub fn all_defaults() -> [MidiFx; 9] {
+    pub fn all_defaults() -> [MidiFx; 11] {
         [
             Self::Scripter {
                 source: crate::scripter::DEFAULT_SCRIPT.to_string(),
@@ -250,17 +324,24 @@ impl MidiFx {
             Self::Repeater {
                 rate: StepRate::Sixteenth,
             },
-            Self::Arpeggiator {
-                rate: StepRate::Sixteenth,
-                pattern: ArpPattern::Up,
-                octaves: 1,
-                gate: 80,
-            },
+            Self::Arpeggiator(ArpSettings::default()),
             Self::Randomizer {
                 pitch: 0,
                 velocity: 10,
                 timing: 0,
                 seed: 1,
+            },
+            Self::Swing {
+                swing: 50,
+                timing: 0,
+                velocity: 0,
+                seed: 1,
+            },
+            Self::Euclid {
+                rate: StepRate::Sixteenth,
+                steps: 8,
+                pulses: 3,
+                rotation: 0,
             },
         ]
     }
@@ -275,13 +356,19 @@ impl MidiFx {
             Self::Scale { .. } => "scale",
             Self::Chord { .. } => "chord",
             Self::Repeater { .. } => "repeater",
-            Self::Arpeggiator { .. } => "arpeggiator",
+            // "arpeggiator" was the one before the step pattern: four numbers (see `old_arp`).
+            Self::Arpeggiator(_) => "step_arpeggiator",
             Self::Randomizer { .. } => "randomizer",
+            Self::Swing { .. } => "swing",
+            Self::Euclid { .. } => "euclid",
         }
     }
 
     /// The settings as numbers, for the project file.
     pub fn numbers(&self) -> Vec<f32> {
+        if let Self::Arpeggiator(a) = self {
+            return arp_numbers(a);
+        }
         match *self {
             Self::Scripter { .. } => Vec::new(),
             Self::Modulator {
@@ -310,17 +397,7 @@ impl MidiFx {
             Self::Scale { root, minor } => vec![f32::from(root), f32::from(u8::from(minor))],
             Self::Chord { kind } => vec![f32::from(kind.index())],
             Self::Repeater { rate } => vec![rate_index(rate) as f32],
-            Self::Arpeggiator {
-                rate,
-                pattern,
-                octaves,
-                gate,
-            } => vec![
-                rate_index(rate) as f32,
-                f32::from(pattern.index()),
-                f32::from(octaves),
-                f32::from(gate),
-            ],
+            Self::Arpeggiator(_) => Vec::new(),
             Self::Randomizer {
                 pitch,
                 velocity,
@@ -331,6 +408,28 @@ impl MidiFx {
                 f32::from(velocity),
                 f32::from(timing),
                 seed as f32,
+            ],
+            Self::Swing {
+                swing,
+                timing,
+                velocity,
+                seed,
+            } => vec![
+                f32::from(swing),
+                f32::from(timing),
+                f32::from(velocity),
+                seed as f32,
+            ],
+            Self::Euclid {
+                rate,
+                steps,
+                pulses,
+                rotation,
+            } => vec![
+                rate_index(rate) as f32,
+                f32::from(steps),
+                f32::from(pulses),
+                f32::from(rotation),
             ],
         }
     }
@@ -387,22 +486,143 @@ impl MidiFx {
             "repeater" => Self::Repeater {
                 rate: rate_of_index(int(0, 2.0, 0.0, 255.0) as usize),
             },
-            "arpeggiator" => Self::Arpeggiator {
-                rate: rate_of_index(int(0, 2.0, 0.0, 255.0) as usize),
-                pattern: ArpPattern::from_index(int(1, 0.0, 0.0, 255.0) as u8),
-                octaves: int(2, 1.0, 1.0, 4.0) as u8,
-                gate: int(3, 80.0, 5.0, 100.0) as u8,
-            },
+            "step_arpeggiator" => Self::Arpeggiator(arp_of_numbers(n)),
+            "arpeggiator" => Self::Arpeggiator(old_arp(
+                rate_of_index(int(0, 2.0, 0.0, 255.0) as usize),
+                int(1, 0.0, 0.0, 255.0) as u8,
+                int(2, 1.0, 1.0, 4.0) as u8,
+                int(3, 80.0, 5.0, 100.0) as u8,
+            )),
             "randomizer" => Self::Randomizer {
                 pitch: int(0, 0.0, 0.0, 24.0) as u8,
                 velocity: int(1, 10.0, 0.0, 127.0) as u8,
                 timing: int(2, 0.0, 0.0, 100.0) as u8,
                 seed: get(3, 1.0).max(0.0) as u32,
             },
+            "swing" => Self::Swing {
+                swing: int(0, 50.0, 0.0, 100.0) as u8,
+                timing: int(1, 0.0, 0.0, 100.0) as u8,
+                velocity: int(2, 0.0, 0.0, 100.0) as u8,
+                seed: get(3, 1.0).max(0.0) as u32,
+            },
+            "euclid" => {
+                let steps = int(1, 8.0, 1.0, f32::from(EUCLID_STEPS)) as u8;
+                Self::Euclid {
+                    rate: rate_of_index(int(0, 2.0, 0.0, 255.0) as usize),
+                    steps,
+                    pulses: int(2, 3.0, 0.0, f32::from(steps)) as u8,
+                    rotation: int(3, 0.0, -31.0, 31.0) as i8,
+                }
+            }
             _ => return None,
         };
         Some(fx)
     }
+}
+
+/// The numbers before the steps in an Arpeggiator's settings, and the numbers of a step.
+const ARP_HEAD: usize = 10;
+const ARP_STEP: usize = 5;
+
+/// An Arpeggiator's settings as numbers: rate, mode, octaves, gate, swing, step velocity,
+/// latch, song position, length, seed, then for each of the 32 steps on, velocity, tie,
+/// chord, transpose.
+fn arp_numbers(a: &ArpSettings) -> Vec<f32> {
+    let flag = |b: bool| f32::from(u8::from(b));
+    let mut n = vec![
+        f32::from(a.rate.index()),
+        f32::from(a.mode.index()),
+        f32::from(a.octaves),
+        f32::from(a.gate),
+        f32::from(a.swing),
+        f32::from(a.step_velocity),
+        flag(a.latch),
+        flag(a.sync),
+        f32::from(a.length),
+        a.seed as f32,
+    ];
+    for s in &a.steps {
+        n.extend([
+            flag(s.on),
+            f32::from(s.vel),
+            flag(s.tie),
+            flag(s.chord),
+            f32::from(s.transpose),
+        ]);
+    }
+    n
+}
+
+/// The Arpeggiator of numbers `n` (missing ones start values, wild ones repaired).
+fn arp_of_numbers(n: &[f32]) -> ArpSettings {
+    let d = ArpSettings::default();
+    let get = |i: usize, default: f32| {
+        n.get(i)
+            .copied()
+            .filter(|v| v.is_finite())
+            .unwrap_or(default)
+    };
+    let int = |i: usize, default: f32, lo: f32, hi: f32| get(i, default).round().clamp(lo, hi);
+    let flag = |i: usize, default: bool| get(i, f32::from(u8::from(default))) >= 0.5;
+    let mut a = ArpSettings {
+        rate: ArpRate::from_index(int(0, f32::from(d.rate.index()), 0.0, 255.0) as u8),
+        mode: ArpMode::from_index(int(1, 0.0, 0.0, 255.0) as u8),
+        octaves: int(2, 1.0, 1.0, 4.0) as u8,
+        gate: int(3, 80.0, 5.0, 200.0) as u8,
+        swing: int(4, 0.0, 0.0, 100.0) as u8,
+        step_velocity: int(5, 100.0, 0.0, 100.0) as u8,
+        latch: flag(6, false),
+        sync: flag(7, false),
+        length: int(8, 16.0, 1.0, ARP_STEPS as f32) as u8,
+        seed: get(9, 1.0).clamp(0.0, 16_777_215.0) as u32,
+        steps: d.steps,
+    };
+    for (k, s) in a.steps.iter_mut().enumerate() {
+        let at = ARP_HEAD + k * ARP_STEP;
+        *s = ArpStep {
+            on: flag(at, true),
+            vel: int(at + 1, 100.0, 1.0, 127.0) as u8,
+            tie: flag(at + 2, false),
+            chord: flag(at + 3, false),
+            transpose: int(at + 4, 0.0, -24.0, 24.0) as i8,
+        };
+    }
+    a
+}
+
+/// The Arpeggiator a project from before the step pattern had (a rate, one of five orders,
+/// octaves and a gate), as the same thing with every step on: each chord starts it again and
+/// the notes keep the velocity they were played with.
+fn old_arp(rate: StepRate, pattern: u8, octaves: u8, gate: u8) -> ArpSettings {
+    ArpSettings {
+        rate: match rate {
+            StepRate::Quarter => ArpRate::Quarter,
+            StepRate::Eighth => ArpRate::Eighth,
+            StepRate::Sixteenth => ArpRate::Sixteenth,
+            StepRate::ThirtySecond => ArpRate::ThirtySecond,
+            StepRate::EighthTriplet => ArpRate::EighthTriplet,
+            StepRate::SixteenthTriplet => ArpRate::SixteenthTriplet,
+        },
+        mode: match pattern {
+            1 => ArpMode::Down,
+            2 => ArpMode::UpDown,
+            3 => ArpMode::Random,
+            4 => ArpMode::AsPlayed,
+            _ => ArpMode::Up,
+        },
+        octaves,
+        gate,
+        step_velocity: 0,
+        ..ArpSettings::default()
+    }
+}
+
+/// The Arpeggiator the keys played live on a track go through: the first one that is on.
+pub fn live_arp(chain: &[FxSlot]) -> Option<ArpSettings> {
+    chain.iter().filter(|s| s.on).find_map(|s| match &s.fx {
+        MidiFx::Arpeggiator(a) => Some(*a),
+        _ => None,
+    })
 }
 
 fn rate_index(rate: StepRate) -> usize {
@@ -465,9 +685,17 @@ fn clamp_pitch(p: i32) -> Option<u8> {
 }
 
 /// Runs `notes` (absolute beats, any order) through the chain; the result is sorted by start.
-pub fn apply(chain: &[FxSlot], mut notes: Vec<NoteEvent>) -> Vec<NoteEvent> {
+#[cfg(test)]
+pub fn apply(chain: &[FxSlot], notes: Vec<NoteEvent>) -> Vec<NoteEvent> {
+    let end = notes.iter().map(|n| n.end_beat).fold(0.0, f64::max);
+    apply_until(chain, notes, end)
+}
+
+/// Runs `notes` (absolute beats, any order) of a track whose regions end at beat `end` through
+/// the chain (a latched Arpeggiator plays on until there); the result is sorted by start.
+pub fn apply_until(chain: &[FxSlot], mut notes: Vec<NoteEvent>, end: f64) -> Vec<NoteEvent> {
     for slot in chain.iter().filter(|s| s.on) {
-        notes = run(&slot.fx, notes);
+        notes = run(&slot.fx, notes, end);
         notes.truncate(MAX_FX_NOTES);
     }
     notes.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
@@ -523,7 +751,7 @@ pub fn controls(chain: &[FxSlot], from: f64, to: f64) -> Vec<ModControl> {
     out
 }
 
-fn run(fx: &MidiFx, notes: Vec<NoteEvent>) -> Vec<NoteEvent> {
+fn run(fx: &MidiFx, notes: Vec<NoteEvent>, end: f64) -> Vec<NoteEvent> {
     match *fx {
         // A script that fails leaves the notes as they were (the window says what is wrong).
         MidiFx::Scripter { ref source } => crate::scripter::run(source, &notes).unwrap_or(notes),
@@ -612,12 +840,49 @@ fn run(fx: &MidiFx, notes: Vec<NoteEvent>) -> Vec<NoteEvent> {
             }
             out
         }
-        MidiFx::Arpeggiator {
+        MidiFx::Arpeggiator(ref arp) => arpeggiate(notes, arp, end),
+        MidiFx::Swing {
+            swing,
+            timing,
+            velocity,
+            seed,
+        } => notes
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| swing_and_humanize(n, i, swing, timing, velocity, seed))
+            .collect(),
+        MidiFx::Euclid {
             rate,
-            pattern,
-            octaves,
-            gate,
-        } => arpeggiate(notes, rate.beats(), pattern, octaves.clamp(1, 4), gate),
+            steps,
+            pulses,
+            rotation,
+        } => {
+            let step = rate.beats();
+            let steps = steps.clamp(1, EUCLID_STEPS);
+            let rhythm = euclidean_rhythm(pulses.min(steps), steps, rotation);
+            let mut out = Vec::new();
+            for n in notes {
+                // The pattern is laid on the song's grid, so every note keeps the same time.
+                let mut k = (n.start_beat / step - 1e-9).ceil().max(0.0) as u64;
+                let mut count = 0;
+                while (k as f64) * step < n.end_beat - 1e-6 && count < 4096 {
+                    if out.len() >= MAX_FX_NOTES {
+                        break;
+                    }
+                    let at = k as f64 * step;
+                    if rhythm[(k % rhythm.len() as u64) as usize] {
+                        out.push(NoteEvent {
+                            start_beat: at,
+                            end_beat: (at + step * 0.9).min(n.end_beat),
+                            ..n
+                        });
+                    }
+                    k += 1;
+                    count += 1;
+                }
+            }
+            out
+        }
         MidiFx::Randomizer {
             pitch,
             velocity,
@@ -646,96 +911,19 @@ fn run(fx: &MidiFx, notes: Vec<NoteEvent>) -> Vec<NoteEvent> {
     }
 }
 
-/// Replaces each group of notes that start together by the notes one after the other.
-fn arpeggiate(
-    mut notes: Vec<NoteEvent>,
-    step: f64,
-    pattern: ArpPattern,
-    octaves: u8,
-    gate: u8,
-) -> Vec<NoteEvent> {
-    notes.sort_by(|a, b| {
-        a.start_beat
-            .total_cmp(&b.start_beat)
-            .then(a.pitch.cmp(&b.pitch))
-    });
+/// The notes of each track played through the Arpeggiator (the notes held together are its
+/// keys), with the engine's generator, so the regions sound as the same keys played live do.
+fn arpeggiate(notes: Vec<NoteEvent>, arp: &ArpSettings, end: f64) -> Vec<NoteEvent> {
+    let mut tracks: Vec<u16> = notes.iter().map(|n| n.track).collect();
+    tracks.sort_unstable();
+    tracks.dedup();
     let mut out = Vec::new();
-    let mut i = 0;
-    while i < notes.len() {
-        // The notes that start within a hair of the first one are a chord, on the same track.
-        let first = notes[i];
-        let mut j = i;
-        while j < notes.len()
-            && notes[j].start_beat - first.start_beat < 0.02
-            && notes[j].track == first.track
-        {
-            j += 1;
-        }
-        let group = &notes[i..j];
-        let end = group
-            .iter()
-            .map(|n| n.end_beat)
-            .fold(first.end_beat, f64::max);
-        let vel = group.iter().map(|n| n.vel).max().unwrap_or(first.vel);
-        let mut pitches: Vec<u8> = Vec::new();
-        for o in 0..octaves {
-            pitches.extend(
-                group
-                    .iter()
-                    .filter_map(|n| clamp_pitch(i32::from(n.pitch) + 12 * i32::from(o))),
-            );
-        }
-        let order = sequence(&pitches, pattern, first.start_beat);
-        let mut at = first.start_beat;
-        let mut k = 0usize;
-        while at < end - 1e-6 && !order.is_empty() && k < 4096 && out.len() < MAX_FX_NOTES {
-            out.push(NoteEvent {
-                start_beat: at,
-                end_beat: (at + step * f64::from(gate) / 100.0).min(end),
-                pitch: order[k % order.len()],
-                vel,
-                track: first.track,
-            });
-            at += step;
-            k += 1;
-        }
-        i = j;
+    for track in tracks {
+        let own: Vec<NoteEvent> = notes.iter().filter(|n| n.track == track).copied().collect();
+        let room = MAX_FX_NOTES.saturating_sub(out.len());
+        out.extend(prowave_engine::arp::render(arp, &own, end, room));
     }
     out
-}
-
-/// The order the arpeggio plays `pitches` in, over one run (it then starts again).
-fn sequence(pitches: &[u8], pattern: ArpPattern, seed: f64) -> Vec<u8> {
-    let mut up = pitches.to_vec();
-    up.sort_unstable();
-    up.dedup();
-    match pattern {
-        ArpPattern::Up => up,
-        ArpPattern::Down => {
-            up.reverse();
-            up
-        }
-        ArpPattern::UpDown => {
-            let mut v = up.clone();
-            if up.len() > 2 {
-                v.extend(up[1..up.len() - 1].iter().rev());
-            } else if up.len() == 2 {
-                v.push(up[0]);
-                v.pop();
-            }
-            v
-        }
-        ArpPattern::Random => {
-            let mut v = up;
-            let key = (seed * 960.0) as u64;
-            for k in (1..v.len()).rev() {
-                let r = ((noise(7, key, k as u64) + 1.0) / 2.0 * (k as f32 + 1.0)) as usize;
-                v.swap(k, r.min(k));
-            }
-            v
-        }
-        ArpPattern::AsPlayed => pitches.to_vec(),
-    }
 }
 
 #[cfg(test)]
@@ -865,77 +1053,106 @@ mod tests {
             .all(|n| n.end_beat <= 4.2 + 1e-9 || n.start_beat < 4.0));
     }
 
+    /// The Arpeggiator of a project from before the step pattern: rate (0 quarter, 1 eighth),
+    /// order (0 up, 1 down, 2 up and down, 3 random), octaves, gate.
+    fn old(rate: f32, order: f32, octaves: f32, gate: f32) -> FxSlot {
+        slot(MidiFx::from_numbers("arpeggiator", &[rate, order, octaves, gate]).unwrap())
+    }
+
     #[test]
-    fn the_arpeggiator_plays_a_held_chord_one_note_at_a_time() {
+    fn an_arpeggiator_from_an_older_project_plays_what_it_played() {
         let chord = vec![note(0.0, 4.0, 67), note(0.0, 4.0, 60), note(0.0, 4.0, 64)];
-        let arp = |pattern, octaves| {
-            apply(
-                &[slot(MidiFx::Arpeggiator {
-                    rate: StepRate::Quarter,
-                    pattern,
-                    octaves,
-                    gate: 50,
-                })],
-                chord.clone(),
-            )
-        };
-        assert_eq!(pitches(&arp(ArpPattern::Up, 1)), [60, 64, 67, 60]);
-        let eighths = apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::Eighth,
-                pattern: ArpPattern::Up,
-                octaves: 1,
-                gate: 100,
-            })],
-            chord.clone(),
-        );
+        let arp = |order: f32| apply(&[old(0.0, order, 1.0, 50.0)], chord.clone());
+        assert_eq!(pitches(&arp(0.0)), [60, 64, 67, 60]);
+        assert!(arp(0.0).iter().all(|n| n.vel == 100 && n.track == 3));
+        let eighths = apply(&[old(1.0, 0.0, 1.0, 100.0)], chord.clone());
         assert_eq!(pitches(&eighths), [60, 64, 67, 60, 64, 67, 60, 64]);
         assert_eq!(eighths[1].start_beat, 0.5);
         assert!((eighths[0].end_beat - 0.5).abs() < 1e-9);
-        let two = apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::Eighth,
-                pattern: ArpPattern::Down,
-                octaves: 2,
-                gate: 100,
-            })],
-            chord.clone(),
-        );
+        let two = apply(&[old(1.0, 1.0, 2.0, 100.0)], chord.clone());
         assert_eq!(pitches(&two[..6]), [79, 76, 72, 67, 64, 60]);
-        let updown = apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::Eighth,
-                pattern: ArpPattern::UpDown,
-                octaves: 1,
-                gate: 100,
-            })],
-            chord.clone(),
-        );
+        let updown = apply(&[old(1.0, 2.0, 1.0, 100.0)], chord.clone());
         assert_eq!(pitches(&updown[..6]), [60, 64, 67, 64, 60, 64]);
-        // Random is a shuffle of the same notes, the same every time.
-        let r1 = pitches(&arp(ArpPattern::Random, 1));
-        assert_eq!(r1, pitches(&arp(ArpPattern::Random, 1)));
+        // Random is the same notes, the same every time.
+        let r1 = pitches(&arp(3.0));
+        assert_eq!(r1, pitches(&arp(3.0)));
+        assert!(r1.iter().all(|p| [60, 64, 67].contains(p)));
         // Two chords one after the other each get their own run, a single note is repeated.
         let two_chords = apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::Quarter,
-                pattern: ArpPattern::Up,
-                octaves: 1,
-                gate: 100,
-            })],
+            &[old(0.0, 0.0, 1.0, 100.0)],
             vec![note(0.0, 2.0, 60), note(0.0, 2.0, 64), note(2.0, 4.0, 62)],
         );
         assert_eq!(pitches(&two_chords), [60, 64, 62, 62]);
-        assert!(apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::Quarter,
-                pattern: ArpPattern::Up,
-                octaves: 1,
-                gate: 50
-            })],
-            vec![]
-        )
-        .is_empty());
+        assert!(apply(&[old(0.0, 0.0, 1.0, 50.0)], vec![]).is_empty());
+    }
+
+    #[test]
+    fn the_arpeggiator_plays_its_step_pattern_on_each_track_and_in_a_chain() {
+        let mut arp = ArpSettings {
+            rate: ArpRate::Quarter,
+            length: 2,
+            ..ArpSettings::default()
+        };
+        arp.steps[1].transpose = 12;
+        arp.steps[1].vel = 40;
+        let chord = vec![note(0.0, 4.0, 64), note(0.0, 4.0, 60)];
+        let out = apply(&[slot(MidiFx::Arpeggiator(arp))], chord.clone());
+        assert_eq!(pitches(&out), [60, 76, 60, 76]);
+        assert_eq!(
+            out.iter().map(|n| n.vel).collect::<Vec<_>>(),
+            [100, 40, 100, 40]
+        );
+        // Two tracks' notes are two keyboards.
+        let mut both = chord.clone();
+        both.push(NoteEvent {
+            track: 9,
+            ..note(1.0, 3.0, 30)
+        });
+        let out = apply(&[slot(MidiFx::Arpeggiator(arp))], both);
+        let of = |t: u16| {
+            out.iter()
+                .filter(|n| n.track == t)
+                .map(|n| (n.start_beat, n.pitch))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(of(3), [(0.0, 60), (1.0, 76), (2.0, 60), (3.0, 76)]);
+        assert_eq!(of(9), [(1.0, 30), (2.0, 42)]);
+        // A Chord Trigger before it gives it a chord to play; a Transposer after it moves
+        // what it made.
+        let chain = [
+            slot(MidiFx::Chord {
+                kind: ChordKind::Fifth,
+            }),
+            slot(MidiFx::Arpeggiator(ArpSettings {
+                rate: ArpRate::Quarter,
+                ..ArpSettings::default()
+            })),
+            slot(MidiFx::Transposer { semitones: 1 }),
+        ];
+        assert_eq!(
+            pitches(&apply(&chain, vec![note(0.0, 3.0, 60)])),
+            [61, 68, 61]
+        );
+        // Latched, the last chord plays on to the end of the track's regions.
+        arp.latch = true;
+        let short = vec![note(0.0, 0.5, 60)];
+        let held = apply_until(&[slot(MidiFx::Arpeggiator(arp))], short.clone(), 4.0);
+        assert_eq!(pitches(&held), [60, 72, 60, 72]);
+        assert_eq!(apply(&[slot(MidiFx::Arpeggiator(arp))], short).len(), 1);
+        // The keys played live go through the first Arpeggiator that is on.
+        let off = FxSlot {
+            fx: MidiFx::Arpeggiator(ArpSettings::default()),
+            on: false,
+        };
+        assert_eq!(live_arp(std::slice::from_ref(&off)), None);
+        assert_eq!(
+            live_arp(&[
+                off,
+                slot(MidiFx::Transposer { semitones: 1 }),
+                slot(MidiFx::Arpeggiator(arp))
+            ]),
+            Some(arp)
+        );
     }
 
     #[test]
@@ -1115,13 +1332,47 @@ mod tests {
                 Some(fx)
             );
         }
-        let fx = MidiFx::Arpeggiator {
-            rate: StepRate::EighthTriplet,
-            pattern: ArpPattern::UpDown,
+        let mut arp = ArpSettings {
+            rate: ArpRate::EighthTriplet,
+            mode: ArpMode::DownUp,
             octaves: 3,
-            gate: 40,
+            gate: 140,
+            swing: 30,
+            step_velocity: 60,
+            latch: true,
+            sync: true,
+            length: 23,
+            seed: 77,
+            ..ArpSettings::default()
         };
-        assert_eq!(MidiFx::from_numbers("arpeggiator", &fx.numbers()), Some(fx));
+        arp.steps[0].tie = true;
+        arp.steps[5].on = false;
+        arp.steps[9].chord = true;
+        arp.steps[31].transpose = -7;
+        arp.steps[31].vel = 3;
+        let fx = MidiFx::Arpeggiator(arp);
+        assert_eq!(fx.name(), "step_arpeggiator");
+        assert_eq!(fx.numbers().len(), 170);
+        assert_eq!(MidiFx::from_numbers(fx.name(), &fx.numbers()), Some(fx));
+        // Missing numbers are start values (a file with fewer steps, or none at all).
+        assert_eq!(
+            MidiFx::from_numbers("step_arpeggiator", &[]),
+            Some(MidiFx::Arpeggiator(ArpSettings::default()))
+        );
+        let MidiFx::Arpeggiator(short) =
+            MidiFx::from_numbers("step_arpeggiator", &arp_numbers(&arp)[..20]).unwrap()
+        else {
+            panic!("an arpeggiator");
+        };
+        assert!(short.steps[0].tie && short.steps[9] == ArpStep::default());
+        let MidiFx::Arpeggiator(wild) =
+            MidiFx::from_numbers("step_arpeggiator", &[999.0; 170]).unwrap()
+        else {
+            panic!("an arpeggiator");
+        };
+        assert_eq!(wild, wild.sanitized());
+        assert_eq!((wild.rate, wild.mode), (ArpRate::Sixteenth, ArpMode::Up));
+        assert_eq!((wild.steps[7].vel, wild.steps[7].transpose), (127, 24));
         assert_eq!(MidiFx::from_numbers("polka", &[]), None);
         let m = MidiFx::Modulator {
             shape: LfoShape::Random,
@@ -1143,15 +1394,29 @@ mod tests {
                 seed: 0
             }
         );
+        // The four numbers of the Arpeggiator before the step pattern.
         let wild = MidiFx::from_numbers("arpeggiator", &[99.0, 99.0, 99.0, 999.0]).unwrap();
         assert_eq!(
             wild,
-            MidiFx::Arpeggiator {
-                rate: StepRate::Sixteenth,
-                pattern: ArpPattern::Up,
+            MidiFx::Arpeggiator(ArpSettings {
+                rate: ArpRate::Sixteenth,
+                mode: ArpMode::Up,
                 octaves: 4,
-                gate: 100
-            }
+                gate: 100,
+                step_velocity: 0,
+                ..ArpSettings::default()
+            })
+        );
+        assert_eq!(
+            MidiFx::from_numbers("arpeggiator", &[4.0, 4.0, 2.0, 40.0]),
+            Some(MidiFx::Arpeggiator(ArpSettings {
+                rate: ArpRate::EighthTriplet,
+                mode: ArpMode::AsPlayed,
+                octaves: 2,
+                gate: 40,
+                step_velocity: 0,
+                ..ArpSettings::default()
+            }))
         );
         let nan = MidiFx::from_numbers("transposer", &[f32::NAN]).unwrap();
         assert_eq!(nan, MidiFx::Transposer { semitones: 0 });
@@ -1185,14 +1450,108 @@ mod tests {
             })
             .collect();
         let out = apply(
-            &[slot(MidiFx::Arpeggiator {
-                rate: StepRate::ThirtySecond,
-                pattern: ArpPattern::Random,
+            &[slot(MidiFx::Arpeggiator(ArpSettings {
+                rate: ArpRate::ThirtySecond,
+                mode: ArpMode::Random,
                 octaves: 4,
                 gate: 100,
-            })],
+                ..ArpSettings::default()
+            }))],
             chords,
         );
-        assert!(out.len() <= MAX_FX_NOTES);
+        assert_eq!(out.len(), MAX_FX_NOTES);
+        assert!(began.elapsed().as_secs() < 60, "{:?}", began.elapsed());
+    }
+
+    /// Swing delays the off-beat sixteenths and nothing else; the random part is the same
+    /// every time for a seed, differs between seeds and stays within its limit.
+    #[test]
+    fn swing_delays_the_off_beats_and_humanize_stays_in_its_range() {
+        let swing_only = MidiFx::Swing {
+            swing: 100,
+            timing: 0,
+            velocity: 0,
+            seed: 1,
+        };
+        let grid: Vec<NoteEvent> = (0..16)
+            .map(|k| note(k as f64 * 0.25, k as f64 * 0.25 + 0.2, 60))
+            .collect();
+        let swung = apply(&[slot(swing_only.clone())], grid.clone());
+        for (k, (a, b)) in grid.iter().zip(&swung).enumerate() {
+            // A full swing is a thirty-second note (an eighth of a beat) on steps 1, 3, 5...
+            let late = if k % 2 == 1 { 0.125 } else { 0.0 };
+            assert!(
+                (b.start_beat - a.start_beat - late).abs() < 1e-9,
+                "step {k}"
+            );
+            assert!((b.end_beat - a.end_beat - late).abs() < 1e-9 && b.vel == a.vel);
+        }
+        // A note off the grid is not swung.
+        let off = apply(&[slot(swing_only)], vec![note(0.3, 0.5, 60)]);
+        assert_eq!(off[0].start_beat, 0.3);
+        let human = |seed: u32| {
+            let fx = MidiFx::Swing {
+                swing: 0,
+                timing: 100,
+                velocity: 100,
+                seed,
+            };
+            let notes = (0..200)
+                .map(|k| note(4.0 + k as f64 * 0.5, 4.2 + k as f64 * 0.5, 60))
+                .collect();
+            apply(&[slot(fx)], notes)
+        };
+        let (a, b, c) = (human(7), human(7), human(8));
+        assert_eq!(a, b, "the same seed gives the same notes");
+        assert_ne!(a, c, "another seed gives others");
+        let mut moved = 0;
+        for (k, n) in a.iter().enumerate() {
+            let offset = n.start_beat - (4.0 + k as f64 * 0.5);
+            assert!(offset.abs() <= HUMANIZE_BEATS + 1e-9, "{offset}");
+            assert!((1..=127).contains(&n.vel));
+            moved += usize::from(offset.abs() > 1e-6);
+        }
+        assert!(moved > 150, "{moved}");
+        let velocities: std::collections::BTreeSet<u8> = a.iter().map(|n| n.vel).collect();
+        assert!(velocities.len() > 20, "{velocities:?}");
+    }
+
+    /// The rhythms are what the ported algorithm gives (three in eight is x..x.x.., a
+    /// turn of the textbook x..x..x.), and a held note plays the hits on the grid.
+    #[test]
+    fn euclid_plays_the_hits_of_the_rhythm() {
+        let text = |p, s, r| -> String {
+            euclidean_rhythm(p, s, r)
+                .iter()
+                .map(|h| if *h { 'x' } else { '.' })
+                .collect()
+        };
+        assert_eq!(text(3, 8, 0), "x..x.x..");
+        assert_eq!(text(5, 8, 0), "x.xx.xx.");
+        assert_eq!(text(4, 16, 0), "x...x...x...x...");
+        assert_eq!(text(3, 8, 1), "..x.x..x");
+        assert_eq!(text(3, 8, -1), ".x..x.x.");
+        assert_eq!(text(0, 4, 0), "....");
+        assert_eq!(text(4, 4, 9), "xxxx");
+        assert!(euclidean_rhythm(3, 0, 0).is_empty());
+        let fx = || MidiFx::Euclid {
+            rate: StepRate::Sixteenth,
+            steps: 8,
+            pulses: 3,
+            rotation: 0,
+        };
+        let out = apply(&[slot(fx())], vec![note(0.0, 4.0, 60)]);
+        let starts: Vec<f64> = out.iter().map(|n| n.start_beat).collect();
+        assert_eq!(starts, [0.0, 0.75, 1.25, 2.0, 2.75, 3.25]);
+        assert!(out
+            .iter()
+            .all(|n| n.pitch == 60 && n.end_beat - n.start_beat <= 0.225 + 1e-9));
+        // A note that starts between steps waits for the next hit and ends with its key.
+        let late = apply(&[slot(fx())], vec![note(0.1, 0.8, 62)]);
+        assert_eq!(
+            late.iter().map(|n| n.start_beat).collect::<Vec<_>>(),
+            [0.75]
+        );
+        assert!(late[0].end_beat <= 0.8 + 1e-9);
     }
 }

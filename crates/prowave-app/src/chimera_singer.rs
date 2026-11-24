@@ -1,29 +1,31 @@
-//! CHIMERA, Vocal Top Line's in-process singer (the engine is `crates/chimera`, vendored from
-//! github.com/jamesondh/chimera-vocal-synth, MIT, by Jameson Hodge).
+//! CHIMERA, an in-process singer of the Singer and Vocal Top Line (the engine is
+//! `crates/chimera`, vendored from github.com/jamesondh/chimera-vocal-synth, MIT, by Jameson
+//! Hodge).
 //!
 //! CHIMERA makes a voice by simulating an airway (lungs, vocal folds, a moving tongue, lips and
 //! nose), not from recordings, so it needs nothing installed and sings on this Mac in the
-//! background thread that renders the track. A phrase's notes become sung syllables (English,
-//! through the CMU Pronouncing Dictionary), the engine's song planner turns them into gestures
-//! (each vowel on its beat, the consonants before it), and one voice plays them from the
-//! phrase's start. The engine runs at [`RATE`], the rate it is calibrated and tested at; the
-//! result is resampled to the Vocal Top Line rate.
+//! background thread that renders the track. A phrase's notes become sung syllables, the
+//! engine's song planner turns them into gestures (each vowel on its beat, the consonants before
+//! it), and one voice plays them from the phrase's start. The engine runs at [`RATE`], the rate
+//! it is calibrated and tested at; the result is resampled to the Vocal Top Line rate.
+//!
+//! Lyrics go through the engine's own front ends: English words through the CMU Pronouncing
+//! Dictionary, Korean (Hangul), Russian (Cyrillic), pinyin with tone numbers, and Chinese
+//! characters through the Mandarin readings vendored with it.
+//!
+//! Two copies of the engine are built: the current one ([`Engine::Current`], upstream eeb0c19)
+//! and the one Pro Wave vendored first ([`Engine::V09fb776`], `crates/chimera-09fb776`, English
+//! only), so a track can keep the sound it had before the update. The same code drives both
+//! (the `engine!` macro below); they differ in the front ends and the airway's oversampling rule.
 //!
 //! Its controls are the engine's own: the body (a blend of the male, female and child
 //! anatomies), vibrato depth and rate, breathiness, brightness and the singer's ring (a
 //! narrowing just above the vocal folds), the controls of CHIMERA's own Sing panel.
 use crate::vocal::ScoreNote;
-use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix};
-use chimera::phonetics::english::EnglishG2P;
-use chimera::phonetics::sing::{midi_to_hz, plan_song, SongOptions, SungNote};
-use chimera::phonetics::syllables::lyrics_to_syllables;
-use chimera::phonetics::Syllable;
-use chimera::voice::human_voice::{HumanVoice, SourcePatch};
-use std::sync::OnceLock;
 
 /// Bumped when the vendored engine or how phrases are given to it changes the sound (cached
-/// phrases are sung again).
-pub const REV: u64 = 1;
+/// phrases are sung again). The engine copy is part of the cache key too.
+pub const REV: u64 = 2;
 /// The engine's output rate (it simulates at twice this inside).
 pub const RATE: u32 = 48_000;
 /// Sound kept after a phrase's planned end (the last consonant and the breath out).
@@ -36,9 +38,21 @@ const JOIN: f64 = 1e-4;
 const PRESSURE: f64 = 9.0;
 const TENSION: f64 = 0.55;
 
+/// Which copy of the engine sings.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Engine {
+    /// Upstream commit eeb0c19 (2026-11-18), `crates/chimera`.
+    #[default]
+    Current,
+    /// Upstream commit 09fb776 (2026-11-07), `crates/chimera-09fb776`: the sound before the
+    /// update.
+    V09fb776,
+}
+
 /// How CHIMERA sings, in the units shown (percent, cents, Hz).
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Voice {
+    pub engine: Engine,
     /// The body: 0..100 toward the female anatomy, and 0..100 toward the child's (male is what
     /// is left: at 0 and 0 the body is the adult male's).
     pub female: f32,
@@ -53,35 +67,11 @@ pub struct Voice {
 }
 
 impl Voice {
-    /// The body as the engine takes it.
-    pub fn body(&self) -> BodyMix {
-        BodyMix::new(self.female as f64 / 100.0, self.child as f64 / 100.0)
-    }
-
-    /// The body's male, female and child shares, in percent.
+    /// The body's male, female and child shares, in percent (the same in both engines).
     pub fn shares(&self) -> [f32; 3] {
-        let w = self.body().weights();
+        let w = current::body(self).weights();
         [w[0].1, w[1].1, w[2].1].map(|x| (x * 100.0) as f32)
     }
-}
-
-/// The CMU Pronouncing Dictionary (vendored with the engine), loaded once.
-fn g2p() -> &'static EnglishG2P {
-    static G2P: OnceLock<EnglishG2P> = OnceLock::new();
-    G2P.get_or_init(|| {
-        use std::io::Read;
-        let gz: &[u8] = include_bytes!("../../chimera/data/cmudict.txt.gz");
-        let mut text = String::new();
-        let mut g = EnglishG2P::new();
-        // Without the dictionary the engine spells words out by its letter-to-sound rules.
-        if flate2::read::GzDecoder::new(gz)
-            .read_to_string(&mut text)
-            .is_ok()
-        {
-            g.load_dict(&text);
-        }
-        g
-    })
 }
 
 /// What a note sings when it has no lyric.
@@ -96,141 +86,264 @@ pub fn lyric(l: &crate::lyrics::Lyric) -> String {
     }
 }
 
-/// A held vowel: the syllable before, sung on at a new pitch.
-fn melisma(prev: &Syllable) -> Syllable {
-    Syllable {
-        text: "~".into(),
-        onset: Vec::new(),
-        nucleus: prev.nucleus.clone(),
-        coda: Vec::new(),
-        melisma: Some(true),
-        word_end: prev.word_end,
-        phrase_end: false,
+/// Reads a gzipped text vendored with the engine (empty if it cannot be read).
+fn gunzip(gz: &[u8]) -> String {
+    use std::io::Read;
+    let mut text = String::new();
+    if flate2::read::GzDecoder::new(gz)
+        .read_to_string(&mut text)
+        .is_err()
+    {
+        text.clear();
     }
+    text
 }
 
-/// The syllable each note sings. A word goes on its note and the `+` notes after it: one
-/// syllable a note when the counts agree; with more notes than syllables, the last syllable is
-/// held over the rest; with fewer, the last note sings the next syllable and the word's end
-/// (its last consonants). `-` holds the vowel before.
-pub fn syllables(lyrics: &[&str]) -> Vec<Syllable> {
-    let g = g2p();
-    let la = || lyrics_to_syllables(DEFAULT_LYRIC, g).remove(0);
-    let mut out: Vec<Syllable> = Vec::with_capacity(lyrics.len());
-    let mut i = 0;
-    while i < lyrics.len() {
-        match lyrics[i] {
-            "-" | "+" if out.is_empty() => {
-                out.push(la());
-                i += 1;
+/// The CMU Pronouncing Dictionary vendored with the engine (the same file in both copies).
+const CMUDICT_GZ: &[u8] = include_bytes!("../../chimera/data/cmudict.txt.gz");
+
+/// The parts of the singer that are the same for both engine copies, written once against the
+/// crate `$c`. The module it is used in supplies `g2p()`, `word_syllables(word)` and
+/// `oversample(fs)`.
+macro_rules! engine {
+    ($c:ident) => {
+        use super::{Voice, DEFAULT_LYRIC, JOIN, PRESSURE, RATE, TAIL, TENSION};
+        use crate::vocal::ScoreNote;
+        use $c::anatomy::human::{ArticKey, ArticPatch, BodyMix};
+        use $c::phonetics::sing::{midi_to_hz, plan_song, SongOptions, SungNote};
+        use $c::phonetics::Syllable;
+        use $c::voice::human_voice::{HumanVoice, SourcePatch};
+
+        /// The body as the engine takes it.
+        pub fn body(v: &Voice) -> BodyMix {
+            BodyMix::new(v.female as f64 / 100.0, v.child as f64 / 100.0)
+        }
+
+        /// A held vowel: the syllable before, sung on at a new pitch.
+        fn melisma(prev: &Syllable) -> Syllable {
+            Syllable {
+                text: "~".into(),
+                onset: Vec::new(),
+                coda: Vec::new(),
+                melisma: Some(true),
+                phrase_end: false,
+                ..prev.clone()
             }
-            "-" => {
-                let held = out.last().map_or_else(la, melisma);
-                out.push(held);
-                i += 1;
-            }
-            word => {
-                // The word's notes: this one and the `+` notes after it, holds in between.
-                let mut notes = vec![i];
-                let mut j = i + 1;
-                while j < lyrics.len() && matches!(lyrics[j], "+" | "-") {
-                    if lyrics[j] == "+" {
-                        notes.push(j);
+        }
+
+        /// The syllable each note sings. A word goes on its note and the `+` notes after it:
+        /// one syllable a note when the counts agree; with more notes than syllables, the last
+        /// syllable is held over the rest; with fewer, the last note sings the next syllable
+        /// and the word's end (its last consonants). `-` holds the vowel before.
+        pub fn syllables(lyrics: &[&str]) -> Vec<Syllable> {
+            let la = || word_syllables(DEFAULT_LYRIC).remove(0);
+            let mut out: Vec<Syllable> = Vec::with_capacity(lyrics.len());
+            let mut i = 0;
+            while i < lyrics.len() {
+                match lyrics[i] {
+                    "-" | "+" if out.is_empty() => {
+                        out.push(la());
+                        i += 1;
                     }
-                    j += 1;
-                }
-                let word = if word == "+" { DEFAULT_LYRIC } else { word };
-                let mut syl = lyrics_to_syllables(word, g);
-                if syl.is_empty() {
-                    syl.push(la());
-                }
-                let n = notes.len();
-                if syl.len() > n {
-                    // The last note: the next syllable, ending as the word does.
-                    let coda = syl.last().map(|s| s.coda.clone()).unwrap_or_default();
-                    let end = syl.last().map(|s| (s.word_end, s.phrase_end));
-                    syl.truncate(n);
-                    if let (Some(last), Some((word_end, phrase_end))) = (syl.last_mut(), end) {
-                        last.coda = coda;
-                        last.word_end = word_end;
-                        last.phrase_end = phrase_end;
-                    }
-                }
-                let mut k = 0;
-                for (at, l) in lyrics.iter().enumerate().take(j).skip(i) {
-                    if *l == "-" || (at != i && k >= syl.len()) {
+                    "-" => {
                         let held = out.last().map_or_else(la, melisma);
                         out.push(held);
-                    } else {
-                        out.push(syl[k].clone());
-                        k += 1;
+                        i += 1;
+                    }
+                    word => {
+                        // The word's notes: this one and the `+` notes after it, holds in
+                        // between.
+                        let mut notes = vec![i];
+                        let mut j = i + 1;
+                        while j < lyrics.len() && matches!(lyrics[j], "+" | "-") {
+                            if lyrics[j] == "+" {
+                                notes.push(j);
+                            }
+                            j += 1;
+                        }
+                        let word = if word == "+" { DEFAULT_LYRIC } else { word };
+                        let mut syl = word_syllables(word);
+                        if syl.is_empty() {
+                            syl.push(la());
+                        }
+                        let n = notes.len();
+                        if syl.len() > n {
+                            // The last note: the next syllable, ending as the word does.
+                            let coda = syl.last().map(|s| s.coda.clone()).unwrap_or_default();
+                            let end = syl.last().map(|s| (s.word_end, s.phrase_end));
+                            syl.truncate(n);
+                            if let (Some(last), Some((word_end, phrase_end))) =
+                                (syl.last_mut(), end)
+                            {
+                                last.coda = coda;
+                                last.word_end = word_end;
+                                last.phrase_end = phrase_end;
+                            }
+                        }
+                        let mut k = 0;
+                        for (at, l) in lyrics.iter().enumerate().take(j).skip(i) {
+                            if *l == "-" || (at != i && k >= syl.len()) {
+                                let held = out.last().map_or_else(la, melisma);
+                                out.push(held);
+                            } else {
+                                out.push(syl[k].clone());
+                                k += 1;
+                            }
+                        }
+                        i = j;
                     }
                 }
-                i = j;
             }
+            out
         }
-    }
-    out
+
+        /// Sings a phrase: `notes` in seconds from sample 0 of the result, which is at
+        /// [`RATE`].
+        pub fn sing(notes: &[ScoreNote], v: &Voice) -> Vec<f32> {
+            let Some(first) = notes.first() else {
+                return Vec::new();
+            };
+            let body = body(v);
+            let lyrics: Vec<&str> = notes.iter().map(|n| n.lyric.as_str()).collect();
+            let syl = syllables(&lyrics);
+            let fs = RATE as f64;
+            let mut voice = HumanVoice::new(fs, body.body(), oversample(fs));
+            voice.set_source(&SourcePatch {
+                f0: Some(midi_to_hz(first.pitch as f64)),
+                voiced: Some(true),
+                pressure: Some(PRESSURE),
+                tension: Some(TENSION),
+                breathiness: Some(v.breathiness as f64 / 100.0),
+                brightness: Some(v.brightness as f64 / 100.0),
+                vibrato_rate: Some(v.vibrato_rate as f64),
+                ..Default::default()
+            });
+            voice.set_articulation(
+                &ArticPatch::default().with(ArticKey::Epilarynx, v.ring as f64 / 100.0),
+                None,
+            );
+            // Seconds as beats: the planner's beat is one second at 60 BPM.
+            let opts = |t0: f64| SongOptions {
+                body,
+                bpm: 60.0,
+                t0,
+                vibrato: v.vibrato_depth as f64,
+            };
+            let mut end: f64 = 0.0;
+            let mut run: Vec<SungNote> = Vec::new();
+            let mut run_start = first.start;
+            for (k, n) in notes.iter().enumerate() {
+                run.push(SungNote {
+                    midi: n.pitch as f64,
+                    beats: n.dur,
+                    syl: syl[k].clone(),
+                });
+                let next_joins = notes
+                    .get(k + 1)
+                    .is_some_and(|m| m.start - (n.start + n.dur) <= JOIN);
+                if !next_joins {
+                    let plan = plan_song(&run, &opts(run_start));
+                    voice.schedule(&plan.gestures);
+                    end = end.max(plan.end).max(n.start + n.dur);
+                    run.clear();
+                    if let Some(m) = notes.get(k + 1) {
+                        run_start = m.start;
+                    }
+                }
+            }
+            let mut out = vec![0f32; ((end + TAIL) * fs).round() as usize];
+            for block in out.chunks_mut(128) {
+                voice.render(block);
+            }
+            out
+        }
+    };
 }
 
-/// Sings a phrase: `notes` in seconds from sample 0 of the result, which is at [`RATE`].
-pub fn sing(notes: &[ScoreNote], v: &Voice) -> Vec<f32> {
-    let Some(first) = notes.first() else {
-        return Vec::new();
-    };
-    let body = v.body();
-    let lyrics: Vec<&str> = notes.iter().map(|n| n.lyric.as_str()).collect();
-    let syl = syllables(&lyrics);
-    let fs = RATE as f64;
-    let mut voice = HumanVoice::new(fs, body.body(), 2);
-    voice.set_source(&SourcePatch {
-        f0: Some(midi_to_hz(first.pitch as f64)),
-        voiced: Some(true),
-        pressure: Some(PRESSURE),
-        tension: Some(TENSION),
-        breathiness: Some(v.breathiness as f64 / 100.0),
-        brightness: Some(v.brightness as f64 / 100.0),
-        vibrato_rate: Some(v.vibrato_rate as f64),
-        ..Default::default()
-    });
-    voice.set_articulation(
-        &ArticPatch::default().with(ArticKey::Epilarynx, v.ring as f64 / 100.0),
-        None,
-    );
-    // Seconds as beats: the planner's beat is one second at 60 BPM.
-    let opts = |t0: f64| SongOptions {
-        body,
-        bpm: 60.0,
-        t0,
-        vibrato: v.vibrato_depth as f64,
-    };
-    let mut end: f64 = 0.0;
-    let mut run: Vec<SungNote> = Vec::new();
-    let mut run_start = first.start;
-    for (k, n) in notes.iter().enumerate() {
-        run.push(SungNote {
-            midi: n.pitch as f64,
-            beats: n.dur,
-            syl: syl[k].clone(),
-        });
-        let next_joins = notes
-            .get(k + 1)
-            .is_some_and(|m| m.start - (n.start + n.dur) <= JOIN);
-        if !next_joins {
-            let plan = plan_song(&run, &opts(run_start));
-            voice.schedule(&plan.gestures);
-            end = end.max(plan.end).max(n.start + n.dur);
-            run.clear();
-            if let Some(m) = notes.get(k + 1) {
-                run_start = m.start;
-            }
+/// The current engine (upstream eeb0c19).
+pub mod current {
+    use super::{gunzip, CMUDICT_GZ};
+    use chimera::phonetics::english::EnglishG2P;
+    use chimera::phonetics::mandarin::MandarinLexicon;
+    use chimera::phonetics::syllables::lyrics_to_syllables_with;
+    use std::sync::OnceLock;
+
+    engine!(chimera);
+
+    /// The CMU Pronouncing Dictionary, loaded once. Without it the engine spells words out by
+    /// its letter-to-sound rules.
+    fn g2p() -> &'static EnglishG2P {
+        static G2P: OnceLock<EnglishG2P> = OnceLock::new();
+        G2P.get_or_init(|| {
+            let mut g = EnglishG2P::new();
+            g.load_dict(&gunzip(CMUDICT_GZ));
+            g
+        })
+    }
+
+    /// The Mandarin readings (vendored with the engine), loaded once. Without them, words in
+    /// Chinese characters are not sung.
+    fn zh() -> &'static MandarinLexicon {
+        static ZH: OnceLock<MandarinLexicon> = OnceLock::new();
+        ZH.get_or_init(|| {
+            let mut zh = MandarinLexicon::new();
+            zh.load(&gunzip(include_bytes!(
+                "../../chimera/data/mandarin.txt.gz"
+            )));
+            zh
+        })
+    }
+
+    /// A word's syllables through every front end of the engine.
+    fn word_syllables(word: &str) -> Vec<Syllable> {
+        lyrics_to_syllables_with(word, g2p(), zh())
+    }
+
+    /// The airway's oversampling: the engine's own rule (2x at 44.1 and 48 kHz).
+    fn oversample(fs: f64) -> usize {
+        chimera::voice::human_voice::oversample_for(fs)
+    }
+}
+
+/// The engine as Pro Wave first vendored it (upstream 09fb776): English only.
+pub mod v09fb776 {
+    use super::{gunzip, CMUDICT_GZ};
+    use chimera_09fb776::phonetics::english::EnglishG2P;
+    use chimera_09fb776::phonetics::syllables::lyrics_to_syllables;
+    use std::sync::OnceLock;
+
+    engine!(chimera_09fb776);
+
+    fn g2p() -> &'static EnglishG2P {
+        static G2P: OnceLock<EnglishG2P> = OnceLock::new();
+        G2P.get_or_init(|| {
+            let mut g = EnglishG2P::new();
+            g.load_dict(&gunzip(CMUDICT_GZ));
+            g
+        })
+    }
+
+    fn word_syllables(word: &str) -> Vec<Syllable> {
+        lyrics_to_syllables(word, g2p())
+    }
+
+    /// As the glue sang with it: 2x below 60 kHz.
+    fn oversample(fs: f64) -> usize {
+        if fs > 60_000.0 {
+            1
+        } else {
+            2
         }
     }
-    let mut out = vec![0f32; ((end + TAIL) * fs).round() as usize];
-    for block in out.chunks_mut(128) {
-        voice.render(block);
+}
+
+/// Sings a phrase with the engine `v` names: `notes` in seconds from sample 0 of the result,
+/// which is at [`RATE`].
+pub fn sing(notes: &[ScoreNote], v: &Voice) -> Vec<f32> {
+    match v.engine {
+        Engine::Current => current::sing(notes, v),
+        Engine::V09fb776 => v09fb776::sing(notes, v),
     }
-    out
 }
 
 /// Zeroth-order modified Bessel function of the first kind (the Kaiser window).
@@ -314,11 +427,16 @@ pub fn resample(x: &[f32], from: u32, to: u32) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+    use super::current::syllables;
     use super::*;
     use chimera::analysis::pitch::{yin_pitch, YinOpts};
+    use chimera::anatomy::human::BodyMix;
+    use chimera::phonetics::sing::midi_to_hz;
+    use chimera::voice::human_voice::HumanVoice;
 
     pub fn voice() -> Voice {
         Voice {
+            engine: Engine::Current,
             female: 0.0,
             child: 0.0,
             vibrato_depth: 0.0,
@@ -379,9 +497,15 @@ mod tests {
 
     /// "la la la la", a beat each at 92 BPM, from half a second in (as a phrase starts): the
     /// sound is as long as the notes and the tail, not silent, and each note's pitch is there
-    /// in the middle of its note.
+    /// in the middle of its note. Both engine copies.
     #[test]
     fn a_phrase_is_sung_with_each_note_at_its_time_and_pitch() {
+        for engine in [Engine::Current, Engine::V09fb776] {
+            a_phrase_is_sung_in_time_and_in_tune_by(engine);
+        }
+    }
+
+    fn a_phrase_is_sung_in_time_and_in_tune_by(engine: Engine) {
         let beat = 60.0 / 92.0;
         let pitches = [57u8, 60, 62, 64];
         let notes: Vec<ScoreNote> = pitches
@@ -389,7 +513,7 @@ mod tests {
             .enumerate()
             .map(|(k, p)| note(0.5 + k as f64 * beat, beat, *p, "la"))
             .collect();
-        let x = sing(&notes, &voice());
+        let x = sing(&notes, &Voice { engine, ..voice() });
         let fs = RATE as f64;
         let end = 0.5 + 4.0 * beat;
         let secs = x.len() as f64 / fs;
@@ -409,7 +533,66 @@ mod tests {
             let want = midi_to_hz(*p as f64);
             let got = pitch_at(&x, mid);
             let cents = 1200.0 * (got / want).log2();
-            assert!(cents.abs() < 50.0, "note {k}: {got} Hz, want {want} Hz");
+            assert!(
+                cents.abs() < 50.0,
+                "{engine:?} note {k}: {got} Hz, want {want} Hz"
+            );
+        }
+    }
+
+    /// Level in dB and the spectral centroid in Hz of `x` (at [`RATE`]), from 2048-sample
+    /// frames.
+    fn level_and_centroid(x: &[f32]) -> (f64, f64) {
+        let n = 2048;
+        let (mut num, mut den) = (0.0, 0.0);
+        for frame in x.chunks_exact(n) {
+            // A plain DFT of the frame's lower half of bins at a stride (enough for a centroid).
+            for k in (1..n / 2).step_by(4) {
+                let (mut re, mut im) = (0.0f64, 0.0f64);
+                for (i, v) in frame.iter().enumerate() {
+                    let w = 0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / n as f64).cos();
+                    let a = 2.0 * std::f64::consts::PI * (k * i) as f64 / n as f64;
+                    re += *v as f64 * w * a.cos();
+                    im -= *v as f64 * w * a.sin();
+                }
+                let mag = (re * re + im * im).sqrt();
+                num += mag * k as f64 * RATE as f64 / n as f64;
+                den += mag;
+            }
+        }
+        (20.0 * rms(x).max(1e-12).log10(), num / den.max(1e-12))
+    }
+
+    /// The update changes the sound: the same phrase sung by the two engine copies differs by
+    /// much more than the difference between two runs of one (none). Prints the level and the
+    /// spectral centroid of each, for the record.
+    #[test]
+    fn the_update_changes_the_sound_and_the_old_engine_keeps_it() {
+        let notes = [
+            note(0.5, 0.6, 57, "row"),
+            note(1.1, 0.6, 60, "row"),
+            note(1.7, 1.2, 64, "boat"),
+        ];
+        for body in [(0.0, 0.0), (100.0, 0.0)] {
+            let at = |engine| Voice {
+                engine,
+                female: body.0,
+                child: body.1,
+                ..voice()
+            };
+            let new = sing(&notes, &at(Engine::Current));
+            let old = sing(&notes, &at(Engine::V09fb776));
+            let n = new.len().min(old.len());
+            let diff: Vec<f32> = (0..n).map(|i| new[i] - old[i]).collect();
+            let (ln, cn) = level_and_centroid(&new[..n]);
+            let (lo, co) = level_and_centroid(&old[..n]);
+            println!(
+                "female {}%: 09fb776 {lo:.1} dB, centroid {co:.0} Hz; eeb0c19 {ln:.1} dB, \
+                 centroid {cn:.0} Hz; difference {:.1} dB below the new",
+                body.0,
+                20.0 * (rms(&diff) / rms(&new[..n])).log10().abs()
+            );
+            assert!(rms(&diff) > 0.05 * rms(&new[..n]), "the engines sang alike");
         }
     }
 
@@ -458,6 +641,21 @@ mod tests {
     fn the_same_phrase_sings_the_same_samples() {
         let notes = [note(0.3, 0.4, 60, "row"), note(0.7, 0.4, 62, "boat")];
         assert_eq!(sing(&notes, &voice()), sing(&notes, &voice()));
+    }
+
+    /// Words in other scripts go through the engine's other front ends instead of being spelt
+    /// out as English or left silent.
+    #[test]
+    fn korean_russian_and_chinese_words_get_their_own_syllables() {
+        let la = syllables(&["la"]).remove(0);
+        for word in ["안", "да", "好", "hao3"] {
+            let s = syllables(&[word]);
+            assert_eq!(s.len(), 1, "{word}");
+            assert_ne!(s[0], la, "{word} sang la");
+            assert!(!s[0].nucleus.ipa.is_empty(), "{word}: no vowel");
+        }
+        let x = sing(&[note(0.3, 0.6, 60, "好")], &voice());
+        assert!(x.iter().all(|v| v.is_finite()) && rms(&x) > 1e-3);
     }
 
     #[test]

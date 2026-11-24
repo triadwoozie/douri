@@ -11,6 +11,7 @@
 static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 mod analysis;
+pub mod arp;
 #[cfg(target_os = "macos")]
 pub mod au;
 #[cfg(target_os = "macos")]
@@ -20,6 +21,7 @@ mod bass808;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture;
 mod clock;
+mod colour_spectrum;
 mod convolver;
 mod core;
 mod disk;
@@ -34,6 +36,7 @@ pub mod melody;
 mod monitor;
 mod mtc;
 pub mod native_fx;
+pub mod native_inst;
 pub mod note_render;
 mod output;
 pub mod pitch_tracker;
@@ -43,6 +46,7 @@ mod plugin_track;
 #[cfg(target_os = "macos")]
 mod plugin_window_layout;
 pub mod prerender;
+pub mod reference_match;
 mod routing;
 pub mod rt_alloc;
 #[cfg(target_os = "macos")]
@@ -51,6 +55,8 @@ mod sample_buf;
 mod sample_rack;
 pub mod sample_tools;
 mod singer;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod smaf;
 mod soundfont;
 mod spectral;
 mod synth;
@@ -72,6 +78,7 @@ mod wasapi;
 pub use crate::analysis::{
     beats_at, tempo_curve, Analysis, Analyzer, TempoEstimate, STRENGTH_RATE,
 };
+pub use crate::arp::{ArpMode, ArpRate, ArpRunner, ArpSettings, ArpStep, ARP_KEYS, ARP_STEPS};
 pub use crate::audition::{
     AuditionLayers, AuditionMsg, AuditionRemote, AuditionStatus, Auditioner, AUDITION_LAYERS,
 };
@@ -87,6 +94,9 @@ pub use crate::capture::{
     MAX_INPUT_CHANNELS,
 };
 pub use crate::clock::{song_position, tick_index, ClockMessage, TICKS_PER_BEAT};
+pub use crate::colour_spectrum::{
+    colour_spectrum, ColourAnalyser, ColourSpectrum, COLOUR_HOP, COLOUR_MELS, COLOUR_RATE,
+};
 pub use crate::convolver::{
     ir_preview, ir_samples, ir_seconds, sd, volume_env, Convolver, BLOCK as CONVOLVER_BLOCK,
     IR_NAMES, IR_PARAMS, MAX_IR_SECONDS,
@@ -94,7 +104,7 @@ pub use crate::convolver::{
 pub use crate::core::{
     dsp_load, AudioClip, ClipEdit, Command, ControlEvent, EngineCore, EngineState, FadeCurve,
     Garbage, MidiCtl, MidiOutEvent, NoteEvent, Shared, Song, StateReader, TrackMix, AUTO_BLOCK,
-    MASTER_TRACK, MAX_AUTO_LANES, MAX_TRACKS,
+    MASTER_TRACK, MAX_AUTO_LANES, MAX_LIVE_ARPS, MAX_TRACKS,
 };
 pub use crate::disk::{
     ring_blocks_for, AudioError, AudioFile, DiskThread, RING_BLOCKS, RING_BLOCKS_MAX,
@@ -113,16 +123,20 @@ pub use crate::mtc::{
     full_frame, quarter_frame_data, rate_code, rate_of_code, MtcDecoder, MtcEvent, MtcGenerator,
     MtcMessage,
 };
+pub use crate::native_fx::texture;
 pub use crate::native_fx::tune;
 pub use crate::native_fx::{
     native_effects, native_info, open_native, open_native_block, open_tune_block, NativeFx,
     NativeFxInfo, NativeParam, NativePreset,
 };
+pub use crate::native_inst::{
+    native_instrument_info, native_instruments, open_native_instrument, NativeInst, NativeInstInfo,
+};
 pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
 pub use crate::output::OfflineOutput;
 pub use crate::output::{peak_of, Engine, EngineError};
 pub use crate::pitch_tracker::{track_pitch, PitchTrack, PITCH_HOP};
-pub use crate::plugin_track::{BlockProcessor, BlockTransport, PluginTrack};
+pub use crate::plugin_track::{BlockProcessor, BlockTransport, PluginTrack, INSTRUMENT_PARAM};
 pub use crate::prerender::{
     plugin_host_delay, prerender_delay, PROCESS_BUFFER_LARGE, PROCESS_BUFFER_MEDIUM,
     PROCESS_BUFFER_SMALL,

@@ -1346,12 +1346,22 @@ pub fn control_cell(
                     sel,
                 )
             } else {
-                paint_key(&p, r, Cap::Bone, sel);
+                let face = paint_key(&p, r, Cap::Bone, sel);
                 led(
                     &p,
                     pos2(r.left() + 10.0, r.center().y + if sel { 1.0 } else { 0.0 }),
                     3.0,
                     sel,
+                );
+                // The legend stays, faint: a key that cannot be pressed still says what it is.
+                let t = fit(&p, name, 11.0, face.width() - 26.0);
+                legend(
+                    &p,
+                    pos2(face.center().x + 7.0, face.center().y),
+                    Align2::CENTER_CENTER,
+                    &t,
+                    11.0,
+                    alpha(INK, 0.35),
                 );
                 ui.interact(r, id.with(("key", k, i)), Sense::hover())
             };

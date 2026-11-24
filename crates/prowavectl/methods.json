@@ -1532,6 +1532,440 @@
     },
     {
       "changes_project": false,
+      "group": "midi_fx",
+      "name": "midi_fx.list",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        }
+      ],
+      "result": "{track, effects: [{index, kind, on, settings: [numbers], arpeggiator?: {rate, mode, octaves, gate, swing, step_velocity, latch, trigger, length, steps}}]}",
+      "summary": "The MIDI FX of a track (Track > MIDI FX…), in the order the notes go through them."
+    },
+    {
+      "changes_project": true,
+      "group": "midi_fx",
+      "name": "midi_fx.add",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "which effect",
+          "name": "kind",
+          "required": true,
+          "type": "string",
+          "values": [
+            "scripter",
+            "modulator",
+            "transposer",
+            "velocity",
+            "scale",
+            "chord",
+            "repeater",
+            "arpeggiator",
+            "randomizer",
+            "swing",
+            "euclid"
+          ]
+        },
+        {
+          "description": "false adds it switched off (default true)",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "the chain, as midi_fx.list gives it",
+      "summary": "Adds a MIDI FX at the end of a track's chain, with its start settings."
+    },
+    {
+      "changes_project": true,
+      "group": "midi_fx",
+      "name": "midi_fx.remove",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the effect's place in the track's MIDI FX, from 1",
+          "name": "index",
+          "required": true,
+          "type": "integer"
+        }
+      ],
+      "result": "the chain, as midi_fx.list gives it",
+      "summary": "Takes a MIDI FX out of a track's chain."
+    },
+    {
+      "changes_project": true,
+      "group": "midi_fx",
+      "name": "midi_fx.set",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the effect's place in the track's MIDI FX, from 1",
+          "name": "index",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "description": "on or off",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "the effect's settings as numbers, in the order midi_fx.list gives them; missing ones go to their start values",
+          "name": "settings",
+          "required": false,
+          "type": "array"
+        }
+      ],
+      "result": "the effect, as in midi_fx.list",
+      "summary": "Switches a MIDI FX on or off, or sets its settings as the numbers midi_fx.list gives (the Arpeggiator's are easier by name: midi_fx.arpeggiator)."
+    },
+    {
+      "changes_project": true,
+      "group": "midi_fx",
+      "name": "midi_fx.arpeggiator",
+      "params": [
+        {
+          "description": "the track: its id (\"t3\"), its name, or its number in the list (from 1)",
+          "name": "track",
+          "required": true,
+          "type": "any"
+        },
+        {
+          "description": "the effect's place in the track's MIDI FX, from 1",
+          "name": "index",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "the effect on or off",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "the length of a step (\".\" dotted, \"T\" triplet)",
+          "name": "rate",
+          "required": false,
+          "type": "string",
+          "values": [
+            "1/4.",
+            "1/4",
+            "1/4T",
+            "1/8.",
+            "1/8",
+            "1/8T",
+            "1/16.",
+            "1/16",
+            "1/16T",
+            "1/32.",
+            "1/32",
+            "1/32T"
+          ]
+        },
+        {
+          "description": "the order the held keys are played in; chord plays them all on every step",
+          "name": "mode",
+          "required": false,
+          "type": "string",
+          "values": [
+            "up",
+            "down",
+            "up_down",
+            "down_up",
+            "random",
+            "as_played",
+            "chord"
+          ]
+        },
+        {
+          "description": "how many octaves the keys are played over",
+          "max": 4.0,
+          "min": 1.0,
+          "name": "octaves",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "how long a note lasts, of a step",
+          "max": 200.0,
+          "min": 5.0,
+          "name": "gate",
+          "required": false,
+          "type": "integer",
+          "unit": "percent"
+        },
+        {
+          "description": "how late every second step is: 100 is half a step, 67 a triplet feel",
+          "max": 100.0,
+          "min": 0.0,
+          "name": "swing",
+          "required": false,
+          "type": "integer",
+          "unit": "percent"
+        },
+        {
+          "description": "how much of a note's velocity comes from its step (0: all from the key played)",
+          "max": 100.0,
+          "min": 0.0,
+          "name": "step_velocity",
+          "required": false,
+          "type": "integer",
+          "unit": "percent"
+        },
+        {
+          "description": "keys stay held after they are let go, until new ones are pressed",
+          "name": "latch",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "restart: each new chord starts the pattern again; song_position: the steps stay on the song's grid",
+          "name": "trigger",
+          "required": false,
+          "type": "string",
+          "values": [
+            "restart",
+            "song_position"
+          ]
+        },
+        {
+          "description": "the steps played before the pattern starts again",
+          "max": 32.0,
+          "min": 1.0,
+          "name": "length",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "a built-in step pattern (it sets the steps and the length)",
+          "name": "preset",
+          "required": false,
+          "type": "string",
+          "values": [
+            "Straight",
+            "Accents",
+            "Offbeat",
+            "Gallop",
+            "Three Three Two",
+            "Long Short",
+            "Octave Jump",
+            "Fifths",
+            "Stabs",
+            "Ramp"
+          ]
+        },
+        {
+          "description": "true: new random steps for the length",
+          "name": "randomize",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "steps to change: [{\"step\": 1, \"on\": true, \"velocity\": 100, \"tie\": false, \"chord\": false, \"transpose\": 0}, ...]; step is its number from 1, tie holds the note through the next step, chord plays all the held keys, transpose is semitones from -24 to 24; what is left out stays",
+          "name": "steps",
+          "required": false,
+          "type": "array"
+        }
+      ],
+      "result": "the effect: {index, kind, on, settings, arpeggiator: {rate, mode, octaves, gate, swing, step_velocity, latch, trigger, length, steps: [{step, on, velocity, tie, chord, transpose}]}}",
+      "summary": "Sets the Arpeggiator of a track (the first one in its MIDI FX, or the one at `index`; a track without one gets one). It plays the keys held on the track, live or from its regions, through a pattern of up to 32 steps. Only what is named changes."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.status",
+      "params": [],
+      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
+      "summary": "The drum-kit library: its folders (present: the folder is there now), the number of kits and the sources. The first call scans the folders."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.rescan",
+      "params": [],
+      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
+      "summary": "Scans the library folders again and waits for it; scan_ms is how long it took."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.folders",
+      "params": [
+        {
+          "description": "the folders, a list of paths",
+          "name": "folders",
+          "required": true,
+          "type": "array"
+        }
+      ],
+      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
+      "summary": "Sets the library folders (saved), then scans them. A folder that is not there is kept and shows present: false."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.search",
+      "params": [
+        {
+          "description": "words to look for (left out: every kit)",
+          "name": "query",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "only kits of this source",
+          "name": "source",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "only kits the library's BEST.md ranks, in its order",
+          "name": "best",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "only the favourites",
+          "name": "favorites",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "description": "most kits to return (default 50)",
+          "max": 1000.0,
+          "min": 1.0,
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "kits to skip (default 0)",
+          "max": 10000000.0,
+          "min": 0.0,
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "result": "{total, offset, kits: [{path, source, name, files, license, best, favorite}]}",
+      "summary": "The kits whose source or name holds every word of the query, as the Kit Browser lists them."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.get",
+      "params": [
+        {
+          "description": "the kit's folder",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "most samples to list (default 200)",
+          "max": 10000.0,
+          "min": 0.0,
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "result": "{path, kind (files, sfz, hydrogen, drumgizmo), files, samples: [{index, file, name, class}], channels: [{channel, file, class}]}",
+      "summary": "Reads a kit's folder: its audio files with the class of each (kick, snare, clap, closed_hat, open_hat, rim, tom_low, tom_mid, tom_high, perc, shaker, crash, ride, 808, fx, loop, other) and the channels a load fills."
+    },
+    {
+      "changes_project": true,
+      "group": "kits",
+      "name": "kits.load",
+      "params": [
+        {
+          "description": "the kit's folder",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the rack's track: its id (\"t3\"), its name, or its number in the list (from 1); left out: the selected track when it plays the Channel Rack, else a new Channel Rack track",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        }
+      ],
+      "result": "{track, kit, channels: [{channel, name, path}]}",
+      "summary": "Loads a kit into a Channel Rack: its samples go on the channels kits.get lists; levels, pans, mutes and steps stay."
+    },
+    {
+      "changes_project": true,
+      "group": "kits",
+      "name": "kits.assign",
+      "params": [
+        {
+          "description": "the audio file",
+          "name": "file",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "the channel, from 1",
+          "max": 64.0,
+          "min": 1.0,
+          "name": "channel",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "description": "the rack's track: its id (\"t3\"), its name, or its number in the list (from 1); left out: the selected track when it plays the Channel Rack, else a new Channel Rack track",
+          "name": "track",
+          "required": false,
+          "type": "any"
+        }
+      ],
+      "result": "{track, kit, channels: [{channel, name, path}]}",
+      "summary": "Puts one audio file on one channel of a Channel Rack (empty channels are added up to it)."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.favorite",
+      "params": [
+        {
+          "description": "the kit's folder",
+          "name": "path",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "description": "false takes the mark off (default true)",
+          "name": "on",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{path, favorite}",
+      "summary": "Marks a kit as a favourite, or takes the mark off."
+    },
+    {
+      "changes_project": false,
       "group": "region",
       "name": "region.get",
       "params": [
@@ -2606,6 +3040,7 @@
             "midi_monitor",
             "midi_fx",
             "free_plugins",
+            "kits",
             "project_settings",
             "tempo_track",
             "marker_track",
@@ -3186,5 +3621,5 @@
     }
   ],
   "protocol": 1,
-  "version": "0.2.0"
+  "version": "0.3.0"
 }

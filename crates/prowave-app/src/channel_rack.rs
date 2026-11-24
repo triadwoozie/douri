@@ -71,7 +71,21 @@ pub fn decode(state: &Option<Vec<u8>>) -> Vec<RackChannel> {
         .unwrap_or_default()
 }
 
+/// The name of the kit a rack slot's channels were loaded from (empty: none).
+pub fn kit_of(state: &Option<Vec<u8>>) -> String {
+    state
+        .as_deref()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+        .and_then(|v| v["kit"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
 pub fn encode(channels: &[RackChannel]) -> Vec<u8> {
+    encode_kit(channels, "")
+}
+
+/// [`encode`], with the name of the kit the channels were loaded from.
+pub fn encode_kit(channels: &[RackChannel], kit: &str) -> Vec<u8> {
     let list: Vec<serde_json::Value> = channels
         .iter()
         .map(|c| {
@@ -80,9 +94,11 @@ pub fn encode(channels: &[RackChannel]) -> Vec<u8> {
             })
         })
         .collect();
-    serde_json::json!({ "channels": list })
-        .to_string()
-        .into_bytes()
+    let mut v = serde_json::json!({ "channels": list });
+    if !kit.is_empty() {
+        v["kit"] = kit.into();
+    }
+    v.to_string().into_bytes()
 }
 
 /// What the engine's rack is made from.
@@ -122,7 +138,7 @@ fn pick_samples() -> Vec<std::path::PathBuf> {
 }
 
 /// The track whose rack the window shows: the selected one, when it plays the rack.
-fn rack_track(p: &Project) -> Option<usize> {
+pub fn rack_track(p: &Project) -> Option<usize> {
     let i = p.selected_track;
     p.tracks
         .get(i)
@@ -168,6 +184,101 @@ fn new_rack_track(p: &mut Project) {
     p.selected_track = i;
 }
 
+/// Loads a kit into a rack: channel `k` takes `pads[k]` (`None`: an empty channel), named for
+/// its file; each channel keeps its level, pan and mute, and the steps stay where they are, so
+/// a pattern plays the new kit. `track`: the rack's track, or `None` for a new rack track.
+/// Returns the track.
+pub fn load_kit(
+    p: &mut Project,
+    track: Option<usize>,
+    kit: &str,
+    pads: &[Option<std::path::PathBuf>],
+) -> usize {
+    let ti = match track.filter(|&i| {
+        p.tracks
+            .get(i)
+            .is_some_and(|t| t.au_instrument.as_ref().is_some_and(is_rack))
+    }) {
+        Some(i) => i,
+        None => {
+            new_rack_track(p);
+            let i = p.selected_track;
+            if !kit.is_empty() {
+                p.tracks[i].name = kit.to_string();
+            }
+            i
+        }
+    };
+    let Some(slot) = p.tracks[ti].au_instrument.as_mut() else {
+        return ti;
+    };
+    let old = decode(&slot.state);
+    let channels: Vec<RackChannel> = pads
+        .iter()
+        .take(MAX_RACK_CHANNELS)
+        .enumerate()
+        .map(|(k, pad)| {
+            let mut c = match pad {
+                Some(path) => channel_from(path),
+                None => RackChannel {
+                    path: String::new(),
+                    name: String::new(),
+                    gain_db: 0.0,
+                    pan: 0.0,
+                    mute: false,
+                },
+            };
+            if let Some(o) = old.get(k) {
+                c.gain_db = o.gain_db;
+                c.pan = o.pan;
+                c.mute = o.mute;
+            }
+            c
+        })
+        .collect();
+    slot.state = Some(encode_kit(&channels, kit));
+    p.song_rev += 1;
+    ti
+}
+
+/// Puts one sample on channel `channel` (from 0) of the rack on track `ti`, adding empty
+/// channels up to it; the channel keeps its level, pan and mute. False when the track has no
+/// rack or the channel is past the last one a rack can have.
+pub fn assign_sample(p: &mut Project, ti: usize, channel: usize, path: &std::path::Path) -> bool {
+    let Some(slot) = p
+        .tracks
+        .get_mut(ti)
+        .and_then(|t| t.au_instrument.as_mut())
+        .filter(|s| is_rack(s))
+    else {
+        return false;
+    };
+    if channel >= MAX_RACK_CHANNELS {
+        return false;
+    }
+    let kit = kit_of(&slot.state);
+    let mut channels = decode(&slot.state);
+    while channels.len() <= channel {
+        channels.push(RackChannel {
+            path: String::new(),
+            name: String::new(),
+            gain_db: 0.0,
+            pan: 0.0,
+            mute: false,
+        });
+    }
+    let fresh = channel_from(path);
+    channels[channel].path = fresh.path;
+    channels[channel].name = fresh.name;
+    slot.state = Some(encode_kit(&channels, &kit));
+    p.song_rev += 1;
+    true
+}
+
+/// A sample dragged from the Kit Browser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SampleDrag(pub std::path::PathBuf);
+
 /// Height of a rack row, the narrowest and widest step pad, and the gap between pads.
 const ROW: f32 = 30.0;
 const PAD_MIN: f32 = 22.0;
@@ -180,6 +291,9 @@ const MUTE_W: f32 = 38.0;
 const SAMPLE_W: f32 = 150.0;
 const GAIN_W: f32 = 84.0;
 const STEPS_X: f32 = MUTE_W + 5.0 + SAMPLE_W + 5.0 + GAIN_W + 12.0;
+/// The Kits key in the rack's head, and the slot beside it that names the loaded kit.
+const KITS_W: f32 = 76.0;
+const KIT_NAME_W: f32 = 240.0;
 /// Height of the step ruler (numbers and the playhead LEDs) over the steps.
 const RULER_H: f32 = 30.0;
 
@@ -294,16 +408,62 @@ pub fn show(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
             bottom: 10,
         })
         .show(ui, |ui| {
+            // The head: the rack's name, the kit its channels came from, and the Kit Browser.
             let head = ui
-                .allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover())
+                .allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover())
                 .0;
+            let kit = rack_track(p)
+                .and_then(|i| p.tracks[i].au_instrument.as_ref())
+                .map(|slot| kit_of(&slot.state))
+                .unwrap_or_default();
+            let kits_label = tr("Kits").to_uppercase();
+            let key =
+                egui::Rect::from_min_max(egui::pos2(head.right() - KITS_W, head.top()), head.max);
+            let name = egui::Rect::from_min_max(
+                egui::pos2(key.left() - 6.0 - KIT_NAME_W, head.top() + 1.0),
+                egui::pos2(key.left() - 6.0, head.bottom() - 1.0),
+            );
+            let bracket_right = if kit.is_empty() {
+                key.left() - 12.0
+            } else {
+                name.left() - 12.0
+            };
             crate::hw::bracket(
                 ui.painter(),
                 head.left(),
-                head.right(),
+                bracket_right,
                 head.center().y,
                 tr("Channel Rack"),
             );
+            let g = ui.painter().clone();
+            let mut toggle = false;
+            if !kit.is_empty() {
+                let resp = ui.interact(name, egui::Id::unique("rack_kit_name"), Sense::click());
+                crate::hw::paint_slot(
+                    &g,
+                    name,
+                    crate::hw::SlotKind::Filled,
+                    &kit,
+                    Some(true),
+                    false,
+                    resp.hovered(),
+                );
+                toggle |= resp.clicked();
+            }
+            let (resp, _) = crate::hw::key(
+                ui,
+                &g,
+                key,
+                egui::Id::unique("rack_kits"),
+                crate::hw::Cap::Bone,
+                s.kits.open,
+                Some(s.kits.open),
+                crate::hw::Legend::Text(&kits_label),
+            );
+            toggle |= resp.clicked();
+            if toggle {
+                s.kits.open = !s.kits.open;
+            }
             ui.add_space(8.0);
             let Some(ti) = rack_track(p) else {
                 ui.label(
@@ -336,6 +496,7 @@ pub fn show(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
                 return;
             };
             let mut channels = decode(&slot.state);
+            let kit = kit_of(&slot.state);
             let mut changed = false;
             let mut remove: Option<usize> = None;
             let mut toggles: Vec<(u8, usize)> = Vec::new();
@@ -394,6 +555,21 @@ pub fn show(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
                             false,
                             name.hovered(),
                         );
+                        // A sample dragged from the Kit Browser lands here.
+                        if name.dnd_hover_payload::<SampleDrag>().is_some() {
+                            g.rect_stroke(
+                                r,
+                                3.0,
+                                egui::Stroke::new(2.0, theme::ORANGE),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        if let Some(drop) = name.dnd_release_payload::<SampleDrag>() {
+                            let fresh = channel_from(&drop.0);
+                            ch.path = fresh.path;
+                            ch.name = fresh.name;
+                            changed = true;
+                        }
                         if name.clicked() {
                             if let Some(path) = pick_samples().first() {
                                 let fresh = channel_from(path);
@@ -445,16 +621,20 @@ pub fn show(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
             if channels.len() < MAX_RACK_CHANNELS {
                 let label = tr("Add Channel…").to_uppercase();
                 let w = label.chars().count() as f32 * 8.0 + 28.0;
-                if rack_key(
+                let add = rack_key(
                     ui,
                     vec2(w, 28.0),
                     egui::Id::unique("rack_add"),
                     &label,
                     false,
                     None,
-                )
-                .clicked()
-                {
+                );
+                // A sample dropped on the key becomes a new channel.
+                if let Some(drop) = add.dnd_release_payload::<SampleDrag>() {
+                    channels.push(channel_from(&drop.0));
+                    changed = true;
+                }
+                if add.clicked() {
                     for path in pick_samples() {
                         if channels.len() < MAX_RACK_CHANNELS {
                             channels.push(channel_from(&path));
@@ -503,7 +683,7 @@ pub fn show(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
             }
             if changed {
                 if let Some(slot) = p.tracks[ti].au_instrument.as_mut() {
-                    slot.state = Some(encode(&channels));
+                    slot.state = Some(encode_kit(&channels, &kit));
                 }
             }
         });
@@ -525,6 +705,88 @@ mod tests {
         assert_eq!(decode(&Some(encode(&channels))), channels);
         assert!(decode(&None).is_empty());
         assert!(decode(&Some(b"not json".to_vec())).is_empty());
+    }
+
+    #[test]
+    fn a_kit_load_fills_the_channels_and_keeps_the_mix_and_the_steps() {
+        let mut p = Project::empty();
+        let pads = vec![
+            Some(std::path::PathBuf::from("/lib/k/Kick 1.wav")),
+            None,
+            Some(std::path::PathBuf::from("/lib/k/hats/CH.wav")),
+        ];
+        // No rack yet: a new track named for the kit.
+        let ti = load_kit(&mut p, None, "Kit One", &pads);
+        assert_eq!(p.tracks[ti].name, "Kit One");
+        assert_eq!(rack_track(&p), Some(ti));
+        let slot = p.tracks[ti].au_instrument.clone().unwrap();
+        assert_eq!(kit_of(&slot.state), "Kit One");
+        let ch = decode(&slot.state);
+        assert_eq!(
+            ch.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            ["Kick 1", "", "CH"]
+        );
+        assert_eq!(ch[2].path, "/lib/k/hats/CH.wav");
+        // A level, a mute and a step set by hand stay through the next kit.
+        let mut ch = ch;
+        ch[0].gain_db = -6.0;
+        ch[2].mute = true;
+        p.tracks[ti].au_instrument.as_mut().unwrap().state = Some(encode_kit(&ch, "Kit One"));
+        let ri = step_region(&mut p, ti, None);
+        p.tracks[ti].regions[ri].notes.push(Note {
+            lyric: crate::lyrics::Lyric::NONE,
+            mute: false,
+            start: 0.0,
+            len: STEP,
+            pitch: RACK_BASE_NOTE,
+            vel: VELOCITY,
+        });
+        let two = vec![
+            Some(std::path::PathBuf::from("/lib/b/BD.wav")),
+            Some(std::path::PathBuf::from("/lib/b/SD.wav")),
+            Some(std::path::PathBuf::from("/lib/b/HH.wav")),
+            Some(std::path::PathBuf::from("/lib/b/OH.wav")),
+        ];
+        assert_eq!(load_kit(&mut p, Some(ti), "Kit Two", &two), ti);
+        assert_eq!(
+            p.tracks[ti].name, "Kit One",
+            "a track already there keeps its name"
+        );
+        let slot = p.tracks[ti].au_instrument.clone().unwrap();
+        assert_eq!(kit_of(&slot.state), "Kit Two");
+        let ch = decode(&slot.state);
+        assert_eq!(ch.len(), 4);
+        assert_eq!((ch[0].name.as_str(), ch[0].gain_db), ("BD", -6.0));
+        assert!(ch[2].mute && !ch[3].mute);
+        assert_eq!(p.tracks[ti].regions[ri].notes.len(), 1);
+        // A track that plays something else is not touched: the kit gets a rack of its own.
+        let other = p.add_track(TrackKind::Instrument);
+        let made = load_kit(&mut p, Some(other), "Kit Three", &two);
+        assert_ne!(made, other);
+    }
+
+    #[test]
+    fn one_sample_goes_on_one_channel() {
+        let mut p = Project::empty();
+        new_rack_track(&mut p);
+        let ti = p.selected_track;
+        let path = std::path::Path::new("/lib/k/Clap.wav");
+        assert!(assign_sample(&mut p, ti, 2, path));
+        let ch = decode(&p.tracks[ti].au_instrument.as_ref().unwrap().state);
+        assert_eq!(ch.len(), 3);
+        assert_eq!((ch[0].path.as_str(), ch[2].name.as_str()), ("", "Clap"));
+        assert!(!assign_sample(&mut p, ti, MAX_RACK_CHANNELS, path));
+        assert!(!assign_sample(&mut p, ti + 9, 0, path));
+        // The rack's window keeps the kit's name when a channel changes.
+        let slot = p.tracks[ti].au_instrument.as_mut().unwrap();
+        slot.state = Some(encode_kit(&ch, "K"));
+        assert!(assign_sample(&mut p, ti, 0, path));
+        assert_eq!(
+            kit_of(&p.tracks[ti].au_instrument.as_ref().unwrap().state),
+            "K"
+        );
+        // A rack saved before kits had names reads as it did.
+        assert_eq!(kit_of(&Some(encode(&ch))), "");
     }
 
     #[test]

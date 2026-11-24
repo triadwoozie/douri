@@ -215,11 +215,19 @@ impl AudioFile {
     /// by answering `false` (then `None`).
     pub fn read_stereo_with(
         &self,
+        progress: impl FnMut(f32, &[f32]) -> bool,
+    ) -> Result<Option<Vec<f32>>, AudioError> {
+        self.read_stereo_up_to(crate::analysis::MAX_SECONDS, progress)
+    }
+
+    /// [`AudioFile::read_stereo_with`], stopping at `max_seconds` instead of ten minutes.
+    pub fn read_stereo_up_to(
+        &self,
+        max_seconds: f64,
         mut progress: impl FnMut(f32, &[f32]) -> bool,
     ) -> Result<Option<Vec<f32>>, AudioError> {
         let mut src = Source::open(&self.path)?;
-        let limit =
-            (crate::analysis::MAX_SECONDS * f64::from(self.sample_rate.max(1))) as usize * 2;
+        let limit = (max_seconds * f64::from(self.sample_rate.max(1))) as usize * 2;
         let total = (self.frames as usize * 2).clamp(2, limit.max(2));
         let mut out = Vec::with_capacity(total.min(limit));
         let mut buf = Vec::new();
@@ -237,6 +245,29 @@ impl AudioFile {
         out.truncate(limit);
         progress(1.0, &out);
         Ok(Some(out))
+    }
+
+    /// Decodes the whole file in pieces of interleaved stereo at its own rate, non-finite
+    /// samples as silence, handing each piece to `piece` until it answers `false`. Returns
+    /// whether it reached the end. Run off the audio thread.
+    pub fn for_each_stereo(
+        &self,
+        mut piece: impl FnMut(&[f32]) -> bool,
+    ) -> Result<bool, AudioError> {
+        let mut src = Source::open(&self.path)?;
+        let mut buf = Vec::new();
+        while src.next_stereo(&mut buf)? {
+            for s in &mut buf {
+                if !s.is_finite() {
+                    *s = 0.0;
+                }
+            }
+            if !piece(&buf) {
+                return Ok(false);
+            }
+            buf.clear();
+        }
+        Ok(true)
     }
 
     /// Min/max overview for waveform display. Decodes the whole file: run off the UI thread.

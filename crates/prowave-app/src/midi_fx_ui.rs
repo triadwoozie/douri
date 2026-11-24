@@ -4,9 +4,7 @@
 //! what it does). Changes bump the song revision so the engine gets the new notes.
 use crate::gear::{self, Cap, Control, LedAt};
 use crate::i18n::{tr, trf};
-use crate::midi_fx::{
-    ArpPattern, ChordKind, FxSlot, LfoShape, MidiFx, ModTarget, MAX_FX, MOD_PERIODS,
-};
+use crate::midi_fx::{ChordKind, FxSlot, LfoShape, MidiFx, ModTarget, MAX_FX, MOD_PERIODS};
 use crate::model::Project;
 use crate::pattern::StepRate;
 use crate::step_editor::NOTE_NAMES;
@@ -22,8 +20,10 @@ fn title(fx: &MidiFx) -> &'static str {
         MidiFx::Scale { .. } => tr("Scale Quantizer"),
         MidiFx::Chord { .. } => tr("Chord Trigger"),
         MidiFx::Repeater { .. } => tr("Note Repeater"),
-        MidiFx::Arpeggiator { .. } => tr("Arpeggiator"),
+        MidiFx::Arpeggiator(_) => tr("Arpeggiator"),
         MidiFx::Randomizer { .. } => tr("Randomizer"),
+        MidiFx::Swing { .. } => tr("Swing"),
+        MidiFx::Euclid { .. } => tr("Euclidean Pattern"),
     }
 }
 
@@ -60,18 +60,8 @@ fn chord_name(k: ChordKind) -> &'static str {
     }
 }
 
-fn pattern_name(p: ArpPattern) -> &'static str {
-    match p {
-        ArpPattern::Up => tr("Up"),
-        ArpPattern::Down => tr("Down"),
-        ArpPattern::UpDown => tr("Up and Down"),
-        ArpPattern::Random => tr("Random"),
-        ArpPattern::AsPlayed => tr("As Played"),
-    }
-}
-
 /// The window's width and its inner margin.
-const W: f32 = 780.0;
+const W: f32 = 880.0;
 const PAD: f32 = 24.0;
 /// A rack unit's header strip and its control row.
 const UNIT_HEAD: f32 = 40.0;
@@ -80,12 +70,12 @@ const SCRIPT_H: f32 = 236.0;
 const LCD_W: f32 = 230.0;
 
 /// A label as the silkscreen prints it: the existing text without its colon.
-fn silk_label(t: &str) -> String {
+pub(crate) fn silk_label(t: &str) -> String {
     t.trim_end_matches(':').trim().to_string()
 }
 
 /// A whole-number knob control.
-fn int_control(
+pub(crate) fn int_control(
     label: &str,
     v: i32,
     min: i32,
@@ -108,7 +98,7 @@ fn int_control(
 }
 
 /// A choice control (keys for up to three, else a menu field).
-fn choice_control(label: &str, names: Vec<String>, current: usize, on: bool) -> Control {
+pub(crate) fn choice_control(label: &str, names: Vec<String>, current: usize, on: bool) -> Control {
     Control {
         label: silk_label(label),
         norm: 0.0,
@@ -122,12 +112,17 @@ fn choice_control(label: &str, names: Vec<String>, current: usize, on: bool) -> 
 }
 
 /// A knob's new whole value from a change.
-fn int_of(ch: &gear::Change, min: i32, max: i32) -> i32 {
+pub(crate) fn int_of(ch: &gear::Change, min: i32, max: i32) -> i32 {
     (min as f32 + ch.norm * (max - min) as f32).round() as i32
 }
 
 /// Lays `cells` (control, width) out in a row from `at`; returns (cell index, change).
-fn row(ui: &mut Ui, at: Pos2, id: Id, cells: &[(Control, f32)]) -> Vec<(usize, gear::Change)> {
+pub(crate) fn row(
+    ui: &mut Ui,
+    at: Pos2,
+    id: Id,
+    cells: &[(Control, f32)],
+) -> Vec<(usize, gear::Change)> {
     let mut out = Vec::new();
     let mut x = at.x;
     for (k, (c, w)) in cells.iter().enumerate() {
@@ -144,6 +139,7 @@ fn row(ui: &mut Ui, at: Pos2, id: Id, cells: &[(Control, f32)]) -> Vec<(usize, g
 fn controls_h(fx: &MidiFx) -> f32 {
     match fx {
         MidiFx::Scripter { .. } => SCRIPT_H,
+        MidiFx::Arpeggiator(_) => crate::arp_ui::HEIGHT,
         _ => gear::CELL_H + 8.0,
     }
 }
@@ -311,40 +307,28 @@ fn display(p: &Painter, rect: Rect, fx: &MidiFx, on: bool) {
             let n = (4.0 / rate.beats()).round().clamp(1.0, 32.0) as usize;
             steps(p, plot, n, |_| 0.5, a);
         }
-        MidiFx::Arpeggiator {
-            rate,
-            pattern,
-            octaves,
-            gate,
-        } => {
-            let n = ((4.0 / rate.beats()).round() as usize).clamp(4, 16);
-            let o = usize::from((*octaves).max(1));
-            let notes = 3 * o;
-            let level = |k: usize| -> f32 {
-                let up = (k % notes) as f32 / (notes - 1).max(1) as f32;
-                match pattern {
-                    ArpPattern::Up => up,
-                    ArpPattern::Down => 1.0 - up,
-                    ArpPattern::UpDown => {
-                        let cyc = (2 * notes - 2).max(1);
-                        let j = k % cyc;
-                        let j = if j < notes { j } else { cyc - j };
-                        j as f32 / (notes - 1).max(1) as f32
-                    }
-                    ArpPattern::Random => [0.4, 0.9, 0.1, 0.7, 0.3, 1.0, 0.0, 0.6][k % 8],
-                    ArpPattern::AsPlayed => [0.0, 0.7, 0.35][k % 3],
-                }
-            };
-            let g = f32::from(*gate) / 100.0;
-            let w = plot.width() / n as f32;
-            for k in 0..n {
-                let y = plot.bottom() - level(k) * (plot.height() - 6.0);
-                let r = Rect::from_min_size(
-                    pos2(plot.left() + k as f32 * w + 1.0, y - 6.0),
-                    vec2((w - 2.0) * g.max(0.15), 6.0),
-                );
-                p.rect_filled(r, 0.0, ink(a));
+        // Its step pattern is its display (see `arp_ui.rs`).
+        MidiFx::Arpeggiator(_) => {}
+        MidiFx::Swing { swing, .. } => {
+            // Eight sixteenths, the off-beat ones pushed late by the swing.
+            let w = plot.width() / 8.0;
+            let late = f32::from(*swing) / 100.0 * 0.5;
+            steps(p, plot, 8, |_| 0.4, a * 0.25);
+            for k in (1..8).step_by(2) {
+                let x = plot.left() + (k as f32 + late) * w;
+                let r = Rect::from_min_size(pos2(x, plot.top()), vec2(w * 0.4, plot.height()));
+                p.rect_filled(r.intersect(plot), 1.0, gear::alpha(gear::LCD_INK, a));
             }
+        }
+        MidiFx::Euclid {
+            steps: count,
+            pulses,
+            rotation,
+            ..
+        } => {
+            let rhythm = crate::midi_fx::euclidean_rhythm(*pulses, *count, *rotation);
+            let n = rhythm.len().max(1);
+            steps(p, plot, n, |k| if rhythm[k] { 0.8 } else { 0.12 }, a);
         }
         MidiFx::Randomizer {
             pitch,
@@ -443,8 +427,16 @@ fn steps(p: &Painter, plot: Rect, n: usize, len: impl Fn(usize) -> f32, a: f32) 
     }
 }
 
-/// The settings of one effect in the controls area `rect`; returns whether any changed.
-fn settings(ui: &mut Ui, rect: Rect, fx: &mut MidiFx, id: Id, on: bool) -> bool {
+/// The settings of one effect in the controls area `rect` (`song_beat`: where the song is
+/// while it plays); returns whether any changed.
+fn settings(
+    ui: &mut Ui,
+    rect: Rect,
+    fx: &mut MidiFx,
+    id: Id,
+    on: bool,
+    song_beat: Option<f64>,
+) -> bool {
     let mut changed = false;
     let at = rect.left_top() + vec2(0.0, 4.0);
     let rate_names = || {
@@ -723,57 +715,85 @@ fn settings(ui: &mut Ui, rect: Rect, fx: &mut MidiFx, id: Id, on: bool) -> bool 
                 changed = true;
             }
         }
-        MidiFx::Arpeggiator {
-            rate,
-            pattern,
-            octaves,
-            gate,
+        MidiFx::Arpeggiator(arp) => {
+            changed |= crate::arp_ui::show(ui, rect, arp, id, on, song_beat);
+        }
+        MidiFx::Swing {
+            swing,
+            timing,
+            velocity,
+            seed,
         } => {
-            let pats: Vec<String> = ArpPattern::ALL
-                .iter()
-                .map(|p| pattern_name(*p).to_string())
-                .collect();
-            let pi = ArpPattern::ALL
-                .iter()
-                .position(|p| p == pattern)
-                .unwrap_or(0);
+            let pct = |label: &str, v: u8| {
+                let text = format!("{v} %");
+                (
+                    int_control(label, i32::from(v), 0, 100, 0, text, on),
+                    gear::CELL_W,
+                )
+            };
+            let cells = [
+                pct(tr("Swing:"), *swing),
+                pct(tr("Timing:"), *timing),
+                pct(tr("Velocity:"), *velocity),
+            ];
+            for (k, ch) in row(ui, at, id, &cells) {
+                match k {
+                    0 => *swing = int_of(&ch, 0, 100) as u8,
+                    1 => *timing = int_of(&ch, 0, 100) as u8,
+                    _ => *velocity = int_of(&ch, 0, 100) as u8,
+                }
+                changed = true;
+            }
+            let r = Rect::from_min_size(
+                pos2(at.x + 3.0 * gear::CELL_W + 14.0, rect.top() + 26.0),
+                vec2(124.0, 28.0),
+            );
+            let key = gear::key(
+                ui,
+                r,
+                id.with("variation"),
+                tr("New Variation"),
+                Cap::Bone,
+                LedAt::None,
+                false,
+                false,
+            );
+            if on && key.clicked() {
+                *seed = seed.wrapping_add(1);
+                changed = true;
+            }
+        }
+        MidiFx::Euclid {
+            rate,
+            steps: count,
+            pulses,
+            rotation,
+        } => {
+            let most = i32::from(crate::midi_fx::EUCLID_STEPS);
+            let int = |label: &str, v: i32, lo: i32, hi: i32| {
+                (
+                    int_control(label, v, lo, hi, 0, v.to_string(), on),
+                    gear::CELL_W,
+                )
+            };
             let cells = [
                 (
                     choice_control(tr("Rate:"), rate_names(), rate_index(*rate), on),
-                    104.0,
+                    110.0,
                 ),
-                (choice_control(tr("Pattern:"), pats, pi, on), 140.0),
-                (
-                    int_control(
-                        tr("Octaves:"),
-                        i32::from(*octaves),
-                        1,
-                        4,
-                        1,
-                        format!("{octaves}"),
-                        on,
-                    ),
-                    gear::CELL_W,
-                ),
-                (
-                    int_control(
-                        tr("Gate:"),
-                        i32::from(*gate),
-                        5,
-                        100,
-                        80,
-                        format!("{gate} %"),
-                        on,
-                    ),
-                    gear::CELL_W,
-                ),
+                int(tr("Steps:"), i32::from(*count), 1, most),
+                int(tr("Pulses:"), i32::from(*pulses), 0, i32::from(*count)),
+                int(tr("Rotation:"), i32::from(*rotation), -most + 1, most - 1),
             ];
             for (k, ch) in row(ui, at, id, &cells) {
                 match k {
                     0 => *rate = StepRate::ALL[ch.choice.unwrap_or(0).min(5)],
-                    1 => *pattern = ArpPattern::ALL[ch.choice.unwrap_or(0).min(4)],
-                    2 => *octaves = int_of(&ch, 1, 4) as u8,
-                    _ => *gate = int_of(&ch, 5, 100) as u8,
+                    1 => {
+                        *count = int_of(&ch, 1, most) as u8;
+                        *pulses = (*pulses).min(*count);
+                    }
+                    2 => *pulses = int_of(&ch, 0, i32::from(*count)) as u8,
+                    _ => *rotation = int_of(&ch, -most + 1, most - 1) as i8,
                 }
                 changed = true;
             }
@@ -874,6 +894,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
         reset: false,
     };
     let id = egui::Id::unique("midi_fx_window");
+    let song_beat = p.playing.then_some(p.position_beats);
     let chain = &mut p.tracks[ti].midi_fx;
     let (head, _) = gear::unit_window(ctx, id, W, &plate, None, |ui| {
         let units: f32 = chain
@@ -983,15 +1004,16 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                 pos2(unit.left() + 12.0, unit.top() + UNIT_HEAD),
                 pos2(unit.right() - 12.0, unit.bottom()),
             );
-            let scripter = matches!(slot.fx, MidiFx::Scripter { .. });
-            if !scripter {
+            // The Scripter's editor and the Arpeggiator's pattern take the whole unit.
+            let whole = matches!(slot.fx, MidiFx::Scripter { .. } | MidiFx::Arpeggiator(_));
+            if !whole {
                 let lcd = Rect::from_min_size(
                     pos2(ctrl.right() - LCD_W, ctrl.top() + 16.0),
                     vec2(LCD_W, ctrl.height() - 32.0),
                 );
                 display(&painter, lcd, &slot.fx, slot.on);
             }
-            changed |= settings(ui, ctrl, &mut slot.fx, uid, slot.on);
+            changed |= settings(ui, ctrl, &mut slot.fx, uid, slot.on, song_beat);
             y = unit.bottom() + 14.0;
         }
         if let Some(i) = remove {
@@ -1069,7 +1091,7 @@ mod tests {
                 on: false,
             }])
             .collect();
-        let mut h = Harness::new(900.0, 1400.0);
+        let mut h = Harness::new(1000.0, 1800.0);
         let rev = p.song_rev;
         for _ in 0..4 {
             h.frame(vec![], |ui| show(ui.ctx(), &mut p, &mut s));
@@ -1090,9 +1112,6 @@ mod tests {
         }
         for k in ChordKind::ALL {
             assert!(!chord_name(k).is_empty());
-        }
-        for a in ArpPattern::ALL {
-            assert!(!pattern_name(a).is_empty());
         }
     }
 }

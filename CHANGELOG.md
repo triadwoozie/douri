@@ -5,6 +5,95 @@ being released into the GitHub Release notes, so keep one `## <version>` heading
 
 ## Unreleased
 
+### 2026-11-23: the Kit Browser
+
+Checked by tests, offscreen pictures and the app without a window against the real library;
+nothing was looked at in the running window or listened to.
+
+- The Channel Rack has a Kits key. It opens the Kit Browser: every drum kit found in the
+  library folders, searched as it is typed (every word has to be in the kit's name or its
+  source), by source, the kits a library's `BEST.md` ranks, and the favourites (the star).
+- Load Kit (or a double-click on a kit, or Return in the search field) puts the kit on the
+  rack's channels: Kick, Snare, Clap, Closed Hat, Open Hat, Rim, Low, Mid and High Tom, Perc,
+  Shaker, Crash, Ride, 808, FX, and one more; a channel the kit has nothing for takes a
+  stand-in, and the rest of the kit fills what is still empty. Levels, pans, mutes and steps
+  stay, so a pattern plays the new kit. With no rack selected, a new Channel Rack track is made.
+- What a sample is comes from its file and folder names, and from an SFZ file, a Hydrogen
+  `drumkit.xml` or a DrumGizmo kit when the kit has one (one sample an instrument: the loudest
+  layer). Loops are listed and never put on a channel by Load Kit.
+- A kit's samples are listed with their class; the class keys show one class. A sample goes on
+  one channel by a double-click (the pad that is lit), or by dragging it onto a pad or onto a
+  channel of the rack. The triangle plays a sample and Audition the kit's first channels;
+  nothing sounds otherwise.
+- Folders: the library folders (any number; kept in `kit-library/settings.json` of the
+  settings folder). A folder that is not there, such as a drive that is not mounted, has an
+  unlit lamp and its kits are not listed. The index is read from a cache at once and made
+  again in the background.
+- A rack names its samples by their path where they are; nothing is copied into the project,
+  as before.
+- `prowavectl`: `kits.status`, `kits.rescan`, `kits.folders`, `kits.search`, `kits.get`,
+  `kits.load`, `kits.assign`, `kits.favorite`; `ui.window` takes `kits`.
+
+### 2026-11-23: plug-in menus scroll
+
+Checked by tests and an offscreen picture only; not tried in the running app.
+
+- The Instrument slot's menu, the empty Audio FX slot's menu and each maker's list of plug-ins
+  scroll when they hold more than the window has room for (the wheel, or the scroll bar that
+  shows while the pointer is over the menu). Before, the entries past the bottom of the window
+  could not be seen or picked. A menu that fits is drawn as before.
+### 2026-11-24: built-in instruments and effects
+
+Checked by tests only; nothing was played or listened to.
+
+- Instruments, in the Instrument slot's menu, each with a unit window, automation and the
+  control interface's `plugin.list`, `instrument.set`, `plugin.params` and `param.set`:
+  Pro Wave Macro Oscillator (24 synthesis models), Pro Wave Resonator, Pro Wave Digital
+  Oscillator (47 shapes), FM6 (six-operator FM; reads voices from a .syx bank), Chip FM 2-Op,
+  Chip FM 4-Op, Chip FM Preset, Chip 6581, Chip PSG, Kick, Bass Line, Triple Oscillator,
+  Pluck and Wave Draw (its cycle is drawn on a display).
+- Effects, in the Audio FX menu: Circuit Overdrive, Pro Wave Resonator FX, Pro Wave Spectral.
+- MIDI FX: Swing (with humanize) and Euclidean Pattern.
+- File > Import > SMAF File… renders a mobile-phone ringtone (.mmf) to an audio track.
+- File > Bounce > Region through EffeTune Chain… runs the selected audio region through a
+  chain of EffeTune effects with a Python that has EffeTune installed.
+- `public/THIRD-PARTY-NOTICES.md` names every source.
+
+### 2026-11-21: the Arpeggiator's step pattern
+
+Checked by tests and offscreen pictures only; nothing was played or listened to.
+
+- The Arpeggiator (Track > MIDI FX… > Add MIDI FX > Arpeggiator) plays the held keys through a
+  pattern of up to 32 steps. Each step is on or off, has a velocity bar (drag across the bars
+  to draw them), can be tied into the next step, moved by up to 24 semitones either way, or
+  play the whole chord. Orders: Up, Down, Up and Down, Down and Up, Random, As Played, Chord,
+  over 1 to 4 octaves. Rate from a dotted quarter to a 1/32 triplet, Swing, Gate up to 200 %,
+  how much of the velocity comes from the bars, the pattern's length, ten built-in patterns
+  and Randomize.
+- Latch keeps the keys after they are let go. Trigger: Restart starts the pattern again with
+  each new chord; Song Position keeps the steps on the song's grid.
+- It now also plays the keys played live (a MIDI keyboard, Musical Typing, a note clicked in
+  the Piano Roll), on the song's beats while the song plays and at the project tempo while it
+  is stopped. Other MIDI FX still change only the notes in regions. Record > Send All Notes
+  Off lets go of latched keys.
+- A project saved with the Arpeggiator before this opens with the same notes: its settings
+  become a pattern with every step on.
+- `prowavectl`: `midi_fx.list`, `midi_fx.add`, `midi_fx.remove`, `midi_fx.set` and
+  `midi_fx.arpeggiator` (every setting and step by name).
+
+### 2026-11-18: the Singer's voices
+
+Checked by tests only; nothing was listened to.
+
+- CHIMERA is updated from upstream commit 09fb776 to eeb0c19 (122 upstream commits). It sounds
+  different: the lungs' pressure now reaches the mouth, women's and children's vocal folds are
+  modelled by their length, a phrase ending on a vowel fades as the folds part, and the Singer's
+  Ring narrows the whole tube above the folds. Lyrics in Korean, Russian, pinyin with tone
+  numbers and Chinese characters are sung. Phrases sung by the old engine are sung again.
+- "CHIMERA (09fb776)" keeps the old engine as a singer of its own, for the old sound.
+- Novox The Robot (Jonathan Mann, MIT), a formant singing voice, is a new singer for the Singer
+  and Vocal Top Line, with its voice presets and nine knobs. It is built from its C++ source.
+
 ### 2026-11-18: the public edition gets more of the private build
 
 - File > Bounce > Project or Section, File > Export > All Tracks as Audio Files, Bounce >

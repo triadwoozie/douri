@@ -1,0 +1,19 @@
+Circuit model DSP (vendored)
+
+Source:  https://github.com/somewheresystems/analog-to-vst, template/dsp/src,
+         commit f5a9d8dafdb2691dc8a07fc685e1991b796f3c19 (f5a9d8d, 2026-10-10)
+Author:  Somewhere Systems
+Licence: MIT. LICENSE is the upstream repository's own LICENSE file at that commit, unchanged.
+
+What is here, unchanged from upstream: the seven files of template/dsp/src (circuit.rs,
+control.rs, lib.rs, model.rs, netlist.rs, oversample.rs, processor.rs): the netlist, the
+per-sample circuit solver, the oversampler, the control tapers, and the example circuit the
+template ships (an op-amp gain stage into a diode pair, with Gain and Level pots).
+
+What is not: upstream's plug-in shell, renderer, xtask, SPICE reference harness, scripts, docs
+and the bench example.
+
+Written for Pro Wave, under the same MIT licence: Cargo.toml (upstream's takes its version,
+edition and licence from its workspace; the package is named circuit-dsp here, upstream's is
+dsp), rustfmt.toml, and this file. Pro Wave's effect around it is
+crates/prowave-engine/src/native_fx/circuit.rs.

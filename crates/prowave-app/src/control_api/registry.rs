@@ -179,6 +179,8 @@ pub fn all() -> &'static [Method] {
         let mut v = Vec::new();
         v.extend(super::m_core::methods());
         v.extend(super::m_tracks::methods());
+        v.extend(super::m_midi_fx::methods());
+        v.extend(super::m_kits::methods());
         v.extend(super::m_regions::methods());
         v.extend(super::m_ui::methods());
         v.extend(super::render::methods());

@@ -828,6 +828,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "chimera-09fb776"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "chip-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "circuit-dsp"
+version = "0.1.0"
+
+[[package]]
 name = "clang-sys"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1307,6 +1327,12 @@ name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "ecolor"
@@ -2544,6 +2570,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "mi-plaits-dsp"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "num-traits",
+ "spin",
+]
+
+[[package]]
 name = "midir"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2728,6 +2770,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "novox"
+version = "1.0.1"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -3547,12 +3596,13 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "prowave-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "base64",
  "block2 0.6.2",
  "chimera",
+ "chimera-09fb776",
  "coremidi",
  "eframe",
  "egui",
@@ -3562,6 +3612,7 @@ dependencies = [
  "libc",
  "midir",
  "muda",
+ "novox",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "prowave-engine",
@@ -3588,8 +3639,12 @@ dependencies = [
  "assert_no_alloc",
  "block2 0.6.2",
  "cc",
+ "chip-dsp",
+ "circuit-dsp",
  "cpal",
  "memmap2",
+ "mi-dsp",
+ "mi-plaits-dsp",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-audio-toolbox",
@@ -4330,6 +4385,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spin"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
+dependencies = [
+ "lock_api",
 ]
 
 [[package]]

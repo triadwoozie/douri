@@ -1,0 +1,16 @@
+CHIMERA voice engine, commit 09fb776 (vendored)
+
+Source:  https://github.com/jamesondh/chimera-vocal-synth, crates/chimera,
+         commit 09fb7769ec13d3a5ff19345c145b4af23d762b82 (09fb776, 2026-11-07)
+Author:  Jameson Hodge
+Licence: MIT. The repository had no LICENSE file at this commit; it added one in commit 5ab44de
+         (2026-11-08), and LICENSE here is that file, byte for byte.
+
+This is the copy Pro Wave vendored first (it was crates/chimera until the update to eeb0c19).
+It stays so the Singer and Vocal Top Line can sing with it ("CHIMERA (09fb776)"), as they did
+before the update. src/ is upstream's, unchanged; the manifest stands alone (version, edition and
+licence written out, the package renamed chimera-09fb776). rustfmt.toml is this fork's.
+
+Its English letter-to-sound reads the CMU Pronouncing Dictionary vendored with the current
+engine (crates/chimera/data/cmudict.txt.gz, unchanged between the two commits; licence in
+crates/chimera/data/CMUDICT-LICENSE.txt).

@@ -1,0 +1,16 @@
+# A resonator, a spectral processor and a digital oscillator: the DSP code of three Eurorack
+# modules by Emilie Gillet, vendored from github.com/pichenettes/eurorack (commit f4cfa76; stmlib
+# at e3bd7c9), MIT licence (see LICENSE and NOTICE), built with the cc crate behind a small C
+# interface (shim/). The C++ source in eurorack/ is unchanged.
+[package]
+name = "mi-dsp"
+description = "Resonator, spectral processor and digital oscillator DSP (C++), with a C interface for Pro Wave's native instruments and effects"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+links = "pw_mi"
+build = "build.rs"
+
+[build-dependencies]
+cc = "1"

@@ -1,0 +1,27 @@
+Novox The Robot singing-voice engine (vendored)
+
+Source:  https://github.com/songadaymann/novox-the-robot, engine/src,
+         commit e18d86ca15738e72ca150042f20e7043bf8fadb8 (e18d86c, tag v1.0.1-beta.2, 2026-10-21)
+Author:  Jonathan Mann
+Licence: MIT. LICENSE is the upstream repository's own LICENSE file at that commit, unchanged.
+         (Upstream's plug-in in plugin/, built on JUCE, is AGPL-3.0; none of it is here.)
+
+What is here, unchanged from upstream: the engine's core in engine/src, the files the Singer
+needs to sing a score: the dictionary and its spelling rules (lexicon), the phonemes, the
+planner, the score, the voice presets and the formant synthesizer (synth), and the JSON and
+UTF-8 helpers they include.
+
+What is not: upstream's own C API (engine/src/novox.cpp, engine/include/novox.h), MIDI and
+MusicXML import, transcription and pitch tracking (import, transcribe, singing_pitch,
+singing_segment, spectrum, syllables, articulation), the CLI, the bindings, the tests, the
+plug-in and the web app.
+
+Written for Pro Wave, under the same MIT licence: shim/pw_novox.h and shim/pw_novox.cpp (a
+smaller C interface over the engine's C++ classes, which never lets a C++ exception out),
+build.rs (builds the C++ with the cc crate), src/lib.rs (the Rust declarations of that
+interface), and this file.
+
+data/cmudict.dict.gz is upstream's data/cmudict.dict (the CMU Pronouncing Dictionary),
+compressed here with gzip -9n and otherwise unchanged; upstream compiles it into the engine,
+Pro Wave reads it at run time. Its BSD-style licence is in data/cmudict.LICENSE (Copyright (C)
+1993-2015 Carnegie Mellon University).

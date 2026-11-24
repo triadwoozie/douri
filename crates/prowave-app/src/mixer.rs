@@ -1834,17 +1834,20 @@ fn au_menu(
                 .collect();
             items.sort_by_key(|c| c.name.to_lowercase());
             let off = crate::plugins::quarantined();
-            for c in items {
-                if let Some(id) = plugin_menu_item(ui, c, &off, prefer_vst3) {
-                    crate::plugins::release(&id);
-                    picked = Some(crate::plugins::AuChoice {
-                        id,
-                        alt_id: None,
-                        ..c.clone()
-                    });
-                    ui.close();
+            // A maker with more plug-ins than the window has room for scrolls.
+            crate::widgets::menu_scroll(ui, |ui| {
+                for c in items {
+                    if let Some(id) = plugin_menu_item(ui, c, &off, prefer_vst3) {
+                        crate::plugins::release(&id);
+                        picked = Some(crate::plugins::AuChoice {
+                            id,
+                            alt_id: None,
+                            ..c.clone()
+                        });
+                        ui.close();
+                    }
                 }
-            }
+            });
         });
     }
     // A plug-in installed as both AU and VST3 is one entry; this picks which one it loads.
@@ -1954,6 +1957,8 @@ fn instrument_slot(
     let (mut pick, mut remove, mut open) = (None, false, false);
     // A built-in instrument picked: what makes its slot.
     let mut built_in: Option<fn() -> crate::plugins::PluginSlot> = None;
+    // A native instrument picked (the engine's table).
+    let mut native: Option<&'static prowave_engine::NativeInstInfo> = None;
     let list = &v.au_list;
     let popup = if loaded.is_some() {
         egui::Popup::context_menu(&resp)
@@ -1962,40 +1967,51 @@ fn instrument_slot(
     };
     popup.show(|ui| {
         ui.set_min_width(170.0);
-        if loaded.is_some() {
-            if ui.button(tr("Open")).clicked() {
-                open = true;
+        // More makers than the window has room for: the menu scrolls.
+        crate::widgets::menu_scroll(ui, |ui| {
+            if loaded.is_some() {
+                if ui.button(tr("Open")).clicked() {
+                    open = true;
+                    ui.close();
+                }
+                ui.separator();
+            }
+            if ui.button(tr("Channel Rack")).clicked() {
+                built_in = Some(crate::channel_rack::new_slot);
                 ui.close();
             }
-            ui.separator();
-        }
-        if ui.button(tr("Channel Rack")).clicked() {
-            built_in = Some(crate::channel_rack::new_slot);
-            ui.close();
-        }
-        if ui.button(tr("Singer")).clicked() {
-            built_in = Some(crate::singer::new_slot);
-            ui.close();
-        }
-        if ui.button("808").clicked() {
-            built_in = Some(crate::bass808::new_slot);
-            ui.close();
-        }
-        ui.separator();
-        if let Some(c) = au_menu(ui, list, true) {
-            pick = Some(c.clone());
-        }
-        if loaded.is_some() {
-            ui.separator();
-            if ui.button(tr("Remove")).clicked() {
-                remove = true;
+            if ui.button(tr("Singer")).clicked() {
+                built_in = Some(crate::singer::new_slot);
                 ui.close();
             }
-        }
+            if ui.button("808").clicked() {
+                built_in = Some(crate::bass808::new_slot);
+                ui.close();
+            }
+            for info in prowave_engine::native_instruments() {
+                if ui.button(info.name).clicked() {
+                    native = Some(info);
+                    ui.close();
+                }
+            }
+            ui.separator();
+            if let Some(c) = au_menu(ui, list, true) {
+                pick = Some(c.clone());
+            }
+            if loaded.is_some() {
+                ui.separator();
+                if ui.button(tr("Remove")).clicked() {
+                    remove = true;
+                    ui.close();
+                }
+            }
+        });
     });
     let t = &mut p.tracks[i];
-    if let Some(new_slot) = built_in {
-        let slot = new_slot();
+    let made = native
+        .map(crate::native_inst_ui::new_slot)
+        .or_else(|| built_in.map(|new_slot| new_slot()));
+    if let Some(slot) = made {
         v.open_plugin = Some((slot.uid, slot.name.clone()));
         t.au_instrument = Some(slot);
         t.soundfont = None;
@@ -2046,21 +2062,24 @@ fn empty_fx_slot(
     let mut space = false;
     egui::Popup::menu(&resp).show(|ui| {
         ui.set_min_width(170.0);
-        // The native effects (FL Studio's dynamics, as Lemon Studio recreated them).
-        for info in prowave_engine::native_effects() {
-            if ui.button(info.name).clicked() {
-                native = Some(info);
+        // More makers than the window has room for: the menu scrolls.
+        crate::widgets::menu_scroll(ui, |ui| {
+            // The native effects (FL Studio's dynamics, as Lemon Studio recreated them).
+            for info in prowave_engine::native_effects() {
+                if ui.button(info.name).clicked() {
+                    native = Some(info);
+                    ui.close();
+                }
+            }
+            if room && ui.button(tr("Space Designer")).clicked() {
+                space = true;
                 ui.close();
             }
-        }
-        if room && ui.button(tr("Space Designer")).clicked() {
-            space = true;
-            ui.close();
-        }
-        ui.separator();
-        if let Some(c) = au_menu(ui, list, false) {
-            pick = Some(c.clone());
-        }
+            ui.separator();
+            if let Some(c) = au_menu(ui, list, false) {
+                pick = Some(c.clone());
+            }
+        });
     });
     if space {
         apply_insert(p, v, i, 0, InsertAct::Add(prowave_engine::FxKind::Reverb));
@@ -3863,6 +3882,42 @@ mod tests {
         );
         assert!(p.tracks[0].volume_db < moved);
         assert_eq!(p.tracks[second].volume_db, before);
+    }
+
+    #[test]
+    fn an_audio_fx_menu_with_more_makers_than_fit_stays_inside_the_window() {
+        let mut h = crate::ui_test::Harness::new(1400.0, 700.0);
+        let mut s = UiState::new();
+        let mut p = mixer_project();
+        s.mixer.au_list = (0..150)
+            .map(|n| crate::plugins::AuChoice {
+                id: format!("test:{n}"),
+                manufacturer: format!("Maker {n:03}"),
+                name: "Effect".to_string(),
+                instrument: false,
+                alt_id: None,
+            })
+            .collect();
+        run(&mut h, &mut p, &mut s, 2);
+        let area = Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 700.0));
+        let lay = Layout::new(area, &p, &MixerView::default());
+        let strip = lay.strip_rects(0.0)[0];
+        // The empty Audio FX slot of the first strip.
+        let slot = pos2(strip.center().x, lay.rows.fx + lay.rows.d.sh / 2.0);
+        h.click(slot, |ui| show(ui, &mut p, &mut s, &Meters::default()));
+        run(&mut h, &mut p, &mut s, 3);
+        let menus: Vec<Rect> = h.ctx.memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .iter()
+                .filter(|l| l.order == egui::Order::Foreground)
+                .filter_map(|l| m.area_rect(l.id))
+                .collect()
+        });
+        assert!(!menus.is_empty(), "the menu opened");
+        for r in menus {
+            assert!(area.contains_rect(r), "the menu {r:?} is inside {area:?}");
+        }
     }
 
     #[test]

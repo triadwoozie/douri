@@ -725,7 +725,7 @@ pub fn plugin_values(s: &crate::plugins::PluginSlot, slot: u8) -> Vec<(AutoTarge
         _ => u32::MAX,
     };
     let own: Box<dyn Fn(u32) -> Option<f32>> =
-        if let Some(info) = prowave_engine::native_info(&s.id) {
+        if let Some(info) = crate::native_inst_ui::any_info(&s.id) {
             let vals = crate::native_fx_ui::values(s, info);
             Box::new(move |k| vals.get(k as usize).copied())
         } else if crate::channel_rack::is_rack(s) {
@@ -885,7 +885,7 @@ pub fn plugin_params(
     slot: u8,
     au: Option<&HashMap<u64, Vec<AuParamInfo>>>,
 ) -> Vec<ParamDesc> {
-    if let Some(info) = prowave_engine::native_info(&s.id) {
+    if let Some(info) = crate::native_inst_ui::any_info(&s.id) {
         return info
             .params
             .iter()

@@ -1,5 +1,6 @@
 //! Device-independent engine core. `EngineCore::process` is the audio-thread entry point:
 //! no allocation, no locks, no syscalls. Unit-testable without an audio device.
+use crate::arp::{ArpEvent, ArpRunner, ArpSettings};
 use crate::clock::song_position;
 use crate::disk::{Block, ClipShared};
 use crate::fx::{Chain, Pdc, MAX_FX_PARAMS};
@@ -42,6 +43,20 @@ pub struct NoteEvent {
     pub pitch: u8,
     pub vel: u8,
     pub track: u16,
+}
+
+/// Tracks that can have an Arpeggiator for live playing at once.
+pub const MAX_LIVE_ARPS: usize = 64;
+/// Note starts and ends one Arpeggiator can make in one frame; starts stop at half of it so
+/// that an end is never lost.
+const ARP_EVENTS: usize = 256;
+
+/// The Arpeggiator of a track's live keys.
+#[derive(Clone, Copy)]
+struct LiveArp {
+    track: u16,
+    settings: ArpSettings,
+    run: ArpRunner,
 }
 
 /// A MIDI note the engine sends out for a track that plays an external instrument (Logic:
@@ -506,7 +521,8 @@ pub enum Command {
     SetMasterPluginsOff(u64),
     /// MIDI clock out on or off (Logic: Transmit MIDI Clock).
     SetMidiClock(bool),
-    /// Parameter `index` of the `effect`-th plug-in effect of `track` (native effects);
+    /// Parameter `index` of the `effect`-th plug-in effect of `track` (native effects), or of
+    /// its instrument when `effect` is [`crate::INSTRUMENT_PARAM`] (native instruments);
     /// [`MASTER_TRACK`] for the master bus.
     SetPluginParam {
         track: u16,
@@ -688,6 +704,17 @@ pub enum Command {
         track: u16,
         frames: u32,
     },
+    /// The Arpeggiator of `track` for the keys played live on it (`None`: none): they are
+    /// held by it and its step pattern plays them, on the song's beats while the song plays
+    /// and at the project tempo while it is stopped. (The notes in the track's regions are
+    /// arpeggiated before they get here, see [`crate::arp::render`].) At most
+    /// [`MAX_LIVE_ARPS`] tracks have one; more are ignored.
+    SetTrackArp {
+        track: u16,
+        arp: Option<ArpSettings>,
+    },
+    /// Every Arpeggiator lets go of its keys (latched ones too) and ends its notes.
+    ReleaseArps,
 }
 
 impl Command {
@@ -1181,6 +1208,13 @@ pub struct EngineCore {
     /// frame instead of the transport's beat (a fraction of a frame past it), so what sits
     /// on the cycle start plays on every pass. NaN otherwise.
     wrap_beat: f64,
+    /// The Arpeggiators of the tracks played live (see [`Command::SetTrackArp`]).
+    arps: Vec<LiveArp>,
+    /// Their notes of one frame, on the way to the instruments.
+    arp_events: Vec<ArpEvent>,
+    /// Their clock in beats: the song's while it plays; while it is stopped it runs on from
+    /// there at the tempo of the playhead.
+    arp_clock: f64,
 }
 
 /// Regions of live tracks that can be delayed at once (see [`Command::SetContentDelay`]).
@@ -1399,6 +1433,9 @@ impl EngineCore {
             transport_hist: vec![f64::NAN; BEAT_HISTORY],
             transport_pos: 0,
             wrap_beat: f64::NAN,
+            arps: Vec::with_capacity(MAX_LIVE_ARPS),
+            arp_events: Vec::with_capacity(ARP_EVENTS),
+            arp_clock: 0.0,
         }
     }
 
@@ -2629,6 +2666,12 @@ impl EngineCore {
             Command::NoteOn { pitch, vel, track } => {
                 self.live_note_on(pitch.min(127), vel.clamp(1, 127), track)
             }
+            Command::SetTrackArp { track, arp } => self.set_track_arp(track, arp),
+            Command::ReleaseArps => {
+                for i in 0..self.arps.len() {
+                    self.with_arp(i, |run, _, now, out| run.stop(now, &mut |e| out(e)));
+                }
+            }
             Command::NoteOff { pitch } => self.live_note_off(pitch, None),
             Command::NoteOffTrack { pitch, track } => self.live_note_off(pitch, Some(track)),
             Command::SetTrackExternal { track, external } => {
@@ -2916,7 +2959,151 @@ impl EngineCore {
         idx
     }
 
+    /// The beat the Arpeggiator of `track` is at: the song's as it is heard on the track
+    /// (its regions are heard its content delay late), or the free clock while stopped.
+    fn arp_now(&self, track: u16) -> f64 {
+        if self.playing {
+            let lag = self.content_delay.get(track as usize).copied().unwrap_or(0);
+            self.beat_ago(lag as usize)
+        } else {
+            self.arp_clock
+        }
+    }
+
+    /// Runs `f` on Arpeggiator `i` (its runner, settings, the beat it is at and where its
+    /// notes go), then plays the notes it made. No allocation.
+    fn with_arp(
+        &mut self,
+        i: usize,
+        f: impl FnOnce(&mut ArpRunner, &ArpSettings, f64, &mut dyn FnMut(ArpEvent)),
+    ) {
+        let Some(track) = self.arps.get(i).map(|a| a.track) else {
+            return;
+        };
+        let now = self.arp_now(track);
+        let mut events = std::mem::take(&mut self.arp_events);
+        events.clear();
+        {
+            let a = &mut self.arps[i];
+            let settings = a.settings;
+            let room = events.capacity();
+            f(&mut a.run, &settings, now, &mut |e: ArpEvent| {
+                // A note that cannot be started is left out; one that ends always gets through.
+                if events.len() < if e.on { room / 2 } else { room } {
+                    events.push(e);
+                }
+            });
+        }
+        for &e in &events {
+            if e.on {
+                self.sound_live_on(e.pitch, e.vel, track);
+            } else {
+                self.sound_live_off(e.pitch, Some(track), false);
+            }
+        }
+        events.clear();
+        self.arp_events = events;
+    }
+
+    /// The Arpeggiators play what is due on this frame.
+    fn tick_arps(&mut self) {
+        for i in 0..self.arps.len() {
+            if !self.arps[i].run.idle() {
+                self.with_arp(i, |run, s, now, out| run.clock(s, now, &mut |e| out(e)));
+            }
+        }
+    }
+
+    fn set_track_arp(&mut self, track: u16, arp: Option<ArpSettings>) {
+        if track as usize >= MAX_TRACKS {
+            return;
+        }
+        let at = self.arps.iter().position(|a| a.track == track);
+        match (at, arp) {
+            (Some(i), Some(s)) => {
+                let s = s.sanitized();
+                let old = std::mem::replace(&mut self.arps[i].settings, s);
+                if old.latch && !s.latch {
+                    self.arps[i].run.unlatch();
+                }
+                // Another step length or grid: the held chord starts again on it.
+                if old.rate != s.rate || old.sync != s.sync {
+                    self.with_arp(i, |run, s, now, out| run.jump(s, now, &mut |e| out(e)));
+                }
+            }
+            (None, Some(s)) => {
+                if self.arps.len() < MAX_LIVE_ARPS {
+                    // Keys already down play on as plain notes: they end here.
+                    self.release_live_track(track);
+                    self.arps.push(LiveArp {
+                        track,
+                        settings: s.sanitized(),
+                        run: ArpRunner::default(),
+                    });
+                }
+            }
+            (Some(i), None) => {
+                self.with_arp(i, |run, _, now, out| run.stop(now, &mut |e| out(e)));
+                self.arps.swap_remove(i);
+            }
+            (None, None) => {}
+        }
+    }
+
+    /// Ends every live note of `track`.
+    fn release_live_track(&mut self, track: u16) {
+        let mut i = 0;
+        while i < self.ext_notes.len() {
+            let e = self.ext_notes[i];
+            if e.live && e.track == track {
+                self.ext_notes.swap_remove(i);
+                self.send_midi(e.track, false, e.pitch, 0, false);
+            } else {
+                i += 1;
+            }
+        }
+        for v in self
+            .voices
+            .iter_mut()
+            .filter(|v| v.active && v.live && v.track == track)
+        {
+            v.releasing = true;
+        }
+        for n in self
+            .sf_notes
+            .iter_mut()
+            .filter(|n| n.active && n.live && n.track == track)
+        {
+            n.released = true;
+        }
+    }
+
+    /// A key played live goes down: held by the track's Arpeggiator when it has one,
+    /// sounded at once otherwise.
     fn live_note_on(&mut self, pitch: u8, vel: u8, track: u16) {
+        if let Some(i) = self.arps.iter().position(|a| a.track == track) {
+            let now = self.arp_now(track);
+            let a = &mut self.arps[i];
+            a.run.set_clock(now);
+            a.run.key_down(&a.settings, pitch, vel, now);
+            return;
+        }
+        self.sound_live_on(pitch, vel, track);
+    }
+
+    /// A key played live goes up. The notes an Arpeggiator made of it end by themselves.
+    fn live_note_off(&mut self, pitch: u8, track: Option<u16>) {
+        for a in self
+            .arps
+            .iter_mut()
+            .filter(|a| track.is_none_or(|t| a.track == t))
+        {
+            a.run.key_up(&a.settings, pitch);
+        }
+        self.sound_live_off(pitch, track, true);
+    }
+
+    fn sound_live_on(&mut self, pitch: u8, vel: u8, track: u16) {
         if self.plays_elsewhere(track) {
             self.ext_note_on(
                 NoteEvent {
@@ -2949,25 +3136,36 @@ impl EngineCore {
         v.live_left = live_left;
     }
 
-    fn live_note_off(&mut self, pitch: u8, track: Option<u16>) {
+    /// Ends the live notes of `pitch` (on `track`, or on every track). `keys`: a key went
+    /// up, which ends no note of a track with an Arpeggiator.
+    fn sound_live_off(&mut self, pitch: u8, track: Option<u16>, keys: bool) {
         let mut i = 0;
         while i < self.ext_notes.len() {
             let e = self.ext_notes[i];
-            if e.live && e.pitch == pitch && track.is_none_or(|t| e.track == t) {
+            let ends = track.is_none_or(|x| x == e.track)
+                && !(keys && self.arps.iter().any(|a| a.track == e.track));
+            if e.live && e.pitch == pitch && ends {
                 self.ext_notes.swap_remove(i);
                 self.send_midi(e.track, false, e.pitch, 0, false);
             } else {
                 i += 1;
             }
         }
-        for v in self.voices.iter_mut().filter(|v| {
-            v.active && v.live && v.pitch == pitch && track.is_none_or(|t| v.track == t)
-        }) {
+        let arps = &self.arps;
+        let ends =
+            |t: u16| track.is_none_or(|x| x == t) && !(keys && arps.iter().any(|a| a.track == t));
+        for v in self
+            .voices
+            .iter_mut()
+            .filter(|v| v.active && v.live && v.pitch == pitch && ends(v.track))
+        {
             v.releasing = true;
         }
-        for n in self.sf_notes.iter_mut().filter(|n| {
-            n.active && n.live && n.pitch == pitch && track.is_none_or(|t| n.track == t)
-        }) {
+        for n in self
+            .sf_notes
+            .iter_mut()
+            .filter(|n| n.active && n.live && n.pitch == pitch && ends(n.track))
+        {
             n.released = true;
         }
     }
@@ -3293,6 +3491,9 @@ impl EngineCore {
                 }
             }
             let (mut l, mut r) = (0f64, 0f64);
+            if !self.arps.is_empty() {
+                self.tick_arps();
+            }
             if self.playing {
                 while let Some(n) = self.song.notes.get(self.next_note).copied() {
                     if n.start_beat > self.beat {
@@ -3515,9 +3716,14 @@ impl EngineCore {
                 frame[1] = r;
             }
             // Render events at the current sample position, then advance to the next one.
+            if !self.playing {
+                // The Arpeggiators' clock runs on at the tempo of where the playhead stands.
+                self.arp_clock += audition_bpf;
+            }
             if self.playing {
                 let prev = self.beat;
                 self.beat = self.tempo_map.advance(prev, frame_secs);
+                self.arp_clock = self.beat;
                 if self.mtc.is_on() {
                     self.mtc_secs += frame_secs;
                     let frames = self.mtc_frames();
@@ -5940,5 +6146,298 @@ mod tests {
         assert!(c.sustain);
         c.apply(129, 127);
         assert_eq!(c.vibrato_cents(), 50.0);
+    }
+
+    /// A core whose track 0 plays an external instrument through an Arpeggiator, and the
+    /// queue its notes go out on.
+    fn arp_rig(arp: ArpSettings) -> (EngineCore, Producer<Command>, Consumer<MidiOutEvent>) {
+        let (mut e, mut tx, _s) = rig();
+        let Some(midi) = e.take_midi_out_reader() else {
+            panic!("the MIDI out reader");
+        };
+        assert!(tx
+            .push(Command::SetTrackExternal {
+                track: 0,
+                external: true
+            })
+            .is_ok());
+        assert!(tx
+            .push(Command::SetTrackArp {
+                track: 0,
+                arp: Some(arp)
+            })
+            .is_ok());
+        (e, tx, midi)
+    }
+
+    /// Plays `ms` milliseconds a millisecond at a time; the notes that went out, each with
+    /// the millisecond it went out in (counted from `from`): (ms, on, pitch, velocity).
+    fn arp_run(
+        e: &mut EngineCore,
+        midi: &mut Consumer<MidiOutEvent>,
+        from: usize,
+        ms: usize,
+    ) -> Vec<(usize, bool, u8, u8)> {
+        let mut buf = vec![0.0f32; 48 * 2];
+        let mut out = Vec::new();
+        for k in 0..ms {
+            e.process(&mut buf);
+            while let Ok(m) = midi.pop() {
+                if m.system == 0 && !m.controller {
+                    out.push((from + k, m.on, m.pitch, m.vel));
+                }
+            }
+        }
+        out
+    }
+
+    fn keys_down(tx: &mut Producer<Command>, pitches: &[u8]) {
+        for &pitch in pitches {
+            assert!(tx
+                .push(Command::NoteOn {
+                    pitch,
+                    vel: 90,
+                    track: 0
+                })
+                .is_ok());
+        }
+    }
+
+    fn ons(notes: &[(usize, bool, u8, u8)]) -> Vec<(usize, u8)> {
+        notes.iter().filter(|n| n.1).map(|n| (n.0, n.2)).collect()
+    }
+
+    #[test]
+    fn a_live_arpeggiator_plays_held_keys_at_the_project_tempo_while_stopped() {
+        use crate::arp::ArpRate;
+        let arp = ArpSettings {
+            rate: ArpRate::Eighth,
+            gate: 50,
+            step_velocity: 0,
+            ..ArpSettings::default()
+        };
+        let (mut e, mut tx, mut midi) = arp_rig(arp);
+        keys_down(&mut tx, &[64, 60, 67]);
+        // 120 BPM: an eighth note every quarter of a second, from the moment the keys go down.
+        let notes = arp_run(&mut e, &mut midi, 0, 1000);
+        assert_eq!(
+            ons(&notes),
+            [(0, 60), (250, 64), (500, 67), (750, 60)],
+            "{notes:?}"
+        );
+        assert!(notes.iter().filter(|n| n.1).all(|n| n.3 == 90));
+        // Each ends after half a step.
+        let offs: Vec<(usize, u8)> = notes.iter().filter(|n| !n.1).map(|n| (n.0, n.2)).collect();
+        assert_eq!(offs, [(125, 60), (375, 64), (625, 67), (875, 60)]);
+        // The tempo changes: the steps follow it (60 BPM: one every half second).
+        let map = TempoMap::new(
+            vec![crate::tempo_map::TempoEvent {
+                beat: 0.0,
+                bpm: 60.0,
+                curve: crate::tempo_map::TempoCurve::Step,
+            }],
+            vec![],
+        );
+        assert!(tx.push(Command::SetTempoMap(Box::new(map))).is_ok());
+        let slow = ons(&arp_run(&mut e, &mut midi, 1000, 900));
+        assert_eq!(slow, [(1000, 64), (1500, 67)], "{slow:?}");
+        // The keys go up while a note sounds: it ends by itself (half a step after it
+        // started) and nothing more is played.
+        for pitch in [60, 64, 67] {
+            assert!(tx.push(Command::NoteOffTrack { pitch, track: 0 }).is_ok());
+        }
+        let _ = arp_run(&mut e, &mut midi, 1900, 100);
+        keys_down(&mut tx, &[72]);
+        let last = arp_run(&mut e, &mut midi, 2000, 100);
+        assert_eq!(last, [(2000, true, 72, 90)], "{last:?}");
+        assert!(tx
+            .push(Command::NoteOffTrack {
+                pitch: 72,
+                track: 0
+            })
+            .is_ok());
+        let after = arp_run(&mut e, &mut midi, 2100, 1000);
+        assert_eq!(after, [(2250, false, 72, 0)], "{after:?}");
+        // A track without an Arpeggiator plays its keys as they are.
+        assert!(tx
+            .push(Command::SetTrackExternal {
+                track: 1,
+                external: true
+            })
+            .is_ok());
+        assert!(tx
+            .push(Command::NoteOn {
+                pitch: 40,
+                vel: 70,
+                track: 1
+            })
+            .is_ok());
+        assert!(tx.push(Command::NoteOff { pitch: 40 }).is_ok());
+        let plain = arp_run(&mut e, &mut midi, 0, 10);
+        assert_eq!(plain, [(0, true, 40, 70), (0, false, 40, 0)]);
+    }
+
+    #[test]
+    fn a_live_arpeggiator_follows_the_song_position_and_its_tempo_changes() {
+        use crate::arp::ArpRate;
+        use crate::tempo_map::{TempoCurve, TempoEvent};
+        let arp = ArpSettings {
+            rate: ArpRate::Eighth,
+            gate: 50,
+            sync: true,
+            ..ArpSettings::default()
+        };
+        let (mut e, mut tx, mut midi) = arp_rig(arp);
+        // 120 BPM for the first beat, then 60 BPM.
+        let map = TempoMap::new(
+            vec![
+                TempoEvent {
+                    beat: 0.0,
+                    bpm: 120.0,
+                    curve: TempoCurve::Step,
+                },
+                TempoEvent {
+                    beat: 1.0,
+                    bpm: 60.0,
+                    curve: TempoCurve::Step,
+                },
+            ],
+            vec![],
+        );
+        assert!(tx.push(Command::SetTempoMap(Box::new(map))).is_ok());
+        assert!(tx.push(Command::Play).is_ok());
+        // The key goes down 100 ms into the song, between two steps: it waits for the song's
+        // next eighth note (beat 0.5, at 250 ms), then plays every eighth: beat 1 at 500 ms,
+        // and at the slower tempo beat 1.5 at 1000 ms and beat 2 at 1500 ms.
+        let before = arp_run(&mut e, &mut midi, 0, 100);
+        assert!(before.is_empty());
+        keys_down(&mut tx, &[60]);
+        let notes = ons(&arp_run(&mut e, &mut midi, 100, 1600));
+        let at: Vec<usize> = notes.iter().map(|n| n.0).collect();
+        assert_eq!(at.len(), 4, "{notes:?}");
+        for (got, want) in at.iter().zip([250usize, 500, 1000, 1500]) {
+            assert!(got.abs_diff(want) <= 1, "{at:?}");
+        }
+        // The playhead jumps: the note that sounds ends and the steps are those of the new
+        // place (beat 8.25 is in the middle of a step, the next is beat 8.5).
+        assert!(tx.push(Command::SetPosition { beat: 8.25 }).is_ok());
+        let jumped = arp_run(&mut e, &mut midi, 0, 400);
+        let first_on = jumped.iter().find(|n| n.1).map(|n| n.0);
+        assert!(first_on.is_some_and(|t| t.abs_diff(250) <= 1), "{jumped:?}");
+        // The song stops: the keys still held play on, on the free clock.
+        assert!(tx.push(Command::Stop).is_ok());
+        let stopped = ons(&arp_run(&mut e, &mut midi, 0, 2000));
+        assert!(stopped.len() >= 3, "{stopped:?}");
+    }
+
+    #[test]
+    fn a_live_arpeggiator_latches_restarts_and_lets_go() {
+        use crate::arp::ArpRate;
+        let mut arp = ArpSettings {
+            rate: ArpRate::Sixteenth,
+            latch: true,
+            ..ArpSettings::default()
+        };
+        let (mut e, mut tx, mut midi) = arp_rig(arp);
+        keys_down(&mut tx, &[60, 64]);
+        assert!(tx.push(Command::NoteOff { pitch: 60 }).is_ok());
+        assert!(tx.push(Command::NoteOff { pitch: 64 }).is_ok());
+        // Latched: the keys play on after they were let go.
+        let held = ons(&arp_run(&mut e, &mut midi, 0, 500));
+        assert_eq!(held.len(), 4, "{held:?}");
+        assert_eq!(
+            held.iter().map(|n| n.1).collect::<Vec<_>>(),
+            [60, 64, 60, 64]
+        );
+        // A new key replaces them and starts the pattern from its first step, at once.
+        keys_down(&mut tx, &[72]);
+        let next = ons(&arp_run(&mut e, &mut midi, 0, 300));
+        assert_eq!(next[0], (0, 72), "{next:?}");
+        assert!(next.iter().all(|n| n.1 == 72));
+        // Latch off: the key that is not down any more is let go.
+        assert!(tx.push(Command::NoteOff { pitch: 72 }).is_ok());
+        arp.latch = false;
+        assert!(tx
+            .push(Command::SetTrackArp {
+                track: 0,
+                arp: Some(arp)
+            })
+            .is_ok());
+        let _ = arp_run(&mut e, &mut midi, 0, 200);
+        assert!(arp_run(&mut e, &mut midi, 0, 500).is_empty());
+        // All Notes Off lets latched keys go; taking the Arpeggiator away ends its notes.
+        arp.latch = true;
+        assert!(tx
+            .push(Command::SetTrackArp {
+                track: 0,
+                arp: Some(arp)
+            })
+            .is_ok());
+        keys_down(&mut tx, &[50]);
+        assert!(tx.push(Command::NoteOff { pitch: 50 }).is_ok());
+        assert!(!ons(&arp_run(&mut e, &mut midi, 0, 300)).is_empty());
+        assert!(tx.push(Command::ReleaseArps).is_ok());
+        let released = arp_run(&mut e, &mut midi, 0, 300);
+        assert!(released.iter().all(|n| !n.1), "{released:?}");
+        keys_down(&mut tx, &[50]);
+        let _ = arp_run(&mut e, &mut midi, 0, 10);
+        assert!(tx
+            .push(Command::SetTrackArp {
+                track: 0,
+                arp: None
+            })
+            .is_ok());
+        let gone = arp_run(&mut e, &mut midi, 0, 300);
+        assert_eq!(gone, [(0, false, 50, 0)]);
+        // Every note that started has ended.
+        keys_down(&mut tx, &[50]);
+        assert_eq!(arp_run(&mut e, &mut midi, 0, 5), [(0, true, 50, 90)]);
+    }
+
+    #[test]
+    fn a_live_arpeggiator_plays_the_built_in_synth_and_does_not_allocate() {
+        use crate::arp::{ArpMode, ArpRate};
+        let (mut e, mut tx, _s) = rig();
+        let song = Song::new(vec![], vec![TrackMix::default()]);
+        assert!(tx.push(Command::SetSong(Box::new(song))).is_ok());
+        let mut arp = ArpSettings {
+            rate: ArpRate::ThirtySecondTriplet,
+            mode: ArpMode::Chord,
+            octaves: 3,
+            gate: 200,
+            swing: 60,
+            ..ArpSettings::default()
+        };
+        arp.steps[1].tie = true;
+        arp.steps[2].chord = true;
+        assert!(tx
+            .push(Command::SetTrackArp {
+                track: 0,
+                arp: Some(arp)
+            })
+            .is_ok());
+        keys_down(&mut tx, &[48, 52, 55, 59, 62]);
+        let mut buf = vec![0.0f32; 512 * 2];
+        let mut peak = 0f32;
+        for k in 0..200 {
+            if k == 60 {
+                assert!(tx.push(Command::Play).is_ok());
+            }
+            if k == 120 {
+                assert!(tx.push(Command::Stop).is_ok());
+            }
+            assert_no_alloc::assert_no_alloc(|| e.process(&mut buf));
+            assert!(buf.iter().all(|x| x.is_finite()));
+            peak = buf.iter().fold(peak, |a, x| a.max(x.abs()));
+        }
+        assert!(peak > 0.01, "the synth is heard: {peak}");
+        // The keys go up: after the last notes ring out there is silence.
+        for pitch in [48, 52, 55, 59, 62] {
+            assert!(tx.push(Command::NoteOff { pitch }).is_ok());
+        }
+        for _ in 0..400 {
+            assert_no_alloc::assert_no_alloc(|| e.process(&mut buf));
+        }
+        assert!(buf.iter().all(|x| x.abs() < 1e-4));
     }
 }

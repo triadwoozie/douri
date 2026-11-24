@@ -1,0 +1,2 @@
+# Vendored upstream code (see NOTICE) and its C interface: not reformatted.
+disable_all_formatting = true

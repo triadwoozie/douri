@@ -1,11 +1,13 @@
 //! Vocal Top Line (Track > New Vocal Top Line Track): an instrument track whose notes and
-//! lyrics (see `lyrics.rs`) are sung by a DiffSinger voice or by CHIMERA, and the audio track
+//! lyrics (see `lyrics.rs`) are sung by a DiffSinger voice, CHIMERA or Novox The Robot, and the
+//! audio track
 //! under it that holds what was sung, one audio region per MIDI region, starting exactly where
 //! it starts.
 //!
 //! The singing is made offline from a score in seconds read off the tempo map (tempo changes
-//! and curves included). CHIMERA, a physical model of the voice (`chimera_singer.rs`), is sung
-//! in this program on the render thread.
+//! and curves included). CHIMERA, a physical model of the voice (`chimera_singer.rs`), and
+//! Novox The Robot, a formant synthesizer (`novox_singer.rs`), are sung in this program on the
+//! render thread.
 //! A DiffSinger voice is sung by `tools/vocal/engine` (OpenUtau's DiffSinger runtime with no
 //! window, installed by `tools/vocal/setup.sh` with a voice the user downloads) on this Mac.
 //! The notes are cut into phrases at rests; each phrase
@@ -47,6 +49,8 @@ const CACHE_BYTES: u64 = 256 << 20;
 const ENGINE_BIN: &str = "engine/OpenUtau.Test";
 
 /// Who sings a track.
+// `DiffSinger` is the engine's own name, not the enum's suffix.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Singer {
     /// An installed DiffSinger voice (tools/vocal/setup.sh), sung by the external engine.
@@ -54,10 +58,20 @@ pub enum Singer {
     DiffSinger,
     /// The CHIMERA physical model, in this program.
     Chimera,
+    /// CHIMERA as it was before the engine's update (upstream commit 09fb776): the same
+    /// settings, the earlier sound.
+    Chimera09fb776,
+    /// Novox The Robot, a formant synthesizer, in this program.
+    Novox,
 }
 
 impl Singer {
-    pub const ALL: [Singer; 2] = [Singer::DiffSinger, Singer::Chimera];
+    pub const ALL: [Singer; 4] = [
+        Singer::DiffSinger,
+        Singer::Chimera,
+        Singer::Novox,
+        Singer::Chimera09fb776,
+    ];
     /// What a saved name nobody knows is, and a new track's singer: CHIMERA, which needs
     /// nothing installed (DiffSinger needs tools/vocal/setup.sh and a voice).
     const UNKNOWN: Singer = Singer::Chimera;
@@ -66,7 +80,19 @@ impl Singer {
         match self {
             Singer::DiffSinger => "diffsinger",
             Singer::Chimera => "chimera",
+            Singer::Chimera09fb776 => "chimera-09fb776",
+            Singer::Novox => "novox",
         }
+    }
+
+    /// Either copy of the CHIMERA engine (they share their settings).
+    pub fn is_chimera(self) -> bool {
+        matches!(self, Singer::Chimera | Singer::Chimera09fb776)
+    }
+
+    /// Sung in this program, on the render thread (not by DiffSinger's external engine).
+    pub fn in_process(self) -> bool {
+        self != Singer::DiffSinger
     }
 
     /// The saved name; an empty or unknown one (files from before CHIMERA) is DiffSinger.
@@ -82,6 +108,8 @@ impl Singer {
         match self {
             Singer::DiffSinger => "DiffSinger",
             Singer::Chimera => "CHIMERA",
+            Singer::Chimera09fb776 => "CHIMERA (09fb776)",
+            Singer::Novox => "Novox The Robot",
         }
     }
 }
@@ -146,7 +174,7 @@ pub struct VocalSettings {
     pub transition_ms: f32,
     pub place: Place,
     /// Who sings. The settings above it are DiffSinger's, except vibrato depth and rate, which
-    /// CHIMERA takes too; the ones below are CHIMERA's.
+    /// CHIMERA takes too; the ones below are CHIMERA's, then Novox's.
     pub singer: Singer,
     /// CHIMERA's body: 0..100 toward the female anatomy and toward the child's (0 and 0 is the
     /// adult male's).
@@ -156,6 +184,8 @@ pub struct VocalSettings {
     pub chimera_breathiness: f32,
     pub brightness: f32,
     pub ring: f32,
+    /// Novox The Robot's voice: its preset and the knobs over it.
+    pub novox: crate::novox_singer::Voice,
 }
 
 impl VocalSettings {
@@ -182,12 +212,17 @@ impl VocalSettings {
             chimera_breathiness: 15.0,
             brightness: 25.0,
             ring: 0.0,
+            novox: crate::novox_singer::Voice::new(),
         }
     }
 
     /// How CHIMERA sings with these settings.
     pub fn chimera_voice(&self) -> crate::chimera_singer::Voice {
         crate::chimera_singer::Voice {
+            engine: match self.singer {
+                Singer::Chimera09fb776 => crate::chimera_singer::Engine::V09fb776,
+                _ => crate::chimera_singer::Engine::Current,
+            },
             female: self.body_female,
             child: self.body_child,
             vibrato_depth: self.vibrato_depth,
@@ -214,6 +249,7 @@ impl VocalSettings {
         self.chimera_breathiness = c(self.chimera_breathiness, 0.0, 100.0, 15.0);
         self.brightness = c(self.brightness, 0.0, 100.0, 25.0);
         self.ring = c(self.ring, 0.0, 100.0, 0.0);
+        self.novox = self.novox.clamped();
         if !LANGUAGES.iter().any(|(code, _)| *code == self.language) {
             self.language = "en".into();
         }
@@ -224,8 +260,17 @@ impl VocalSettings {
 
     /// What the sound depends on (not where it is made): the singer and its settings.
     fn sound_key(&self, h: &mut Fnv) {
-        if self.singer == Singer::Chimera {
-            h.str(Singer::Chimera.name());
+        if self.singer == Singer::Novox {
+            h.str(self.singer.name());
+            h.u64(crate::novox_singer::REV);
+            h.str(&self.novox.preset);
+            for x in self.novox.key_values() {
+                h.u64(x.to_bits() as u64);
+            }
+            return;
+        }
+        if self.singer.is_chimera() {
+            h.str(self.singer.name());
             h.u64(crate::chimera_singer::REV);
             let v = self.chimera_voice();
             for x in [
@@ -317,6 +362,16 @@ pub fn to_doc(role: &VocalRole) -> prowave_project::VocalDoc {
             chimera_breathiness: v.chimera_breathiness,
             brightness: v.brightness,
             ring: v.ring,
+            novox_preset: v.novox.preset.clone(),
+            novox_formant: v.novox.formant,
+            novox_breathiness: v.novox.breathiness,
+            novox_grit: v.novox.grit,
+            novox_brightness: v.novox.brightness,
+            novox_voices: v.novox.voices,
+            novox_vibrato_depth: v.novox.vibrato_depth,
+            novox_vibrato_rate: v.novox.vibrato_rate,
+            novox_scoop: v.novox.scoop,
+            novox_portamento: v.novox.portamento,
         },
     }
 }
@@ -342,6 +397,23 @@ pub fn from_doc(d: &prowave_project::VocalDoc) -> Option<VocalRole> {
             d.ring,
         )
     };
+    // A file from before Novox has no Novox settings: its defaults.
+    let novox = if d.novox_preset.is_empty() {
+        fresh.novox.clone()
+    } else {
+        crate::novox_singer::Voice {
+            preset: d.novox_preset.clone(),
+            formant: d.novox_formant,
+            breathiness: d.novox_breathiness,
+            grit: d.novox_grit,
+            brightness: d.novox_brightness,
+            voices: d.novox_voices,
+            vibrato_depth: d.novox_vibrato_depth,
+            vibrato_rate: d.novox_vibrato_rate,
+            scoop: d.novox_scoop,
+            portamento: d.novox_portamento,
+        }
+    };
     match d.role.as_str() {
         "output" => Some(VocalRole::Output { link: d.link }),
         "score" => Some(VocalRole::Score(
@@ -365,6 +437,7 @@ pub fn from_doc(d: &prowave_project::VocalDoc) -> Option<VocalRole> {
                 chimera_breathiness,
                 brightness,
                 ring,
+                novox,
             }
             .clamped(),
         )),
@@ -466,7 +539,9 @@ pub fn region_phrases(
                     pitch: *pitch,
                     lyric: match set.singer {
                         Singer::DiffSinger => lyrics::engine_lyric(lyric),
-                        Singer::Chimera => crate::chimera_singer::lyric(lyric),
+                        Singer::Chimera | Singer::Chimera09fb776 | Singer::Novox => {
+                            crate::chimera_singer::lyric(lyric)
+                        }
                     },
                 })
                 .collect();
@@ -691,16 +766,61 @@ pub(crate) fn sing(
     }
 }
 
-/// Sings `todo` into the cache with CHIMERA, on this thread and helpers (one phrase each at a
-/// time, leaving two cores to the rest of the program).
-pub(crate) fn sing_chimera(
+/// How the last render of an in-process singer went: phrases sung, in how long, and the seconds
+/// of singing they hold.
+pub(crate) fn sung_message(singer: Singer, phrases: usize, secs: f64, sung_secs: f64) -> String {
+    let args: [&dyn std::fmt::Display; 3] =
+        [&phrases, &format!("{secs:.1}"), &format!("{sung_secs:.1}")];
+    match singer {
+        Singer::Novox => trf("{} phrases sung by Novox in {} s ({} s of singing)", &args),
+        _ => trf(
+            "{} phrases sung by CHIMERA in {} s ({} s of singing)",
+            &args,
+        ),
+    }
+}
+
+/// The voice the status LCD names under the singer: DiffSinger's voice, Novox's preset, none
+/// for CHIMERA.
+pub(crate) fn voice_name(set: &VocalSettings, voice: Option<&Voice>) -> String {
+    match set.singer {
+        Singer::DiffSinger => voice.map_or(set.voice.clone(), |v| v.name.clone()),
+        Singer::Novox => set.novox.preset.clone(),
+        Singer::Chimera | Singer::Chimera09fb776 => String::new(),
+    }
+}
+
+/// The credits printed at the foot of the window for the singer (the voice's licence).
+pub(crate) fn credits(set: &VocalSettings, voice: Option<&Voice>) -> Option<String> {
+    match set.singer {
+        Singer::Chimera | Singer::Chimera09fb776 => {
+            Some(tr("CHIMERA voice model by Jameson Hodge (MIT licence)").into())
+        }
+        Singer::Novox => {
+            Some(tr("Novox The Robot voice model by Jonathan Mann (MIT licence)").into())
+        }
+        Singer::DiffSinger => voice.map(|v| v.licence.clone()).filter(|l| !l.is_empty()),
+    }
+}
+
+/// One phrase sung by an in-process singer, at [`SAMPLE_RATE`].
+pub(crate) fn sing_phrase(set: &VocalSettings, ph: &Phrase) -> Vec<f32> {
+    if set.singer == Singer::Novox {
+        return crate::novox_singer::sing(&ph.notes, &set.novox, SAMPLE_RATE);
+    }
+    let x = crate::chimera_singer::sing(&ph.notes, &set.chimera_voice());
+    crate::chimera_singer::resample(&x, crate::chimera_singer::RATE, SAMPLE_RATE)
+}
+
+/// Sings `todo` into the cache with an in-process singer (CHIMERA or Novox), on this thread
+/// and helpers (one phrase each at a time, leaving two cores to the rest of the program).
+pub(crate) fn sing_in_process(
     set: &VocalSettings,
     todo: &[&Phrase],
     progress: &Arc<Mutex<String>>,
 ) -> Result<(), String> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     std::fs::create_dir_all(cache_dir()).map_err(|e| e.to_string())?;
-    let voice = set.chimera_voice();
     let workers = std::thread::available_parallelism()
         .map_or(1, |n| n.get().saturating_sub(2).max(1))
         .min(todo.len().max(1));
@@ -710,8 +830,17 @@ pub(crate) fn sing_chimera(
     let work = || loop {
         let i = next.fetch_add(1, Ordering::Relaxed);
         let Some(ph) = todo.get(i) else { break };
-        let x = crate::chimera_singer::sing(&ph.notes, &voice);
-        let x = crate::chimera_singer::resample(&x, crate::chimera_singer::RATE, SAMPLE_RATE);
+        let x = sing_phrase(set, ph);
+        if x.is_empty() && !ph.notes.is_empty() {
+            if let Ok(mut errs) = errors.lock() {
+                errs.push(format!(
+                    "{}: phrase {:016x} was not sung",
+                    set.singer.label(),
+                    ph.key
+                ));
+            }
+            continue;
+        }
         if let Err(e) = write_wav(&cached(ph.key), &x, SAMPLE_RATE) {
             if let Ok(mut errs) = errors.lock() {
                 errs.push(e.to_string());
@@ -719,7 +848,10 @@ pub(crate) fn sing_chimera(
         }
         let n = sung.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(mut p) = progress.lock() {
-            *p = trf("CHIMERA: {} of {} phrases", &[&n, &total]);
+            *p = match set.singer {
+                Singer::Novox => trf("Novox: {} of {} phrases", &[&n, &total]),
+                _ => trf("CHIMERA: {} of {} phrases", &[&n, &total]),
+            };
         }
     };
     std::thread::scope(|sc| {
@@ -886,8 +1018,8 @@ fn render(
         .map(|ph| ph.notes.last().map_or(0.0, |n| n.start + n.dur))
         .sum();
     let mut place = None;
-    if !todo.is_empty() && set.singer == Singer::Chimera {
-        sing_chimera(&set, &todo, &progress)?;
+    if !todo.is_empty() && set.singer.in_process() {
+        sing_in_process(&set, &todo, &progress)?;
         place = Some(Place::ThisMac);
     } else if !todo.is_empty() {
         let mut errors = Vec::new();
@@ -1163,14 +1295,9 @@ pub fn frame(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                     st.speed[i] = Some(st.speed[i].map_or(rate, |old| 0.5 * old + 0.5 * rate));
                 }
                 t.last = match done.place {
-                    Some(_) if done.singer == Singer::Chimera => trf(
-                        "{} phrases sung by CHIMERA in {} s ({} s of singing)",
-                        &[
-                            &done.phrases,
-                            &format!("{:.1}", done.secs),
-                            &format!("{:.1}", done.sung_secs),
-                        ],
-                    ),
+                    Some(_) if done.singer.in_process() => {
+                        sung_message(done.singer, done.phrases, done.secs, done.sung_secs)
+                    }
                     Some(place) => trf(
                         "{} phrases sung on {} in {} s",
                         &[&done.phrases, &place.label(), &format!("{:.1}", done.secs)],
@@ -1389,6 +1516,110 @@ fn chimera_panel(ui: &mut egui::Ui, set: &mut VocalSettings, changed: &mut bool)
     );
 }
 
+/// A knob with its own unit.
+fn dial_in<'a>(
+    label: &'a str,
+    value: &'a mut f32,
+    (lo, hi): (f32, f32),
+    default: f32,
+    decimals: usize,
+    unit: &'a str,
+) -> hw_vocal::Dial<'a> {
+    hw_vocal::Dial {
+        unit,
+        ..dial(label, value, lo..=hi, default, decimals)
+    }
+}
+
+/// Novox The Robot's settings: its voice (one of the engine's presets, which sets every knob),
+/// and the knobs over it: the sound (vocal tract size, breathiness, grit, brightness, voices)
+/// and the pitch (vibrato, the scoop into each note, the glide between joined notes). A knob
+/// goes back to the voice's own value on a double-click.
+fn novox_panel(ui: &mut egui::Ui, set: &mut VocalSettings, changed: &mut bool) {
+    use crate::novox_singer as nv;
+    let id = egui::Id::unique("vocal_novox");
+    let field = hw_vocal::row(ui, tr("Voice"));
+    let names = nv::presets();
+    let now = names.iter().position(|n| *n == set.novox.preset);
+    if let Some(i) = hw_vocal::dropdown(ui, id.with("preset"), field, &set.novox.preset, names, now)
+    {
+        if let Some(v) = nv::Voice::preset(names[i]) {
+            *changed |= set.novox != v;
+            set.novox = v;
+        }
+    }
+    let d = nv::Voice::preset(&set.novox.preset).unwrap_or_default();
+    let v = &mut set.novox;
+    hw_vocal::gap(ui, 8.0);
+    hw_vocal::section(ui, tr("Sound"));
+    *changed |= hw_vocal::dials(
+        ui,
+        id.with("sound"),
+        vec![
+            dial_in(
+                tr("Formant"),
+                &mut v.formant,
+                nv::FORMANT,
+                d.formant,
+                0,
+                "%",
+            ),
+            dial_in(
+                tr("Breathiness"),
+                &mut v.breathiness,
+                nv::BREATHINESS,
+                d.breathiness,
+                0,
+                "%",
+            ),
+            dial_in(tr("Grit"), &mut v.grit, nv::GRIT, d.grit, 0, "%"),
+            dial_in(
+                tr("Brightness"),
+                &mut v.brightness,
+                nv::BRIGHTNESS,
+                d.brightness,
+                0,
+                "%",
+            ),
+            dial_in(tr("Voices"), &mut v.voices, nv::VOICES, d.voices, 0, ""),
+        ],
+    );
+    v.voices = v.voices.round();
+    hw_vocal::gap(ui, 6.0);
+    hw_vocal::section(ui, tr("Pitch"));
+    *changed |= hw_vocal::dials(
+        ui,
+        id.with("pitch"),
+        vec![
+            dial_in(
+                tr("Vibrato Depth (cents)"),
+                &mut v.vibrato_depth,
+                nv::VIBRATO_DEPTH,
+                d.vibrato_depth,
+                0,
+                "",
+            ),
+            dial_in(
+                tr("Vibrato Rate (Hz)"),
+                &mut v.vibrato_rate,
+                nv::VIBRATO_RATE,
+                d.vibrato_rate,
+                1,
+                "",
+            ),
+            dial_in(tr("Scoop (cents)"), &mut v.scoop, nv::SCOOP, d.scoop, 0, ""),
+            dial_in(
+                tr("Portamento"),
+                &mut v.portamento,
+                nv::PORTAMENTO,
+                d.portamento,
+                0,
+                "ms",
+            ),
+        ],
+    );
+}
+
 /// `x`, off unless `on`.
 fn on(mut x: hw_vocal::Dial<'_>, on: bool) -> hw_vocal::Dial<'_> {
     x.enabled = on;
@@ -1416,7 +1647,7 @@ fn dial<'a>(
 
 /// The singer and its settings, as a Hardware panel: the singer, voice, colour, language and
 /// where it is sung as dark fields; the sound and the pitch as knobs (a knob for a control the
-/// DiffSinger `voice` does not have is off). For CHIMERA, its own knobs.
+/// DiffSinger `voice` does not have is off). For CHIMERA and Novox, their own knobs.
 pub(crate) fn settings_panel(
     ui: &mut egui::Ui,
     set: &mut VocalSettings,
@@ -1445,9 +1676,13 @@ pub(crate) fn settings_panel(
         *changed |= set.singer != Singer::ALL[i];
         set.singer = Singer::ALL[i];
     }
-    if set.singer == Singer::Chimera {
+    if set.singer.is_chimera() {
         hw_vocal::gap(ui, 8.0);
         chimera_panel(ui, set, changed);
+        return;
+    }
+    if set.singer == Singer::Novox {
+        novox_panel(ui, set, changed);
         return;
     }
     let field = hw_vocal::row(ui, tr("Voice"));
@@ -1612,22 +1847,27 @@ pub(crate) fn status_lcd(ui: &mut egui::Ui, st: &Status<'_>) {
     hw_vocal::lcd_divider(&g, z1.right() + 8.0, top..=bottom);
     hw_vocal::lcd_divider(&g, z3.left() - 8.0, top..=bottom);
 
-    // The singer, and its voice under it (smaller, then on two lines, before it is cut).
+    // The singer (smaller for a long name, then cut), and its voice under it (smaller, then on
+    // two lines, before it is cut).
     hw_vocal::lcd_label(&g, z1.min, tr("Singer"));
-    let name = hw::fit(
-        &g,
-        &st.singer.label().to_uppercase(),
-        Face::Lcd,
-        17.0,
-        z1.width(),
-    );
+    let label = st.singer.label().to_uppercase();
+    let size = [17.0, 15.0, 13.0]
+        .into_iter()
+        .find(|size| {
+            hw::galley(&g, &label, Face::Lcd, *size, theme::LCD_INK)
+                .size()
+                .x
+                <= z1.width()
+        })
+        .unwrap_or(13.0);
+    let name = hw::fit(&g, &label, Face::Lcd, size, z1.width());
     hw::text(
         &g,
         pos2(z1.left(), z1.top() + 28.0),
         Align2::LEFT_CENTER,
         &name,
         Face::Lcd,
-        17.0,
+        size,
         theme::LCD_INK,
     );
     if !st.voice.is_empty() {
@@ -1893,7 +2133,7 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 return;
             };
             let voice = voices.iter().find(|v| v.id == set.voice).cloned();
-            let chimera = set.singer == Singer::Chimera;
+            let chimera = set.singer.is_chimera();
             let link = set.link;
             let t = st.tracks.entry(link).or_default();
             let (line, busy) = match &t.job {
@@ -1904,11 +2144,7 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 None => (t.last.clone(), false),
             };
             let note = String::new();
-            let voice_name = if chimera {
-                String::new()
-            } else {
-                voice.as_ref().map_or(set.voice.clone(), |v| v.name.clone())
-            };
+            let voice_name = voice_name(set, voice.as_ref());
             status_lcd(
                 ui,
                 &Status {
@@ -1953,10 +2189,8 @@ fn show_window(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
             if clicked[2] {
                 pitch_link = Some(link);
             }
-            if chimera {
-                licence(ui, tr("CHIMERA voice model by Jameson Hodge (MIT licence)"));
-            } else if let Some(v) = voice.as_ref().filter(|v| !v.licence.is_empty()) {
-                licence(ui, &v.licence);
+            if let Some(text) = credits(set, voice.as_ref()) {
+                licence(ui, &text);
             }
         },
     );
@@ -2161,6 +2395,49 @@ mod tests {
         let diffsinger = with(&|_| {});
         let chimera = with(&|s| s.singer = Singer::Chimera);
         assert_ne!(diffsinger.key, chimera.key, "another singer sings it again");
+        let before = with(&|s| s.singer = Singer::Chimera09fb776);
+        assert_ne!(before.key, chimera.key, "so does the other CHIMERA engine");
+        assert_eq!(before.notes, chimera.notes, "with the same lyrics");
+        // Novox: its own key, its voice and every knob count, the others' settings do not.
+        let novox = with(&|s| s.singer = Singer::Novox);
+        assert_ne!(novox.key, chimera.key);
+        assert_ne!(novox.key, before.key);
+        assert_eq!(
+            novox.notes, chimera.notes,
+            "Novox is given the lyrics as typed too"
+        );
+        for f in [
+            |s: &mut VocalSettings| s.novox.preset = "female".into(),
+            |s: &mut VocalSettings| s.novox.formant = 120.0,
+            |s: &mut VocalSettings| s.novox.breathiness = 30.0,
+            |s: &mut VocalSettings| s.novox.grit = 30.0,
+            |s: &mut VocalSettings| s.novox.brightness = -30.0,
+            |s: &mut VocalSettings| s.novox.voices = 2.0,
+            |s: &mut VocalSettings| s.novox.vibrato_depth = 30.0,
+            |s: &mut VocalSettings| s.novox.vibrato_rate = 7.0,
+            |s: &mut VocalSettings| s.novox.scoop = -50.0,
+            |s: &mut VocalSettings| s.novox.portamento = 90.0,
+        ] {
+            let k = with(&|s| {
+                s.singer = Singer::Novox;
+                f(s);
+            });
+            assert_ne!(k.key, novox.key);
+            assert_eq!(
+                with(&|s| f(s)).key,
+                diffsinger.key,
+                "Novox's knobs leave DiffSinger alone"
+            );
+        }
+        let k = with(&|s| {
+            s.singer = Singer::Novox;
+            s.ring = 50.0;
+            s.vibrato_depth = 120.0;
+        });
+        assert_eq!(
+            k.key, novox.key,
+            "the other singers' settings leave Novox alone"
+        );
         // Each singer's own settings count; the other's do not.
         assert_ne!(
             with(&|s| {
@@ -2356,6 +2633,16 @@ mod tests {
             s.chimera_breathiness = 30.0;
             s.brightness = 60.0;
             s.ring = 45.0;
+            s.novox = crate::novox_singer::Voice::preset("crooner").unwrap();
+            s.novox.formant = 104.0;
+            s.novox.breathiness = 20.0;
+            s.novox.grit = 12.0;
+            s.novox.brightness = -40.0;
+            s.novox.voices = 2.0;
+            s.novox.vibrato_depth = 55.0;
+            s.novox.vibrato_rate = 6.5;
+            s.novox.scoop = -90.0;
+            s.novox.portamento = 140.0;
         }
         let mut out = Track::new("Top Vocal", TrackKind::Audio);
         out.vocal = Some(VocalRole::Output { link: 7 });
@@ -2373,6 +2660,13 @@ mod tests {
             .map(|n| n.lyric.as_str())
             .collect();
         assert_eq!(lyrics, ["row", "+"]);
+        // Every singer's name round-trips.
+        for singer in Singer::ALL {
+            let mut set = VocalSettings::new(5);
+            set.singer = singer;
+            let back = from_doc(&to_doc(&VocalRole::Score(set.clone())));
+            assert_eq!(back, Some(VocalRole::Score(set)), "{singer:?}");
+        }
         // A file from before CHIMERA: DiffSinger, and CHIMERA's defaults.
         let old = prowave_project::VocalDoc {
             role: "score".into(),
@@ -2387,6 +2681,22 @@ mod tests {
         assert_eq!(
             (s.chimera_breathiness, s.brightness, s.ring),
             (fresh.chimera_breathiness, fresh.brightness, fresh.ring)
+        );
+        assert_eq!(s.novox, fresh.novox, "and Novox's");
+        // Novox settings out of range or an unknown voice in a file are held to what it takes.
+        let mut odd = to_doc(&VocalRole::Score(VocalSettings::new(4)));
+        odd.singer = "novox".into();
+        odd.novox_preset = "nobody".into();
+        odd.novox_voices = 40.0;
+        odd.novox_formant = f32::NAN;
+        let Some(VocalRole::Score(s)) = from_doc(&odd) else {
+            panic!("a score")
+        };
+        assert_eq!(s.singer, Singer::Novox);
+        assert_eq!(s.novox.preset, crate::novox_singer::DEFAULT_PRESET);
+        assert_eq!(
+            (s.novox.voices, s.novox.formant),
+            (8.0, fresh.novox.formant)
         );
         // Notes without lyrics leave them out of the file.
         let plain = serde_json::to_string(&prowave_project::NoteDoc::default()).unwrap();

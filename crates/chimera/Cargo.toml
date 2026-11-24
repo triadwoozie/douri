@@ -1,4 +1,4 @@
-# Vendored from github.com/jamesondh/chimera-vocal-synth (crates/chimera, commit 09fb776) by
+# Vendored from github.com/jamesondh/chimera-vocal-synth (crates/chimera, commit eeb0c19) by
 # Jameson Hodge, MIT licence (see LICENSE and NOTICE). The engine's source is unchanged; the
 # upstream tests, golden fixtures, examples, CLI and wasm crates are not vendored.
 [package]

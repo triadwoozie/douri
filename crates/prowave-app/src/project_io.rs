@@ -2031,16 +2031,25 @@ pub(crate) mod tests {
 
     #[test]
     fn midi_fx_are_saved_in_order_and_unknown_ones_are_dropped() {
-        use crate::midi_fx::{ArpPattern, FxSlot, MidiFx};
+        use crate::midi_fx::{FxSlot, MidiFx};
+        use prowave_engine::{ArpMode, ArpRate, ArpSettings};
         let mut p = Project::demo();
+        let mut arp = ArpSettings {
+            rate: ArpRate::Eighth,
+            mode: ArpMode::UpDown,
+            octaves: 2,
+            gate: 60,
+            swing: 20,
+            latch: true,
+            length: 12,
+            ..ArpSettings::default()
+        };
+        arp.steps[3].on = false;
+        arp.steps[4].tie = true;
+        arp.steps[11].transpose = 12;
         p.tracks[0].midi_fx = vec![
             FxSlot {
-                fx: MidiFx::Arpeggiator {
-                    rate: crate::pattern::StepRate::Eighth,
-                    pattern: ArpPattern::UpDown,
-                    octaves: 2,
-                    gate: 60,
-                },
+                fx: MidiFx::Arpeggiator(arp),
                 on: true,
             },
             FxSlot {
@@ -2049,7 +2058,7 @@ pub(crate) mod tests {
             },
         ];
         let (mut doc, _) = to_doc(&p);
-        assert_eq!(doc.tracks[0].midi_fx[0].kind, "arpeggiator");
+        assert_eq!(doc.tracks[0].midi_fx[0].kind, "step_arpeggiator");
         let (q, _) = from_doc(&doc, Path::new("."), &egui::Context::default());
         assert_eq!(q.tracks[0].midi_fx, p.tracks[0].midi_fx);
         assert!(q.tracks[1].midi_fx.is_empty(), "older files have none");
@@ -2062,6 +2071,24 @@ pub(crate) mod tests {
         );
         let (r, _) = from_doc(&doc, Path::new("."), &egui::Context::default());
         assert_eq!(r.tracks[0].midi_fx, p.tracks[0].midi_fx);
+        // A project saved before the step pattern: its Arpeggiator opens as the same notes.
+        doc.tracks[0].midi_fx = vec![prowave_project::MidiFxDoc {
+            kind: "arpeggiator".into(),
+            settings: vec![1.0, 2.0, 2.0, 60.0],
+            ..Default::default()
+        }];
+        let (old, _) = from_doc(&doc, Path::new("."), &egui::Context::default());
+        assert_eq!(
+            old.tracks[0].midi_fx[0].fx,
+            MidiFx::Arpeggiator(ArpSettings {
+                rate: ArpRate::Eighth,
+                mode: ArpMode::UpDown,
+                octaves: 2,
+                gate: 60,
+                step_velocity: 0,
+                ..ArpSettings::default()
+            })
+        );
     }
 
     #[test]
@@ -2170,6 +2197,49 @@ pub(crate) mod tests {
         assert_eq!(f.rendered, 0);
         assert!(q.tracks[t].params.groove);
         assert!(q.tracks[0].params.follow_groove);
+    }
+
+    /// Pro Wave Texture's settings (every knob, FREEZE and QUALITY) come back from a saved
+    /// project, and the effect opens with them.
+    #[test]
+    fn texture_settings_are_saved_and_opened_again() {
+        use prowave_engine::texture as tx;
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let mut p = Project::demo();
+        let info = prowave_engine::native_info(tx::ID).unwrap();
+        let mut slot = crate::native_fx_ui::new_slot(info);
+        let mut v = crate::native_fx_ui::values(&slot, info);
+        for (k, x) in [
+            (tx::TIME, 812.0),
+            (tx::SIZE, 150.0),
+            (tx::SHAPE, 33.0),
+            (tx::PITCH, -850.0),
+            (tx::TIME_RANDOM, -420.0),
+            (tx::PITCH_RANDOM, 999.0),
+            (tx::DENSITY, 777.0),
+            (tx::FEEDBACK, 640.0),
+            (tx::DRY_WET, 1000.0),
+            (tx::REVERB, 5.0),
+            (tx::FREEZE, 1.0),
+            (tx::QUALITY, 3.0),
+        ] {
+            v[k] = x;
+        }
+        slot.state = Some(crate::native_fx_ui::encode(&v));
+        p.tracks[1].au_effects = vec![slot];
+        let path = save_project(&p, &dir.path().join("texture")).unwrap();
+        let (q, warnings) = open_project(&path, &ctx).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let s = &q.tracks[1].au_effects[0];
+        assert_eq!(s.id, tx::ID);
+        assert_eq!(s.name, tx::NAME);
+        let back = crate::native_fx_ui::values(s, info);
+        assert_eq!(back, v);
+        let fx = prowave_engine::open_native(tx::ID, 44100, &back).unwrap();
+        for (k, x) in back.iter().enumerate() {
+            assert_eq!(fx.param(k), *x, "{}", info.params[k].name);
+        }
     }
 
     #[test]

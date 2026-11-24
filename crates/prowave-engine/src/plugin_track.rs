@@ -104,6 +104,10 @@ impl BlockProcessor for crate::au::AuInstance {
     }
 }
 
+/// In [`crate::Command::SetPluginParam`], the `effect` that means the track's instrument (a
+/// native instrument's knob) instead of one of its effects.
+pub const INSTRUMENT_PARAM: u8 = 255;
+
 /// MIDI messages one block can hold for an instrument; more are dropped.
 const MAX_EVENTS: usize = 1024;
 /// Automation changes one block can hold for the plug-ins; more are dropped.
@@ -817,14 +821,22 @@ impl PluginTrack {
     /// plug-ins are pre-rendered the change travels with the frames and is heard with them
     /// (up to the pre-render delay later, as in Logic).
     pub(crate) fn set_effect_param(&mut self, effect: usize, index: usize, value: f32) {
+        let instrument = effect == usize::from(INSTRUMENT_PARAM);
         match self.work.as_mut() {
+            Some(w) if instrument => {
+                if let Some(inst) = w.instrument.as_mut() {
+                    inst.set_parameter(index, value);
+                }
+            }
             Some(w) => {
                 if let Some(fx) = w.effects.get_mut(effect) {
                     fx.set_parameter(index, value);
                 }
             }
             None => {
-                if effect < 255 {
+                if instrument {
+                    self.push_param(0, 0, index as u32, value);
+                } else if effect < 255 {
                     self.push_param(0, (effect + 1) as u8, index as u32, value);
                 }
             }

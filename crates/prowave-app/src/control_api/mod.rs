@@ -20,6 +20,8 @@ mod events;
 pub(crate) mod headless;
 mod ids;
 mod m_core;
+mod m_kits;
+mod m_midi_fx;
 mod m_regions;
 mod m_tracks;
 mod m_ui;

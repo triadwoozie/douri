@@ -523,12 +523,15 @@ pub fn export(p: &Project, only: Option<(usize, usize)>) -> MidiFile {
             ..FileTrack::default()
         };
         let mut played = Vec::new();
+        // Where the regions written end (a latched Arpeggiator plays on until there).
+        let mut end = 0.0f64;
         for (ri, r) in t.regions.iter().enumerate() {
             if only.is_some_and(|o| o != (ti, ri)) || r.params.mute {
                 continue;
             }
             // A looped region is written out with its repeats.
             for (origin, span) in crate::engine_sync::plays_of(p, r) {
+                end = end.max(p.region_end_beats(r).max(origin + span.unwrap_or(0.0)));
                 played.extend(crate::engine_sync::played_notes(
                     t, r, origin, span, ti as u16,
                 ));
@@ -546,7 +549,7 @@ pub fn export(p: &Project, only: Option<(usize, usize)>) -> MidiFile {
             }
         }
         // What the track's MIDI FX make of them.
-        for n in crate::midi_fx::apply(&t.midi_fx, played) {
+        for n in crate::midi_fx::apply_until(&t.midi_fx, played, end) {
             track.notes.push(FileNote {
                 start: ticks(n.start_beat, ppq),
                 len: ticks(n.end_beat, ppq)

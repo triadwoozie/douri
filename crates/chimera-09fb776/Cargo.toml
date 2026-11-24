@@ -1,0 +1,16 @@
+# The CHIMERA engine as Pro Wave first vendored it: github.com/jamesondh/chimera-vocal-synth
+# (crates/chimera, commit 09fb776) by Jameson Hodge, MIT licence (see LICENSE and NOTICE). Kept
+# beside the current copy (crates/chimera) so a Singer can sing as it did before the update.
+# The engine's source is unchanged; only the package name differs from upstream's.
+[package]
+name = "chimera-09fb776"
+description = "CHIMERA physical-modelling voice engine, upstream commit 09fb776"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+libm = "=0.2.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

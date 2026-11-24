@@ -194,6 +194,8 @@ const SYSTEM_WINDOWS: &[(&str, &str)] = &[
     ("Audio File…", "import.audio"),
     ("Selection as MIDI File…", "export.midi"),
     ("Paint Image to Audio…", ""),
+    ("SMAF File…", ""),
+    ("Region through EffeTune Chain…", ""),
 ];
 
 fn system_window(app: &App, label: &str) -> Option<&'static str> {
@@ -381,6 +383,7 @@ const WINDOWS: &[&str] = &[
     "midi_monitor",
     "midi_fx",
     "free_plugins",
+    "kits",
     "project_settings",
     "tempo_track",
     "marker_track",
@@ -430,6 +433,7 @@ fn window_open(app: &App, id: &str) -> bool {
         "midi_monitor" => s.show_midi_monitor,
         "midi_fx" => s.show_midi_fx,
         "free_plugins" => s.free_plugins.open,
+        "kits" => s.kits.open,
         "project_settings" => s.settings_tab.is_some(),
         "tempo_track" => s.tracks.show_tempo,
         "marker_track" => s.tracks.show_markers,
@@ -500,6 +504,7 @@ fn ui_window(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
         "midi_monitor" => s.show_midi_monitor = open,
         "midi_fx" => s.show_midi_fx = open,
         "free_plugins" => s.free_plugins.open = open,
+        "kits" => s.kits.open = open,
         "project_settings" => {
             s.settings_tab = if open {
                 Some(

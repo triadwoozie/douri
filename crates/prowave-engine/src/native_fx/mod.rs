@@ -20,12 +20,18 @@
 //! not in dB or ms: [`NativeFxInfo::value_text`] gives the text FL shows for a value ("-8.7dB
 //! 0.37", "2.00ms", "4.0:1", ...); [`NativeParam::unit`] names the unit of that text.
 
+pub mod circuit;
 pub mod lemon_fast_distortion;
 pub mod lemon_limiter;
 pub mod lemon_soft_clipper;
 pub mod lemon_transient_processor;
 mod level_curve;
 pub mod press;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod resonator_fx;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod spectral;
+pub mod texture;
 pub mod tune;
 
 use crate::plugin_track::BlockProcessor;
@@ -135,6 +141,23 @@ pub struct NativeFxInfo {
 }
 
 impl NativeFxInfo {
+    /// An entry (the native instruments' table makes its own, `crate::native_inst`).
+    pub(crate) const fn new(
+        id: &'static str,
+        name: &'static str,
+        params: &'static [NativeParam],
+        presets: &'static [NativePreset],
+        text: fn(usize, i32) -> String,
+    ) -> Self {
+        NativeFxInfo {
+            id,
+            name,
+            params,
+            presets,
+            text,
+        }
+    }
+
     /// The text FL shows for parameter `index` at `value` (not for the audio thread: it
     /// allocates).
     pub fn value_text(&self, index: usize, value: f32) -> String {
@@ -163,7 +186,8 @@ pub trait NativeFx: BlockProcessor {
     }
 }
 
-static EFFECTS: [NativeFxInfo; 6] = [
+/// The effects written in C++ (the vendored crate `mi_dsp`) are not in the browser build.
+static EFFECTS: &[NativeFxInfo] = &[
     NativeFxInfo {
         id: lemon_limiter::ID,
         name: lemon_limiter::NAME,
@@ -205,6 +229,36 @@ static EFFECTS: [NativeFxInfo; 6] = [
         params: &tune::PARAMS,
         presets: &tune::PRESETS,
         text: tune::value_text,
+    },
+    NativeFxInfo {
+        id: texture::ID,
+        name: texture::NAME,
+        params: &texture::PARAMS,
+        presets: &texture::PRESETS,
+        text: texture::value_text,
+    },
+    NativeFxInfo {
+        id: circuit::ID,
+        name: circuit::NAME,
+        params: &circuit::PARAMS,
+        presets: &[],
+        text: circuit::value_text,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    NativeFxInfo {
+        id: resonator_fx::ID,
+        name: resonator_fx::NAME,
+        params: &resonator_fx::PARAMS,
+        presets: &[],
+        text: resonator_fx::value_text,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    NativeFxInfo {
+        id: spectral::ID,
+        name: spectral::NAME,
+        params: &spectral::PARAMS,
+        presets: &[],
+        text: spectral::value_text,
     },
 ];
 
@@ -250,7 +304,7 @@ pub fn open_native_block(
 
 /// Every native effect, in menu order.
 pub fn native_effects() -> &'static [NativeFxInfo] {
-    &EFFECTS
+    EFFECTS
 }
 
 /// The entry for `id`.
@@ -281,6 +335,12 @@ pub fn open_native(id: &str, sample_rate: u32, values: &[f32]) -> Option<Box<dyn
             rate, values,
         )),
         tune::ID => Box::new(tune::ProWaveTune::new(rate, values)),
+        texture::ID => Box::new(texture::Texture::new(rate, values)),
+        circuit::ID => Box::new(circuit::CircuitOverdrive::new(rate, values)),
+        #[cfg(not(target_arch = "wasm32"))]
+        resonator_fx::ID => Box::new(resonator_fx::ResonatorFx::new(rate, values)),
+        #[cfg(not(target_arch = "wasm32"))]
+        spectral::ID => Box::new(spectral::Spectral::new(rate, values)),
         _ => return None,
     })
 }
