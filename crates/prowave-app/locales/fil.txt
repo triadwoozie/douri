@@ -133,7 +133,6 @@ Time Quantize (classic) = Time Quantize (klasiko)
 Strength = Lakas
 Swing = Swing
 Velocity = Velocity
-Click: add · Drag: select · Del/Right-click: delete = I-click: magdagdag · I-drag: pumili · Del/Right-click: burahin
 Tempo = Tempo
 Delete Tempo Change = Burahin ang Pagbabago ng Tempo
 Smart = Smart

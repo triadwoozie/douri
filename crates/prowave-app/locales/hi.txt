@@ -133,7 +133,6 @@ Time Quantize (classic) = समय क्वांटाइज़ (क्ला
 Strength = तीव्रता
 Swing = स्विंग
 Velocity = वेलोसिटी
-Click: add · Drag: select · Del/Right-click: delete = क्लिक: जोड़ें · ड्रैग: चुनें · Del/राइट-क्लिक: हटाएँ
 Tempo = टेम्पो
 Delete Tempo Change = टेम्पो बदलाव हटाएँ
 Smart = स्मार्ट

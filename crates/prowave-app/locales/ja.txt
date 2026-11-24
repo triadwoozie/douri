@@ -133,7 +133,6 @@ Time Quantize (classic) = タイムクオンタイズ（クラシック）
 Strength = ストレングス
 Swing = スウィング
 Velocity = ベロシティ
-Click: add · Drag: select · Del/Right-click: delete = クリック：追加 · ドラッグ：選択 · Del/右クリック：削除
 Tempo = テンポ
 Delete Tempo Change = テンポチェンジを削除
 Smart = スマート

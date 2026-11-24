@@ -133,7 +133,6 @@ Time Quantize (classic) = Laiko kvantavimas (klasikinis)
 Strength = Stiprumas
 Swing = Svingas
 Velocity = Stiprumas
-Click: add · Drag: select · Del/Right-click: delete = Spustelėkite: pridėti · Vilkite: pažymėti · Del/dešinysis: ištrinti
 Tempo = Tempas
 Delete Tempo Change = Ištrinti tempo pokytį
 Smart = Išmanusis

@@ -133,7 +133,6 @@ Time Quantize (classic) = Quantification temporelle (classique)
 Strength = Force
 Swing = Swing
 Velocity = Vélocité
-Click: add · Drag: select · Del/Right-click: delete = Clic : ajouter · Glisser : sélectionner · Suppr/clic droit : supprimer
 Tempo = Tempo
 Delete Tempo Change = Supprimer le changement de tempo
 Smart = Intelligent

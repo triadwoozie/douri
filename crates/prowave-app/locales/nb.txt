@@ -133,7 +133,6 @@ Time Quantize (classic) = Tidskvantisering (klassisk)
 Strength = Styrke
 Swing = Swing
 Velocity = Anslag
-Click: add · Drag: select · Del/Right-click: delete = Klikk: legg til · Dra: marker · Del/høyreklikk: slett
 Tempo = Tempo
 Delete Tempo Change = Slett tempoendring
 Smart = Smart

@@ -1489,11 +1489,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     ) {
         act.scale = true;
     }
-    y += 38.0;
+    y += 28.0;
     gi.line_segment(
         [
-            pos2(insp.left() + 6.0, y - 10.0),
-            pos2(insp.right() - 6.0, y - 10.0),
+            pos2(insp.left() + 6.0, y - 8.0),
+            pos2(insp.right() - 6.0, y - 8.0),
         ],
         Stroke::new(1.0, Color32::from_gray(0x2c)),
     );
@@ -1540,7 +1540,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     }
 
     // Automation / MIDI: what the lane under the notes shows (Note Velocity).
-    let ay = insp.bottom() - 112.0;
+    let ay = insp.bottom() - 92.0;
     if ay > y + 24.0 {
         gi.text(
             pos2(ix, ay),
@@ -1574,17 +1574,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Color32::from_rgb(0x4c, 0xe0, 0x4c),
         );
     }
-
-    let hint = tr("Click: add · Drag: select · Del/Right-click: delete");
-    let hint_font = FontId::proportional(10.5);
-    let hint_text = crate::mixer::elide(&gi, hint, &hint_font, iw);
-    gi.text(
-        pos2(ix, insp.bottom() - 18.0),
-        Align2::LEFT_TOP,
-        hint_text,
-        hint_font,
-        Color32::from_gray(0x88),
-    );
 
     // ---- Apply toolbar/inspector actions
     let targets: Vec<usize> = if v.selected.is_empty() {

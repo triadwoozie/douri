@@ -133,7 +133,6 @@ Time Quantize (classic) = 时间量化（经典）
 Strength = 强度
 Swing = 摇摆
 Velocity = 力度
-Click: add · Drag: select · Del/Right-click: delete = 点按：添加 · 拖移：选择 · Del/右键点按：删除
 Tempo = 速度
 Delete Tempo Change = 删除速度变化
 Smart = 智能

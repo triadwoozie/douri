@@ -303,6 +303,114 @@ pub enum SoundChip {
     Keys,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SoundPackFilter {
+    #[default]
+    AllSounds,
+    InstalledOnly,
+    DoriEssential,
+    SalamanderPiano,
+    SalamanderDrums,
+    VersilianOrchestra,
+    VersilianMiscellania,
+    UserPatches,
+}
+
+impl SoundPackFilter {
+    pub const ALL: [Self; 8] = [
+        Self::AllSounds,
+        Self::InstalledOnly,
+        Self::DoriEssential,
+        Self::SalamanderPiano,
+        Self::SalamanderDrums,
+        Self::VersilianOrchestra,
+        Self::VersilianMiscellania,
+        Self::UserPatches,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::AllSounds => tr("All Sounds"),
+            Self::InstalledOnly => "Installed Packs Only",
+            Self::DoriEssential => "Dōri Essential Factory Kit",
+            Self::SalamanderPiano => "Salamander Grand Piano V3",
+            Self::SalamanderDrums => "Salamander Drumkit V1",
+            Self::VersilianOrchestra => "Versilian Chamber Orchestra 2 CE",
+            Self::VersilianMiscellania => "Versilian Miscellania I & II",
+            Self::UserPatches => "User Patches",
+        }
+    }
+}
+
+pub fn pack_id_matches_category(pack_id: &str, cat_name: &str) -> bool {
+    match pack_id {
+        "dori-essential-factory-kit" => matches!(
+            cat_name,
+            "Electronic Drum Kit"
+                | "Bass"
+                | "Guitar"
+                | "Guitar Amp"
+                | "Synthesizer"
+                | "Arpeggiator"
+                | "Quick Sampler"
+                | "Legacy"
+        ),
+        "salamander-grand-piano-v3" => matches!(
+            cat_name,
+            "Piano"
+                | "Keyboards"
+                | "Vintage Electric Piano"
+                | "Vintage Clav"
+                | "Vintage B3 Organ"
+                | "Vintage Mellotron"
+        ),
+        "salamander-drumkit-v1" => matches!(cat_name, "Drum Kit" | "Percussion"),
+        "versilian-chamber-orchestra-2" => {
+            matches!(cat_name, "Orchestral" | "Studio Strings" | "Studio Horns")
+        }
+        "versilian-miscellania" => {
+            matches!(cat_name, "Mallet" | "Percussion" | "World" | "Cinematic")
+        }
+        "user-patches" => cat_name == "User Patches",
+        _ => true,
+    }
+}
+
+pub fn category_matches_filter(
+    cat_name: &str,
+    filter: SoundPackFilter,
+    reg: &crate::sound_library::SoundRegistry,
+) -> bool {
+    match filter {
+        SoundPackFilter::AllSounds => true,
+        SoundPackFilter::InstalledOnly => {
+            let mut packs = vec!["dori-essential-factory-kit"];
+            for p in &reg.installed {
+                packs.push(p.id.as_str());
+            }
+            packs
+                .iter()
+                .any(|&pid| pack_id_matches_category(pid, cat_name))
+        }
+        SoundPackFilter::DoriEssential => {
+            pack_id_matches_category("dori-essential-factory-kit", cat_name)
+        }
+        SoundPackFilter::SalamanderPiano => {
+            pack_id_matches_category("salamander-grand-piano-v3", cat_name)
+        }
+        SoundPackFilter::SalamanderDrums => {
+            pack_id_matches_category("salamander-drumkit-v1", cat_name)
+        }
+        SoundPackFilter::VersilianOrchestra => {
+            pack_id_matches_category("versilian-chamber-orchestra-2", cat_name)
+        }
+        SoundPackFilter::VersilianMiscellania => {
+            pack_id_matches_category("versilian-miscellania", cat_name)
+        }
+        SoundPackFilter::UserPatches => cat_name == "User Patches",
+    }
+}
+
 pub struct LibraryView {
     pub category: Option<usize>,
     pub search: String,
@@ -320,6 +428,7 @@ pub struct LibraryView {
     pub audition_volume: f32,
     pub audition_auto: bool,
     pub audition_off_at: Option<(std::time::Instant, u8)>,
+    pub pack_filter: SoundPackFilter,
 }
 
 impl Default for LibraryView {
@@ -340,6 +449,7 @@ impl Default for LibraryView {
             audition_volume: 0.8,
             audition_auto: true,
             audition_off_at: None,
+            pack_filter: SoundPackFilter::AllSounds,
         }
     }
 }
@@ -689,36 +799,105 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let right = panel.right();
     let w = panel.width();
 
-    // Header: "Library  All Sounds ⇕"
+    // Header: "Library  [All Sounds ▾]"
     let hy = panel.top() + 14.0;
-    let cx = left + w * 0.5;
     g.text(
-        pos2(cx - 6.0, hy),
-        Align2::RIGHT_CENTER,
+        pos2(left + 10.0, hy),
+        Align2::LEFT_CENTER,
         tr("Library"),
         FontId::proportional(13.0),
         TEXT,
     );
-    let all = g.text(
-        pos2(cx + 2.0, hy),
+
+    let drop_x = left + 68.0;
+    let drop_w = (right - 8.0 - drop_x).max(110.0);
+    let drop_r = Rect::from_min_size(pos2(drop_x, panel.top() + 3.0), vec2(drop_w, 22.0));
+    let drop_id = id("library_pack_filter_btn");
+    let resp = ui.interact(drop_r, drop_id, Sense::click());
+
+    g.rect_filled(
+        drop_r,
+        4.0,
+        if resp.hovered() {
+            Color32::from_rgb(0x32, 0x32, 0x36)
+        } else {
+            Color32::from_rgb(0x25, 0x25, 0x27)
+        },
+    );
+    g.rect_stroke(
+        drop_r,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+        egui::StrokeKind::Inside,
+    );
+
+    let label_font = FontId::proportional(11.5);
+    let label_text = crate::mixer::elide(
+        &g,
+        v.pack_filter.label(),
+        &label_font,
+        drop_r.width() - 22.0,
+    );
+    g.text(
+        pos2(drop_r.left() + 8.0, drop_r.center().y),
         Align2::LEFT_CENTER,
-        tr("All Sounds"),
-        FontId::proportional(12.5),
+        label_text,
+        label_font,
+        TEXT,
+    );
+    g.text(
+        pos2(drop_r.right() - 8.0, drop_r.center().y),
+        Align2::RIGHT_CENTER,
+        "▾",
+        FontId::proportional(11.0),
         TEXT_DIM,
     );
-    let c = pos2(all.right() + 8.0, hy);
-    g.add(Shape::line(
-        vec![
-            c + vec2(-2.5, -1.5),
-            c + vec2(0.0, -4.0),
-            c + vec2(2.5, -1.5),
-        ],
-        stroke(TEXT_DIM),
-    ));
-    g.add(Shape::line(
-        vec![c + vec2(-2.5, 1.5), c + vec2(0.0, 4.0), c + vec2(2.5, 1.5)],
-        stroke(TEXT_DIM),
-    ));
+
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.set_min_width(230.0);
+        let mut visuals = ui.visuals().clone();
+        visuals.panel_fill = Color32::from_rgb(0x25, 0x25, 0x27);
+        visuals.window_fill = Color32::from_rgb(0x25, 0x25, 0x27);
+        visuals.window_stroke = Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c));
+        visuals.selection.bg_fill = Color32::from_rgb(0x12, 0x69, 0xcc);
+        visuals.selection.stroke = Stroke::NONE;
+        visuals.override_text_color = Some(Color32::from_rgb(0xe5, 0xe5, 0xea));
+        ui.set_visuals(visuals);
+
+        for &opt in &SoundPackFilter::ALL {
+            let is_active = v.pack_filter == opt;
+            let text = opt.label();
+            if ui.selectable_label(is_active, text).clicked() {
+                v.pack_filter = opt;
+                v.category = None;
+                ui.close();
+            }
+        }
+
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        let mgr_btn = ui.add(
+            egui::Button::new(
+                egui::RichText::new(format!(
+                    "{}  {}",
+                    phosphor_egui::regular::FOLDER_OPEN,
+                    tr("Open in Sound Library Manager")
+                ))
+                .size(11.5)
+                .color(Color32::WHITE),
+            )
+            .fill(Color32::from_rgb(0x2b, 0x2b, 0x2e))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)))
+            .corner_radius(egui::CornerRadius::same(4))
+            .min_size(vec2(ui.available_width(), 26.0)),
+        );
+        if mgr_btn.clicked() {
+            s.show_sound_library_manager = true;
+            ui.close();
+        }
+    });
 
     // Modern Tag-Driven Search Field (vertically centered magnifying glass & text)
     let search_r = Rect::from_min_size(pos2(left + 8.0, panel.top() + 32.0), vec2(w - 16.0, 26.0));
@@ -911,10 +1090,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     );
 
     let query = v.search.trim().to_lowercase();
+    let reg = crate::sound_library::get_cached_registry();
     if !query.is_empty() {
         let hits: Vec<(usize, usize)> = CATEGORIES
             .iter()
             .enumerate()
+            .filter(|(_ci, c)| category_matches_filter(c.name, v.pack_filter, &reg))
             .flat_map(|(ci, c)| {
                 c.patches
                     .iter()
@@ -959,6 +1140,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let hits: Vec<(usize, usize)> = CATEGORIES
             .iter()
             .enumerate()
+            .filter(|(_ci, c)| category_matches_filter(c.name, v.pack_filter, &reg))
             .flat_map(|(ci, c)| {
                 let cat_matches = match chip {
                     SoundChip::Synth => {
@@ -1025,20 +1207,49 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
 
         // Left Column (Categories)
-        let cat_items: Vec<String> = CATEGORIES.iter().map(|c| tr(c.name).to_string()).collect();
-        if let Some(ci) = column(
+        let visible_cats: Vec<usize> = CATEGORIES
+            .iter()
+            .enumerate()
+            .filter(|(_ci, c)| {
+                if v.pack_filter != SoundPackFilter::UserPatches && c.patches.is_empty() {
+                    return false;
+                }
+                category_matches_filter(c.name, v.pack_filter, &reg)
+            })
+            .map(|(ci, _)| ci)
+            .collect();
+
+        if let Some(cur_cat) = v.category {
+            if !visible_cats.contains(&cur_cat) {
+                v.category = visible_cats.first().copied();
+            }
+        } else {
+            v.category = visible_cats.first().copied();
+        }
+
+        let cat_items: Vec<String> = visible_cats
+            .iter()
+            .map(|&ci| tr(CATEGORIES[ci].name).to_string())
+            .collect();
+        let sel_row = v
+            .category
+            .and_then(|c| visible_cats.iter().position(|&x| x == c));
+
+        if let Some(row_idx) = column(
             ui,
             &g,
             left_rect,
             0,
             &mut v.scroll_left,
             &cat_items,
-            v.category,
+            sel_row,
             true,
             None,
         ) {
-            v.category = Some(ci);
-            v.scroll_right = 0.0;
+            if let Some(&ci) = visible_cats.get(row_idx) {
+                v.category = Some(ci);
+                v.scroll_right = 0.0;
+            }
         }
 
         // Right Column (Patches for the selected category)
@@ -1052,7 +1263,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 .collect();
             let sel_patch = v.loaded.filter(|(c, _)| *c == sel_cat).map(|(_, pi)| pi);
 
-            if let Some(pi) = column(
+            if patch_items.is_empty() {
+                g.text(
+                    right_rect.center(),
+                    Align2::CENTER_CENTER,
+                    tr("No results"),
+                    FontId::proportional(11.5),
+                    TEXT_DIM,
+                );
+            } else if let Some(pi) = column(
                 ui,
                 &g,
                 right_rect,
@@ -1323,5 +1542,84 @@ mod tests {
         for c in CATEGORIES.iter().skip(1) {
             assert!(!c.patches.is_empty(), "{}", c.name);
         }
+    }
+
+    #[test]
+    fn sound_pack_filter_filters_categories_appropriately() {
+        let reg = crate::sound_library::SoundRegistry::default();
+        // All Sounds matches everything
+        assert!(category_matches_filter(
+            "Piano",
+            SoundPackFilter::AllSounds,
+            &reg
+        ));
+        assert!(category_matches_filter(
+            "Bass",
+            SoundPackFilter::AllSounds,
+            &reg
+        ));
+
+        // Salamander Piano matches Piano and Keyboards, but not Bass or Drums
+        assert!(category_matches_filter(
+            "Piano",
+            SoundPackFilter::SalamanderPiano,
+            &reg
+        ));
+        assert!(category_matches_filter(
+            "Keyboards",
+            SoundPackFilter::SalamanderPiano,
+            &reg
+        ));
+        assert!(!category_matches_filter(
+            "Bass",
+            SoundPackFilter::SalamanderPiano,
+            &reg
+        ));
+        assert!(!category_matches_filter(
+            "Drum Kit",
+            SoundPackFilter::SalamanderPiano,
+            &reg
+        ));
+
+        // Salamander Drums matches Drum Kit and Percussion
+        assert!(category_matches_filter(
+            "Drum Kit",
+            SoundPackFilter::SalamanderDrums,
+            &reg
+        ));
+        assert!(category_matches_filter(
+            "Percussion",
+            SoundPackFilter::SalamanderDrums,
+            &reg
+        ));
+        assert!(!category_matches_filter(
+            "Piano",
+            SoundPackFilter::SalamanderDrums,
+            &reg
+        ));
+
+        // Versilian Chamber Orchestra matches Orchestral
+        assert!(category_matches_filter(
+            "Orchestral",
+            SoundPackFilter::VersilianOrchestra,
+            &reg
+        ));
+        assert!(!category_matches_filter(
+            "Drum Kit",
+            SoundPackFilter::VersilianOrchestra,
+            &reg
+        ));
+
+        // User Patches matches only User Patches
+        assert!(category_matches_filter(
+            "User Patches",
+            SoundPackFilter::UserPatches,
+            &reg
+        ));
+        assert!(!category_matches_filter(
+            "Piano",
+            SoundPackFilter::UserPatches,
+            &reg
+        ));
     }
 }

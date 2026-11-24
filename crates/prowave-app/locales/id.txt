@@ -133,7 +133,6 @@ Time Quantize (classic) = Kuantisasi Waktu (klasik)
 Strength = Kekuatan
 Swing = Swing
 Velocity = Velositas
-Click: add · Drag: select · Del/Right-click: delete = Klik: tambah · Seret: pilih · Del/klik kanan: hapus
 Tempo = Tempo
 Delete Tempo Change = Hapus Perubahan Tempo
 Smart = Pintar
