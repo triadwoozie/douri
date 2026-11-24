@@ -900,12 +900,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     });
 
     // Modern Tag-Driven Search Field (vertically centered magnifying glass & text)
-    let search_r = Rect::from_min_size(pos2(left + 8.0, panel.top() + 32.0), vec2(w - 16.0, 26.0));
-    g.rect_filled(search_r, 6.0, Color32::from_rgb(0x16, 0x16, 0x18));
+    let search_r = Rect::from_min_size(pos2(left + 8.0, panel.top() + 32.0), vec2(w - 16.0, 28.0));
+    g.rect_filled(search_r, 6.0, Color32::from_rgb(0x21, 0x21, 0x23));
     g.rect_stroke(
         search_r,
         6.0,
-        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         egui::StrokeKind::Inside,
     );
     let mag_r = Rect::from_center_size(
@@ -919,15 +919,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         14.0,
         Color32::from_rgb(0x8e, 0x8e, 0x93),
     );
+    let edit_h = 20.0;
     let edit_r = Rect::from_min_max(
-        pos2(search_r.left() + 26.0, search_r.top() + 2.5),
-        pos2(search_r.right() - 8.0, search_r.bottom() - 2.5),
+        pos2(search_r.left() + 26.0, search_r.center().y - edit_h * 0.5),
+        pos2(search_r.right() - 8.0, search_r.center().y + edit_h * 0.5),
     );
     ui.put(
         edit_r,
         egui::TextEdit::singleline(&mut v.search)
             .hint_text(tr("Search Sounds"))
             .frame(egui::Frame::NONE)
+            .margin(egui::Margin::ZERO)
             .text_color(TEXT)
             .font(FontId::proportional(12.0)),
     );
