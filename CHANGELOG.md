@@ -5,6 +5,39 @@ being released into the GitHub Release notes, so keep one `## <version>` heading
 
 ## Unreleased
 
+## 0.3.1
+
+### 2026-11-24: more free plug-ins
+
+Checked by the free plug-in tests and `bash -n` only; the installer was not run.
+
+- Window > Get Free Plug-ins lists 273 plug-ins (84 synths, 189 effects), up from 190. The
+  installer fetches 178 of them; the other 95 are got by hand from the maker's page. New
+  installer rows: Magical 8bit Plug 2, NIBBI, Colony, GLUECOMP-3B, Kirin Hypha, Maim, Rare,
+  RareSE, Virtual Sound Stage, Dimension Expander, DJMFilter and Blue Cat's Freeceiver. New
+  rows by hand include the Knightsnare plug-ins, the eighteen Riverflux Relic units and the
+  four Wavesfactory freebies. The script is the site's, copied unchanged; with it come the
+  site's earlier changes: rows added on 11-23, Smoke Mono Free removed, installers named
+  "legacy" inside a download skipped.
+
+### 2026-11-24: three more built-in instruments
+
+Checked by tests only; nothing was played or listened to.
+
+- Engine: a car engine simulated (cylinders, valves, throttle, pipes), ported from REDLINE's
+  engine model, with its eight engines as the Engine choice and as presets. The note sets the
+  engine speed so that it fires at the note's frequency, between idle and redline; Release
+  Stop lets it spin down to silence, Release Idle lets it idle.
+- Drum Synth: eight pads, each a falling tone and a noise burst through a falling low-pass,
+  ported from Bespoke Synth's DrumSynth. Pad 1 to 8 are notes 36 to 43 (C1 to G1), and 0
+  to 7 as in the original.
+- Monstro: LMMS's three-oscillator synthesizer with two envelopes, two LFOs and its
+  modulation matrix (each envelope and LFO to each oscillator's volume, phase and pitch,
+  oscillator 1's pulse width and oscillator 3's sub mix), sync from oscillator 1, and
+  oscillator 2 mixed in or modulating oscillator 3 by AM, FM or PM. Eight voices.
+
+## 0.3.0
+
 ### 2026-11-23: the Kit Browser
 
 Checked by tests, offscreen pictures and the app without a window against the real library;

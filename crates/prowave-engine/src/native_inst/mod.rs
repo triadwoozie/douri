@@ -34,11 +34,14 @@ pub mod chip_psg;
 pub mod chip_sid;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod digital_osc;
+pub mod drum_synth;
+pub mod engine_sound;
 pub mod envelope;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fm6;
 pub mod kick;
 pub mod macro_osc;
+pub mod monstro;
 pub mod pluck;
 pub mod rate;
 #[cfg(not(target_arch = "wasm32"))]
@@ -293,6 +296,36 @@ fn entries() -> &'static [Entry] {
                     wave_draw::value_text,
                 ),
                 open: |rate, values| Box::new(wave_draw::WaveDraw::new(rate, values)),
+            },
+            Entry {
+                info: NativeFxInfo::new(
+                    engine_sound::ID,
+                    engine_sound::NAME,
+                    &engine_sound::PARAMS,
+                    &engine_sound::PRESETS,
+                    engine_sound::value_text,
+                ),
+                open: |rate, values| Box::new(engine_sound::EngineSound::new(rate, values)),
+            },
+            Entry {
+                info: NativeFxInfo::new(
+                    drum_synth::ID,
+                    drum_synth::NAME,
+                    drum_synth::params(),
+                    &[],
+                    drum_synth::value_text,
+                ),
+                open: |rate, values| Box::new(drum_synth::DrumSynth::new(rate, values)),
+            },
+            Entry {
+                info: NativeFxInfo::new(
+                    monstro::ID,
+                    monstro::NAME,
+                    monstro::params(),
+                    &[],
+                    monstro::value_text,
+                ),
+                open: |rate, values| Box::new(monstro::Monstro::new(rate, values)),
             },
             // The instruments written in C++ (the vendored crate `mi_dsp`) are not in the
             // browser build.

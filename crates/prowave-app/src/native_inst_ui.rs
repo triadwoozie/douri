@@ -47,6 +47,9 @@ fn model_code(id: &str) -> &'static str {
         prowave_engine::native_inst::triple_osc::ID => "TO-3",
         prowave_engine::native_inst::pluck::ID => "PL-1",
         prowave_engine::native_inst::wave_draw::ID => "WD-200",
+        prowave_engine::native_inst::engine_sound::ID => "EN-8",
+        prowave_engine::native_inst::drum_synth::ID => "DS-8",
+        prowave_engine::native_inst::monstro::ID => "MN-3",
         prowave_engine::native_inst::resonator::ID => "RS-6",
         prowave_engine::native_inst::digital_osc::ID => "DO-47",
         prowave_engine::native_inst::fm6::ID => "FM-6",
@@ -140,6 +143,47 @@ fn pages(info: &NativeInstInfo) -> Vec<Page> {
         out.push(Page {
             key: "VOICE".into(),
             params: (to::MOD_1..to::COUNT).collect(),
+            prefix: String::new(),
+        });
+        return out;
+    }
+    if info.id == prowave_engine::native_inst::monstro::ID {
+        use prowave_engine::native_inst::monstro as mo;
+        let page = |key: &str, params: Vec<usize>, prefix: &str| Page {
+            key: key.into(),
+            params,
+            prefix: prefix.into(),
+        };
+        let m = |t: usize, n: usize| mo::MATRIX + t * 4..mo::MATRIX + (t + n) * 4;
+        let mut osc3: Vec<usize> = (mo::O3_VOL..mo::LFO).collect();
+        osc3.push(mo::O23_MOD);
+        let mut vol: Vec<usize> = m(mo::T_VOL, 3).collect();
+        vol.push(mo::LEVEL);
+        return vec![
+            page("OSC 1", (mo::O1_VOL..mo::O2_VOL).collect(), "Osc 1 "),
+            page("OSC 2", (mo::O2_VOL..mo::O3_VOL).collect(), "Osc 2 "),
+            page("OSC 3", osc3, "Osc 3 "),
+            page("LFO", (mo::LFO..mo::ENV).collect(), ""),
+            page("ENV", (mo::ENV..mo::O23_MOD).collect(), ""),
+            page("VOL", vol, "Vol "),
+            page("PHASE", m(mo::T_PHS, 3).collect(), "Phase "),
+            page("PITCH", m(mo::T_PIT, 3).collect(), "Pitch "),
+            page("PW SUB", m(mo::T_PW, 2).collect(), ""),
+        ];
+    }
+    if info.id == prowave_engine::native_inst::drum_synth::ID {
+        use prowave_engine::native_inst::drum_synth as ds;
+        let mut out: Vec<Page> = (1..=ds::PADS)
+            .map(|n| Page {
+                key: format!("PAD {n}"),
+                params: (ds::PAD + (n - 1) * ds::PAD_PARAMS..ds::PAD + n * ds::PAD_PARAMS)
+                    .collect(),
+                prefix: format!("Pad {n} "),
+            })
+            .collect();
+        out.push(Page {
+            key: "KIT".into(),
+            params: vec![ds::VOLUME, ds::OVERSAMPLING],
             prefix: String::new(),
         });
         return out;

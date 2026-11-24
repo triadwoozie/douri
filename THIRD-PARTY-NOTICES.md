@@ -872,6 +872,9 @@ GPL-3.0-or-later; each file names the files it was ported from and their authors
   and Oscillator, Copyright (c) 2004-2014 Tobias Doerffel, 2018 Dave French.
 - Wave Draw (`crates/prowave-engine/src/native_inst/wave_draw.rs`): BitInvader, Copyright (c)
   2006-2008 Andreas Brandmaier.
+- Monstro (`crates/prowave-engine/src/native_inst/monstro.rs`): Monstro and BandLimitedWave,
+  Copyright (c) 2014 Vesa Kivimäki, with Oscillator's waveforms and the helpers of
+  `lmms_math.h` and `interpolation.h`, Copyright (c) 2004-2014 Tobias Doerffel.
 
 ## Bespoke Synth (ported instruments)
 
@@ -881,6 +884,41 @@ voice of Bespoke Synth (https://github.com/BespokeSynth/BespokeSynth, at commit
 GPL-3.0-or-later; the file names the files it was ported from. The rhythm of the MIDI FX
 Euclidean Pattern (`euclidean_rhythm` in `crates/prowave-app/src/midi_fx.rs`) is ported from
 the same project's `Source/EuclideanSequencer.cpp`, same author and licence.
+Drum Synth (`crates/prowave-engine/src/native_inst/drum_synth.rs`) is a Rust port of the same
+project's DrumSynth (`Source/DrumSynth.cpp` and `.h`, with the parts of `ADSR.cpp`,
+`EnvOscillator.cpp`, `Oscillator.cpp`, `BiquadFilter.cpp` and `MathUtils.cpp` it uses), same
+commit, author and licence.
+
+## REDLINE (engine model of Engine)
+
+Engine (`crates/prowave-engine/src/native_inst/engine_sound.rs`) is a Rust port of the engine
+model and engines of REDLINE (https://github.com/Jwillc/redline, at commit
+ac12cf9aa2f28453dd4b60262b011904c2d879c7; `src/engine/model.ts` and `src/engine/presets.ts`),
+Copyright (c) 2026 JW Dev. MIT licence:
+
+```
+MIT License
+
+Copyright (c) 2026 JW Dev (REDLINE)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Hydrogen (swing and humanize of the MIDI FX Swing)
 
