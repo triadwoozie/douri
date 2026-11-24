@@ -156,13 +156,18 @@ struct IrJob {
 /// Recording first.
 fn start_command(p: &Project) -> Command {
     if !(p.recording && p.count_in) {
-        return Command::Play;
+        return if p.recording {
+            Command::Record
+        } else {
+            Command::Play
+        };
     }
     let bar = p.beats_to_bar(p.position_beats).floor().max(0.0) as u32;
     let (clicks, unit) = p.signature_of_bar(bar);
     Command::CountIn {
-        clicks: clicks.saturating_mul(p.count_in_bars.clamp(1, 4)),
+        clicks: (clicks.saturating_mul(p.count_in_bars.clamp(1, 4)) as u8).max(1),
         beats_per_click: 4.0 / f64::from(unit.max(1)),
+        record: p.recording,
     }
 }
 
@@ -398,6 +403,7 @@ pub(crate) fn region_notes(
     track: u16,
 ) -> Vec<NoteEvent> {
     let (rp, tp) = (r.params, t.params);
+    let delay_beats = (tp.delay_ms as f64 / 1000.0) * 2.0; // 120 BPM reference (2 beats per sec)
     r.notes
         .iter()
         .filter_map(|n| {
@@ -405,22 +411,37 @@ pub(crate) fn region_notes(
                 return None;
             }
             let start = match rp.quantize {
-                Some(q) if q > 0.0 => (n.start / q).round() * q,
+                Some(q) if q > 0.0 => {
+                    let base = (n.start / q).round() * q;
+                    let step = (n.start / q).round() as i64;
+                    if step % 2 == 1 && rp.q_swing != 0.0 {
+                        let swing_offset = (rp.q_swing / 100.0) * (q * 0.5);
+                        (base + swing_offset).max(0.0)
+                    } else {
+                        base
+                    }
+                }
                 _ => n.start,
             };
             if start < 0.0 || (start as f64) >= len_beats {
                 return None;
             }
-            let pitch = n.pitch as i32 + rp.transpose as i32 + tp.transpose as i32;
+            let pitch = if tp.no_transpose {
+                n.pitch as i32
+            } else {
+                n.pitch as i32 + rp.transpose as i32 + tp.transpose as i32
+            };
             let vel = (n.vel as i32 + rp.velocity as i32 + tp.velocity as i32).clamp(1, 127);
             let in_keys = (tp.key_limit.0 as i32..=tp.key_limit.1 as i32).contains(&pitch);
             let in_vels = (tp.vel_limit.0 as i32..=tp.vel_limit.1 as i32).contains(&vel);
-            let end_beat = (origin + (start + n.len) as f64).min(origin + len_beats);
-            if end_beat <= origin + start as f64 {
+            let start_beat = (origin + delay_beats + start as f64).max(0.0);
+            let end_beat = (origin + delay_beats + (start + n.len) as f64)
+                .min(origin + len_beats + delay_beats);
+            if end_beat <= start_beat {
                 return None;
             }
             (in_keys && in_vels && (0..=127).contains(&pitch)).then_some(NoteEvent {
-                start_beat: origin + start as f64,
+                start_beat,
                 end_beat,
                 pitch: pitch as u8,
                 vel: vel as u8,
@@ -720,6 +741,9 @@ impl EngineSync {
             p.counting_in = true;
         } else if p.counting_in && (!p.playing || self.engine.state().playing) {
             p.counting_in = false;
+            if self.engine.state().recording {
+                p.recording = true;
+            }
         }
         // Engine owns time while playing, unless a seek is still waiting to be accepted
         // (then the UI keeps the requested position and `push` retries it).
@@ -2130,14 +2154,21 @@ mod tests {
         assert!(matches!(start_command(&p), Command::Play), "not recording");
         p.recording = true;
         p.count_in = false;
-        assert!(matches!(start_command(&p), Command::Play), "count-in off");
+        assert!(
+            matches!(start_command(&p), Command::Record),
+            "count-in off records directly"
+        );
         p.count_in = true;
         p.sig = (6, 8);
         match start_command(&p) {
             Command::CountIn {
                 clicks,
                 beats_per_click,
-            } => assert_eq!((clicks, beats_per_click), (6, 0.5)),
+                record,
+            } => {
+                assert_eq!((clicks, beats_per_click), (6, 0.5));
+                assert!(record, "count-in carries recording");
+            }
             _ => panic!("no count-in"),
         }
         // Two bars of count-in: twice the clicks.

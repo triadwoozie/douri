@@ -376,3 +376,98 @@ pub fn menu_row(
 
     resp
 }
+
+/// Window control action triggered by the unified window buttons strip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowControlAction {
+    None,
+    Minimize,
+    Maximize,
+    Close,
+}
+
+/// Unified window control button strip (Minimize, Maximize/Restore, Close)
+/// matching Logic Pro dark chrome and Apple Human Interface Guidelines.
+pub fn draw_window_controls(ui: &mut Ui, is_maximized: bool) -> WindowControlAction {
+    let mut action = WindowControlAction::None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
+        let btn_size = vec2(28.0, 26.0);
+        let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
+        let hover_tint = Color32::WHITE;
+        let hover_bg = Color32::from_rgb(0x2b, 0x2b, 0x2e);
+        let close_hover_bg = Color32::from_rgb(0xc9, 0x3b, 0x3b);
+
+        // 1. Minimize
+        let (min_r, min_resp) = ui.allocate_exact_size(btn_size, Sense::click());
+        if min_resp.hovered() {
+            ui.painter()
+                .rect_filled(min_r, CornerRadius::same(4), hover_bg);
+        }
+        let min_col = if min_resp.hovered() {
+            hover_tint
+        } else {
+            default_tint
+        };
+        ui.painter().text(
+            min_r.center(),
+            Align2::CENTER_CENTER,
+            crate::icons::regular::MINUS,
+            FontId::proportional(13.0),
+            min_col,
+        );
+        if min_resp.clicked() {
+            action = WindowControlAction::Minimize;
+        }
+
+        // 2. Maximize / Restore
+        let (max_r, max_resp) = ui.allocate_exact_size(btn_size, Sense::click());
+        if max_resp.hovered() {
+            ui.painter()
+                .rect_filled(max_r, CornerRadius::same(4), hover_bg);
+        }
+        let max_col = if max_resp.hovered() {
+            hover_tint
+        } else {
+            default_tint
+        };
+        let max_icon = if is_maximized {
+            crate::icons::regular::COPY
+        } else {
+            crate::icons::regular::SQUARE
+        };
+        ui.painter().text(
+            max_r.center(),
+            Align2::CENTER_CENTER,
+            max_icon,
+            FontId::proportional(13.0),
+            max_col,
+        );
+        if max_resp.clicked() {
+            action = WindowControlAction::Maximize;
+        }
+
+        // 3. Close
+        let (close_r, close_resp) = ui.allocate_exact_size(btn_size, Sense::click());
+        if close_resp.hovered() {
+            ui.painter()
+                .rect_filled(close_r, CornerRadius::same(4), close_hover_bg);
+        }
+        let close_col = if close_resp.hovered() {
+            hover_tint
+        } else {
+            default_tint
+        };
+        ui.painter().text(
+            close_r.center(),
+            Align2::CENTER_CENTER,
+            crate::icons::regular::X,
+            FontId::proportional(13.0),
+            close_col,
+        );
+        if close_resp.clicked() {
+            action = WindowControlAction::Close;
+        }
+    });
+    action
+}

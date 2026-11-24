@@ -209,6 +209,8 @@ pub struct RegionParams {
     pub crossfade: bool,
     /// Loop length in quarter notes; 0 = no loop.
     pub loop_beats: f32,
+    /// Playback quantize swing (0% to 100%).
+    pub q_swing: f32,
     /// The region's own colour, or `None` for its track's colour.
     pub color: Option<egui::Color32>,
     /// Locked to SMPTE / timeline position (Logic: Lock SMPTE Position). Locked clips are protected
@@ -676,6 +678,12 @@ pub struct TrackParams {
     pub key_limit: (u8, u8),
     /// Lowest/highest velocity that plays (Vel Limit).
     pub vel_limit: (u8, u8),
+    /// Track playback delay in milliseconds (-99 to +99 ms).
+    pub delay_ms: i16,
+    /// Ignores region/global transpose when true.
+    pub no_transpose: bool,
+    /// Ignores controller reset commands when true.
+    pub no_reset: bool,
     /// The Groove Track: the one whose timing the following tracks take (see `groove.rs`).
     pub groove: bool,
     /// Plays with the Groove Track's timing.
@@ -689,6 +697,9 @@ impl Default for TrackParams {
             velocity: 0,
             key_limit: (0, 127),
             vel_limit: (1, 127),
+            delay_ms: 0,
+            no_transpose: false,
+            no_reset: false,
             groove: false,
             follow_groove: false,
         }

@@ -1421,13 +1421,41 @@ impl App {
             if !plays {
                 break;
             }
+            let tp = p
+                .tracks
+                .get(p.selected_track)
+                .map(|t| t.params)
+                .unwrap_or_default();
             s.audition.push(match *note {
-                recorder::LiveNote::On { pitch, vel } => piano_roll::Audition::On {
-                    pitch,
-                    vel,
-                    track: track.min(usize::from(u16::MAX)) as u16,
-                },
-                recorder::LiveNote::Off { pitch } => piano_roll::Audition::Off { pitch },
+                recorder::LiveNote::On { pitch, vel } => {
+                    let eff_pitch = if tp.no_transpose {
+                        pitch as i32
+                    } else {
+                        pitch as i32 + tp.transpose as i32
+                    };
+                    let eff_vel = (vel as i32 + tp.velocity as i32).clamp(1, 127);
+                    if !(tp.key_limit.0 as i32..=tp.key_limit.1 as i32).contains(&eff_pitch)
+                        || !(tp.vel_limit.0 as i32..=tp.vel_limit.1 as i32).contains(&eff_vel)
+                        || !(0..=127).contains(&eff_pitch)
+                    {
+                        continue;
+                    }
+                    piano_roll::Audition::On {
+                        pitch: eff_pitch as u8,
+                        vel: eff_vel as u8,
+                        track: track.min(usize::from(u16::MAX)) as u16,
+                    }
+                }
+                recorder::LiveNote::Off { pitch } => {
+                    let eff_pitch = if tp.no_transpose {
+                        pitch as i32
+                    } else {
+                        pitch as i32 + tp.transpose as i32
+                    };
+                    piano_roll::Audition::Off {
+                        pitch: (eff_pitch.clamp(0, 127)) as u8,
+                    }
+                }
                 // Bend and modulation reach a SoundFont or an external instrument as they are
                 // played (and are recorded).
                 recorder::LiveNote::Bend { val } => piano_roll::Audition::Control {
@@ -1811,8 +1839,11 @@ impl eframe::App for App {
         }
         if s.show_inspector {
             egui::Panel::left("inspector")
-                .exact_size(inspector::WIDTH)
-                .frame(egui::Frame::new())
+                .resizable(true)
+                .default_size(276.0)
+                .min_size(240.0)
+                .max_size(440.0)
+                .frame(egui::Frame::new().fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e)))
                 .show(ui, |ui| inspector::show(ui, p, s, &meters));
         }
         if s.show_toolbar {
@@ -1912,20 +1943,24 @@ impl eframe::App for App {
         if let Some(sync) = self.sync.as_mut() {
             let mut sent = 0;
             for ev in &self.ui.audition {
-                let cmd = match *ev {
+                let cmd = match ev {
                     piano_roll::Audition::On { track, .. }
-                        if usize::from(track) >= prowave_engine::MAX_TRACKS =>
+                        if usize::from(*track) >= prowave_engine::MAX_TRACKS =>
                     {
                         None
                     }
                     piano_roll::Audition::On { pitch, vel, track } => {
-                        Some(prowave_engine::Command::NoteOn { pitch, vel, track })
+                        Some(prowave_engine::Command::NoteOn {
+                            pitch: *pitch,
+                            vel: *vel,
+                            track: *track,
+                        })
                     }
                     piano_roll::Audition::Off { pitch } => {
-                        Some(prowave_engine::Command::NoteOff { pitch })
+                        Some(prowave_engine::Command::NoteOff { pitch: *pitch })
                     }
                     piano_roll::Audition::Control { track, .. }
-                        if usize::from(track) >= prowave_engine::MAX_TRACKS =>
+                        if usize::from(*track) >= prowave_engine::MAX_TRACKS =>
                     {
                         None
                     }
@@ -1934,9 +1969,26 @@ impl eframe::App for App {
                         number,
                         value,
                     } => Some(prowave_engine::Command::LiveControl {
-                        track,
-                        number,
-                        value,
+                        track: *track,
+                        number: *number,
+                        value: *value,
+                    }),
+                    piano_roll::Audition::StartSample(player) => {
+                        Some(prowave_engine::Command::StartAudition(player.clone()))
+                    }
+                    piano_roll::Audition::StopSample => Some(prowave_engine::Command::StopAudition),
+                    piano_roll::Audition::SampleParams {
+                        gain,
+                        speed,
+                        is_stereo,
+                        is_looping,
+                        pos_norm,
+                    } => Some(prowave_engine::Command::SetAuditionParams {
+                        gain: *gain,
+                        speed: *speed,
+                        is_stereo: *is_stereo,
+                        is_looping: *is_looping,
+                        pos_norm: *pos_norm,
                     }),
                 };
                 if cmd.is_some_and(|cmd| !sync.engine.send(cmd)) {

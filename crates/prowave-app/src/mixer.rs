@@ -38,11 +38,11 @@ const STRIP_FOOTER_H: f32 = 50.0;
 const MIN_FADER_H: f32 = 72.0;
 
 const TOOLBAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
-const MIXER_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
-const STRIP_BG: Color32 = Color32::from_rgb(0x26, 0x26, 0x2a);
-const STRIP_SEL: Color32 = Color32::from_rgb(0x30, 0x30, 0x35);
-const SLOT_EMPTY: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
-const SLOT_GRAY: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
+const MIXER_BG: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x1e);
+const STRIP_BG: Color32 = Color32::from_rgb(0x21, 0x21, 0x23);
+const STRIP_SEL: Color32 = Color32::from_rgb(0x2b, 0x2b, 0x2e);
+const SLOT_EMPTY: Color32 = Color32::from_rgb(0x2b, 0x2b, 0x2e);
+const SLOT_GRAY: Color32 = Color32::from_rgb(0x2b, 0x2b, 0x2e);
 const PLUGIN_BLUE: Color32 = Color32::from_rgb(0x12, 0x69, 0xcc);
 /// A plug-in in a project that is not installed here: its slot keeps its name and passes the
 /// sound through, and the orange says so.
@@ -237,7 +237,7 @@ fn slot(g: &Painter, r: Rect, text: &str, fill: Color32, color: Color32) {
     g.rect_stroke(
         r,
         4.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         StrokeKind::Inside,
     );
     if !text.is_empty() {
@@ -283,7 +283,7 @@ fn small_button(
         );
     } else {
         let bg = if resp.hovered() {
-            Color32::from_rgb(0x25, 0x2a, 0x37)
+            Color32::from_rgb(0x38, 0x38, 0x3c)
         } else {
             SLOT_GRAY
         };
@@ -291,7 +291,7 @@ fn small_button(
         g.rect_stroke(
             r,
             pill_r,
-            Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
             StrokeKind::Inside,
         );
     }
@@ -320,11 +320,11 @@ fn eq_thumb(
     r: Rect,
     eq: Option<(prowave_engine::FxKind, [f32; prowave_engine::MAX_FX_PARAMS])>,
 ) {
-    g.rect_filled(r, 3.0, Color32::from_gray(0x24));
+    g.rect_filled(r, 4.0, Color32::from_rgb(0x2b, 0x2b, 0x2e));
     g.rect_stroke(
         r,
-        3.0,
-        Stroke::new(1.0, Color32::from_gray(0x1a)),
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         StrokeKind::Inside,
     );
     if let Some((kind, params)) = eq {
@@ -488,11 +488,11 @@ fn fader_and_meter(
         pos2(meter_left - 2.0, top - 1.0),
         pos2(meter_left + 2.0 * bar_w + 3.0, bottom + 1.0),
     );
-    g.rect_filled(housing, 3.0, Color32::from_rgb(0x0d, 0x0f, 0x14));
+    g.rect_filled(housing, 4.0, Color32::from_rgb(0x18, 0x18, 0x1a));
     g.rect_stroke(
         housing,
-        3.0,
-        Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         StrokeKind::Inside,
     );
     for (i, (lvl, hd)) in [(levels.0, hold.0), (levels.1, hold.1)]
@@ -577,17 +577,17 @@ fn fader_and_meter(
         out.started |= resp.drag_started();
         out.stopped |= resp.drag_stopped();
     }
-    // Tactile white fader cap with soft shadow, silver-white body, center groove, and engraved ridges
+    // Dark anodized metallic fader cap with soft shadow, #3a3a3e body, 1px #58585e border, and #ffffff center line
     g.rect_filled(
         cap.translate(vec2(1.0, 2.0)),
         3.0,
-        Color32::from_black_alpha(120),
+        Color32::from_black_alpha(140),
     );
-    g.rect_filled(cap, 3.0, Color32::from_rgb(0xea, 0xee, 0xf4));
+    g.rect_filled(cap, 3.0, Color32::from_rgb(0x3a, 0x3a, 0x3e));
     g.rect_filled(
         Rect::from_min_max(
             pos2(cap.left() + 1.0, cap.top() + 1.0),
-            pos2(cap.right() - 1.0, cap.center().y),
+            pos2(cap.right() - 1.0, cap_y),
         ),
         egui::CornerRadius {
             nw: 2,
@@ -595,11 +595,11 @@ fn fader_and_meter(
             sw: 0,
             se: 0,
         },
-        Color32::from_rgb(0xf8, 0xfa, 0xfc),
+        Color32::from_rgb(0x42, 0x42, 0x48),
     );
     g.rect_filled(
         Rect::from_min_max(
-            pos2(cap.left() + 1.0, cap.center().y),
+            pos2(cap.left() + 1.0, cap_y),
             pos2(cap.right() - 1.0, cap.bottom() - 1.0),
         ),
         egui::CornerRadius {
@@ -608,12 +608,12 @@ fn fader_and_meter(
             sw: 2,
             se: 2,
         },
-        Color32::from_rgb(0xd8, 0xde, 0xe9),
+        Color32::from_rgb(0x32, 0x32, 0x36),
     );
     g.rect_stroke(
         cap,
         3.0,
-        Stroke::new(1.0, Color32::from_rgb(0x8a, 0x93, 0xa5)),
+        Stroke::new(1.0, Color32::from_rgb(0x58, 0x58, 0x5e)),
         StrokeKind::Inside,
     );
     for dy in [-9.0f32, -6.0, -3.0, 4.5, 7.5, 10.5] {
@@ -622,37 +622,23 @@ fn fader_and_meter(
                 pos2(cap.left() + 2.5, cap_y + dy),
                 pos2(cap.right() - 2.5, cap_y + dy),
             ],
-            Stroke::new(0.8, Color32::from_rgb(0x94, 0xa3, 0xb8)),
+            Stroke::new(0.8, Color32::from_rgb(0x28, 0x28, 0x2c)),
         );
         g.line_segment(
             [
                 pos2(cap.left() + 2.5, cap_y + dy + 1.0),
                 pos2(cap.right() - 2.5, cap_y + dy + 1.0),
             ],
-            Stroke::new(0.6, Color32::WHITE),
+            Stroke::new(0.6, Color32::from_rgb(0x4a, 0x4a, 0x50)),
         );
     }
-    // Deep center alignment groove with bright highlight underneath
+    // High-visibility crisp #ffffff white center indicator line
     g.line_segment(
         [
             pos2(cap.left() + 1.0, cap_y),
             pos2(cap.right() - 1.0, cap_y),
         ],
-        Stroke::new(2.0, Color32::from_rgb(0x1e, 0x29, 0x3b)),
-    );
-    g.line_segment(
-        [
-            pos2(cap.left() + 1.0, cap_y + 1.0),
-            pos2(cap.right() - 1.0, cap_y + 1.0),
-        ],
-        Stroke::new(0.8, Color32::WHITE),
-    );
-    g.line_segment(
-        [
-            pos2(cap.left() + 1.0, cap_y + 1.4),
-            pos2(cap.right() - 1.0, cap_y + 1.4),
-        ],
-        Stroke::new(0.8, Color32::from_gray(0xee)),
+        Stroke::new(1.5, Color32::WHITE),
     );
     out
 }
@@ -1004,12 +990,12 @@ fn insert_slot(
     let Some(fx) = have else {
         g.rect_filled(
             r,
-            CornerRadius::same(2),
-            Color32::from_rgb(0x1c, 0x1c, 0x1e),
+            CornerRadius::same(4),
+            Color32::from_rgb(0x2b, 0x2b, 0x2e),
         );
         g.rect_stroke(
             r,
-            CornerRadius::same(2),
+            CornerRadius::same(4),
             Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
             StrokeKind::Inside,
         );
@@ -1018,7 +1004,7 @@ fn insert_slot(
             Align2::CENTER_CENTER,
             "Audio FX",
             FontId::proportional(10.0),
-            Color32::from_rgb(0x8e, 0x8e, 0x93),
+            Color32::from_rgb(0xa0, 0xa0, 0xa6),
         );
         let resp = ui.interact(r, uid, Sense::click());
         let mut act = None;
@@ -1045,8 +1031,8 @@ fn insert_slot(
         Stroke::new(1.0, Color32::from_rgb(0x1a, 0x56, 0xa0))
     };
 
-    g.rect_filled(r, CornerRadius::same(2), bg);
-    g.rect_stroke(r, CornerRadius::same(2), stroke, StrokeKind::Inside);
+    g.rect_filled(r, CornerRadius::same(4), bg);
+    g.rect_stroke(r, CornerRadius::same(4), stroke, StrokeKind::Inside);
 
     // Three-zone Logic Pro style slot layout:
     // 1. Left power/bypass button
@@ -1853,10 +1839,10 @@ pub fn channel_strip(
             );
         }
         NameStyle::Plain => {
-            g.rect_filled(name_r, corner, Color32::from_rgb(0x13, 0x16, 0x1e));
+            g.rect_filled(name_r, corner, Color32::from_rgb(0x18, 0x18, 0x1a));
             g.line_segment(
                 [name_r.left_top(), name_r.right_top()],
-                Stroke::new(1.0, Color32::from_rgb(0x25, 0x2a, 0x37)),
+                Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
             );
             g.text(
                 name_r.center(),

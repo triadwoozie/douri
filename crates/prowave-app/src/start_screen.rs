@@ -368,13 +368,13 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         g.rect_filled(full, 0.0, Color32::from_black_alpha(160));
         Rect::from_center_size(full.center(), vec2(modal_w, modal_h))
     };
-    // Modal card with smooth 12px rounded corners
-    let cr = 12.0;
+    // Modal card with smooth 10px rounded corners
+    let cr = 10.0;
     g.rect_filled(area, cr, BG);
     g.rect_stroke(
         area,
         cr,
-        Stroke::new(1.0, Color32::from_rgb(46, 49, 56)),
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         StrokeKind::Inside,
     );
 
@@ -382,9 +382,9 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
     let side_w = 170.0f32;
     let side = Rect::from_min_size(area.min, vec2(side_w, area.height()));
     let side_cr = egui::CornerRadius {
-        nw: 12,
+        nw: 10,
         ne: 0,
-        sw: 12,
+        sw: 10,
         se: 0,
     };
     g.rect_filled(side, side_cr, SIDEBAR);
@@ -459,37 +459,28 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         }
     }
 
-    // Top-right clean close 'x' button
-    let close_r = Rect::from_center_size(
-        pos2(area.right() - 16.0, area.top() + 16.0),
-        vec2(20.0, 20.0),
+    // Top-right clean unified window controls
+    let is_max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+    let controls_w = 3.0 * 28.0 + 2.0 * 4.0;
+    let controls_rect = Rect::from_min_size(
+        pos2(area.right() - controls_w - 12.0, area.top() + 6.0),
+        vec2(controls_w, 26.0),
     );
-    let close_resp = ui.interact(close_r, egui::Id::unique("chooser_close_x"), Sense::click());
-    if close_resp.hovered() {
-        g.circle_filled(close_r.center(), 10.0, Color32::from_white_alpha(20));
-    }
-    let stroke_color = if close_resp.hovered() {
-        Color32::WHITE
-    } else {
-        Color32::from_rgb(0x9a, 0x9a, 0xa2)
-    };
-    let x_stroke = Stroke::new(1.2, stroke_color);
-    g.line_segment(
-        [
-            close_r.center() + vec2(-4.0, -4.0),
-            close_r.center() + vec2(4.0, 4.0),
-        ],
-        x_stroke,
-    );
-    g.line_segment(
-        [
-            close_r.center() + vec2(4.0, -4.0),
-            close_r.center() + vec2(-4.0, 4.0),
-        ],
-        x_stroke,
-    );
-    if close_resp.clicked() {
-        cancel = true;
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(controls_rect));
+    let action = crate::ui_chrome::draw_window_controls(&mut child_ui, is_max);
+    match action {
+        crate::ui_chrome::WindowControlAction::Minimize => {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+        crate::ui_chrome::WindowControlAction::Maximize => {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Maximized(!is_max));
+        }
+        crate::ui_chrome::WindowControlAction::Close => {
+            cancel = true;
+        }
+        crate::ui_chrome::WindowControlAction::None => {}
     }
 
     match c.section {
@@ -762,14 +753,14 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
         nw: 0,
         ne: 0,
         sw: 0,
-        se: 12,
+        se: 10,
     };
     g.rect_filled(footer_bg, footer_cr, SIDEBAR);
-    // Ensure the 1px #2E3138 outer border is crisp over all edges
+    // Ensure the 1px #38383c outer border is crisp over all edges
     g.rect_stroke(
         area,
         cr,
-        Stroke::new(1.0, Color32::from_rgb(46, 49, 56)),
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         StrokeKind::Inside,
     );
 

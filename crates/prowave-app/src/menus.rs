@@ -1823,42 +1823,22 @@ pub fn trigger_record(p: &mut Project, s: &mut crate::UiState) {
         return;
     }
 
-    if p.playing {
-        let sel_is_midi = p.tracks.get(p.selected_track).is_some_and(is_midi);
-        let any_armed = p.tracks.iter().any(|t| t.rec);
-        if sel_is_midi {
-            if let Some(t) = p.tracks.get_mut(p.selected_track) {
-                t.rec = true;
-            }
-            p.recording = true;
-        } else if any_armed {
-            p.recording = true;
-        } else {
-            s.status = Some(tr("No track record enabled").to_string());
-        }
-        return;
-    }
-
-    // Transport stopped: start immediate recording
-    let sel_is_midi = p.tracks.get(p.selected_track).is_some_and(is_midi);
-    let any_audio_armed = p
-        .tracks
-        .iter()
-        .any(|t| t.rec && t.kind == crate::model::TrackKind::Audio);
-    let any_midi_armed = p.tracks.iter().any(|t| t.rec && is_midi(t));
-
-    if sel_is_midi {
+    // Auto-arm the selected track if no track is explicitly armed (standard DAW behavior).
+    let any_armed = p.tracks.iter().any(|t| t.rec);
+    if !any_armed {
         if let Some(t) = p.tracks.get_mut(p.selected_track) {
             t.rec = true;
         }
-        p.recording = true;
-        p.playing = true;
-    } else if any_audio_armed || any_midi_armed {
-        p.recording = true;
-        p.playing = true;
-    } else {
-        s.status = Some(tr("No track record enabled").to_string());
     }
+
+    if p.playing {
+        p.recording = true;
+        return;
+    }
+
+    // Transport stopped: start recording (or count-in)
+    p.recording = true;
+    p.playing = true;
 }
 
 /// One menu entry that is always enabled (the Open Recent list).

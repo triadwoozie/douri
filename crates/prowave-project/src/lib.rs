@@ -132,6 +132,8 @@ pub struct RegionDoc {
     pub crossfade: bool,
     #[serde(default)]
     pub loop_beats: f32,
+    #[serde(default)]
+    pub q_swing: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[u8; 3]>,
     /// A Pattern region: the steps that make its `notes`.
@@ -288,6 +290,12 @@ pub struct TrackDoc {
     pub velocity: i8,
     pub key_limit: (u8, u8),
     pub vel_limit: (u8, u8),
+    #[serde(default)]
+    pub delay_ms: i16,
+    #[serde(default)]
+    pub no_transpose: bool,
+    #[serde(default)]
+    pub no_reset: bool,
     pub send_bus: Option<u16>,
     pub send_level: f32,
     pub send_pre: bool,
@@ -535,6 +543,9 @@ impl Default for TrackDoc {
             velocity: 0,
             key_limit: (0, 127),
             vel_limit: (1, 127),
+            delay_ms: 0,
+            no_transpose: false,
+            no_reset: false,
             send_bus: None,
             send_level: 0.0,
             send_pre: false,

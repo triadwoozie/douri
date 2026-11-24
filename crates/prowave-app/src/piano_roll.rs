@@ -58,7 +58,7 @@ fn region_bar_color(c: Color32) -> Color32 {
 }
 
 /// Live notes the Piano Roll wants to play; `main` forwards them to the engine.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Audition {
     On {
         pitch: u8,
@@ -73,6 +73,18 @@ pub enum Audition {
         track: u16,
         number: u8,
         value: u16,
+    },
+    /// Live sample audition player (Sound Library previewer).
+    StartSample(Box<prowave_engine::AuditionPlayer>),
+    /// Stop live sample audition.
+    StopSample,
+    /// Live sample audition parameter update.
+    SampleParams {
+        gain: f32,
+        speed: f64,
+        is_stereo: bool,
+        is_looping: bool,
+        pos_norm: Option<f32>,
     },
 }
 

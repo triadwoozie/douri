@@ -396,11 +396,14 @@ impl AudioClip {
 /// payload travels back through the garbage queue so it is freed off the audio thread.
 pub enum Command {
     Play,
-    /// Clicks `clicks` times, `beats_per_click` quarter notes apart, then plays from where
+    /// Starts recording directly from where the playhead is.
+    Record,
+    /// Clicks `clicks` times, `beats_per_click` quarter notes apart, then plays or records from where
     /// the playhead is (Logic: Count-in). Pause or Stop cancels it.
     CountIn {
         clicks: u8,
         beats_per_click: f64,
+        record: bool,
     },
     /// Every finished frame (the master mix, after the master fader) goes into this sink, for
     /// a bounce; a full ring drops the frame and counts it. `None` stops capturing.
@@ -413,8 +416,20 @@ pub enum Command {
         track: u16,
         plugins: Option<Box<crate::plugin_track::PluginTrack>>,
     },
-    /// The plug-in effects of the master bus (Stereo Out).
+    /// Sets the plug-in effects of the master bus (Stereo Out).
     SetMasterPlugins(Option<Box<crate::plugin_track::PluginTrack>>),
+    /// Starts live auditioning of an audio sample buffer off the audio thread.
+    StartAudition(Box<AuditionPlayer>),
+    /// Stops live auditioning.
+    StopAudition,
+    /// Sets live audition parameters (gain, speed, stereo, looping, playhead position).
+    SetAuditionParams {
+        gain: f32,
+        speed: f64,
+        is_stereo: bool,
+        is_looping: bool,
+        pos_norm: Option<f32>,
+    },
     /// The tracks that hear their input now (the first `count` of `tracks`).
     SetMonitors {
         tracks: [MonitorTrack; MAX_MONITORS],
@@ -619,6 +634,8 @@ impl Command {
                 | Self::SetTrackSoundFont { .. }
                 | Self::SetPlugins { .. }
                 | Self::SetMasterPlugins(_)
+                | Self::StartAudition(_)
+                | Self::StopAudition
         )
     }
 
@@ -642,6 +659,81 @@ pub struct CaptureSink {
     pub dropped: Arc<AtomicU64>,
 }
 
+/// Real-time safe audio sample audition player.
+/// Samples are decoded / synthesized off-audio-thread into `Vec<f32>` (interleaved stereo).
+/// The audio thread only reads from `samples` and advances playback with linear interpolation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuditionPlayer {
+    pub samples: Vec<f32>,
+    pub sample_rate: f32,
+    pub pos: f64,
+    pub speed: f64,
+    pub gain: f32,
+    pub is_looping: bool,
+    pub is_stereo: bool,
+    pub is_active: bool,
+}
+
+impl AuditionPlayer {
+    pub fn new(samples: Vec<f32>, sample_rate: f32) -> Self {
+        Self {
+            samples,
+            sample_rate,
+            pos: 0.0,
+            speed: 1.0,
+            gain: 1.0,
+            is_looping: false,
+            is_stereo: true,
+            is_active: true,
+        }
+    }
+
+    #[inline]
+    pub fn next_sample(&mut self, engine_sr: f32) -> (f32, f32) {
+        if !self.is_active || self.samples.is_empty() {
+            return (0.0, 0.0);
+        }
+        let total_frames = self.samples.len() / 2;
+        if total_frames == 0 {
+            return (0.0, 0.0);
+        }
+
+        let frame_idx = self.pos.floor() as usize;
+        let frac = (self.pos - self.pos.floor()) as f32;
+
+        let (l, r) = if frame_idx + 1 < total_frames {
+            let l0 = self.samples[frame_idx * 2];
+            let r0 = self.samples[frame_idx * 2 + 1];
+            let l1 = self.samples[(frame_idx + 1) * 2];
+            let r1 = self.samples[(frame_idx + 1) * 2 + 1];
+            (l0 + frac * (l1 - l0), r0 + frac * (r1 - r0))
+        } else if frame_idx < total_frames {
+            (self.samples[frame_idx * 2], self.samples[frame_idx * 2 + 1])
+        } else {
+            (0.0, 0.0)
+        };
+
+        let step = (self.sample_rate as f64 / engine_sr.max(1.0) as f64) * self.speed.max(0.01);
+        self.pos += step;
+
+        if self.pos >= total_frames as f64 {
+            if self.is_looping {
+                self.pos %= total_frames as f64;
+            } else {
+                self.is_active = false;
+            }
+        }
+
+        let gain = self.gain;
+        if self.is_stereo {
+            (l * gain, r * gain)
+        } else {
+            let mono = (l + r) * 0.5 * gain;
+            (mono, mono)
+        }
+    }
+}
+
 pub enum Garbage {
     Song(Box<Song>),
     Notes(Vec<NoteEvent>),
@@ -657,6 +749,8 @@ pub enum Garbage {
     Capture(Box<CaptureSink>),
     /// Plug-in tracks handed back to the UI thread.
     Plugins(Box<crate::plugin_track::PluginTrack>),
+    /// Audition player handed back to the UI thread.
+    Audition(Box<AuditionPlayer>),
 }
 
 /// What the engine shows the UI after each audio block: the playhead, the transport and the
@@ -665,6 +759,8 @@ pub enum Garbage {
 pub struct EngineState {
     pub position_beats: f64,
     pub playing: bool,
+    pub recording: bool,
+    pub counting_in: bool,
     /// Master output peak (left, right), linear, falling back slowly like a meter.
     pub peaks: (f32, f32),
     /// Post-fader stereo peak per track, linear, for the mixer meters.
@@ -696,6 +792,8 @@ impl Default for EngineState {
         Self {
             position_beats: 0.0,
             playing: false,
+            recording: false,
+            counting_in: false,
             peaks: (0.0, 0.0),
             track_peaks: [(0.0, 0.0); MAX_TRACKS],
             gain_reduction: [0.0; MAX_TRACKS],
@@ -936,6 +1034,8 @@ pub struct EngineCore {
     count_left: u8,
     count_wait: u32,
     count_step: u32,
+    recording: bool,
+    pending_record: bool,
     input: Option<Box<InputFeed>>,
     /// Where the finished master frames go while a bounce is running.
     capture: Option<CaptureSink>,
@@ -1021,6 +1121,8 @@ pub struct EngineCore {
     test_hz: f32,
     test_gain: f32,
     test_phase: f32,
+    /// Live audition player for sound library sample previewing
+    audition_player: Option<Box<AuditionPlayer>>,
     /// ITU-R BS.1770 / EBU R128 loudness and 4× oversampled true-peak meter.
     pub loudness: crate::meter::LoudnessMeter,
 }
@@ -1107,6 +1209,8 @@ impl EngineCore {
             count_left: 0,
             count_wait: 0,
             count_step: 1,
+            recording: false,
+            pending_record: false,
             input: None,
             capture: None,
             offline: false,
@@ -1166,6 +1270,7 @@ impl EngineCore {
             test_hz: 0.0,
             test_gain: 0.0,
             test_phase: 0.0,
+            audition_player: None,
             loudness: crate::meter::LoudnessMeter::new(sample_rate.max(1) as f32, 2),
         }
     }
@@ -1644,6 +1749,10 @@ impl EngineCore {
                 self.start_beat = self.beat;
                 self.clock_start();
                 self.playing = true;
+                if self.pending_record {
+                    self.recording = true;
+                    self.pending_record = false;
+                }
                 self.mtc_locate();
                 return;
             }
@@ -1729,6 +1838,7 @@ impl EngineCore {
                 Command::CountIn {
                     clicks,
                     beats_per_click,
+                    record,
                 } => {
                     if self.playing {
                         continue;
@@ -1743,6 +1853,19 @@ impl EngineCore {
                     self.count_left = clicks;
                     self.count_wait = 0;
                     self.counting = true;
+                    self.pending_record = record;
+                    self.recording = false;
+                }
+                Command::Record => {
+                    self.counting = false;
+                    self.pending_record = false;
+                    self.recording = true;
+                    if !self.playing {
+                        self.start_beat = self.beat;
+                        self.clock_start();
+                    }
+                    self.playing = true;
+                    self.mtc_locate();
                 }
                 Command::SetInput(feed) => {
                     let mut feed = feed;
@@ -1759,6 +1882,8 @@ impl EngineCore {
                 }
                 Command::Play => {
                     self.counting = false;
+                    self.recording = false;
+                    self.pending_record = false;
                     if !self.playing {
                         self.start_beat = self.beat;
                         self.clock_start();
@@ -1768,6 +1893,8 @@ impl EngineCore {
                 }
                 Command::Pause => {
                     self.counting = false;
+                    self.recording = false;
+                    self.pending_record = false;
                     if self.playing {
                         self.clock_send(ClockMessage::Stop);
                     }
@@ -1777,6 +1904,8 @@ impl EngineCore {
                 }
                 Command::Stop => {
                     self.counting = false;
+                    self.recording = false;
+                    self.pending_record = false;
                     if self.playing {
                         self.clock_send(ClockMessage::Stop);
                     }
@@ -2066,6 +2195,35 @@ impl EngineCore {
                 Command::SetMasterPlugins(plugins) => {
                     if let Some(old) = std::mem::replace(&mut self.master_plugins, plugins) {
                         let _ = self.trash.push(Garbage::Plugins(old));
+                    }
+                }
+                Command::StartAudition(player) => {
+                    if let Some(old) = self.audition_player.replace(player) {
+                        let _ = self.trash.push(Garbage::Audition(old));
+                    }
+                }
+                Command::StopAudition => {
+                    if let Some(mut player) = self.audition_player.take() {
+                        player.is_active = false;
+                        let _ = self.trash.push(Garbage::Audition(player));
+                    }
+                }
+                Command::SetAuditionParams {
+                    gain,
+                    speed,
+                    is_stereo,
+                    is_looping,
+                    pos_norm,
+                } => {
+                    if let Some(player) = self.audition_player.as_mut() {
+                        player.gain = gain;
+                        player.speed = speed;
+                        player.is_stereo = is_stereo;
+                        player.is_looping = is_looping;
+                        if let Some(pn) = pos_norm {
+                            let total_frames = (player.samples.len() / 2) as f64;
+                            player.pos = (pn as f64 * total_frames).clamp(0.0, total_frames);
+                        }
                     }
                 }
             }
@@ -2696,6 +2854,13 @@ impl EngineCore {
                     (f64::from(cl), f64::from(cr))
                 };
             }
+            if let Some(player) = self.audition_player.as_mut() {
+                if player.is_active {
+                    let (al, ar) = player.next_sample(self.sr);
+                    l += al as f64;
+                    r += ar as f64;
+                }
+            }
             let master = self.master.next() as f64;
             // `clamp` lets NaN through, so a non-finite sum becomes silence first.
             let l = finite_or_zero((l * master) as f32).clamp(-1.0, 1.0);
@@ -2786,6 +2951,8 @@ impl EngineCore {
         let shown = &mut self.shown;
         shown.position_beats = self.beat;
         shown.playing = self.playing;
+        shown.recording = self.recording;
+        shown.counting_in = self.counting;
         // Peak with simple decay so the UI meter does not flicker between callbacks.
         let (ol, or) = shown.peaks;
         shown.peaks = (decayed_peak(pk_l, ol), decayed_peak(pk_r, or));
@@ -3602,6 +3769,7 @@ mod tests {
         let cmd = Command::CountIn {
             clicks,
             beats_per_click,
+            record: false,
         };
         assert!(tx.push(cmd).is_ok());
         // 120 BPM: 2 beats are 1 second at 48 kHz.
@@ -3619,11 +3787,67 @@ mod tests {
     }
 
     #[test]
+    fn count_in_transitions_directly_to_recording() {
+        let (mut e, mut tx, mut s) = rig();
+        assert!(tx.push(Command::SetPosition { beat: 4.0 }).is_ok());
+        let cmd = Command::CountIn {
+            clicks: 2,
+            beats_per_click: 1.0,
+            record: true,
+        };
+        assert!(tx.push(cmd).is_ok());
+        let mut buf = vec![0.0f32; 24_000 * 2];
+        e.process(&mut buf);
+        let st = s.read();
+        assert!(!st.playing && st.counting_in && !st.recording);
+        // Process through rest of count-in
+        let mut rest = vec![0.0f32; 25_000 * 2];
+        e.process(&mut rest);
+        let st = s.read();
+        assert!(st.playing, "transport started");
+        assert!(!st.counting_in, "count-in finished");
+        assert!(st.recording, "recording active after count-in");
+    }
+
+    #[test]
+    fn count_in_with_cycle_transitions_to_recording_and_preserves_on_wrap() {
+        let (mut e, mut tx, mut s) = rig();
+        assert!(tx
+            .push(Command::SetCycle {
+                on: true,
+                start_beat: 4.0,
+                end_beat: 8.0,
+            })
+            .is_ok());
+        assert!(tx.push(Command::SetPosition { beat: 4.0 }).is_ok());
+        let cmd = Command::CountIn {
+            clicks: 1,
+            beats_per_click: 1.0,
+            record: true,
+        };
+        assert!(tx.push(cmd).is_ok());
+        let mut buf = vec![0.0f32; 25_000 * 2];
+        e.process(&mut buf);
+        let st = s.read();
+        assert!(
+            st.playing && st.recording,
+            "recording after count-in in cycle"
+        );
+        // Process enough frames to cross cycle end (beat 8.0) and wrap back
+        let mut wrap_buf = vec![0.0f32; 96_000 * 2];
+        e.process(&mut wrap_buf);
+        let st = s.read();
+        assert!(st.playing, "still playing");
+        assert!(st.recording, "recording preserved across cycle wrap");
+    }
+
+    #[test]
     fn stopping_cancels_a_count_in() {
         let (mut e, mut tx, _s) = rig();
         let cmd = Command::CountIn {
             clicks: 4,
             beats_per_click: 1.0,
+            record: false,
         };
         assert!(tx.push(cmd).is_ok());
         let mut buf = vec![0.0f32; 256];

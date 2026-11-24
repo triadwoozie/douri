@@ -17,15 +17,13 @@ use egui::{
 };
 use prowave_engine::FadeCurve;
 
-const PANEL_BG: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
-const HEADER_BG: Color32 = Color32::from_rgb(0x42, 0x42, 0x42);
+const PANEL_BG: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x1e);
+const HEADER_BG: Color32 = Color32::from_rgb(0x25, 0x25, 0x27);
 const ROW_H: f32 = 20.0;
 const HEADER_H: f32 = 24.0;
 /// The inspector's width: Logic's, which is two channel strips of the Mixer's width side by
 /// side (the selected track's and its output's).
-pub const WIDTH: f32 = 180.0;
-const LABEL_RIGHT: f32 = 76.0;
-const VALUE_LEFT: f32 = 82.0;
+pub const WIDTH: f32 = 276.0;
 const STRIPS_MIN_H: f32 = 430.0;
 
 /// Fade lengths move in 1/16 notes.
@@ -155,7 +153,7 @@ fn use_sampler(p: &mut Project, ti: usize, source: crate::sampler_load::SamplerS
 fn sampler_rows(
     ui: &Ui,
     g: &Painter,
-    (left, vx, vw): (f32, f32, f32),
+    (label_right, vx, vw): (f32, f32, f32),
     y: &mut f32,
     current: &crate::model::SamplerUse,
 ) -> Option<crate::model::SamplerUse> {
@@ -163,7 +161,7 @@ fn sampler_rows(
     let mut next = current.clone();
     let mut changed = false;
     for (dial, name, per_unit, range) in SAMPLER_ROWS {
-        label(g, left, *y, tr(name), true);
+        label(g, label_right, *y, tr(name), true);
         let r = Rect::from_min_size(pos2(vx, *y + 2.0), vec2(vw, ROW_H - 4.0));
         let steps = (current.params[dial] * per_unit).round() as i32;
         let default = (prowave_engine::sampler::defaults()[dial] * per_unit).round() as i32;
@@ -184,7 +182,7 @@ fn sampler_rows(
         *y += ROW_H;
     }
     if let SamplerSource::Audio { path, root, looped } = &current.source {
-        label(g, left, *y, tr("Root Key:"), true);
+        label(g, label_right, *y, tr("Root Key:"), true);
         let r = Rect::from_min_size(pos2(vx, *y + 2.0), vec2(vw, ROW_H - 4.0));
         if let Some(v) = drag_value(
             ui,
@@ -205,7 +203,7 @@ fn sampler_rows(
             changed = true;
         }
         *y += ROW_H;
-        label(g, left, *y, tr("Loop:"), true);
+        label(g, label_right, *y, tr("Loop:"), true);
         let r = Rect::from_min_size(pos2(vx, *y + 2.0), vec2(vw, ROW_H - 4.0));
         let text = if *looped { tr("On") } else { tr("Off") }.to_string();
         if let Some(v) = drag_value(
@@ -281,13 +279,13 @@ fn piano_text(dial: usize, steps: i32) -> String {
 fn piano_rows(
     ui: &Ui,
     g: &Painter,
-    (left, vx, vw): (f32, f32, f32),
+    (label_right, vx, vw): (f32, f32, f32),
     y: &mut f32,
     dials: [f32; prowave_engine::epiano::PARAMS],
 ) -> Option<[f32; prowave_engine::epiano::PARAMS]> {
     let mut out = None;
     for (dial, name, per_unit, range) in PIANO_ROWS {
-        label(g, left, *y, tr(name), true);
+        label(g, label_right, *y, tr(name), true);
         let r = Rect::from_min_size(pos2(vx, *y + 2.0), vec2(vw, ROW_H - 4.0));
         let steps = (dials[dial] * per_unit).round() as i32;
         let default = (prowave_engine::epiano::defaults()[dial] * per_unit).round() as i32;
@@ -385,7 +383,7 @@ fn section_header(
     g.rect_filled(r, 0.0, HEADER_BG);
     g.line_segment(
         [r.left_bottom(), r.right_bottom()],
-        Stroke::new(1.0, Color32::from_gray(0x2a)),
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
     );
     let c = pos2(r.left() + 12.0, r.center().y);
     let tri = if open {
@@ -422,14 +420,14 @@ fn section_header(
     resp
 }
 
-fn label(g: &Painter, panel_left: f32, y: f32, text: &str, enabled: bool) {
+fn label(g: &Painter, label_right: f32, y: f32, text: &str, enabled: bool) {
     let col = if enabled {
-        Color32::from_gray(0xb0)
+        Color32::from_rgb(0xa0, 0xa0, 0xa6)
     } else {
-        Color32::from_gray(0x6c)
+        Color32::from_rgb(0x60, 0x60, 0x65)
     };
     g.text(
-        pos2(panel_left + LABEL_RIGHT, y + ROW_H / 2.0),
+        pos2(label_right, y + ROW_H / 2.0),
         Align2::RIGHT_CENTER,
         text,
         FontId::proportional(11.5),
@@ -445,20 +443,20 @@ fn checkbox(ui: &Ui, g: &Painter, at: Pos2, key: &str, value: bool, enabled: boo
             .interact(r.expand(3.0), id(("check", key)), Sense::click())
             .clicked();
     let border = if enabled {
-        Color32::from_gray(0x8a)
+        Color32::from_rgb(0x38, 0x38, 0x3c)
     } else {
-        Color32::from_gray(0x55)
+        Color32::from_rgb(0x2b, 0x2b, 0x2e)
     };
     g.rect_filled(
         r,
-        2.5,
+        3.0,
         if value {
-            crate::widgets::BLUE
+            Color32::from_rgb(0x12, 0x69, 0xcc)
         } else {
-            Color32::from_gray(0x2c)
+            Color32::from_rgb(0x18, 0x18, 0x1a)
         },
     );
-    g.rect_stroke(r, 2.5, Stroke::new(1.0, border), StrokeKind::Inside);
+    g.rect_stroke(r, 3.0, Stroke::new(1.0, border), StrokeKind::Inside);
     if value {
         g.add(Shape::line(
             vec![
@@ -484,21 +482,28 @@ fn popup(
     let col = if enabled {
         TEXT
     } else {
-        Color32::from_gray(0x70)
+        Color32::from_rgb(0x8e, 0x8e, 0x93)
     };
     let resp = enabled.then(|| ui.interact(r, id(("popup", key)), Sense::click()));
     let hovered = resp.as_ref().is_some_and(|r| r.hovered());
-    g.rect_filled(
-        r,
-        3.0,
-        if hovered {
-            Color32::from_gray(0x5c)
-        } else if enabled {
-            BTN_BG
-        } else {
-            Color32::from_gray(0x44)
-        },
-    );
+    let (bg, border) = if hovered {
+        (
+            Color32::from_rgb(0x38, 0x38, 0x3c),
+            Color32::from_rgb(0x50, 0x50, 0x55),
+        )
+    } else if enabled {
+        (
+            Color32::from_rgb(0x2b, 0x2b, 0x2e),
+            Color32::from_rgb(0x38, 0x38, 0x3c),
+        )
+    } else {
+        (
+            Color32::from_rgb(0x1c, 0x1c, 0x1e),
+            Color32::from_rgb(0x2b, 0x2b, 0x2e),
+        )
+    };
+    g.rect_filled(r, 4.0, bg);
+    g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
     g.text(
         pos2(r.left() + 6.0, r.center().y),
         Align2::LEFT_CENTER,
@@ -538,9 +543,15 @@ fn drag_value(
     let col = if enabled {
         TEXT
     } else {
-        Color32::from_gray(0x70)
+        Color32::from_rgb(0x8e, 0x8e, 0x93)
     };
-    g.rect_filled(r, 3.0, Color32::from_gray(0x30));
+    g.rect_filled(r, 4.0, Color32::from_rgb(0x2b, 0x2b, 0x2e));
+    g.rect_stroke(
+        r,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+        StrokeKind::Inside,
+    );
     g.text(
         pos2(r.left() + 6.0, r.center().y),
         Align2::LEFT_CENTER,
@@ -586,13 +597,35 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     let left = panel.left();
     let w = panel.width();
 
+    let label_col_w = (w * 0.44).clamp(112.0, 150.0);
+    let label_right = left + label_col_w - 6.0;
+    let vx = left + label_col_w;
+    let vw = (w - label_col_w - 12.0).max(40.0);
+
+    let (upper_rect, strips_rect, anchor_strips) = if panel.height() >= 550.0 {
+        let strips_h = 440.0_f32.min(panel.height() - 80.0);
+        let strips_top = panel.bottom() - strips_h;
+        (
+            Rect::from_min_max(panel.min, pos2(panel.max.x, strips_top)),
+            Rect::from_min_max(pos2(panel.left(), strips_top), panel.max),
+            true,
+        )
+    } else {
+        (panel, panel, false)
+    };
+
     if ui
         .input(|i| i.pointer.hover_pos())
-        .is_some_and(|pt| panel.contains(pt))
+        .is_some_and(|pt| upper_rect.contains(pt))
     {
         s.inspector.scroll_y -= ui.input(|i| i.smooth_scroll_delta.y);
     }
-    let mut y = panel.top() - s.inspector.scroll_y;
+    let g_upper = if anchor_strips {
+        g.with_clip_rect(upper_rect.intersect(g.clip_rect()))
+    } else {
+        g.clone()
+    };
+    let mut y = upper_rect.top() - s.inspector.scroll_y;
     let mut changed_song = false;
 
     // ---------------- Region
@@ -606,7 +639,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
     let head = section_header(
         ui,
-        &g,
+        &g_upper,
         hdr,
         "region",
         s.inspector.region_open,
@@ -630,26 +663,24 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             .map(|(t, r)| p.tracks[t].regions[r].params)
             .unwrap_or_default();
         let mut params = before;
-        let vx = left + VALUE_LEFT;
-        let vw = w - VALUE_LEFT - 10.0;
 
-        label(&g, left, y, tr("Mute:"), has);
-        if checkbox(ui, &g, pos2(vx, y), "region_mute", params.mute, has) {
+        label(&g_upper, label_right, y, tr("Mute:"), has);
+        if checkbox(ui, &g_upper, pos2(vx, y), "region_mute", params.mute, has) {
             params.mute = !params.mute;
         }
         y += ROW_H;
-        label(&g, left, y, tr("Loop:"), has);
+        label(&g_upper, label_right, y, tr("Loop:"), has);
         let looped = params.loop_beats > 0.0;
-        let loop_click = checkbox(ui, &g, pos2(vx, y), "region_loop", looped, has);
+        let loop_click = checkbox(ui, &g_upper, pos2(vx, y), "region_loop", looped, has);
         y += ROW_H;
-        label(&g, left, y, tr("Quantize:"), midi);
+        label(&g_upper, label_right, y, tr("Quantize:"), midi);
         let q_text = QUANTIZE
             .iter()
             .find(|(_, q)| *q == params.quantize)
             .map_or(tr("Off"), |(t, _)| tr(t));
         if let Some(resp) = popup(
             ui,
-            &g,
+            &g_upper,
             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
             "quantize",
             q_text,
@@ -665,13 +696,32 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             });
         }
         y += ROW_H;
-        label(&g, left, y, tr("Q-Swing:"), false);
-        y += ROW_H;
-        label(&g, left, y, tr("Transpose:"), midi);
+        let swing_active = midi && params.quantize.is_some();
+        label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
         let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
         if let Some(v) = drag_value(
             ui,
-            &g,
+            &g_upper,
+            r,
+            "region_q_swing",
+            params.q_swing.round() as i32,
+            (0, 100),
+            0,
+            if params.q_swing == 0.0 {
+                tr("Off").to_string()
+            } else {
+                format!("{}%", params.q_swing.round() as i32)
+            },
+            swing_active,
+        ) {
+            params.q_swing = v as f32;
+        }
+        y += ROW_H;
+        label(&g_upper, label_right, y, tr("Transpose:"), midi);
+        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+        if let Some(v) = drag_value(
+            ui,
+            &g_upper,
             r,
             "region_transpose",
             params.transpose as i32,
@@ -683,11 +733,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             params.transpose = v as i8;
         }
         y += ROW_H;
-        label(&g, left, y, tr("Velocity:"), midi);
+        label(&g_upper, label_right, y, tr("Velocity:"), midi);
         let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
         if let Some(v) = drag_value(
             ui,
-            &g,
+            &g_upper,
             r,
             "region_velocity",
             params.velocity as i32,
@@ -707,11 +757,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             (p.region_start_beats(reg), p.region_len_beats(reg))
         });
         let bpm = p.tempo_at(start_beat);
-        label(&g, left, y, tr("Gain:"), audio);
+        label(&g_upper, label_right, y, tr("Gain:"), audio);
         let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
         if let Some(v) = drag_value(
             ui,
-            &g,
+            &g_upper,
             r,
             "region_gain",
             (params.gain_db * 2.0).round() as i32,
@@ -737,11 +787,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             } else {
                 params.fade_out
             };
-            label(&g, left, y, name, audio);
+            label(&g_upper, label_right, y, name, audio);
             let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r,
                 key,
                 (beats * FADE_STEPS_PER_BEAT as f32).round() as i32,
@@ -759,14 +809,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             }
             y += ROW_H;
         }
-        label(&g, left, y, tr("Curve:"), audio);
+        label(&g_upper, label_right, y, tr("Curve:"), audio);
         let curve_name = FADE_CURVES
             .iter()
             .find(|(_, c)| *c == params.fade_curve)
             .map_or(tr("Equal Power"), |(t, _)| tr(t));
         if let Some(resp) = popup(
             ui,
-            &g,
+            &g_upper,
             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
             "fade_curve",
             curve_name,
@@ -782,14 +832,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             });
         }
         y += ROW_H;
-        label(&g, left, y, tr("Reverse:"), audio);
-        if checkbox(ui, &g, pos2(vx, y), "region_reverse", params.reverse, audio) {
+        label(&g_upper, label_right, y, tr("Reverse:"), audio);
+        if checkbox(
+            ui,
+            &g_upper,
+            pos2(vx, y),
+            "region_reverse",
+            params.reverse,
+            audio,
+        ) {
             params.reverse = !params.reverse;
         }
         y += ROW_H;
         // Crossfades with the audio region this one overlaps (Drag: X-Fade sets it too).
-        label(&g, left, y, &format!("{}:", tr("X-Fade")), audio);
-        if checkbox(ui, &g, pos2(vx, y), "region_xfade", params.crossfade, audio) {
+        label(
+            &g_upper,
+            label_right,
+            y,
+            &format!("{}:", tr("X-Fade")),
+            audio,
+        );
+        if checkbox(
+            ui,
+            &g_upper,
+            pos2(vx, y),
+            "region_xfade",
+            params.crossfade,
+            audio,
+        ) {
             params.crossfade = !params.crossfade;
         }
         y += ROW_H;
@@ -813,8 +883,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 c + vec2(-2.0, 3.5),
             ]
         };
-        g.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
-        g.text(
+        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+        g_upper.text(
             pos2(left + 22.0, more.center().y),
             Align2::LEFT_CENTER,
             tr("More"),
@@ -834,7 +904,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tr("Q-Range:"),
                 tr("Q-Strength:"),
             ] {
-                label(&g, left, y, t, false);
+                label(&g_upper, label_right, y, t, false);
                 y += ROW_H;
             }
         }
@@ -854,7 +924,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
     if section_header(
         ui,
-        &g,
+        &g_upper,
         hdr,
         "track",
         s.inspector.track_open,
@@ -867,23 +937,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     }
     y += HEADER_H + 4.0;
     if s.inspector.track_open && ti < p.tracks.len() {
-        let vx = left + VALUE_LEFT;
-        let vw = w - VALUE_LEFT - 10.0;
         let audio = p.tracks[ti].kind == TrackKind::Audio;
         let mut tp = p.tracks[ti].params;
 
-        label(&g, left, y, tr("Icon:"), true);
+        label(&g_upper, label_right, y, tr("Icon:"), true);
         draw_icon(
-            &g,
+            &g_upper,
             Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0)),
             track_icon(&p.tracks[ti]),
         );
         y += 30.0;
         let channel = p.channel_name(ti);
-        label(&g, left, y, tr("Channel:"), false);
+        label(&g_upper, label_right, y, tr("Channel:"), false);
         popup(
             ui,
-            &g,
+            &g_upper,
             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
             "channel",
             &channel,
@@ -891,23 +959,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         );
         y += ROW_H;
         if audio {
-            label(&g, left, y, tr("Freeze Mode:"), false);
+            label(&g_upper, label_right, y, tr("Freeze Mode:"), false);
             popup(
                 ui,
-                &g,
+                &g_upper,
                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                 "freeze",
                 tr("Pre Fader"),
                 false,
             );
             y += ROW_H;
-            label(&g, left, y, tr("Q-Reference:"), false);
-            checkbox(ui, &g, pos2(vx, y), "qref", true, false);
+            label(&g_upper, label_right, y, tr("Q-Reference:"), false);
+            checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
             y += ROW_H;
-            label(&g, left, y, tr("Flex Mode:"), false);
+            label(&g_upper, label_right, y, tr("Flex Mode:"), false);
             popup(
                 ui,
-                &g,
+                &g_upper,
                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                 "flex",
                 tr("Off"),
@@ -918,14 +986,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
             if external {
                 // Where this track's notes go: a MIDI output port and a channel.
-                label(&g, left, y, tr("MIDI Out Port:"), true);
+                label(&g_upper, label_right, y, tr("MIDI Out Port:"), true);
                 let port = p.tracks[ti]
                     .midi_port
                     .clone()
                     .unwrap_or_else(|| tr("No Port").to_string());
                 if let Some(resp) = popup(
                     ui,
-                    &g,
+                    &g_upper,
                     Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                     "midi_out_port",
                     &port,
@@ -952,12 +1020,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                     });
                 }
                 y += ROW_H;
-                label(&g, left, y, tr("MIDI Out Channel:"), true);
+                label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
                 let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
                 let channel = p.tracks[ti].midi_channel.clamp(1, 16);
                 if let Some(v) = drag_value(
                     ui,
-                    &g,
+                    &g_upper,
                     r,
                     "midi_out_channel",
                     channel as i32,
@@ -971,11 +1039,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 y += ROW_H;
                 // The sound sent when the track is routed: a program, and a bank (both optional;
                 // the top of each range is Off).
-                label(&g, left, y, tr("MIDI Program:"), true);
+                label(&g_upper, label_right, y, tr("MIDI Program:"), true);
                 let program = p.tracks[ti].midi_program.map_or(128, i32::from);
                 if let Some(v) = drag_value(
                     ui,
-                    &g,
+                    &g_upper,
                     Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                     "midi_out_program",
                     program,
@@ -991,11 +1059,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                     p.tracks[ti].midi_program = (v < 128).then_some(v as u8);
                 }
                 y += ROW_H;
-                label(&g, left, y, tr("MIDI Bank:"), true);
+                label(&g_upper, label_right, y, tr("MIDI Bank:"), true);
                 let bank = p.tracks[ti].midi_bank.map_or(16384, i32::from);
                 if let Some(v) = drag_value(
                     ui,
-                    &g,
+                    &g_upper,
                     Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                     "midi_out_bank",
                     bank,
@@ -1014,7 +1082,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             }
             if !external {
                 // The instrument this track plays instead of its synth patch.
-                label(&g, left, y, tr("SoundFont:"), true);
+                label(&g_upper, label_right, y, tr("SoundFont:"), true);
                 let current = p.tracks[ti].soundfont.clone();
                 let piano = p.tracks[ti].epiano;
                 let sampler = p.tracks[ti].sampler.clone();
@@ -1037,7 +1105,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                     (Some(sf), None) => soundfont_label(sf),
                 };
                 let rect = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(resp) = popup(ui, &g, rect, "soundfont", &shown, true) {
+                if let Some(resp) = popup(ui, &g_upper, rect, "soundfont", &shown, true) {
                     if resp.double_clicked() {
                         if hosted_inst != 0 {
                             s.mixer.inst_window = Some(ti);
@@ -1284,12 +1352,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 }
                 y += ROW_H;
                 if let Some(ep) = p.tracks[ti].epiano {
-                    if let Some(dials) = piano_rows(ui, &g, (left, vx, vw), &mut y, ep.params) {
+                    if let Some(dials) =
+                        piano_rows(ui, &g_upper, (label_right, vx, vw), &mut y, ep.params)
+                    {
                         p.tracks[ti].epiano = Some(crate::model::EPianoUse { params: dials });
                     }
                 }
                 if let Some(current) = p.tracks[ti].sampler.clone() {
-                    if let Some(next) = sampler_rows(ui, &g, (left, vx, vw), &mut y, &current) {
+                    if let Some(next) =
+                        sampler_rows(ui, &g_upper, (label_right, vx, vw), &mut y, &current)
+                    {
                         p.tracks[ti].sampler = Some(next);
                     }
                 }
@@ -1303,10 +1375,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             .into_iter()
             .filter(|(t, _)| !(external && *t == tr("MIDI Out Channel:")))
             {
-                label(&g, left, y, t, false);
+                label(&g_upper, label_right, y, t, false);
                 popup(
                     ui,
-                    &g,
+                    &g_upper,
                     Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                     t,
                     v,
@@ -1314,11 +1386,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 );
                 y += ROW_H;
             }
-            label(&g, left, y, tr("Transpose:"), true);
+            label(&g_upper, label_right, y, tr("Transpose:"), true);
             let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r,
                 "track_transpose",
                 tp.transpose as i32,
@@ -1330,11 +1402,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.transpose = v as i8;
             }
             y += ROW_H;
-            label(&g, left, y, tr("Velocity:"), true);
+            label(&g_upper, label_right, y, tr("Velocity:"), true);
             let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r,
                 "track_velocity",
                 tp.velocity as i32,
@@ -1347,13 +1419,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             }
             y += ROW_H;
             let half = (vw - 4.0) / 2.0;
-            label(&g, left, y, tr("Key Limit:"), true);
+            label(&g_upper, label_right, y, tr("Key Limit:"), true);
             let (lo, hi) = tp.key_limit;
             let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
             let r2 = Rect::from_min_size(pos2(vx + half + 4.0, y + 2.0), vec2(half, ROW_H - 4.0));
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r1,
                 "key_lo",
                 lo as i32,
@@ -1366,7 +1438,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             }
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r2,
                 "key_hi",
                 hi as i32,
@@ -1378,13 +1450,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.key_limit.1 = v as u8;
             }
             y += ROW_H;
-            label(&g, left, y, tr("Vel Limit:"), true);
+            label(&g_upper, label_right, y, tr("Vel Limit:"), true);
             let (lo, hi) = tp.vel_limit;
             let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
             let r2 = Rect::from_min_size(pos2(vx + half + 4.0, y + 2.0), vec2(half, ROW_H - 4.0));
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r1,
                 "vel_lo",
                 lo as i32,
@@ -1397,7 +1469,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             }
             if let Some(v) = drag_value(
                 ui,
-                &g,
+                &g_upper,
                 r2,
                 "vel_hi",
                 hi as i32,
@@ -1409,27 +1481,57 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.vel_limit.1 = v as u8;
             }
             y += ROW_H;
-            label(&g, left, y, tr("Delay:"), false);
-            y += ROW_H;
-            for t in [tr("No Transpose:"), tr("No Reset:")] {
-                label(&g, left, y, t, false);
-                checkbox(ui, &g, pos2(vx, y), t, false, false);
-                y += ROW_H;
+            label(&g_upper, label_right, y, tr("Delay:"), true);
+            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+            if let Some(v) = drag_value(
+                ui,
+                &g_upper,
+                r,
+                "track_delay",
+                tp.delay_ms as i32,
+                (-99, 99),
+                0,
+                if tp.delay_ms == 0 {
+                    "0 ms".to_string()
+                } else {
+                    format!("{:+} ms", tp.delay_ms)
+                },
+                true,
+            ) {
+                tp.delay_ms = v as i16;
             }
-            label(&g, left, y, tr("Staff Style:"), false);
+            y += ROW_H;
+            label(&g_upper, label_right, y, tr("No Transpose:"), true);
+            if checkbox(
+                ui,
+                &g_upper,
+                pos2(vx, y),
+                "no_transpose",
+                tp.no_transpose,
+                true,
+            ) {
+                tp.no_transpose = !tp.no_transpose;
+            }
+            y += ROW_H;
+            label(&g_upper, label_right, y, tr("No Reset:"), true);
+            if checkbox(ui, &g_upper, pos2(vx, y), "no_reset", tp.no_reset, true) {
+                tp.no_reset = !tp.no_reset;
+            }
+            y += ROW_H;
+            label(&g_upper, label_right, y, tr("Staff Style:"), false);
             popup(
                 ui,
-                &g,
+                &g_upper,
                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                 "staff",
                 tr("Auto"),
                 false,
             );
             y += ROW_H;
-            label(&g, left, y, tr("Articulation Set:"), false);
+            label(&g_upper, label_right, y, tr("Articulation Set:"), false);
             popup(
                 ui,
-                &g,
+                &g_upper,
                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                 "artic",
                 "",
@@ -1444,15 +1546,36 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         y += 4.0;
     }
 
+    if anchor_strips {
+        let upper_content_h = (y + s.inspector.scroll_y) - upper_rect.top();
+        s.inspector.scroll_y = s
+            .inspector
+            .scroll_y
+            .clamp(0.0, (upper_content_h - upper_rect.height()).max(0.0));
+    }
+
     // ---------------- Channel strips: selected track + Stereo Out
-    let strips_h = (panel.bottom() - y - 4.0).max(STRIPS_MIN_H);
+    let strips_y = if anchor_strips {
+        g.line_segment(
+            [
+                pos2(panel.left(), strips_rect.top()),
+                pos2(panel.right(), strips_rect.top()),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(0x2b, 0x2b, 0x2e)),
+        );
+        strips_rect.top() + 4.0
+    } else {
+        y + 4.0
+    };
+    let strips_h = (panel.bottom() - strips_y - 4.0).max(STRIPS_MIN_H);
+
     if !p.tracks.is_empty() {
         let keys = [StripKey::Track(ti), StripKey::StereoOut];
-        let r = rows(y, fx_rows_for(p, &keys), send_rows_for(p, &keys));
+        let r = rows(strips_y, fx_rows_for(p, &keys), send_rows_for(p, &keys));
         let sw = (w - 12.0) / 2.0;
         for (n, key) in keys.iter().enumerate() {
             let strip = Rect::from_min_size(
-                pos2(left + 4.0 + n as f32 * (sw + 4.0), y),
+                pos2(left + 4.0 + n as f32 * (sw + 4.0), strips_y),
                 vec2(sw, strips_h),
             );
             channel_strip(
@@ -1470,11 +1593,35 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         }
     }
 
-    let content_h = y + strips_h + s.inspector.scroll_y - panel.top();
-    s.inspector.scroll_y = s
-        .inspector
-        .scroll_y
-        .clamp(0.0, (content_h - panel.height()).max(0.0));
+    if !anchor_strips {
+        let content_h = strips_y + strips_h + s.inspector.scroll_y - panel.top();
+        s.inspector.scroll_y = s
+            .inspector
+            .scroll_y
+            .clamp(0.0, (content_h - panel.height()).max(0.0));
+    }
+
+    // 1px right edge divider highlighting on hover
+    let right_edge = Rect::from_min_max(
+        pos2(panel.right() - 3.0, panel.top()),
+        pos2(panel.right() + 3.0, panel.bottom()),
+    );
+    let edge_hovered = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|pt| right_edge.contains(pt));
+    let divider_color = if edge_hovered {
+        Color32::from_rgb(0x12, 0x69, 0xcc)
+    } else {
+        Color32::from_rgb(0x38, 0x38, 0x3c)
+    };
+    g.line_segment(
+        [
+            pos2(panel.right() - 0.5, panel.top()),
+            pos2(panel.right() - 0.5, panel.bottom()),
+        ],
+        Stroke::new(1.0, divider_color),
+    );
+
     // Rebuild the engine song once per gesture, not on every frame of a drag.
     s.inspector.pending_song_change |= changed_song;
     if s.inspector.pending_song_change && !ui.input(|i| i.pointer.any_down()) {

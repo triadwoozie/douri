@@ -22,9 +22,11 @@ fn maximized(ctx: &egui::Context) -> bool {
 
 /// Draws the window buttons at the right end of `bar` and turns the free part of the bar
 /// (from `free_left`) into the window's drag handle. `fg` is the bar's text colour.
-pub fn bar_controls(ui: &egui::Ui, bar: Rect, free_left: f32, fg: Color32) {
+pub fn bar_controls(ui: &mut egui::Ui, bar: Rect, free_left: f32, _fg: Color32) {
     let ctx = ui.ctx().clone();
-    let buttons_left = bar.right() - 3.0 * BUTTON_W;
+    let is_max = maximized(&ctx);
+    let controls_w = 3.0 * 28.0 + 2.0 * 4.0;
+    let buttons_left = bar.right() - controls_w - 6.0;
 
     // Free part of the bar: drag to move, double-click to maximize or restore.
     if buttons_left > free_left {
@@ -35,39 +37,29 @@ pub fn bar_controls(ui: &egui::Ui, bar: Rect, free_left: f32, fg: Color32) {
             Sense::click_and_drag(),
         );
         if resp.double_clicked() {
-            ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized(&ctx)));
+            ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_max));
         } else if resp.drag_started() {
             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
         }
     }
 
-    let g = ui.painter();
-    let kinds = [Button::Minimize, Button::Maximize, Button::Close];
-    for (k, kind) in kinds.into_iter().enumerate() {
-        let r = Rect::from_min_size(
-            pos2(buttons_left + k as f32 * BUTTON_W, bar.top()),
-            vec2(BUTTON_W, bar.height()),
-        );
-        let resp = ui
-            .interact(r, egui::Id::unique(("window_button", k)), Sense::click())
-            .on_hover_text(kind.label(maximized(&ctx)));
-        let hover = resp.hovered();
-        let (bg, ink) = match (kind, hover) {
-            (Button::Close, true) => (Some(Color32::from_rgb(0xc4, 0x2b, 0x1c)), Color32::WHITE),
-            (_, true) => (Some(fg.gamma_multiply(0.15)), fg),
-            (_, false) => (None, fg),
-        };
-        if let Some(bg) = bg {
-            g.rect_filled(r, 0.0, bg);
+    let controls_rect = Rect::from_min_size(
+        pos2(buttons_left, bar.center().y - 13.0),
+        vec2(controls_w, 26.0),
+    );
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(controls_rect));
+    let action = crate::ui_chrome::draw_window_controls(&mut child_ui, is_max);
+    match action {
+        crate::ui_chrome::WindowControlAction::Minimize => {
+            ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
         }
-        kind.draw(g, r.center(), ink, maximized(&ctx));
-        if resp.clicked() {
-            ctx.send_viewport_cmd(match kind {
-                Button::Minimize => ViewportCommand::Minimized(true),
-                Button::Maximize => ViewportCommand::Maximized(!maximized(&ctx)),
-                Button::Close => ViewportCommand::Close,
-            });
+        crate::ui_chrome::WindowControlAction::Maximize => {
+            ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_max));
         }
+        crate::ui_chrome::WindowControlAction::Close => {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+        crate::ui_chrome::WindowControlAction::None => {}
     }
 }
 

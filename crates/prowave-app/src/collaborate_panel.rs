@@ -194,16 +194,16 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
             s.show_collaborate = false;
         }
 
-        let panel_bg = Color32::from_rgb(0x1a, 0x1b, 0x1e);
-        let card_bg = Color32::from_rgb(0x20, 0x22, 0x26);
-        let border_color = Color32::from_rgb(0x2e, 0x31, 0x38);
+        let panel_bg = Color32::from_rgb(0x1c, 0x1c, 0x1e);
+        let card_bg = Color32::from_rgb(0x25, 0x25, 0x27);
+        let border_color = Color32::from_rgb(0x38, 0x38, 0x3c);
         let border_stroke = Stroke::new(1.0, border_color);
 
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::NONE
                     .fill(Color32::TRANSPARENT)
-                    .inner_margin(egui::Margin::ZERO),
+                    .inner_margin(egui::Margin::same(1)),
             )
             .show(ctx, |ui| {
                 egui::Frame::new()
@@ -268,15 +268,20 @@ fn render_window_chrome(ui: &mut Ui, s: &mut UiState) {
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let close_btn = egui::Button::new(
-                RichText::new("×")
-                    .size(18.0)
-                    .color(Color32::from_rgb(0x9a, 0x9a, 0xa2)),
-            )
-            .frame(false);
-
-            if ui.add(close_btn).on_hover_text("Close Window").clicked() {
-                s.show_collaborate = false;
+            let is_max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+            let action = crate::ui_chrome::draw_window_controls(ui, is_max);
+            match action {
+                crate::ui_chrome::WindowControlAction::Minimize => {
+                    ui.ctx().send_viewport_cmd(ViewportCommand::Minimized(true));
+                }
+                crate::ui_chrome::WindowControlAction::Maximize => {
+                    ui.ctx()
+                        .send_viewport_cmd(ViewportCommand::Maximized(!is_max));
+                }
+                crate::ui_chrome::WindowControlAction::Close => {
+                    s.show_collaborate = false;
+                }
+                crate::ui_chrome::WindowControlAction::None => {}
             }
         });
     });
