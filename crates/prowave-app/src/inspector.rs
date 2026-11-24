@@ -540,10 +540,10 @@ fn drag_value(
     text: String,
     enabled: bool,
 ) -> Option<i32> {
-    let col = if enabled {
-        TEXT
-    } else {
+    let col = if !enabled || (value == 0 && reset == 0) {
         Color32::from_rgb(0x8e, 0x8e, 0x93)
+    } else {
+        Color32::from_rgb(0xe5, 0xe5, 0xea)
     };
     g.rect_filled(r, 4.0, Color32::from_rgb(0x2b, 0x2b, 0x2e));
     g.rect_stroke(
@@ -581,9 +581,33 @@ fn drag_value(
     None
 }
 
+fn transpose_text(v: i32) -> String {
+    match v {
+        0 => "0 st".to_string(),
+        v if v > 0 => format!("+{v} st"),
+        v => format!("{v} st"),
+    }
+}
+
+fn velocity_text(v: i32) -> String {
+    match v {
+        0 => "0".to_string(),
+        v if v > 0 => format!("+{v}"),
+        v => v.to_string(),
+    }
+}
+
+fn delay_text(v: i32) -> String {
+    match v {
+        0 => "0 ms".to_string(),
+        v if v > 0 => format!("+{v} ms"),
+        v => format!("{v} ms"),
+    }
+}
+
 fn signed(v: i32) -> String {
     match v {
-        0 => String::new(),
+        0 => "0".to_string(),
         v if v > 0 => format!("+{v}"),
         v => v.to_string(),
     }
@@ -727,7 +751,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             params.transpose as i32,
             (-96, 96),
             0,
-            signed(params.transpose as i32),
+            transpose_text(params.transpose as i32),
             midi,
         ) {
             params.transpose = v as i8;
@@ -743,7 +767,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
             params.velocity as i32,
             (-99, 99),
             0,
-            signed(params.velocity as i32),
+            velocity_text(params.velocity as i32),
             midi,
         ) {
             params.velocity = v as i8;
@@ -1396,7 +1420,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.transpose as i32,
                 (-96, 96),
                 0,
-                signed(tp.transpose as i32),
+                transpose_text(tp.transpose as i32),
                 true,
             ) {
                 tp.transpose = v as i8;
@@ -1412,7 +1436,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.velocity as i32,
                 (-99, 99),
                 0,
-                signed(tp.velocity as i32),
+                velocity_text(tp.velocity as i32),
                 true,
             ) {
                 tp.velocity = v as i8;
@@ -1491,11 +1515,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 tp.delay_ms as i32,
                 (-99, 99),
                 0,
-                if tp.delay_ms == 0 {
-                    "0 ms".to_string()
-                } else {
-                    format!("{:+} ms", tp.delay_ms)
-                },
+                delay_text(tp.delay_ms as i32),
                 true,
             ) {
                 tp.delay_ms = v as i16;
@@ -1775,5 +1795,24 @@ mod tests {
                 "drawing the rows changes nothing"
             );
         }
+    }
+
+    #[test]
+    fn numeric_box_labels_show_units_and_never_blank() {
+        assert_eq!(transpose_text(0), "0 st");
+        assert_eq!(transpose_text(12), "+12 st");
+        assert_eq!(transpose_text(-7), "-7 st");
+
+        assert_eq!(velocity_text(0), "0");
+        assert_eq!(velocity_text(15), "+15");
+        assert_eq!(velocity_text(-20), "-20");
+
+        assert_eq!(delay_text(0), "0 ms");
+        assert_eq!(delay_text(25), "+25 ms");
+        assert_eq!(delay_text(-10), "-10 ms");
+
+        assert_eq!(signed(0), "0");
+        assert_eq!(signed(5), "+5");
+        assert_eq!(signed(-8), "-8");
     }
 }

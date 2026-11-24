@@ -388,86 +388,102 @@ pub enum WindowControlAction {
 
 /// Unified window control button strip (Minimize, Maximize/Restore, Close)
 /// matching Logic Pro dark chrome and Apple Human Interface Guidelines.
+/// Left-to-right order is strictly preserved: [ — ]  [ □/❐ ]  [ × ]
 pub fn draw_window_controls(ui: &mut Ui, is_maximized: bool) -> WindowControlAction {
     let mut action = WindowControlAction::None;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
-        let btn_size = vec2(28.0, 26.0);
-        let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
-        let hover_tint = Color32::WHITE;
-        let hover_bg = Color32::from_rgb(0x2b, 0x2b, 0x2e);
-        let close_hover_bg = Color32::from_rgb(0xc9, 0x3b, 0x3b);
+    let btn_size = vec2(28.0, 26.0);
+    let gap = 4.0;
+    let controls_w = 3.0 * btn_size.x + 2.0 * gap;
+    let (strip_rect, _) = ui.allocate_exact_size(vec2(controls_w, btn_size.y), Sense::hover());
 
-        // 1. Minimize
-        let (min_r, min_resp) = ui.allocate_exact_size(btn_size, Sense::click());
-        if min_resp.hovered() {
-            ui.painter()
-                .rect_filled(min_r, CornerRadius::same(4), hover_bg);
-        }
-        let min_col = if min_resp.hovered() {
-            hover_tint
-        } else {
-            default_tint
-        };
-        ui.painter().text(
-            min_r.center(),
-            Align2::CENTER_CENTER,
-            crate::icons::regular::MINUS,
-            FontId::proportional(13.0),
-            min_col,
-        );
-        if min_resp.clicked() {
-            action = WindowControlAction::Minimize;
-        }
+    let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
+    let hover_tint = Color32::WHITE;
+    let hover_bg = Color32::from_rgb(0x2b, 0x2b, 0x2e);
+    let close_hover_bg = Color32::from_rgb(0xc9, 0x3b, 0x3b);
 
-        // 2. Maximize / Restore
-        let (max_r, max_resp) = ui.allocate_exact_size(btn_size, Sense::click());
-        if max_resp.hovered() {
-            ui.painter()
-                .rect_filled(max_r, CornerRadius::same(4), hover_bg);
-        }
-        let max_col = if max_resp.hovered() {
-            hover_tint
-        } else {
-            default_tint
-        };
-        let max_icon = if is_maximized {
-            crate::icons::regular::COPY
-        } else {
-            crate::icons::regular::SQUARE
-        };
-        ui.painter().text(
-            max_r.center(),
-            Align2::CENTER_CENTER,
-            max_icon,
-            FontId::proportional(13.0),
-            max_col,
-        );
-        if max_resp.clicked() {
-            action = WindowControlAction::Maximize;
-        }
+    // Left-to-right layout guaranteed in both LTR and RTL parent contexts:
+    // 1. Minimize (left)
+    let min_r = Rect::from_min_size(strip_rect.min, btn_size);
+    let min_resp = ui.interact(min_r, ui.scope_id().with("win_min"), Sense::click());
+    if min_resp.hovered() {
+        ui.painter()
+            .rect_filled(min_r, CornerRadius::same(4), hover_bg);
+    }
+    let min_col = if min_resp.hovered() {
+        hover_tint
+    } else {
+        default_tint
+    };
+    ui.painter().text(
+        min_r.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::regular::MINUS,
+        FontId::proportional(13.0),
+        min_col,
+    );
+    if min_resp.clicked() {
+        action = WindowControlAction::Minimize;
+    }
 
-        // 3. Close
-        let (close_r, close_resp) = ui.allocate_exact_size(btn_size, Sense::click());
-        if close_resp.hovered() {
-            ui.painter()
-                .rect_filled(close_r, CornerRadius::same(4), close_hover_bg);
-        }
-        let close_col = if close_resp.hovered() {
-            hover_tint
-        } else {
-            default_tint
-        };
-        ui.painter().text(
-            close_r.center(),
-            Align2::CENTER_CENTER,
-            crate::icons::regular::X,
-            FontId::proportional(13.0),
-            close_col,
-        );
-        if close_resp.clicked() {
-            action = WindowControlAction::Close;
-        }
-    });
+    // 2. Maximize / Restore (middle)
+    let max_r = Rect::from_min_size(
+        pos2(strip_rect.min.x + btn_size.x + gap, strip_rect.min.y),
+        btn_size,
+    );
+    let max_resp = ui.interact(max_r, ui.scope_id().with("win_max"), Sense::click());
+    if max_resp.hovered() {
+        ui.painter()
+            .rect_filled(max_r, CornerRadius::same(4), hover_bg);
+    }
+    let max_col = if max_resp.hovered() {
+        hover_tint
+    } else {
+        default_tint
+    };
+    let max_icon = if is_maximized {
+        crate::icons::regular::COPY
+    } else {
+        crate::icons::regular::SQUARE
+    };
+    ui.painter().text(
+        max_r.center(),
+        Align2::CENTER_CENTER,
+        max_icon,
+        FontId::proportional(13.0),
+        max_col,
+    );
+    if max_resp.clicked() {
+        action = WindowControlAction::Maximize;
+    }
+
+    // 3. Close (far right)
+    let close_r = Rect::from_min_size(
+        pos2(
+            strip_rect.min.x + 2.0 * (btn_size.x + gap),
+            strip_rect.min.y,
+        ),
+        btn_size,
+    );
+    let close_resp = ui.interact(close_r, ui.scope_id().with("win_close"), Sense::click());
+    if close_resp.hovered() {
+        ui.painter()
+            .rect_filled(close_r, CornerRadius::same(4), close_hover_bg);
+    }
+    let close_col = if close_resp.hovered() {
+        hover_tint
+    } else {
+        default_tint
+    };
+    ui.painter().text(
+        close_r.center(),
+        Align2::CENTER_CENTER,
+        crate::icons::regular::X,
+        FontId::proportional(13.0),
+        close_col,
+    );
+    if close_resp.clicked() {
+        action = WindowControlAction::Close;
+    }
+
     action
 }

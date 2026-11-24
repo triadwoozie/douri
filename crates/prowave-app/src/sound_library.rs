@@ -2580,7 +2580,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
         // 2. THREE-COLUMN BODY
         // ---------------------------------------------------------------
         let sidebar_w = 200.0f32;
-        let inspector_w = 248.0f32;
+        let inspector_w = 252.0f32;
         let sidebar_rect = Rect::from_min_size(body_rect.min, vec2(sidebar_w, body_rect.height()));
         let inspector_rect = Rect::from_min_size(
             pos2(body_rect.right() - inspector_w, body_rect.top()),
@@ -2692,11 +2692,24 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                                         Color32::from_rgb(0x8e, 0x8e, 0x93)
                                     },
                                 );
-                                ui.painter().text(
+
+                                let font = FontId::proportional(11.5);
+                                let cat_shown = elide_text(
+                                    ui.painter(),
+                                    cat,
+                                    &font,
+                                    (sidebar_w - 68.0).max(20.0),
+                                );
+                                let cat_clip = Rect::from_min_max(
+                                    pos2(btn_rect.left() + 28.0, btn_rect.top()),
+                                    pos2(btn_rect.right() - 28.0, btn_rect.bottom()),
+                                )
+                                .intersect(sidebar_rect);
+                                ui.painter().with_clip_rect(cat_clip).text(
                                     pos2(btn_rect.left() + 30.0, btn_rect.center().y),
                                     Align2::LEFT_CENTER,
-                                    cat,
-                                    FontId::proportional(11.5),
+                                    cat_shown,
+                                    font,
                                     text_color,
                                 );
                                 ui.painter().text(
@@ -2770,11 +2783,24 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                                     },
                                 );
 
-                                ui.painter().text(
+                                let font = FontId::proportional(11.5);
+                                let pad_r = if is_installed { 30.0 } else { 12.0 };
+                                let pack_shown = elide_text(
+                                    ui.painter(),
+                                    p.name,
+                                    &font,
+                                    (sidebar_w - 32.0 - pad_r).max(20.0),
+                                );
+                                let pack_clip = Rect::from_min_max(
+                                    pos2(btn_rect.left() + 28.0, btn_rect.top()),
+                                    pos2(btn_rect.right() - pad_r, btn_rect.bottom()),
+                                )
+                                .intersect(sidebar_rect);
+                                ui.painter().with_clip_rect(pack_clip).text(
                                     pos2(btn_rect.left() + 30.0, btn_rect.center().y),
                                     Align2::LEFT_CENTER,
-                                    p.name,
-                                    FontId::proportional(11.5),
+                                    pack_shown,
+                                    font,
                                     text_color,
                                 );
 
@@ -2820,18 +2846,26 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
             Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
         );
 
-        let fixed_cols_w = 366.0f32;
-        let col_name_w = (center_rect.width() - fixed_cols_w - 8.0).max(100.0);
+        let usable_w = (center_rect.width() - 12.0).max(100.0);
+        let col_name_w = (usable_w * 0.26).round();
+        let col_wave_w = (usable_w * 0.13).round();
+        let col_dur_w = (usable_w * 0.11).round();
+        let col_fmt_w = (usable_w * 0.10).round();
+        let col_rate_w = (usable_w * 0.12).round();
+        let col_pack_w = (usable_w * 0.16).round();
+        let col_lic_w = (usable_w
+            - (col_name_w + col_wave_w + col_dur_w + col_fmt_w + col_rate_w + col_pack_w))
+            .max(20.0);
         let mut h_x = table_hdr_rect.left();
 
         let cols = [
             ("Name", col_name_w, 0),
-            ("Waveform", 64.0, 1),
-            ("Duration", 54.0, 2),
-            ("Format", 50.0, 3),
-            ("Rate", 54.0, 4),
-            ("Pack", 84.0, 5),
-            ("License", 60.0, 6),
+            ("Waveform", col_wave_w, 1),
+            ("Duration", col_dur_w, 2),
+            ("Format", col_fmt_w, 3),
+            ("Rate", col_rate_w, 4),
+            ("Pack", col_pack_w, 5),
+            ("License", col_lic_w, 6),
         ];
 
         for (title, w, col_idx) in cols {
@@ -2946,7 +2980,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                             &g_name,
                             asset.name,
                             &FontId::proportional(11.0),
-                            col_name_w - 12.0,
+                            (col_name_w - 12.0).max(20.0),
                         );
                         g_name.text(
                             pos2(name_cell.left() + 8.0, row_box.center().y),
@@ -2960,22 +2994,24 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                         let (_, row_peaks, _, row_dur) =
                             get_or_create_asset_audio(asset.name, asset);
 
-                        // Mini Waveform (centered in 64px cell)
-                        let wave_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(64.0, row_h));
+                        // Mini Waveform
+                        let wave_cell = Rect::from_min_size(
+                            pos2(cur_x, row_box.top()),
+                            vec2(col_wave_w, row_h),
+                        );
                         let g_wave = ui.painter().with_clip_rect(
                             wave_cell.intersect(table_body_rect).intersect(center_rect),
                         );
                         let wave_r = Rect::from_center_size(
-                            pos2(cur_x + 32.0, row_box.center().y),
-                            vec2(48.0, 14.0),
+                            pos2(cur_x + col_wave_w / 2.0, row_box.center().y),
+                            vec2((col_wave_w - 12.0).clamp(24.0, 52.0), 14.0),
                         );
                         draw_mini_waveform(&g_wave, wave_r, &row_peaks, is_sel);
-                        cur_x += 64.0;
+                        cur_x += col_wave_w;
 
-                        // Duration (54px)
+                        // Duration
                         let dur_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(54.0, row_h));
+                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(col_dur_w, row_h));
                         let g_dur = ui.painter().with_clip_rect(
                             dur_cell.intersect(table_body_rect).intersect(center_rect),
                         );
@@ -2987,41 +3023,57 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                             FontId::proportional(10.5),
                             dim_color,
                         );
-                        cur_x += 54.0;
+                        cur_x += col_dur_w;
 
-                        // Format (50px)
+                        // Format
                         let fmt_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(50.0, row_h));
+                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(col_fmt_w, row_h));
                         let g_fmt = ui.painter().with_clip_rect(
                             fmt_cell.intersect(table_body_rect).intersect(center_rect),
+                        );
+                        let elided_fmt = elide_text(
+                            &g_fmt,
+                            asset.format,
+                            &FontId::proportional(10.5),
+                            (col_fmt_w - 6.0).max(10.0),
                         );
                         g_fmt.text(
                             pos2(cur_x + 4.0, row_box.center().y),
                             Align2::LEFT_CENTER,
-                            asset.format,
+                            elided_fmt,
                             FontId::proportional(10.5),
                             dim_color,
                         );
-                        cur_x += 50.0;
+                        cur_x += col_fmt_w;
 
-                        // Sample Rate (54px)
-                        let rate_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(54.0, row_h));
+                        // Sample Rate
+                        let rate_cell = Rect::from_min_size(
+                            pos2(cur_x, row_box.top()),
+                            vec2(col_rate_w, row_h),
+                        );
                         let g_rate = ui.painter().with_clip_rect(
                             rate_cell.intersect(table_body_rect).intersect(center_rect),
+                        );
+                        let elided_rate = elide_text(
+                            &g_rate,
+                            asset.sample_rate,
+                            &FontId::proportional(10.5),
+                            (col_rate_w - 6.0).max(10.0),
                         );
                         g_rate.text(
                             pos2(cur_x + 4.0, row_box.center().y),
                             Align2::LEFT_CENTER,
-                            asset.sample_rate,
+                            elided_rate,
                             FontId::proportional(10.5),
                             dim_color,
                         );
-                        cur_x += 54.0;
+                        cur_x += col_rate_w;
 
-                        // Pack (84px)
-                        let pack_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(84.0, row_h));
+                        // Pack
+                        let pack_cell = Rect::from_min_size(
+                            pos2(cur_x, row_box.top()),
+                            vec2(col_pack_w, row_h),
+                        );
                         let g_pack = ui.painter().with_clip_rect(
                             pack_cell.intersect(table_body_rect).intersect(center_rect),
                         );
@@ -3029,7 +3081,7 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                             &g_pack,
                             asset.pack_name,
                             &FontId::proportional(10.5),
-                            84.0 - 6.0,
+                            (col_pack_w - 6.0).max(10.0),
                         );
                         g_pack.text(
                             pos2(cur_x + 4.0, row_box.center().y),
@@ -3038,18 +3090,24 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                             FontId::proportional(10.5),
                             dim_color,
                         );
-                        cur_x += 84.0;
+                        cur_x += col_pack_w;
 
-                        // License (60px)
+                        // License
                         let lic_cell =
-                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(60.0, row_h));
+                            Rect::from_min_size(pos2(cur_x, row_box.top()), vec2(col_lic_w, row_h));
                         let g_lic = ui.painter().with_clip_rect(
                             lic_cell.intersect(table_body_rect).intersect(center_rect),
+                        );
+                        let elided_lic = elide_text(
+                            &g_lic,
+                            asset.license,
+                            &FontId::proportional(10.0),
+                            (col_lic_w - 6.0).max(10.0),
                         );
                         g_lic.text(
                             pos2(cur_x + 4.0, row_box.center().y),
                             Align2::LEFT_CENTER,
-                            asset.license,
+                            elided_lic,
                             FontId::proportional(10.0),
                             if is_sel {
                                 Color32::WHITE
