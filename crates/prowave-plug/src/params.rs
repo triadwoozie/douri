@@ -24,6 +24,44 @@ pub struct PlugParams {
     groups: Vec<String>,
 }
 
+/// A choice's name in the plug-in where it differs from the program's: Pro Wave Tune's Key and
+/// Scale "Project" follow the program's project key, which a host does not give a plug-in, so
+/// there they are C and Major. The stored value stays the same (0), so saved settings keep
+/// their meaning.
+fn plug_choice(info: &NativeFxInfo, k: usize, i: usize) -> Option<&'static str> {
+    use prowave_engine::tune;
+    if info.id != tune::ID || i != 0 {
+        return None;
+    }
+    match k {
+        tune::KEY => Some("C (default)"),
+        tune::SCALE => Some("Major (default)"),
+        _ => None,
+    }
+}
+
+/// The choices of parameter `k` as the plug-in names them (see [`plug_choice`]).
+pub fn choices(info: &NativeFxInfo, k: usize) -> Vec<String> {
+    info.params.get(k).map_or_else(Vec::new, |p| {
+        p.choices
+            .iter()
+            .enumerate()
+            .map(|(i, c)| plug_choice(info, k, i).unwrap_or(c).to_string())
+            .collect()
+    })
+}
+
+/// The text of parameter `k` at stored value `v`, as the plug-in shows it.
+pub fn value_text(info: &NativeFxInfo, k: usize, v: i32) -> String {
+    let p = &info.params[k];
+    if !p.choices.is_empty() {
+        if let Some(t) = plug_choice(info, k, (v - p.min as i32).max(0) as usize) {
+            return t.to_string();
+        }
+    }
+    info.value_text(k, v as f32)
+}
+
 /// The number at the start of `text` ("-3.5dB" gives -3.5), if any.
 fn leading_number(text: &str) -> Option<f64> {
     let t = text.trim();
@@ -41,10 +79,10 @@ pub fn parse_value(info: &NativeFxInfo, k: usize, text: &str) -> Option<i32> {
     let (min, max) = (p.min as i32, p.max as i32);
     let want = text.trim();
     if !p.choices.is_empty() {
-        return p
-            .choices
+        return choices(info, k)
             .iter()
             .position(|c| c.eq_ignore_ascii_case(want))
+            .or_else(|| p.choices.iter().position(|c| c.eq_ignore_ascii_case(want)))
             .map(|i| min + i as i32)
             .or_else(|| want.parse::<i32>().ok().filter(|v| (min..=max).contains(v)));
     }
@@ -56,7 +94,7 @@ pub fn parse_value(info: &NativeFxInfo, k: usize, text: &str) -> Option<i32> {
         let mut best: Option<(f64, i32)> = None;
         let mut v = from;
         while v <= to {
-            let t = info.value_text(k, v as f32);
+            let t = value_text(info, k, v);
             if t.eq_ignore_ascii_case(want) {
                 return Err(v);
             }
@@ -96,7 +134,7 @@ impl PlugParams {
                 max: p.max as i32,
             };
             let param = IntParam::new(p.name, p.default as i32, range)
-                .with_value_to_string(Arc::new(move |v| info.value_text(k, v as f32)))
+                .with_value_to_string(Arc::new(move |v| value_text(info, k, v)))
                 .with_string_to_value(Arc::new(move |s| parse_value(info, k, s)));
             values.push(param);
             ids.push(format!("p{k}"));
@@ -147,12 +185,12 @@ mod tests {
                 let step = ((max - min) / 40).max(1);
                 let mut v = min;
                 while v <= max {
-                    let text = info.value_text(k, v as f32);
+                    let text = value_text(info, k, v);
                     let back = parse_value(info, k, &text);
                     // Two values may print alike ("0.0" for 0 and 1 of a fine knob): then the
                     // text must at least be the text of the value read back.
-                    let ok = back == Some(v)
-                        || back.is_some_and(|b| info.value_text(k, b as f32) == text);
+                    let ok =
+                        back == Some(v) || back.is_some_and(|b| value_text(info, k, b) == text);
                     assert!(ok, "{} {} {v} {text:?} -> {back:?}", info.id, p.name);
                     v += step;
                 }

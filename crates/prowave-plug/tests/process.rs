@@ -93,7 +93,7 @@ fn parameters_and_state() {
         );
         assert_eq!(
             h.value_text(k, got.default),
-            info.value_text(k, want.default)
+            prowave_plug::params::value_text(info, k, want.default as i32)
         );
     }
     // Change the last parameter, save, load into a new instance.
@@ -123,4 +123,58 @@ fn latency_is_reported() {
     let core = prowave_plug::core::PlugCore::open(info, selected::INSTRUMENT, 48_000, 512, &[])
         .expect("opens");
     assert_eq!(h.latency(), core.latency_samples());
+}
+
+/// The registry's presets reach a CLAP host: a preset-discovery factory lists them (in the
+/// plug-in's own location, as factory content, for this plug-in), and loading one through
+/// `clap.preset-load` sets the parameters it names and keeps the others. clap-wrapper reads the
+/// same factory for the Audio Unit's factory presets.
+#[test]
+fn factory_presets_reach_the_host() {
+    use clap_sys::factory::preset_discovery::{
+        CLAP_PRESET_DISCOVERY_IS_FACTORY_CONTENT, CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN,
+    };
+    let info = prowave_plug::selected_info();
+    let found = clap_host::discover_presets(&prowave_plug::clap_entry, c"/tmp/prowave-plug.clap");
+    assert_eq!(found.len(), info.presets.len(), "{}", info.id);
+    for (i, (f, want)) in found.iter().zip(info.presets).enumerate() {
+        assert_eq!(f.name, want.name);
+        assert_eq!(f.load_key, i.to_string());
+        assert_eq!(f.plugin_ids, vec![selected::CLAP_ID.to_string()]);
+        assert_eq!(f.flags, CLAP_PRESET_DISCOVERY_IS_FACTORY_CONTENT);
+        assert_eq!(f.location_kind, CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN);
+    }
+    let h = host(48_000.0, 512);
+    if info.presets.is_empty() {
+        assert_eq!(h.load_preset("0"), None, "no preset-load without presets");
+        return;
+    }
+    for (i, preset) in info.presets.iter().enumerate() {
+        let before: Vec<f64> = (0..info.params.len()).map(|k| h.param_value(k)).collect();
+        assert_eq!(h.load_preset(&i.to_string()), Some(true), "{}", preset.name);
+        for (k, was) in before.iter().enumerate() {
+            let set = preset.values.iter().find(|(pk, _)| *pk == k);
+            let now = h.param_value(k).round();
+            match set {
+                // nih-plug gives CLAP a whole-number parameter as steps from its minimum.
+                Some((_, v)) => assert_eq!(
+                    now,
+                    f64::from(*v - info.params[k].min).round(),
+                    "{} p{k}",
+                    preset.name
+                ),
+                None => assert_eq!(now, was.round(), "{} kept p{k}", preset.name),
+            }
+        }
+    }
+    assert_eq!(h.load_preset(&info.presets.len().to_string()), Some(false));
+}
+
+/// An effect that takes notes (Tune) has a note input; the others and the instruments have the
+/// inputs they had.
+#[test]
+fn note_input() {
+    let h = host(48_000.0, 512);
+    let want = u32::from(selected::INSTRUMENT || selected::TAKES_NOTES);
+    assert_eq!(h.note_inputs(), want);
 }

@@ -36,6 +36,30 @@ being released into the GitHub Release notes, so keep one `## <version>` heading
   a kit, or with `capture` writes what the audition voice plays to a WAV file and compares it
   with the files.
 
+### 2026-11-24: plug-ins 0.3.2 (factory presets, FM6 banks, Tune's MIDI input)
+
+Checked with auval -strict (27 of 27, on both Macs), pluginval at strictness 10 without its
+window tests (27 VST3 and 27 Audio Units), clap-validator built from its current source (27
+CLAP), the crate's tests, and Ableton Live 12.3.5 on the MacBook Air: every VST3 and every Audio
+Unit loaded in a set and rendered with Export (all 17 instruments sounded, through the ten
+effects). Logic Pro was not checked inside Logic (the second Mac's screen was locked); Logic
+loads only Audio Units that pass auval.
+
+- Presets: Engine's, Tune's and Texture's presets are the host's factory presets in every
+  format (CLAP preset discovery, Audio Unit factory presets, a VST3 program list), and still a
+  menu on the faceplate. The crate now uses a fork of nih-plug that adds them
+  (github.com/yuribeats/nih-plug, branch prowave-presets).
+- FM6 opens .syx banks: SYX key, the system's file dialog, then a voice from the bank; its
+  parameters are set through the host, so the host saves and undoes it.
+- Pro Wave Tune takes MIDI notes: in MIDI mode the newest note held is the target, and with
+  none held it tunes to the key and scale. Its Audio Unit is now a music effect (`aumf`), so a
+  Logic project that used the 0.3.1 Tune Audio Unit does not find it. Key and Scale "Project"
+  read "C (default)" and "Major (default)" in the plug-in.
+- CLAP fixes found by clap-validator in every 0.3.1 plug-in: a damaged saved state no longer
+  aborts the host, the host is told to read the parameters again after a state is loaded, and
+  a latency change while the plug-in is active asks the host to restart it instead of calling
+  a function only allowed during activation.
+
 ### 2026-11-24: the built-in instruments and effects as plug-ins
 
 Checked by tests, `auval`, `prowave --vst3-check` and offline renders only; nothing was played

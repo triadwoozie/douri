@@ -4,7 +4,8 @@
 //! The plug-in's window: the instrument or effect as a Pro Wave hardware unit, as the program
 //! draws it (PW-1, "Hardware"): the faceplate with the model code and name, the page keys, the
 //! knobs with their LCD readouts, choice keys and menus, and a RESET key; Wave Draw's display
-//! where its wave is drawn; the presets in a menu on the faceplate.
+//! where its wave is drawn; FM6's SYX key, which opens a .syx bank and puts one of its voices
+//! on the instrument; the presets in a menu on the faceplate.
 //!
 //! `theme.rs`, `hw.rs` and `gear.rs` are copies of the program's own (`prowave-app/src`), with
 //! only what this crate's egui version (nih_plug_egui's) needs changed; the layout below follows
@@ -24,9 +25,9 @@ use gear::{Cap, Change, Control, LedAt, CELL_H, CELL_W};
 use nih_plug::prelude::*;
 use nih_plug_egui::egui::{self, pos2, vec2, Align2, Pos2, Rect, Sense, Ui};
 use nih_plug_egui::{create_egui_editor, EguiState};
-use prowave_engine::native_inst::wave_draw;
+use prowave_engine::native_inst::{fm6, wave_draw};
 use prowave_engine::NativeFxInfo;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Margin inside the faceplate.
 const PAD: f32 = 26.0;
@@ -41,6 +42,36 @@ const SHAPE_ROW_H: f32 = 40.0;
 
 fn draws_wave(info: &NativeFxInfo) -> bool {
     info.id == wave_draw::ID
+}
+
+/// Whether the instrument reads voices from .syx files (FM6).
+fn loads_syx(info: &NativeFxInfo) -> bool {
+    info.id == fm6::ID
+}
+
+/// The voices of a .syx bank: (name, parameter values).
+pub type Bank = Vec<(String, Vec<f32>)>;
+
+/// The voices in the .syx file at `path` (none when it cannot be read or is not a bank), as the
+/// program reads them (`fm6::bank_voices`).
+pub fn read_bank(path: &std::path::Path) -> Bank {
+    std::fs::read(path)
+        .map(|bytes| fm6::bank_voices(&bytes))
+        .unwrap_or_default()
+}
+
+/// The edits that put `voice` (a bank voice: FM6's parameters 0 to 144) on the instrument,
+/// one gesture per parameter that changes; the others (voices, level...) are kept, as in the
+/// program.
+fn take_voice(vals: &[i32], voice: &[f32]) -> Vec<Edit> {
+    let mut out = Vec::new();
+    for (k, (old, new)) in vals.iter().zip(voice).enumerate() {
+        let new = new.round() as i32;
+        if *old != new {
+            set_once(&mut out, k, new);
+        }
+    }
+    out
 }
 
 /// Width of the widest row.
@@ -64,7 +95,7 @@ fn rows_height(rows: &[Row]) -> f32 {
         .sum()
 }
 
-/// Keys along the top: one per page when there is more than one.
+/// Page keys along the top: one per page when there is more than one.
 fn page_keys(pages: &[Page]) -> usize {
     if pages.len() > 1 {
         pages.len()
@@ -73,9 +104,14 @@ fn page_keys(pages: &[Page]) -> usize {
     }
 }
 
+/// Keys along the top: the page keys and FM6's SYX key.
+fn top_keys(info: &NativeFxInfo, pages: &[Page]) -> usize {
+    page_keys(pages) + usize::from(loads_syx(info))
+}
+
 /// The panel between the header and the foot: (width, height).
 fn body_size(info: &NativeFxInfo, pages: &[Page]) -> (f32, f32) {
-    let keys = page_keys(pages);
+    let keys = top_keys(info, pages);
     let keys_w = keys as f32 * (PAGE_KEY_W + PAGE_KEY_GAP) + PAD * 2.0;
     let width = pages
         .iter()
@@ -225,6 +261,12 @@ pub struct State {
     page: usize,
     /// The parameters being turned (a gesture the host has been told of).
     turning: Vec<bool>,
+    /// FM6: the voices of the .syx file opened last.
+    bank: Bank,
+    /// FM6: a bank read on the file dialog's thread, taken by the next frame.
+    incoming: Arc<Mutex<Option<Bank>>>,
+    /// FM6: the file dialog is open.
+    choosing: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl State {
@@ -232,7 +274,33 @@ impl State {
         State {
             page: 0,
             turning: vec![false; params],
+            bank: Vec::new(),
+            incoming: Arc::new(Mutex::new(None)),
+            choosing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
+    }
+
+    /// Opens the file dialog on a thread of its own, so the host's window thread keeps going
+    /// (rfd runs the panel on the main thread's queue); the bank arrives in `incoming`.
+    fn choose_bank(&self, ctx: &egui::Context) {
+        use std::sync::atomic::Ordering;
+        if self.choosing.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let (incoming, choosing, ctx) = (self.incoming.clone(), self.choosing.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let file = rfd::FileDialog::new()
+                .add_filter("SysEx", &["syx"])
+                .pick_file();
+            if let Some(path) = file {
+                let bank = read_bank(&path);
+                if let Ok(mut slot) = incoming.lock() {
+                    *slot = Some(bank);
+                }
+            }
+            choosing.store(false, Ordering::SeqCst);
+            ctx.request_repaint();
+        });
     }
 }
 
@@ -327,8 +395,8 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
                 label: label(info, params.instrument, &pages[page], k),
                 norm: ((v - param.min) / span).clamp(0.0, 1.0),
                 default: ((param.default - param.min) / span).clamp(0.0, 1.0),
-                text: info.value_text(k, v),
-                choices: param.choices.iter().map(|c| c.to_string()).collect(),
+                text: crate::params::value_text(info, k, vals[k]),
+                choices: crate::params::choices(info, k),
                 choice: (v - param.min).round().max(0.0) as usize,
                 automated: None,
                 enabled: true,
@@ -337,6 +405,13 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
         .collect();
     let (width, body_h) = body_size(info, pages);
     let id = egui::Id::new("prowave-plug");
+    if let Some(bank) = st.incoming.lock().ok().and_then(|mut s| s.take()) {
+        st.bank = bank;
+        // The voices' menu opens by itself on a bank just read.
+        if !st.bank.is_empty() {
+            ctx.memory_mut(|m| m.open_popup(id.with("syx-menu")));
+        }
+    }
     let frame = egui::Frame::NONE.fill(gear::BONE);
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -362,10 +437,11 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
             }
             y += GRAPH_H + SHAPE_ROW_H;
         }
-        let keys = page_keys(pages);
+        let keys = top_keys(info, pages);
         if keys > 0 {
             let x0 = rect.left() + (width - keys as f32 * (PAGE_KEY_W + PAGE_KEY_GAP)) / 2.0;
-            for (b, pg) in pages.iter().enumerate() {
+            let pages_shown = if page_keys(pages) > 0 { pages.len() } else { 0 };
+            for (b, pg) in pages.iter().enumerate().take(pages_shown) {
                 let r = Rect::from_min_size(
                     pos2(x0 + b as f32 * (PAGE_KEY_W + PAGE_KEY_GAP), y),
                     vec2(PAGE_KEY_W, 28.0),
@@ -383,6 +459,61 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
                 );
                 if key.clicked() {
                     st.page = b;
+                }
+            }
+            if loads_syx(info) {
+                // The SYX key: a .syx bank's voices, and the voices of the file opened last.
+                let r = Rect::from_min_size(
+                    pos2(x0 + pages_shown as f32 * (PAGE_KEY_W + PAGE_KEY_GAP), y),
+                    vec2(PAGE_KEY_W, 28.0),
+                );
+                let key = gear::key(
+                    ui,
+                    r,
+                    id.with("syx"),
+                    "SYX",
+                    Cap::Dark,
+                    LedAt::None,
+                    false,
+                    false,
+                );
+                let menu = id.with("syx-menu");
+                if key.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(menu));
+                }
+                let mut picked = None;
+                let mut choose = false;
+                egui::popup::popup_below_widget(
+                    ui,
+                    menu,
+                    &key,
+                    egui::PopupCloseBehavior::CloseOnClickOutside,
+                    |ui| {
+                        ui.set_min_width(170.0);
+                        if ui.button("Load .syx…").clicked() {
+                            choose = true;
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                        if !st.bank.is_empty() {
+                            ui.separator();
+                            egui::ScrollArea::vertical()
+                                .max_height(320.0)
+                                .show(ui, |ui| {
+                                    for (i, (name, _)) in st.bank.iter().enumerate() {
+                                        if ui.button(format!("{:02} {name}", i + 1)).clicked() {
+                                            picked = Some(i);
+                                            ui.memory_mut(|m| m.close_popup());
+                                        }
+                                    }
+                                });
+                        }
+                    },
+                );
+                if choose {
+                    st.choose_bank(ui.ctx());
+                }
+                if let Some(i) = picked {
+                    out.extend(take_voice(vals, &st.bank[i].1));
                 }
             }
             y += PAGE_ROW_H;
@@ -515,5 +646,66 @@ mod tests {
             let sets = edits.iter().filter(|e| matches!(e, Edit::Set(..))).count();
             assert_eq!(sets, info.params.len(), "{}: RESET", info.id);
         }
+    }
+
+    /// FM6's SYX key: a .syx bank is read as the program reads it, the key opens a menu with
+    /// the bank's voices, and picking one sets the voice's parameters (0 to 144) as gestures and
+    /// leaves the rest.
+    #[test]
+    fn fm6_takes_a_voice_from_a_bank() {
+        let info = prowave_engine::native_instrument_info(fm6::ID).expect("fm6");
+        // A bank made as the engine's own test makes one.
+        let mut file = vec![0xf0, 0x43, 0x00, 0x09, 0x20, 0x00];
+        for v in 0..32u32 {
+            for k in 0..128u32 {
+                file.push(((v * 7 + k * 13) % 100) as u8);
+            }
+        }
+        file.extend([0x00, 0xf7]);
+        let dir = std::env::temp_dir().join(format!("prowave-plug-syx-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bank.syx");
+        std::fs::write(&path, &file).unwrap();
+        let bank = read_bank(&path);
+        assert_eq!(bank.len(), 32);
+        assert!(read_bank(&dir.join("none.syx")).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+
+        let params = PlugParams::new(info, true);
+        let (w, h) = size(info, true, &params.pages);
+        let vals: Vec<i32> = info.params.iter().map(|p| p.default as i32).collect();
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let mut st = State::new(info.params.len());
+        // As if the file dialog's thread had read it.
+        *st.incoming.lock().unwrap() = Some(bank.clone());
+        let screen = Rect::from_min_size(Pos2::ZERO, vec2(w as f32, h as f32));
+        let frame = |st: &mut State, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut edits = Vec::new();
+            let out = ctx.run(input, |ctx| edits = draw(ctx, &params, st, &vals));
+            (edits, out)
+        };
+        let (_, out) = frame(&mut st, Vec::new());
+        assert_eq!(st.bank.len(), 32);
+        // The voices' menu opened by itself and is drawn (its rows are text shapes).
+        assert!(ctx.memory(|m| m.is_popup_open(egui::Id::new("prowave-plug").with("syx-menu"))));
+        assert!(!out.shapes.is_empty());
+        // Picking goes through take_voice: every voice parameter that differs, one gesture each.
+        let edits = take_voice(&vals, &bank[2].1);
+        let changed = bank[2]
+            .1
+            .iter()
+            .zip(&vals)
+            .filter(|(n, o)| n.round() as i32 != **o)
+            .count();
+        assert_eq!(edits.len(), changed * 3);
+        assert!(edits.iter().all(|e| match e {
+            Edit::Begin(k) | Edit::End(k) | Edit::Set(k, _) => *k < fm6::VOICE_PARAMS,
+        }));
     }
 }

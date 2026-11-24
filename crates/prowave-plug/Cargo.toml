@@ -8,7 +8,7 @@ members = ["."]
 
 [package]
 name = "prowave-plug"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 publish = false
@@ -20,8 +20,12 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 # The public build of the engine: none of the private build's parts.
 prowave-engine = { path = "../prowave-engine", default-features = false }
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "de421011f41a6d10fc8c7a6084e4f4dee0143683", features = ["assert_process_allocs"] }
-nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "de421011f41a6d10fc8c7a6084e4f4dee0143683" }
+# nih-plug at de42101 with factory presets added (CLAP preset discovery and preset-load, the
+# VST3 program list): github.com/yuribeats/nih-plug, branch prowave-presets.
+nih_plug = { git = "https://github.com/yuribeats/nih-plug.git", rev = "df9c4a307989bedf41a83cb35f945c42fc0b575c", features = ["assert_process_allocs"] }
+nih_plug_egui = { git = "https://github.com/yuribeats/nih-plug.git", rev = "df9c4a307989bedf41a83cb35f945c42fc0b575c" }
+# FM6's window opens .syx banks with the system's file dialog (as the program does).
+rfd = "0.17.2"
 
 [build-dependencies]
 # build.rs reads the instrument's or effect's name and kind from the engine's tables.

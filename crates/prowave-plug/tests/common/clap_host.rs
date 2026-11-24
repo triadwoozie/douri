@@ -140,6 +140,44 @@ impl Host {
         ((*self.plugin).get_extension.unwrap())(self.plugin, id.as_ptr()) as *const T
     }
 
+    /// Loads the preset `load_key` of the plug-in's own location through `clap.preset-load`;
+    /// `None` when the plug-in has no such extension.
+    pub fn load_preset(&self, load_key: &str) -> Option<bool> {
+        use clap_sys::ext::preset_load::{clap_plugin_preset_load, CLAP_EXT_PRESET_LOAD};
+        use clap_sys::factory::preset_discovery::CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN;
+        unsafe {
+            let p = self.ext::<clap_plugin_preset_load>(CLAP_EXT_PRESET_LOAD);
+            if p.is_null() {
+                return None;
+            }
+            let key = std::ffi::CString::new(load_key).unwrap();
+            // A host calls this on its main thread while its audio thread keeps processing,
+            // and nih-plug hands the state to that thread. This host has one thread, so it
+            // stops processing around the call (nih-plug then sets the state at once).
+            ((*self.plugin).stop_processing.unwrap())(self.plugin);
+            let ok = ((*p).from_location.unwrap())(
+                self.plugin,
+                CLAP_PRESET_DISCOVERY_LOCATION_PLUGIN,
+                null(),
+                key.as_ptr(),
+            );
+            assert!(((*self.plugin).start_processing.unwrap())(self.plugin));
+            Some(ok)
+        }
+    }
+
+    /// The number of note inputs the plug-in has.
+    pub fn note_inputs(&self) -> u32 {
+        use clap_sys::ext::note_ports::{clap_plugin_note_ports, CLAP_EXT_NOTE_PORTS};
+        unsafe {
+            let p = self.ext::<clap_plugin_note_ports>(CLAP_EXT_NOTE_PORTS);
+            if p.is_null() {
+                return 0;
+            }
+            ((*p).count.unwrap())(self.plugin, true)
+        }
+    }
+
     fn read_params(&mut self) {
         unsafe {
             let p = self.ext::<clap_plugin_params>(CLAP_EXT_PARAMS);
@@ -456,4 +494,188 @@ pub fn instrument_score() -> Score {
         (1.20, Ev::Off(60)),
         (1.20, Ev::Off(64)),
     ]
+}
+
+/// A preset found by [`discover_presets`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct FoundPreset {
+    pub name: String,
+    pub load_key: String,
+    /// The plug-in ids it is for.
+    pub plugin_ids: Vec<String>,
+    pub flags: u32,
+    /// The kind of location it was found in.
+    pub location_kind: u32,
+}
+
+mod discovery {
+    use super::FoundPreset;
+    use clap_sys::factory::preset_discovery::*;
+    use clap_sys::universal_plugin_id::clap_universal_plugin_id;
+    use std::ffi::{c_char, c_void, CStr};
+
+    pub struct Crawl {
+        pub locations: Vec<(u32, u32, Option<String>)>,
+        pub presets: Vec<FoundPreset>,
+        pub kind: u32,
+    }
+
+    unsafe fn crawl<'a>(p: *mut c_void) -> &'a mut Crawl {
+        &mut *(p as *mut Crawl)
+    }
+    fn text(p: *const c_char) -> String {
+        if p.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+        }
+    }
+
+    pub unsafe extern "C" fn declare_filetype(
+        _i: *const clap_preset_discovery_indexer,
+        _f: *const clap_preset_discovery_filetype,
+    ) -> bool {
+        true
+    }
+    pub unsafe extern "C" fn declare_location(
+        i: *const clap_preset_discovery_indexer,
+        l: *const clap_preset_discovery_location,
+    ) -> bool {
+        let l = &*l;
+        let loc = (!l.location.is_null()).then(|| text(l.location));
+        crawl((*i).indexer_data)
+            .locations
+            .push((l.kind, l.flags, loc));
+        true
+    }
+    pub unsafe extern "C" fn declare_soundpack(
+        _i: *const clap_preset_discovery_indexer,
+        _s: *const clap_preset_discovery_soundpack,
+    ) -> bool {
+        true
+    }
+    pub unsafe extern "C" fn indexer_ext(
+        _i: *const clap_preset_discovery_indexer,
+        _id: *const c_char,
+    ) -> *const c_void {
+        std::ptr::null()
+    }
+
+    pub unsafe extern "C" fn on_error(
+        _r: *const clap_preset_discovery_metadata_receiver,
+        _e: i32,
+        _m: *const c_char,
+    ) {
+    }
+    pub unsafe extern "C" fn begin_preset(
+        r: *const clap_preset_discovery_metadata_receiver,
+        name: *const c_char,
+        key: *const c_char,
+    ) -> bool {
+        let c = crawl((*r).receiver_data);
+        let kind = c.kind;
+        c.presets.push(FoundPreset {
+            name: text(name),
+            load_key: text(key),
+            plugin_ids: Vec::new(),
+            flags: 0,
+            location_kind: kind,
+        });
+        true
+    }
+    pub unsafe extern "C" fn add_plugin_id(
+        r: *const clap_preset_discovery_metadata_receiver,
+        id: *const clap_universal_plugin_id,
+    ) {
+        if let Some(p) = crawl((*r).receiver_data).presets.last_mut() {
+            assert_eq!(text((*id).abi), "clap");
+            p.plugin_ids.push(text((*id).id));
+        }
+    }
+    pub unsafe extern "C" fn set_flags(r: *const clap_preset_discovery_metadata_receiver, f: u32) {
+        if let Some(p) = crawl((*r).receiver_data).presets.last_mut() {
+            p.flags = f;
+        }
+    }
+    pub unsafe extern "C" fn ignore_str(
+        _r: *const clap_preset_discovery_metadata_receiver,
+        _s: *const c_char,
+    ) {
+    }
+    pub unsafe extern "C" fn ignore_times(
+        _r: *const clap_preset_discovery_metadata_receiver,
+        _a: u64,
+        _b: u64,
+    ) {
+    }
+    pub unsafe extern "C" fn ignore_pair(
+        _r: *const clap_preset_discovery_metadata_receiver,
+        _a: *const c_char,
+        _b: *const c_char,
+    ) {
+    }
+}
+
+/// Crawls `entry`'s preset-discovery factory as a host's indexer does: every provider, every
+/// location it declares, every preset in it. Empty when the library has no such factory.
+pub fn discover_presets(entry: &clap_plugin_entry, path: &CStr) -> Vec<FoundPreset> {
+    use clap_sys::factory::preset_discovery::*;
+    use discovery::*;
+    unsafe {
+        assert!((entry.init.unwrap())(path.as_ptr()));
+        let f = (entry.get_factory.unwrap())(CLAP_PRESET_DISCOVERY_FACTORY_ID.as_ptr())
+            as *const clap_preset_discovery_factory;
+        if f.is_null() {
+            return Vec::new();
+        }
+        let mut crawl = Crawl {
+            locations: Vec::new(),
+            presets: Vec::new(),
+            kind: 0,
+        };
+        let indexer = clap_preset_discovery_indexer {
+            clap_version: CLAP_VERSION,
+            name: c"test indexer".as_ptr(),
+            vendor: c"test".as_ptr(),
+            url: c"".as_ptr(),
+            version: c"1".as_ptr(),
+            indexer_data: &mut crawl as *mut Crawl as *mut c_void,
+            declare_filetype: Some(declare_filetype),
+            declare_location: Some(declare_location),
+            declare_soundpack: Some(declare_soundpack),
+            get_extension: Some(indexer_ext),
+        };
+        let receiver = clap_preset_discovery_metadata_receiver {
+            receiver_data: &mut crawl as *mut Crawl as *mut c_void,
+            on_error: Some(on_error),
+            begin_preset: Some(begin_preset),
+            add_plugin_id: Some(add_plugin_id),
+            set_soundpack_id: Some(ignore_str),
+            set_flags: Some(set_flags),
+            add_creator: Some(ignore_str),
+            set_description: Some(ignore_str),
+            set_timestamps: Some(ignore_times),
+            add_feature: Some(ignore_str),
+            add_extra_info: Some(ignore_pair),
+        };
+        for i in 0..((*f).count.unwrap())(f) {
+            let d = ((*f).get_descriptor.unwrap())(f, i);
+            assert!(!d.is_null());
+            let p = ((*f).create.unwrap())(f, &indexer, (*d).id);
+            assert!(!p.is_null());
+            assert!(((*p).init.unwrap())(p));
+            let locations = std::mem::take(&mut crawl.locations);
+            for (kind, _flags, loc) in &locations {
+                crawl.kind = *kind;
+                let c = loc
+                    .as_ref()
+                    .map(|s| std::ffi::CString::new(s.as_str()).unwrap());
+                let ptr = c.as_ref().map_or(null(), |c| c.as_ptr());
+                assert!(((*p).get_metadata.unwrap())(p, *kind, ptr, &receiver));
+            }
+            crawl.locations = locations;
+            ((*p).destroy.unwrap())(p);
+        }
+        crawl.presets
+    }
 }

@@ -19,7 +19,7 @@ fn main() {
             if instrument { "instrument" } else { "effect" },
             codes::bundle_name(info.name),
             codes::clap_id(info.id),
-            codes::au_type(instrument),
+            codes::au_type(info.id, instrument),
             codes::au_subtype(info.id),
             codes::AU_MANUFACTURER,
             info.params.len(),

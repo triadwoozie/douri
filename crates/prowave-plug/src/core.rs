@@ -33,6 +33,8 @@ pub struct PlugCore {
     info: &'static NativeFxInfo,
     engine: Engine,
     rate: u32,
+    /// The largest host block it was opened for.
+    max_block: usize,
     /// The stored values the engine has.
     applied: Vec<i32>,
     events: Vec<Midi>,
@@ -83,6 +85,7 @@ impl PlugCore {
             info,
             engine,
             rate: rate.max(1),
+            max_block: max_block.max(1),
             applied: stored.iter().map(|v| *v as i32).collect(),
             events: Vec::with_capacity(MAX_EVENTS),
             in_l: vec![0.0; CHUNK],
@@ -93,6 +96,12 @@ impl PlugCore {
 
     pub fn info(&self) -> &'static NativeFxInfo {
         self.info
+    }
+
+    /// Whether it was opened for this rate and block size (then it can be kept when the host
+    /// initializes the plug-in again).
+    pub fn fits(&self, rate: u32, max_block: usize) -> bool {
+        self.rate == rate.max(1) && self.max_block == max_block.max(1)
     }
 
     /// Sets parameter `k` to the stored value `v` when the engine has another.
@@ -110,7 +119,8 @@ impl PlugCore {
         }
     }
 
-    /// A MIDI message `offset` frames into the next block (an effect has no use for them).
+    /// A MIDI message `offset` frames into the next block (an effect other than Tune ignores
+    /// them).
     pub fn midi(&mut self, status: u8, d1: u8, d2: u8, offset: u32) {
         if self.events.len() < self.events.capacity() {
             self.events.push(Midi {
@@ -122,11 +132,13 @@ impl PlugCore {
         }
     }
 
-    /// Silence at once: an instrument's voices stop (as controller 120).
+    /// Silence at once: an instrument's voices stop (as controller 120); Tune lets go of the
+    /// notes it holds (as controller 123).
     pub fn silence(&mut self) {
         self.events.clear();
-        if let Engine::Instrument(h) = &mut self.engine {
-            h.midi(0xb0, 120, 0, 0);
+        match &mut self.engine {
+            Engine::Instrument(h) => h.midi(0xb0, 120, 0, 0),
+            Engine::Effect(fx) => fx.midi(0xb0, 123, 0, 0),
         }
     }
 
@@ -163,16 +175,18 @@ impl PlugCore {
         while at < n {
             let end = (at + CHUNK).min(n);
             let (cl, cr) = (&mut l[at..end], &mut r[at..end]);
+            // Messages for this piece; a late one (past the block) goes with the last.
+            while next < events.len() && ((events[next].offset as usize) < end || end == n) {
+                let e = events[next];
+                let offset = (e.offset as usize).clamp(at, end - 1) - at;
+                match engine {
+                    Engine::Instrument(h) => h.midi(e.status, e.d1, e.d2, offset as u32),
+                    Engine::Effect(fx) => fx.midi(e.status, e.d1, e.d2, offset as u32),
+                }
+                next += 1;
+            }
             match engine {
                 Engine::Instrument(h) => {
-                    // Messages for this piece; a late one (past the block) goes with the last.
-                    while next < events.len() && ((events[next].offset as usize) < end || end == n)
-                    {
-                        let e = events[next];
-                        let offset = (e.offset as usize).clamp(at, end - 1) - at;
-                        h.midi(e.status, e.d1, e.d2, offset as u32);
-                        next += 1;
-                    }
                     h.process((&[], &[]), (cl, cr));
                 }
                 Engine::Effect(fx) => {

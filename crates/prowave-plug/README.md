@@ -45,15 +45,34 @@ macOS 11 or later. The sound is the engine's own code (`crates/prowave-engine`, 
   knob turns (drag; Shift for fine; double-click for the default) and shows its value text;
   choices are keys or a menu; RESET puts every parameter back to its default; Wave Draw's
   display is drawn on with the pointer.
-- **Presets:** nih-plug offers hosts no preset list, so the registry's presets (Engine, Tune,
-  Texture) are a menu on the window's faceplate.
+- **Presets:** the registry's presets (Engine, Tune, Texture) are the host's factory presets in
+  every format, and a menu on the window's faceplate too. nih-plug has no presets of its own, so
+  the crate uses a fork of it (github.com/yuribeats/nih-plug, branch `prowave-presets`, on
+  `de42101`) that adds them: a CLAP preset-discovery factory and `clap.preset-load` (one location
+  inside the plug-in, the preset's number as its key), which clap-wrapper turns into the Audio
+  Unit's factory presets, and a VST3 program list with a program-change parameter ("Program",
+  first entry "(none)"). Loading one sets the parameters it names and keeps the others, as the
+  menu does. The numbering is the registry's order: new presets go at the end.
+- **FM6 banks:** the SYX key on FM6's window opens a .syx bank with the system's file dialog
+  (rfd, on a thread of its own, so the host keeps running), reads it with the program's code
+  (`fm6::bank_voices`) and lists its voices; picking one sets the voice's 145 parameters
+  through the host, one gesture each, so the host saves and undoes it; the other parameters
+  (voices, level) are kept, as in the program.
+- **Tune's MIDI target:** Pro Wave Tune takes MIDI notes (a note input in VST3 and CLAP; its
+  Audio Unit is a music effect, `aumf`, which Logic lists with the effects and gives a MIDI
+  side-chain menu). With Target "MIDI", the newest note held is the target; with none held it
+  tunes to the key and scale, as the program does while stopped. A note counts from the start
+  of the piece of at most 256 frames it comes in. In the program the MIDI target is the notes of
+  a MIDI track instead.
 
 What the plug-ins leave out:
 
-- FM6 cannot open `.syx` banks (the program's window does that with a file dialog).
-- Pro Wave Tune's Target "MIDI" follows the notes of the program's MIDI track; a plug-in has no
-  such track, so in it MIDI mode corrects to nothing. Use Scale mode, or Pitch Override. Its
-  Key and Scale "Project" are C major (A4 = 440 Hz) in the plug-in: choose the key.
+- Pro Wave Tune's Key and Scale "Project" follow the program's project key, which a host does
+  not give a plug-in: in the plug-in they are named "C (default)" and "Major (default)" and
+  are C major (A4 = 440 Hz). The stored value is the same, so saved settings keep their
+  meaning. Its "MIDI Track" knob has no use in a plug-in (the notes come in on its MIDI input).
+- Pro Wave Tune's Audio Unit changed from an effect (`aufx`) to a music effect (`aumf`) in
+  0.3.2, so a Logic project that used the 0.3.1 Tune Audio Unit does not find it again.
 - In VST3, an instrument also shows 2080 hidden parameters: nih-plug's stand-ins for the MIDI
   controllers of 16 channels (VST3 passes controllers to a plug-in as parameters).
 - When a host resets an effect, the sound already inside it (delay lines, reverb) is not

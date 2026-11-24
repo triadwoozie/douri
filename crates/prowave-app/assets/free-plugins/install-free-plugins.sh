@@ -11,9 +11,17 @@
 #   sh install-free-plugins.sh --dry-run       download and unpack, install nothing
 #   --gui                                      no terminal: one macOS password dialog
 #   --yes                                      do not ask before starting
+#   --resolve                                  print id, download address, time found; install nothing
+#
+# Download addresses come from links.tsv on the Pro Wave site, which a job on the site's server
+# refreshes every hour from the makers' pages (the addresses only; the files stay with the makers).
+# Rows missing from it, older than 48 hours, or all of them when it cannot be read, are looked up
+# here on the makers' pages. PROWAVE_LINKS=off skips links.tsv; PROWAVE_LINKS=<address> reads another.
 #
 # Installers (.pkg) need the Mac password once. Loose plug-ins are copied to
 # ~/Library/Audio/Plug-Ins (Components and VST3), no password.
+# What it installs is listed in ~/Library/Application Support/prowave-free-plugins/installed.tsv
+# for the uninstaller (uninstall-free-plugins.sh).
 
 DEFAULT_KIND="all"
 # ids chosen on the download page (comma separated). Empty: everything of DEFAULT_KIND.
@@ -26,12 +34,12 @@ TAB="$(printf '\t')"
 # first (or last, see pick) link on it that matches. mode manual: open `page`.
 catalog() {
 cat <<'PROWAVE_CATALOG_END'
-digital-suburban-dexed	synth	Dexed	Digital Suburban	auto		https://github.com/asb2m10/dexed/releases	Yamaha DX7 FM synth. Open source.	https://api.github.com/repos/asb2m10/dexed/releases	https://github\.com/[^"]+/releases/download/[^"]+/Dexed-[0-9.]+-macOS\.dmg"	first
-distrho-cardinal	synth	Cardinal	DISTRHO	auto		https://github.com/DISTRHO/Cardinal/releases	Virtual modular synthesizer. Open source.	https://api.github.com/repos/DISTRHO/Cardinal/releases	https://github\.com/[^"]+/releases/download/[^"]+/Cardinal-macOS-universal-[0-9.]+\.pkg"	first
+digital-suburban-dexed	synth	Dexed	Digital Suburban	auto		https://github.com/asb2m10/dexed/releases	Yamaha DX7 FM synth. Open source.	https://api.github.com/repos/asb2m10/dexed/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/Dexed-[0-9.]+-macOS\.dmg"	first
+distrho-cardinal	synth	Cardinal	DISTRHO	auto		https://github.com/DISTRHO/Cardinal/releases	Virtual modular synthesizer. Open source.	https://api.github.com/repos/DISTRHO/Cardinal/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/Cardinal-macOS-universal-[0-9.]+\.pkg"	first
 djw-audio-dw-303	synth	DW-303	DJW Audio	auto		https://djwaudio.co/#dw-303	Bass line synthesizer with step sequencer, accent and slide. Open source.	https://djwaudio.co/api/download.php?product=dw-303&platform=mac		first
-fablesynth-fablesynth-bl-1	synth	FableSynth BL-1	FableSynth	auto		https://fablesynth.com	Acid bass on the FableSynth wavetable engine.	https://api.github.com/repos/georgi/fablesynth/releases	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-BL1-macOS\.zip"	first
-fablesynth-fablesynth-sq-4	synth	FableSynth SQ-4	FableSynth	auto		https://fablesynth.com	Session that plays the FableSynth instruments.	https://api.github.com/repos/georgi/fablesynth/releases	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-SQ4-macOS\.zip"	first
-fablesynth-fablesynth-wt-1	synth	FableSynth WT-1	FableSynth	auto		https://fablesynth.com	Wavetable synth.	https://api.github.com/repos/georgi/fablesynth/releases	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-macOS\.zip"	first
+fablesynth-fablesynth-bl-1	synth	FableSynth BL-1	FableSynth	auto		https://fablesynth.com	Acid bass on the FableSynth wavetable engine.	https://api.github.com/repos/georgi/fablesynth/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-BL1-macOS\.zip"	first
+fablesynth-fablesynth-sq-4	synth	FableSynth SQ-4	FableSynth	auto		https://fablesynth.com	Session that plays the FableSynth instruments.	https://api.github.com/repos/georgi/fablesynth/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-SQ4-macOS\.zip"	first
+fablesynth-fablesynth-wt-1	synth	FableSynth WT-1	FableSynth	auto		https://fablesynth.com	Wavetable synth.	https://api.github.com/repos/georgi/fablesynth/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/FableSynth-macOS\.zip"	first
 full-bucket-music-blooo	synth	Blooo	Full Bucket Music	auto		https://www.fullbucket.de/music/blooo.html	Classic subtractive synth, up to 64 voices.	https://www.fullbucket.de/music/blooo.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
 full-bucket-music-brokenmini	synth	BrokenMini	Full Bucket Music	auto		https://www.fullbucket.de/music/brokenmini.html	Simulates an unknown, obscure synth from the 1970s. Broken on purpose.	https://www.fullbucket.de/music/brokenmini.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
 full-bucket-music-bucket-one	synth	Bucket ONE	Full Bucket Music	auto		https://www.fullbucket.de/music/bucketone.html	Simulates the Crumar BIT 01/99 (1985).	https://www.fullbucket.de/music/bucketone.html	dl\.php\?file=[a-z0-9]+(_[0-9]+)+_mac"	first
@@ -66,28 +74,28 @@ jas-i-khorlo	synth	Khorlo	JAS-I	manual	Needs account	https://www.jas-i.com/khorl
 knightsnare-knight-strings-74	synth	Knight Strings 74	Knightsnare	manual		https://knightsnare.com/	String machine.			
 knightsnare-knight8000	synth	Knight8000	Knightsnare	manual		https://knightsnare.com/	Analog-style drum machine with tuning, patterns and MIDI.			
 knightsnare-knight9000	synth	Knight9000	Knightsnare	manual		https://knightsnare.com/	Drum machine in the style of a vintage rhythm composer.			
-krakli-arminator2	synth	Arminator2	Krakli	auto		https://www.krakli.com/	The original Arminator.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Arminator2026_OldStyle\.zip	first
-krakli-arminator26	synth	Arminator26	Krakli	auto		https://www.krakli.com/	Revised Arminator: new interface, new features, Random.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Arminator26_NewStyle\.zip	first
+krakli-arminator2	synth	Arminator2	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	The original Arminator.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Arminator2026_OldStyle\.zip	first
+krakli-arminator26	synth	Arminator26	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	Revised Arminator: new interface, new features, Random.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Arminator26_NewStyle\.zip	first
 krakli-cygnus-26	synth	Cygnus 26	Krakli	auto		https://www.krakli.com/	New version of Cygnus, with a sampler module in place of the soundfont oscillator.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Cygnus%2026\.zip	first
-krakli-k1ks	synth	K1Ks	Krakli	auto		https://www.krakli.com/	3 oscillators, 2 filters, multiple envelopes and LFOs.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=K1Ks\.zip	first
+krakli-k1ks	synth	K1Ks	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	3 oscillators, 2 filters, multiple envelopes and LFOs.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=K1Ks\.zip	first
 krakli-klatch	synth	Klatch	Krakli	auto		https://www.krakli.com/	Scanned synthesis: objects interact and change the sound over time. Randomize.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Klatch\.zip	first
 krakli-krakli-tone	synth	Krakli-Tone	Krakli	auto		https://www.krakli.com/	Home organ.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Krakli-Tone\.zip	first
-krakli-kxtra	synth	KXtra	Krakli	auto		https://www.krakli.com/	Hybrid FM synth with configurable operators and a randomizer.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=KXtra_64bit\.zip	first
-krakli-rmpx	synth	RMPx	Krakli	auto		https://www.krakli.com/	Physical modelling, FM and supersaw oscillator sections.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=RMPX_64bit\.zip	first
+krakli-kxtra	synth	KXtra	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	Hybrid FM synth with configurable operators and a randomizer.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=KXtra\.zip	first
+krakli-rmpx	synth	RMPx	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	Physical modelling, FM and supersaw oscillator sections.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=RMPX\.zip	first
 krakli-s5	synth	S5	Krakli	auto		https://www.krakli.com/	Ensemble keyboard: part organ, part string machine, part polysynth.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=S5\.zip	first
-krakli-sk7	synth	SK7	Krakli	auto		https://www.krakli.com/	Styled after a 1970s synth.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=SK7_64bit\.zip	first
+krakli-sk7	synth	SK7	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	Styled after a 1970s synth.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=SK7\.zip	first
 krakli-stringz3	synth	Stringz3	Krakli	auto		https://www.krakli.com/	Physical modelling, with a randomizer and a workbench page.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=Stringz3\.zip	first
-krakli-xakt	synth	Xakt	Krakli	auto		https://www.krakli.com/	Combines two additive waveforms. Randomize.	https://www.krakli.com/	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=XAKT\.zip	first
-lemus-ro-drums-808	synth	ro-drums-808	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-808 model; MIDI plays the voices. Without your own CPU ROM there is no sequencer. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-808-[0-9.]+-mac\.pkg"	first
-lemus-ro-drums-909	synth	ro-drums-909	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-909 model; MIDI plays the voices. Without your own program ROM there is no sequencer. Open source.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-909-[0-9.]+-mac\.pkg"	first
-lemus-ro-mono-101	synth	ro-mono-101	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland SH-101 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-101-[0-9.]+-mac\.pkg"	first
-lemus-ro-mono-303	synth	ro-mono-303	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TB-303 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-303-[0-9.]+-mac\.pkg"	first
-lemus-ac-digital-vc	synth	ac-digital-vc	Lemus	auto	Needs ROM	https://github.com/lemus-dev/lemus/releases	Access Virus C: runs the real firmware, so it is silent until you add your own Virus C ROM. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases	https://github\.com/[^"]+/releases/download/[^"]+/ac-digital-vc-[0-9.]+-mac\.pkg"	first
+krakli-xakt	synth	Xakt	Krakli	auto		https://www.krakli.com/copy-of-they-re-here	Combines two additive waveforms. Randomize.	https://www.krakli.com/copy-of-they-re-here	https://www\.krakli\.com/_files/archives/[a-z0-9_]+\.zip\?dn=XAKT\.zip	first
+lemus-ro-drums-808	synth	ro-drums-808	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-808 model; MIDI plays the voices. Without your own CPU ROM there is no sequencer. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-808-[0-9.]+-mac\.pkg"	first
+lemus-ro-drums-909	synth	ro-drums-909	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TR-909 model; MIDI plays the voices. Without your own program ROM there is no sequencer. Open source.	https://api.github.com/repos/lemus-dev/lemus/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ro-drums-909-[0-9.]+-mac\.pkg"	first
+lemus-ro-mono-101	synth	ro-mono-101	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland SH-101 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-101-[0-9.]+-mac\.pkg"	first
+lemus-ro-mono-303	synth	ro-mono-303	Lemus	auto		https://github.com/lemus-dev/lemus/releases	Roland TB-303 model. Without your own CPU ROM it plays from MIDI only (voice mode). Open source.	https://api.github.com/repos/lemus-dev/lemus/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ro-mono-303-[0-9.]+-mac\.pkg"	first
+lemus-ac-digital-vc	synth	ac-digital-vc	Lemus	auto	Needs ROM	https://github.com/lemus-dev/lemus/releases	Access Virus C: runs the real firmware, so it is silent until you add your own Virus C ROM. Open source, beta.	https://api.github.com/repos/lemus-dev/lemus/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ac-digital-vc-[0-9.]+-mac\.pkg"	first
 majetone-pantomime-4	synth	Pantomime 4	Majetone	auto		https://majetone.com/download	Synth. Its sample library (1.2 GB) is a separate download on the maker's page.	https://majetone.com/downloads/p4-mac		first
-midilab-jc303	synth	JC303	midilab	auto		https://github.com/midilab/jc303/releases	Roland TB-303 bass line clone. Open source.	https://api.github.com/repos/midilab/jc303/releases	https://github\.com/[^"]+/releases/download/[^"]+/jc303-[0-9.]+-macos[_-]universal-plugins\.zip"	first
+midilab-jc303	synth	JC303	midilab	auto		https://github.com/midilab/jc303/releases	Roland TB-303 bass line clone. Open source.	https://api.github.com/repos/midilab/jc303/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/jc303-[0-9.]+-macos[_-]universal-plugins\.zip"	first
 oxo-music-oxo-synth2	synth	Oxo Synth2	Oxo Music	auto		https://oxo-music.com/products/oxo_synth2	Synth by Oxo Music.	https://oxo-music.com/downloads/OxoSynth2-1.1.8-16-macOS.dmg		first
 phantomexposure-sprite-spores	synth	Sprite Spores	Phantomexposure	manual		https://phantomexposure.gumroad.com/sprite-spores	Synth modelled on several retro sound chips.			
-plugdata-team-plugdata	synth	plugdata	plugdata team	auto		https://github.com/plugdata-team/plugdata/releases	Visual patching environment based on Pure Data. Installs instrument, effect and MIDI versions. Open source.	https://api.github.com/repos/plugdata-team/plugdata/releases	https://github\.com/[^"]+/releases/download/[^"]+/plugdata-macOS-Universal\.pkg"	first
+plugdata-team-plugdata	synth	plugdata	plugdata team	auto		https://github.com/plugdata-team/plugdata/releases	Visual patching environment based on Pure Data. Installs instrument, effect and MIDI versions. Open source.	https://api.github.com/repos/plugdata-team/plugdata/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/plugdata-macOS-Universal\.pkg"	first
 socalabs-organ	synth	Organ	SocaLabs	auto		https://socalabs.com/synths/organ/	Tonewheel organ with drawbars, vibrato and chorus.	https://socalabs.com/files/get.php?id=Organ.pkg		first
 socalabs-papu	synth	PAPU	SocaLabs	auto		https://socalabs.com/synths/papu/	Nintendo Game Boy sound chip.	https://socalabs.com/files/get.php?id=PAPU.pkg		first
 socalabs-piano	synth	Piano	SocaLabs	auto		https://socalabs.com/synths/piano/	Simple sampled piano.	https://socalabs.com/files/get.php?id=Piano.pkg		first
@@ -97,13 +105,13 @@ socalabs-sn76489	synth	SN76489	SocaLabs	auto		https://socalabs.com/synths/sn7648
 socalabs-voc	synth	Voc	SocaLabs	auto		https://socalabs.com/synths/voc-vocal-synth/	Vocal synth: vowel sounds and vocal-like tones.	https://socalabs.com/files/get.php?id=Voc.pkg		first
 socalabs-wavetable	synth	Wavetable	SocaLabs	auto		https://socalabs.com/synths/wavetable/	Wavetable synth: 2 wavetable oscillators, 150 wavetables, 5 effects.	https://socalabs.com/files/get.php?id=Wavetable.pkg		first
 squish-labs-ok-instruments-mkii	synth	OK Instruments MKII	Squish Labs	manual		https://squishlabs.gumroad.com/l/okinstruments	Instrument by Squish Labs. The free Gumroad checkout gives its licence key.			
-surge-synth-team-monique	synth	Monique	Surge Synth Team	auto		https://github.com/surge-synthesizer/monique-monosynth/releases	Monophonic synth for bass and lead. Open source.	https://api.github.com/repos/surge-synthesizer/monique-monosynth/releases	https://github\.com/[^"]+/releases/download/[^"]+/moniquemonosynth-macOS-[^"]+\.dmg"	first
-surge-synth-team-ob-xf	synth	OB-Xf	Surge Synth Team	auto		https://github.com/surge-synthesizer/OB-Xf/releases	Inspired by the Oberheim OB-X. Continues OB-Xd. Open source.	https://api.github.com/repos/surge-synthesizer/OB-Xf/releases	https://github\.com/[^"]+/releases/download/[^"]+/ob-xf-macOS-v[0-9.]+\.dmg"	first
-surge-synth-team-surge-xt	synth	Surge XT	Surge Synth Team	auto		https://surge-synthesizer.github.io/downloads/	Hybrid synthesizer. Open source.	https://api.github.com/repos/surge-synthesizer/releases-xt/releases	https://github\.com/[^"]+/releases/download/[^"]+/surge-xt-macOS-[0-9.]+\.dmg"	first
+surge-synth-team-monique	synth	Monique	Surge Synth Team	auto		https://github.com/surge-synthesizer/monique-monosynth/releases	Monophonic synth for bass and lead. Open source.	https://api.github.com/repos/surge-synthesizer/monique-monosynth/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/moniquemonosynth-macOS-[^"]+\.dmg"	first
+surge-synth-team-ob-xf	synth	OB-Xf	Surge Synth Team	auto		https://github.com/surge-synthesizer/OB-Xf/releases	Inspired by the Oberheim OB-X. Continues OB-Xd. Open source.	https://api.github.com/repos/surge-synthesizer/OB-Xf/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ob-xf-macOS-v[0-9.]+\.dmg"	first
+surge-synth-team-surge-xt	synth	Surge XT	Surge Synth Team	auto		https://surge-synthesizer.github.io/downloads/	Hybrid synthesizer. Open source.	https://api.github.com/repos/surge-synthesizer/releases-xt/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/surge-xt-macOS-[0-9.]+\.dmg"	first
 tal-software-tal-noisemaker	synth	TAL-NoiseMaker	TAL Software	auto		https://tal-software.com/products/tal-noisemaker	Virtual analog synth.	https://tal-software.com/products/tal-noisemaker	[^"]*/downloads/plugins/TAL-NoiseMaker-installer_macos\.zip	first
 temecula-dsp-nibbi	synth	NIBBI	Temecula DSP	auto		https://www.temeculadsp.com/nibbi	Sampler, tape looper and chopper adapted from the CHOMPI firmware, with an S950 12-bit mode.	https://assets.temeculadsp.com/installers/nibbi/TemeculaDSPNibbi_latest.pkg		first
-thewavewarden-odin-2	synth	Odin 2	TheWaveWarden	auto		https://thewavewarden.com/odin2	24-voice polyphonic synth. Open source.	https://api.github.com/repos/TheWaveWarden/odin2/releases	https://github\.com/[^"]+/releases/download/[^"]+/Odin2[0-9.]+MacInstaller\.pkg"	first
-tilr-ripplerx	synth	RipplerX	tilr	auto		https://github.com/tiagolr/ripplerx/releases	Physically modeled synth. Open source.	https://api.github.com/repos/tiagolr/ripplerx/releases	https://github\.com/[^"]+/releases/download/[^"]+/ripplerx-macos-v[0-9.]+\.zip"	first
+thewavewarden-odin-2	synth	Odin 2	TheWaveWarden	auto		https://thewavewarden.com/odin2	24-voice polyphonic synth. Open source.	https://api.github.com/repos/TheWaveWarden/odin2/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/Odin2[0-9.]+MacInstaller\.pkg"	first
+tilr-ripplerx	synth	RipplerX	tilr	auto		https://github.com/tiagolr/ripplerx/releases	Physically modeled synth. Open source.	https://api.github.com/repos/tiagolr/ripplerx/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ripplerx-macos-v[0-9.]+\.zip"	first
 u-he-podolski	synth	Podolski	u-he	auto		https://u-he.com/products/podolski/	Straightforward, CPU-efficient virtual analog synth.	https://u-he.com/products/podolski/	https://dl\.u-he\.com/releases/Podolski_[^"]*_Mac\.zip	first
 u-he-triple-cheese	synth	Triple Cheese	u-he	auto		https://u-he.com/products/triplecheese/	Comb filter synth.	https://u-he.com/products/triplecheese/	https://dl\.u-he\.com/releases/TripleCheese_[^"]*_Mac\.zip	first
 u-he-tyrell-n6	synth	Tyrell N6	u-he	auto		https://u-he.com/products/tyrelln6/	Virtual analog synth.	https://u-he.com/products/tyrelln6/	https://dl\.u-he\.com/releases/TyrellN6_[^"]*_Mac\.zip	first
@@ -112,8 +120,8 @@ ymck-magical-8bit-plug-2	synth	Magical 8bit Plug 2	YMCK	auto		https://ymck.net/a
 ymck-magicalfdsplug	synth	MagicalFDSPlug	YMCK	auto		https://ymck.net/app/magical-fds-plug	Famicom Disk System sound.	https://ymck.net/data/magicalFDSplug/MagicalFDSPlug-mac.zip		first
 13x-audio-colony	effect	Colony	13x Audio	auto		https://13x.audio/products/colony	Multi-effect: eleven effects, from tape and fuzz to stutter and shimmer, moved together by one Energy control.	https://13x.audio/api/download/colony?os=macos		first
 13x-audio-loft	effect	LOFT	13x Audio	auto		https://13x.audio/products/loft	Vintage reverb. The tail follows a curve you draw, in time with the project and in its key.	https://13x.audio/api/download/loft?os=macos		first
-adb-records-adb-smart-eq	effect	ADB Smart EQ	ADB Records	auto		https://adbrecords.com/adbsmarteq/	Adaptive EQ: four engines correct resonances and tonal balance, plus a 12-band manual EQ.	https://api.github.com/repos/adbrecords/ADB-Smart-EQ/releases	https://github\.com/[^"]+/releases/download/[^"]+/ADB_Smart_EQ_[0-9.]+_macOS\.zip"	first
-airwindows-airwindows-consolidated	effect	Airwindows Consolidated	Airwindows	auto		https://github.com/baconpaul/airwin2rack/releases	The Airwindows effects in one plug-in. Open source.	https://api.github.com/repos/baconpaul/airwin2rack/releases	https://github\.com/[^"]+/releases/download/[^"]+/airwindows-consolidated-macOS-[^"]+\.dmg"	first
+adb-records-adb-smart-eq	effect	ADB Smart EQ	ADB Records	auto		https://adbrecords.com/adbsmarteq/	Adaptive EQ: four engines correct resonances and tonal balance, plus a 12-band manual EQ.	https://api.github.com/repos/adbrecords/ADB-Smart-EQ/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/ADB_Smart_EQ_[0-9.]+_macOS\.zip"	first
+airwindows-airwindows-consolidated	effect	Airwindows Consolidated	Airwindows	auto		https://github.com/baconpaul/airwin2rack/releases	The Airwindows effects in one plug-in. Open source.	https://api.github.com/repos/baconpaul/airwin2rack/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/airwindows-consolidated-macOS-[^"]+\.dmg"	first
 analog-obsession-mastertone	effect	MasterTone	Analog Obsession	auto		https://www.patreon.com/analogobsession	Transformer-balanced active Baxandall EQ.	https://analogobsession.com/wp-content/uploads/2026/11/MasterTone_1.1.pkg		first
 analog-obsession-rare	effect	Rare	Analog Obsession	auto		https://analogobsession.com/bundles/	Vintage program equalizer.	https://analogobsession.com/wp-content/uploads/2023/10/RB_Rare_1.0.pkg		first
 analog-obsession-rarese	effect	RareSE	Analog Obsession	auto		https://analogobsession.com/bundles/	Vintage program equalizer with separate left/mid and right/side units.	https://analogobsession.com/wp-content/uploads/2023/10/RB_RareSE_1.0.pkg		first
@@ -185,7 +193,7 @@ kilohearts-stereo	effect	Stereo	Kilohearts	manual	Needs account	https://kilohear
 kilohearts-tape-stop	effect	Tape Stop	Kilohearts	manual	Needs account	https://kilohearts.com/products/tape_stop	Tape speed simulation.			
 kilohearts-trance-gate	effect	Trance Gate	Kilohearts	manual	Needs account	https://kilohearts.com/products/trance_gate	Sequenced gate.			
 kilohearts-transient-shaper	effect	Transient Shaper	Kilohearts	manual	Needs account	https://kilohearts.com/products/transient_shaper	Attack shaping.			
-kirin-kirin-hypha	effect	Kirin Hypha	Kirin	auto		https://github.com/heyalohaloha/kirin_hypha/releases	Meter pair (PRE before a chain, POST after it) that shows what the chain changed and compares at matched loudness. Open source.	https://api.github.com/repos/heyalohaloha/kirin_hypha/releases	https://github\.com/[^"]+/releases/download/[^"]+/Kirin-Hypha-[0-9.]+-macOS-Universal\.pkg"	first
+kirin-kirin-hypha	effect	Kirin Hypha	Kirin	auto		https://github.com/heyalohaloha/kirin_hypha/releases	Meter pair (PRE before a chain, POST after it) that shows what the chain changed and compares at matched loudness. Open source.	https://api.github.com/repos/heyalohaloha/kirin_hypha/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/Kirin-Hypha-[0-9.]+-macOS-Universal\.pkg"	first
 klanghelm-dc1a	effect	DC1A	Klanghelm	manual		https://klanghelm.com/contents/products/DC1A.html	Character compressor.			
 klanghelm-ivgi	effect	IVGI	Klanghelm	manual		https://klanghelm.com/contents/products/IVGI.html	Saturation and distortion.			
 klanghelm-mjuc-jr	effect	MJUC jr.	Klanghelm	manual		https://klanghelm.com/contents/products/MJUCjr.html	Variable-tube compressor.			
@@ -203,7 +211,7 @@ knightsnare-pluto-z	effect	Pluto Z	Knightsnare	manual		https://knightsnare.com/	
 m-media-audio-thunderbuss-instruments	effect	Thunderbuss Instruments	M Media Audio	manual		https://www.mmediaaudio.com/plugins/thunderbuss-instruments/	Bus processor for guitars and keys.			
 onetakz-soundstage-au	effect	SoundStage AU	OneTakz	manual		https://www.onetakz.com/	Stereo field visualizer, 2D and 3D. Audio passes through unchanged.			
 overload-audio-echodude-bbd-150	effect	ECHODUDE BBD-150	Overload Audio	manual		https://overloadaudio.gumroad.com/l/echodudebbd150	Bucket-brigade echo.			
-parallax-audio-virtual-sound-stage	effect	Virtual Sound Stage	Parallax Audio	auto		https://www.parallax.audio/	Places instruments on a virtual stage: direct sound and early reflections. Free legacy edition of a former commercial plug-in.	https://api.github.com/repos/gabrielheinrich/vss-dist/releases	https://github\.com/[^"]+/releases/download/[^"]+/VirtualSoundStage\.[0-9.]+\.pkg"	first
+parallax-audio-virtual-sound-stage	effect	Virtual Sound Stage	Parallax Audio	auto		https://www.parallax.audio/	Places instruments on a virtual stage: direct sound and early reflections. Free legacy edition of a former commercial plug-in.	https://api.github.com/repos/gabrielheinrich/vss-dist/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/VirtualSoundStage\.[0-9.]+\.pkg"	first
 pulsar-modular-q-bit	effect	Q BIT	Pulsar Modular	manual		https://www.pulsarmodular.com/product/q-bit/	Bit crusher with a time hold that repeats slices in tempo. The free order gives its licence key.			
 reasonable-audio-preamble	effect	Preamble	Reasonable Audio	manual	Needs account	https://reasonableaudio.com/preamble	Preamp and distortion.			
 riverflux-audio-rf-16vu	effect	RF-16VU	Riverflux Audio	manual		https://riverfluxaudio.com/relic	VCA compressor and limiter. Part of Relic.			
@@ -252,8 +260,8 @@ socalabs-stereoprocessor	effect	StereoProcessor	SocaLabs	auto		https://socalabs.
 socalabs-vu	effect	VU	SocaLabs	auto		https://socalabs.com/analysis/vu/	Pair of analogue-style VU meters.	https://socalabs.com/files/get.php?id=VU.pkg		first
 socalabs-xyscope	effect	XYScope	SocaLabs	auto		https://socalabs.com/analysis/xyscope/	XY oscilloscope for stereo signals.	https://socalabs.com/files/get.php?id=XYScope.pkg		first
 sonosaurus-paulxstretch	effect	PaulXStretch	Sonosaurus	auto		https://sonosaurus.com/paulxstretch/	Extreme time stretching. Open source.	https://sonosaurus.com/paulxstretch/	releases/paulxstretch-[0-9.]+-mac\.dmg	first
-steven-atkinson-neural-amp-modeler	effect	Neural Amp Modeler	Steven Atkinson	auto		https://www.neuralampmodeler.com/	Plays deep-learning models of guitar amps and pedals. Open source.	https://api.github.com/repos/sdatkinson/NeuralAmpModelerPlugin/releases	https://github\.com/[^"]+/releases/download/[^"]+/NeuralAmpModeler-v[0-9.]+-mac\.dmg"	first
-surge-synth-team-surge-xt-effects	effect	Surge XT Effects	Surge Synth Team	auto		https://surge-synthesizer.github.io/downloads/	The Surge XT effects as a plug-in. Installed with Surge XT. Open source.	https://api.github.com/repos/surge-synthesizer/releases-xt/releases	https://github\.com/[^"]+/releases/download/[^"]+/surge-xt-macOS-[0-9.]+\.dmg"	first
+steven-atkinson-neural-amp-modeler	effect	Neural Amp Modeler	Steven Atkinson	auto		https://www.neuralampmodeler.com/	Plays deep-learning models of guitar amps and pedals. Open source.	https://api.github.com/repos/sdatkinson/NeuralAmpModelerPlugin/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/NeuralAmpModeler-v[0-9.]+-mac\.dmg"	first
+surge-synth-team-surge-xt-effects	effect	Surge XT Effects	Surge Synth Team	auto		https://surge-synthesizer.github.io/downloads/	The Surge XT effects as a plug-in. Installed with Surge XT. Open source.	https://api.github.com/repos/surge-synthesizer/releases-xt/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/surge-xt-macOS-[0-9.]+\.dmg"	first
 tal-software-tal-bitcrusher	effect	TAL-Bitcrusher	TAL Software	auto		https://tal-software.com/products/tal-bitcrusher	Bit crusher.	https://tal-software.com/products/tal-bitcrusher	[^"]*/downloads/plugins/TAL-Bitcrusher-installer_macos\.zip	first
 tal-software-tal-chorus-lx	effect	TAL-Chorus-LX	TAL Software	auto		https://tal-software.com/products/tal-chorus-lx	Chorus.	https://tal-software.com/products/tal-chorus-lx	[^"]*/downloads/plugins/TAL-Chorus-LX-installer_macos\.zip	first
 tal-software-tal-filter-2	effect	TAL-Filter-2	TAL Software	auto		https://tal-software.com/products/tal-filter	Filter.	https://tal-software.com/products/tal-filter	[^"]*/downloads/plugins/TAL-Filter-2-installer_macos\.zip	first
@@ -291,7 +299,7 @@ wavesfactory-cassette-transport	effect	Cassette Transport	Wavesfactory	manual		h
 wavesfactory-flash	effect	Flash	Wavesfactory	manual		https://www.wavesfactory.com/free-vst-plugins/	Transient shaper with mid/side and a clipper.			
 wavesfactory-sk10	effect	SK10	Wavesfactory	manual		https://www.wavesfactory.com/free-vst-plugins/	Simulates a sub-kick microphone.			
 wavesfactory-snarebuzz	effect	SnareBuzz	Wavesfactory	manual		https://www.wavesfactory.com/free-vst-plugins/	Simulates the sympathetic buzz of snare wires.			
-wildergarden-maim	effect	Maim	Wildergarden	auto		https://github.com/ArdenButterfield/Maim/releases	Distortion that bends real MP3 and Opus encoders. Open source.	https://api.github.com/repos/ArdenButterfield/Maim/releases	https://github\.com/[^"]+/releases/download/[^"]+/Maim-[0-9.]+-macOS\.dmg"	first
+wildergarden-maim	effect	Maim	Wildergarden	auto		https://github.com/ArdenButterfield/Maim/releases	Distortion that bends real MP3 and Opus encoders. Open source.	https://api.github.com/repos/ArdenButterfield/Maim/releases?per_page=100	https://github\.com/[^"]+/releases/download/[^"]+/Maim-[0-9.]+-macOS\.dmg"	first
 woodstock-audio-waveform-compressor	effect	Waveform Compressor	Woodstock Audio	manual		https://woodstockaudio.com/product/waveform-compressor	Compressor with VCA and optical modes and a before/after waveform display.			
 xfer-records-dimension-expander	effect	Dimension Expander	Xfer Records	auto		https://xferrecords.com/freeware	Stereo widener.	https://xferrecords.com/freeware	/product_downloads/32/freeware	first
 xfer-records-djmfilter	effect	DJMFilter	Xfer Records	auto		https://xferrecords.com/freeware	DJ mixer filter with drive and resonance.	https://xferrecords.com/freeware	/product_downloads/68/freeware	first
@@ -302,16 +310,17 @@ zero9-signal-switch	effect	Signal Switch	ZERO9	manual		https://zero9.uk/plugins/
 PROWAVE_CATALOG_END
 }
 
-KIND="$DEFAULT_KIND"; ONLY="$DEFAULT_ONLY"; LIST=0; DRY=0; GUI=0; YES=0
+KIND="$DEFAULT_KIND"; ONLY="$DEFAULT_ONLY"; LIST=0; DRY=0; GUI=0; YES=0; RESOLVE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) LIST=1 ;;
     --dry-run) DRY=1 ;;
     --gui) GUI=1; YES=1 ;;
     --yes) YES=1 ;;
+    --resolve) RESOLVE=1; YES=1 ;;
     --kind) shift; KIND="$1" ;;
     --only) shift; ONLY="$1"; KIND="" ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -322,7 +331,7 @@ if [ "$LIST" = 1 ]; then
   exit 0
 fi
 
-if [ "$(uname -s)" != "Darwin" ]; then echo "macOS only" >&2; exit 2; fi
+if [ "$RESOLVE" != 1 ] && [ "$(uname -s)" != "Darwin" ]; then echo "macOS only" >&2; exit 2; fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/prowave-free.XXXXXXXX")" || exit 2
 chmod 700 "$WORK"
@@ -349,6 +358,14 @@ fix() {
 }
 ROOTFIX
 PKGIDS="$WORK/pkgids.txt"; : > "$PKGIDS"
+# record ID TYPE VALUE: notes what was installed for the uninstaller. TYPE is pkg (an installer's
+# package id, its receipt lists the files), name (a plug-in bundle in that installer), file (a
+# plug-in copied here) or bid (bundle name/bundle id, to tell it from another maker's of that name). A dry run records nothing unless PROWAVE_MANIFEST names a file.
+MANIFEST="${PROWAVE_MANIFEST:-$HOME/Library/Application Support/prowave-free-plugins/installed.tsv}"
+record() {
+  if [ "$DRY" = 1 ] && [ -z "$PROWAVE_MANIFEST" ]; then return 0; fi
+  mkdir -p "$(dirname "$MANIFEST")" 2>/dev/null && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$MANIFEST"
+}
 N_OK=0; N_FAIL=0; N_MANUAL=0
 
 cleanup() {
@@ -365,7 +382,25 @@ ok() { N_OK=$((N_OK+1)); say "@@ ok $1"; }
 fail() { N_FAIL=$((N_FAIL+1)); say "@@ fail $1 $2"; }
 manual() { N_MANUAL=$((N_MANUAL+1)); say "@@ manual $1 $2"; }
 
-fetch_page() { curl -fsSL --compressed --max-time 60 --retry 2 -A "$UA" -w '\n@@EFFECTIVE %{url_effective}\n' "$1" 2>/dev/null; }
+fetch_page() {
+  # PROWAVE_GITHUB_TOKEN (the server's job only) lifts GitHub's 60 lookups an hour
+  case "$1" in
+    https://api.github.com/*) if [ -n "$PROWAVE_GITHUB_TOKEN" ]; then
+      curl -fsSL --compressed --max-time 60 --retry 2 -A "$UA" -H "Authorization: Bearer $PROWAVE_GITHUB_TOKEN" -w '\n@@EFFECTIVE %{url_effective}\n' "$1" 2>/dev/null; return; fi ;;
+  esac
+  curl -fsSL --compressed --max-time 60 --retry 2 -A "$UA" -w '\n@@EFFECTIVE %{url_effective}\n' "$1" 2>/dev/null
+}
+
+# links.tsv: id, address, unix time found. Read once; a row counts when under 48 hours old.
+LINKS_URL="${PROWAVE_LINKS:-off}"
+load_links() {
+  : > "$WORK/links.tsv"
+  [ "$LINKS_URL" = off ] && return 0
+  curl -fsS --max-time 15 -A "$UA" "$LINKS_URL" -o "$WORK/links.tsv.new" 2>/dev/null &&
+    awk -F"$TAB" -v now="$(date +%s)" 'NF >= 3 && $2 ~ /^https?:\/\// && $3 ~ /^[0-9]+$/ && now - $3 < 172800 && now - $3 > -3600' "$WORK/links.tsv.new" > "$WORK/links.tsv"
+  rm -f "$WORK/links.tsv.new"
+}
+cached_url() { awk -F"$TAB" -v i="$1" '$1 == i {print $2; exit}' "$WORK/links.tsv"; }
 
 # resolve LINK against BASE (the page's final address)
 resolve() {
@@ -383,6 +418,19 @@ resolve() {
 find_url() {
   src="$1"; pat="$2"; pick="$3"
   if [ -z "$pat" ]; then printf '%s' "$src"; return 0; fi
+  case "$src" in
+    https://api.github.com/repos/*/releases\?per_page=*)
+      # GitHub releases come a page at a time, newest first: read on until the asset turns up
+      n=1
+      while [ "$n" -le 10 ]; do
+        page="$(fetch_page "$src&page=$n")" || return 1
+        hit="$(printf '%s\n' "$page" | grep -oE -- "$pat" | head -1 | sed -e 's/["'"'"']$//')"
+        if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
+        printf '%s\n' "$page" | grep -q '"browser_download_url"' || return 1
+        n=$((n+1))
+      done
+      return 1 ;;
+  esac
   page="$(fetch_page "$src")" || return 1
   base="$(printf '%s\n' "$page" | sed -n 's/^@@EFFECTIVE //p' | tail -1)"
   [ -n "$base" ] || base="$src"
@@ -450,7 +498,10 @@ copy_bundle() {
     *) return 0 ;;
   esac
   name="$(basename "$b")"
-  if [ "$DRY" = 1 ]; then say "  would copy $name to ${dest#$HOME/}"; return 0; fi
+  printf '%s\n' "$dest/$name" >> "$WORK/$id.files"
+  bidv="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$b/Contents/Info.plist" 2>/dev/null)"
+  [ -n "$bidv" ] && record "$id" bid "$name/$bidv"
+  if [ "$DRY" = 1 ]; then say "  would copy $name to ${dest#$HOME/}"; record "$id" file "$dest/$name"; return 0; fi
   mkdir -p "$dest" || return 1
   rm -rf "$dest/$name.prowave-new"
   ditto "$b" "$dest/$name.prowave-new" || return 1
@@ -460,6 +511,7 @@ copy_bundle() {
   if ! codesign --verify --deep "$dest/$name" >/dev/null 2>&1; then
     codesign --force --deep -s - "$dest/$name" >/dev/null 2>&1
   fi
+  record "$id" file "$dest/$name"
   say "  copied $name to ${dest#$HOME/}"
 }
 
@@ -485,6 +537,22 @@ if [ "$YES" != 1 ]; then
   read -r _ < /dev/tty || exit 1
 fi
 
+load_links
+
+# ---- --resolve: print the download addresses and stop ----
+if [ "$RESOLVE" = 1 ]; then
+  awk -F"$TAB" '$5 == "auto"' "$ROWS" | tr '\t' '\037' > "$ROWS.us"
+  US="$(printf '\037')"
+  while IFS="$US" read -r id kind name maker mode tag page desc src pat pick; do
+    url="$(cached_url "$id")"; from=links
+    when="$(awk -F"$TAB" -v i="$id" '$1 == i {print $3; exit}' "$WORK/links.tsv")"
+    [ -n "$url" ] || { url="$(find_url "$src" "$pat" "$pick")"; from=live; when="$(date +%s)"; }
+    if [ -n "$url" ]; then printf '%s\t%s\t%s\t%s\n' "$id" "$url" "$when" "$from"
+    else printf '%s\tnot found\n' "$id" >&2; fi
+  done < "$ROWS.us"
+  exit 0
+fi
+
 # ---- phase 1: download and unpack, as the user ----
 SEEN="$WORK/seen.tsv"; : > "$SEEN"
 US="$(printf '\037')"
@@ -494,13 +562,16 @@ while IFS="$US" read -r id kind name maker mode tag page desc src pat pick; do
   say "@@ start $id"
   if [ "$mode" != "auto" ]; then manual "$id" "$page"; continue; fi
   say "$name ($maker)"
-  url="$(find_url "$src" "$pat" "$pick")"
+  url="$(cached_url "$id")"
+  [ -n "$url" ] || url="$(find_url "$src" "$pat" "$pick")"
   if [ -z "$url" ]; then fail "$id" "download link not found, get it from $page"; continue; fi
   prev="$(awk -F"$TAB" -v u="$url" '$1 == u {print $2; exit}' "$SEEN")"
   if [ -n "$prev" ]; then
     # same installer as an earlier row (one installer, several plug-ins)
     if grep -q "^$prev\$" "$PKGIDS"; then printf '%s %s\n' "$prev" "$id" >> "$WORK/alias.txt"
-    elif grep -q "^$prev\$" "$DONE"; then ok "$id"
+    elif grep -q "^$prev\$" "$DONE"; then
+      [ -s "$WORK/$prev.files" ] && while IFS= read -r f; do record "$id" file "$f"; done < "$WORK/$prev.files"
+      ok "$id"
     else fail "$id" "its installer failed earlier in this run"; fi
     continue
   fi
@@ -521,7 +592,18 @@ while IFS="$US" read -r id kind name maker mode tag page desc src pat pick; do
       # the plug-in bundles this installer holds, for fix after it runs
       ex="$WORK/$id.expand.$RANDOM"
       if pkgutil --expand "$p" "$ex" >/dev/null 2>&1; then
-        find "$ex" -name Bom -exec lsbom -s {} \; 2>/dev/null | grep -oE '[^/]+\.(component|vst3)(/|$)' | sed 's#/$##' >> "$WORK/$id.inst"
+        find "$ex" -name Bom -exec lsbom -s {} \; 2>/dev/null > "$WORK/$id.bom"
+        grep -oE '[^/]+\.(component|vst3)(/|$)' "$WORK/$id.bom" | sed 's#/$##' >> "$WORK/$id.inst"
+        # for the uninstaller: the package ids and the first plug-in bundle on each path
+        find "$ex" -name PackageInfo -exec sh -c 'for f; do tr "\n" " " < "$f"; echo; done' sh {} + 2>/dev/null |
+          tee "$WORK/$id.pinfo" | grep -o '<pkg-info[^>]*' | sed -n 's/.*[[:space:]]identifier="\([^"]*\)".*/\1/p' | awk '{print "pkg\t" $0}' >> "$WORK/$id.rec"
+        grep -o '<bundle [^>]*' "$WORK/$id.pinfo" | awk '{
+          id = ""; path = ""
+          if (match($0, / id="[^"]*"/)) id = substr($0, RSTART + 5, RLENGTH - 6)
+          if (match($0, / path="[^"]*"/)) path = substr($0, RSTART + 7, RLENGTH - 8)
+          n = split(path, a, "/")
+          for (i = 1; i <= n; i++) if (a[i] ~ /\.(component|vst3|vst|clap|aaxplugin)$/) { if (id != "") print "bid\t" a[i] "/" id; break } }' >> "$WORK/$id.rec"
+        awk -F/ '{for (i = 1; i <= NF; i++) if ($i ~ /\.(component|vst3|vst|clap|aaxplugin)$/) {print "name\t" $i; break}}' "$WORK/$id.bom" >> "$WORK/$id.rec"
       fi
       rm -rf "$ex"
     done < "$WORK/$id.pkgs"
@@ -565,6 +647,7 @@ if [ -s "$PKGIDS" ]; then
     ids="$id"
     [ -f "$WORK/alias.txt" ] && ids="$id $(awk -v p="$id" '$1 == p {print $2}' "$WORK/alias.txt" | tr '\n' ' ')"
     for one in $ids; do
+      [ -s "$WORK/$id.rec" ] && sort -u "$WORK/$id.rec" | while IFS="$TAB" read -r rt rv; do record "$one" "$rt" "$rv"; done
       case "$r" in
         ok) ok "$one" ;;
         fail) fail "$one" "the installer reported an error" ;;

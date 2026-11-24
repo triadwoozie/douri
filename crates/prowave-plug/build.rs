@@ -37,6 +37,11 @@ fn main() {
     let _ = writeln!(s, "pub const INSTRUMENT: bool = {instrument};");
     let _ = writeln!(
         s,
+        "pub const TAKES_NOTES: bool = {};",
+        codes::takes_notes(info.id)
+    );
+    let _ = writeln!(
+        s,
         "pub const CLAP_ID: &str = {:?};",
         codes::clap_id(info.id)
     );

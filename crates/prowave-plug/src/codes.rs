@@ -60,10 +60,20 @@ pub const AU_MANUFACTURER: &str = "PrWv";
 /// The Audio Unit manufacturer name.
 pub const AU_MANUFACTURER_NAME: &str = "Pro Wave";
 
-/// The Audio Unit type: an instrument is a music device, an effect an effect.
-pub fn au_type(instrument: bool) -> &'static str {
+/// Effects that also take MIDI notes (Pro Wave Tune: the notes held are its targets in MIDI
+/// mode). Their VST3 and CLAP have a note input, and their Audio Unit is a music effect.
+pub fn takes_notes(id: &str) -> bool {
+    id == "prowave:tune"
+}
+
+/// The Audio Unit type: an instrument is a music device; an effect that takes notes a music
+/// effect (`aumf`, which Logic lists with the effects and gives a MIDI side-chain menu); any
+/// other effect an effect.
+pub fn au_type(id: &str, instrument: bool) -> &'static str {
     if instrument {
         "aumu"
+    } else if takes_notes(id) {
+        "aumf"
     } else {
         "aufx"
     }

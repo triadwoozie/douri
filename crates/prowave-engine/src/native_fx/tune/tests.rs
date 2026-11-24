@@ -330,6 +330,55 @@ fn midi_mode_follows_the_notes() {
     assert!((out[out.len() - 1] - 62.0).abs() < 0.01);
 }
 
+/// Notes held on the MIDI input are the targets in MIDI mode, stopped or playing, the newest
+/// first; letting go of them goes back to the key and scale.
+#[test]
+fn midi_mode_follows_notes_held_on_the_input() {
+    let n = RATE as usize;
+    let x = voice(&vec![300.0; n], RATE as f32);
+    let mut fx = tune(&[(TARGET, TARGET_MIDI as f32), (RETUNE, 0.0), (VIBRATO, 0.0)]);
+    let mut out = vec![0.0f32; n];
+    let (mut l, mut r) = (vec![0.0f32; 64], vec![0.0f32; 64]);
+    for (k, chunk) in x.as_chunks::<64>().0.iter().enumerate() {
+        let start = k * 64;
+        assert_no_alloc::assert_no_alloc(|| {
+            if start == 0 {
+                fx.midi(0x90, 65, 100, 0); // F4, then G4 over it
+                fx.midi(0x90, 67, 100, 0);
+            }
+            if start == n / 2 {
+                fx.midi(0x80, 67, 0, 0); // G4 let go: F4 again
+            }
+            fx.process((&chunk[..], &chunk[..]), (&mut l, &mut r))
+        });
+        out[start..start + 64].copy_from_slice(&l);
+    }
+    assert_eq!(fx.held_notes(), &[65]);
+    let y = &out[fx.latency_samples()..];
+    let at = |a: f32, b: f32| {
+        f0_of(
+            &y[(a * 48000.0) as usize..(b * 48000.0) as usize],
+            48000.0,
+            100.0,
+            800.0,
+        )
+    };
+    let (first, second) = (at(0.2, 0.45), at(0.7, 0.95));
+    assert!(cents(first, hz_of(67.0)).abs() < 5.0, "G4: {first}");
+    assert!(cents(second, hz_of(65.0)).abs() < 5.0, "F4: {second}");
+    // All notes off: the key and scale again (300 Hz is nearest D4 in C major).
+    fx.midi(0xb0, 123, 0, 0);
+    assert!(fx.held_notes().is_empty());
+    let out = asked(&mut fx, &x[..RATE as usize / 3]);
+    assert!((out[out.len() - 1] - 62.0).abs() < 0.01);
+    // More notes than it keeps: the oldest goes.
+    for note in 40..60 {
+        fx.midi(0x90, note, 1, 0);
+    }
+    assert_eq!(fx.held_notes().len(), MAX_HELD);
+    assert_eq!(fx.held_notes()[MAX_HELD - 1], 59);
+}
+
 #[test]
 fn pitch_override_wins_over_the_scale() {
     let x = voice(&vec![hz_of(57.0); RATE as usize / 3], RATE as f32);

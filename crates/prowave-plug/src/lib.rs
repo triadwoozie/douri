@@ -81,6 +81,23 @@ const EFFECT_LAYOUTS: &[AudioIOLayout] = &[
     },
 ];
 
+/// `info`'s presets as the host's factory presets: each sets the parameters it names ("p" and
+/// the index, as [`params`] names them) and keeps the others.
+pub fn factory_presets(info: &NativeFxInfo) -> Vec<FactoryPreset> {
+    info.presets
+        .iter()
+        .map(|p| FactoryPreset {
+            name: p.name.to_string(),
+            values: p
+                .values
+                .iter()
+                .filter(|(k, _)| *k < info.params.len())
+                .map(|(k, v)| (format!("p{k}"), *v))
+                .collect(),
+        })
+        .collect()
+}
+
 /// The status byte of a channel message.
 fn status(kind: u8, channel: u8) -> u8 {
     kind | (channel & 0x0f)
@@ -104,8 +121,11 @@ impl Plugin for ProWavePlug {
         EFFECT_LAYOUTS
     };
 
+    // Pro Wave Tune takes notes too: in its MIDI target mode the notes held are what it tunes to.
     const MIDI_INPUT: MidiConfig = if selected::INSTRUMENT {
         MidiConfig::MidiCCs
+    } else if selected::TAKES_NOTES {
+        MidiConfig::Basic
     } else {
         MidiConfig::None
     };
@@ -122,6 +142,12 @@ impl Plugin for ProWavePlug {
         editor::create(self.params.clone())
     }
 
+    /// The registry's presets (Engine, Tune, Texture), for the host's preset list. Their order is
+    /// the registry's, which only grows at its end.
+    fn factory_presets() -> Vec<FactoryPreset> {
+        factory_presets(selected_info())
+    }
+
     fn initialize(
         &mut self,
         _layout: &AudioIOLayout,
@@ -131,6 +157,16 @@ impl Plugin for ProWavePlug {
         let values: Vec<i32> = self.params.values.iter().map(|p| p.value()).collect();
         let rate = config.sample_rate.round().max(1.0) as u32;
         let max_block = config.max_buffer_size.max(1) as usize;
+        // Opened already for the same rate and block size (a preset or a saved state being
+        // loaded, or the host starting again): keep the engine and give it the values.
+        if let Some(core) = self.core.as_mut().filter(|c| c.fits(rate, max_block)) {
+            for (k, v) in values.iter().enumerate() {
+                core.set_param(k, *v);
+            }
+            self.latency = core.latency_samples();
+            context.set_latency_samples(self.latency);
+            return true;
+        }
         self.core = PlugCore::open(
             self.params.info,
             self.params.instrument,
