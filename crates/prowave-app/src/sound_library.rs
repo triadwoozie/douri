@@ -889,11 +889,13 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
     egui::Window::new("dori_sound_library_manager")
         .open(&mut open)
         .title_bar(false)
+        .movable(true)
         .resizable(true)
         .collapsible(false)
-        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-        .default_size(vec2(880.0, 540.0))
-        .min_size(vec2(680.0, 420.0))
+        .default_pos(ctx.input(|i| i.viewport_rect().center()))
+        .pivot(Align2::CENTER_CENTER)
+        .default_size(vec2(680.0, 440.0))
+        .min_size(vec2(600.0, 380.0))
         .frame(
             egui::Frame::new()
                 .fill(Color32::from_rgb(0x1e, 0x1e, 0x1e))
@@ -915,45 +917,83 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 Color32::from_rgb(0x1e, 0x1e, 0x1e),
             );
 
-            // Header (#252526, height 44)
-            let header_rect = Rect::from_min_size(win_rect.min, vec2(win_rect.width(), 44.0));
+            // Custom Title Bar Dragging across top bar (height 40)
+            let drag_rect = Rect::from_min_size(win_rect.min, vec2(win_rect.width(), 40.0));
+            let drag_resp = ui.interact(
+                drag_rect,
+                ui.scope_id().with("sound_lib_drag"),
+                Sense::drag(),
+            );
+            if drag_resp.dragged() {
+                let delta = drag_resp.drag_delta();
+                if delta != Vec2::ZERO {
+                    let layer_id = ui.layer_id();
+                    if let Some(mut state) = egui::AreaState::load(ui.ctx(), layer_id.id) {
+                        state.set_left_top_pos(state.left_top_pos() + delta);
+                        ui.ctx().memory_mut(|mem| {
+                            mem.areas_mut().set_state(layer_id, state);
+                        });
+                    }
+                }
+            }
+
+            // Left Sidebar (width 260.0, #252526 from top to bottom)
+            let sidebar_w = 260.0f32.min(win_rect.width() * 0.45);
+            let sidebar_rect =
+                Rect::from_min_size(win_rect.min, vec2(sidebar_w, win_rect.height()));
             {
                 let g = ui.painter();
                 g.rect_filled(
-                    header_rect,
+                    sidebar_rect,
                     CornerRadius::ZERO,
                     Color32::from_rgb(0x25, 0x25, 0x26),
                 );
                 g.line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
+                    [sidebar_rect.right_top(), sidebar_rect.right_bottom()],
                     Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
                 );
 
-                // Phosphor Waveform icon + Title
+                // Phosphor Waveform icon + Title in sidebar top
                 g.text(
-                    pos2(header_rect.left() + 20.0, header_rect.center().y),
+                    pos2(sidebar_rect.left() + 16.0, sidebar_rect.top() + 20.0),
                     Align2::LEFT_CENTER,
                     phosphor_egui::regular::WAVEFORM,
                     FontId::proportional(16.0),
                     Color32::from_rgb(0x51, 0xee, 0xfc),
                 );
                 g.text(
-                    pos2(header_rect.left() + 46.0, header_rect.center().y),
+                    pos2(sidebar_rect.left() + 40.0, sidebar_rect.top() + 20.0),
                     Align2::LEFT_CENTER,
                     tr("Dōri Sound Library"),
-                    FontId::proportional(13.5),
+                    FontId::proportional(13.0),
                     Color32::WHITE,
+                );
+                g.line_segment(
+                    [
+                        pos2(sidebar_rect.left(), sidebar_rect.top() + 40.0),
+                        pos2(sidebar_rect.right(), sidebar_rect.top() + 40.0),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x30, 0x30, 0x30)),
                 );
             }
 
-            // Close (×) and Minimize (–) buttons top right
+            // Right Main Pane background: UNIFORM OPAQUE #1e1e1e from top to bottom
+            let main_rect =
+                Rect::from_min_max(pos2(sidebar_rect.right(), win_rect.top()), win_rect.max);
+            ui.painter().rect_filled(
+                main_rect,
+                CornerRadius::ZERO,
+                Color32::from_rgb(0x1e, 0x1e, 0x1e),
+            );
+
+            // Close (×) and Minimize (–) buttons top right of right pane
             let close_rect = Rect::from_center_size(
-                pos2(header_rect.right() - 20.0, header_rect.center().y),
-                vec2(24.0, 24.0),
+                pos2(main_rect.right() - 20.0, main_rect.top() + 20.0),
+                vec2(22.0, 22.0),
             );
             let min_rect = Rect::from_center_size(
-                pos2(header_rect.right() - 48.0, header_rect.center().y),
-                vec2(24.0, 24.0),
+                pos2(main_rect.right() - 44.0, main_rect.top() + 20.0),
+                vec2(22.0, 22.0),
             );
 
             let close_resp = ui.interact(close_rect, egui::Id::unique("sl_close"), Sense::click());
@@ -999,36 +1039,6 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 close = true;
             }
 
-            // Body Rect below header
-            let body_rect =
-                Rect::from_min_max(pos2(win_rect.left(), header_rect.bottom()), win_rect.max);
-
-            // Left Sidebar (width ~35%, #252526)
-            let sidebar_w = (win_rect.width() * 0.35).clamp(280.0, 320.0);
-            let sidebar_rect =
-                Rect::from_min_size(body_rect.min, vec2(sidebar_w, body_rect.height()));
-            {
-                let g = ui.painter();
-                g.rect_filled(
-                    sidebar_rect,
-                    CornerRadius::ZERO,
-                    Color32::from_rgb(0x25, 0x25, 0x26),
-                );
-                g.line_segment(
-                    [sidebar_rect.right_top(), sidebar_rect.right_bottom()],
-                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
-                );
-            }
-
-            // Right Main Pane background: OPAQUE #1e1e1e
-            let main_rect =
-                Rect::from_min_max(pos2(sidebar_rect.right(), body_rect.top()), body_rect.max);
-            ui.painter().rect_filled(
-                main_rect,
-                CornerRadius::ZERO,
-                Color32::from_rgb(0x1e, 0x1e, 0x1e),
-            );
-
             let reg = get_cached_registry();
             let active_dl = active_download();
 
@@ -1058,245 +1068,245 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                 .find(|p| p.id == sel_pack_id)
                 .or_else(|| CATALOG.first());
 
-            let sidebar_inner_w = (sidebar_w - 32.0).max(180.0);
-
-            ui.scope_builder(
-                egui::UiBuilder::new().max_rect(sidebar_rect.shrink(16.0)),
-                |ui| {
-                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                        // Top Section
-                        ui.label(
-                            egui::RichText::new("FILTER")
-                                .size(10.5)
-                                .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
-                                .strong(),
-                        );
-                        ui.add_space(3.0);
-
-                        egui::ComboBox::from_id_salt("cat_filter_cb")
-                            .width(sidebar_inner_w)
-                            .selected_text(active_cat)
-                            .show_ui(ui, |ui| {
-                                for (idx, &cat) in CATEGORIES.iter().enumerate() {
-                                    if ui
-                                        .selectable_label(filter_guard.category_idx == idx, cat)
-                                        .clicked()
-                                    {
-                                        filter_guard.category_idx = idx;
-                                    }
-                                }
-                            });
-
-                        ui.add_space(12.0);
-                        ui.label(
-                            egui::RichText::new("SELECTED PACK")
-                                .size(10.5)
-                                .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
-                                .strong(),
-                        );
-                        ui.add_space(3.0);
-
-                        let pack_name = current_pack.map_or("None", |p| p.name);
-                        egui::ComboBox::from_id_salt("pack_sel_cb")
-                            .width(sidebar_inner_w)
-                            .selected_text(pack_name)
-                            .show_ui(ui, |ui| {
-                                for p in &matching_packs {
-                                    if ui
-                                        .selectable_label(
-                                            filter_guard.selected_pack_id.as_deref() == Some(p.id),
-                                            p.name,
-                                        )
-                                        .clicked()
-                                    {
-                                        filter_guard.selected_pack_id = Some(p.id.to_string());
-                                    }
-                                }
-                            });
-
-                        ui.add_space(14.0);
-
-                        // Pack Specs & License Card
-                        if let Some(pack) = current_pack {
-                            let card_rect = ui.available_rect_before_wrap();
-                            let card_h = 160.0;
-                            let card_box =
-                                Rect::from_min_size(card_rect.min, vec2(sidebar_inner_w, card_h));
-                            ui.painter().rect_filled(
-                                card_box,
-                                CornerRadius::same(2),
-                                Color32::from_rgb(0x30, 0x30, 0x30),
-                            );
-                            ui.painter().rect_stroke(
-                                card_box,
-                                CornerRadius::same(2),
-                                Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
-                                StrokeKind::Inside,
-                            );
-
-                            ui.scope_builder(
-                                egui::UiBuilder::new().max_rect(card_box.shrink(12.0)),
-                                |ui| {
-                                    ui.label(
-                                        egui::RichText::new(pack.name)
-                                            .size(13.0)
-                                            .strong()
-                                            .color(Color32::WHITE),
-                                    );
-                                    ui.add_space(2.0);
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "{} • {}",
-                                                pack.format, pack.size
-                                            ))
-                                            .size(11.0)
-                                            .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
-                                        );
-                                        ui.add_space(6.0);
-                                        let l_rect = ui.available_rect_before_wrap();
-                                        let badge_box = Rect::from_min_size(
-                                            l_rect.min,
-                                            vec2(ui.spacing().interact_size.x, 16.0),
-                                        );
-                                        ui.painter().rect_filled(
-                                            badge_box,
-                                            CornerRadius::same(2),
-                                            Color32::from_rgb(0x25, 0x25, 0x26),
-                                        );
-                                        ui.painter().rect_stroke(
-                                            badge_box,
-                                            CornerRadius::same(2),
-                                            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
-                                            StrokeKind::Inside,
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(pack.license)
-                                                .size(10.0)
-                                                .color(Color32::from_rgb(0x6d, 0x9a, 0xc7)),
-                                        );
-                                    });
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new(pack.description)
-                                            .size(11.0)
-                                            .color(Color32::from_rgb(0xcc, 0xd0, 0xd8)),
-                                    );
-                                },
-                            );
-                            ui.add_space(card_h + 10.0);
-                        }
-                    });
-
-                    // Bottom-Anchored Action Group (Remove + Download CTA)
-                    let bottom_y = sidebar_rect.bottom() - 68.0;
-                    let is_installed =
-                        current_pack.map_or(false, |p| reg.installed.iter().any(|i| i.id == p.id));
-                    let is_dl = current_pack.map_or(false, |p| {
-                        active_dl.as_ref().map_or(false, |a| a.pack_id == p.id)
-                    });
-
-                    if is_installed {
-                        let remove_rect = Rect::from_center_size(
-                            pos2(sidebar_rect.center().x, bottom_y - 14.0),
-                            vec2(120.0, 22.0),
-                        );
-                        let r_resp =
-                            ui.interact(remove_rect, egui::Id::unique("rm_pack"), Sense::click());
-                        let r_color = if r_resp.hovered() {
-                            Color32::from_rgb(0xff, 0x60, 0x55)
-                        } else {
-                            Color32::from_rgb(0xff, 0x45, 0x3a)
-                        };
-                        ui.painter().text(
-                            remove_rect.center(),
-                            Align2::CENTER_CENTER,
-                            format!("{}  {}", phosphor_egui::regular::TRASH, tr("Remove")),
-                            FontId::proportional(11.5),
-                            r_color,
-                        );
-                        if r_resp.clicked() {
-                            if let Some(pack) = current_pack {
-                                remove_installed_pack(pack.id);
-                            }
-                        }
-                    }
-
-                    let cta_rect = Rect::from_min_size(
-                        pos2(sidebar_rect.left() + 16.0, sidebar_rect.bottom() - 50.0),
-                        vec2(sidebar_inner_w, 34.0),
-                    );
-                    let cta_resp =
-                        ui.interact(cta_rect, egui::Id::unique("cta_dl"), Sense::click());
-
-                    let (cta_bg, cta_txt, cta_fg) = if is_dl {
-                        (
-                            Color32::from_rgb(0x25, 0x25, 0x26),
-                            format!(
-                                "{}  {}",
-                                phosphor_egui::regular::ARROWS_CLOCKWISE,
-                                "Downloading…"
-                            ),
-                            Color32::from_rgb(0x51, 0xee, 0xfc),
-                        )
-                    } else if is_installed {
-                        (
-                            Color32::from_rgb(0x25, 0x25, 0x26),
-                            format!("{}  {}", phosphor_egui::regular::CHECK, tr("Installed")),
-                            Color32::from_rgb(0x8e, 0x8e, 0x93),
-                        )
-                    } else if cta_resp.hovered() {
-                        (
-                            Color32::from_rgb(0x18, 0x7b, 0xe5),
-                            format!(
-                                "{}  {}",
-                                phosphor_egui::regular::DOWNLOAD_SIMPLE,
-                                tr("Download Pack")
-                            ),
-                            Color32::WHITE,
-                        )
-                    } else {
-                        (
-                            Color32::from_rgb(0x12, 0x69, 0xcc),
-                            format!(
-                                "{}  {}",
-                                phosphor_egui::regular::DOWNLOAD_SIMPLE,
-                                tr("Download Pack")
-                            ),
-                            Color32::WHITE,
-                        )
-                    };
-
-                    ui.painter()
-                        .rect_filled(cta_rect, CornerRadius::same(2), cta_bg);
-                    ui.painter().rect_stroke(
-                        cta_rect,
-                        CornerRadius::same(2),
-                        Stroke::new(
-                            1.0,
-                            if is_installed || is_dl {
-                                Color32::from_rgb(0x3a, 0x3a, 0x3a)
-                            } else {
-                                cta_bg
-                            },
-                        ),
-                        StrokeKind::Inside,
-                    );
-                    ui.painter().text(
-                        cta_rect.center(),
-                        Align2::CENTER_CENTER,
-                        cta_txt,
-                        FontId::proportional(12.5),
-                        cta_fg,
-                    );
-
-                    if cta_resp.clicked() && !is_installed && !is_dl {
-                        if let Some(pack) = current_pack {
-                            start_download(pack);
-                        }
-                    }
-                },
+            let sidebar_inner_w = (sidebar_w - 28.0).max(180.0);
+            let sidebar_body = Rect::from_min_max(
+                pos2(sidebar_rect.left() + 14.0, sidebar_rect.top() + 48.0),
+                pos2(sidebar_rect.right() - 14.0, sidebar_rect.bottom() - 12.0),
             );
+
+            ui.scope_builder(egui::UiBuilder::new().max_rect(sidebar_body), |ui| {
+                ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                    // Top Section
+                    ui.label(
+                        egui::RichText::new("FILTER")
+                            .size(10.5)
+                            .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
+                            .strong(),
+                    );
+                    ui.add_space(3.0);
+
+                    egui::ComboBox::from_id_salt("cat_filter_cb")
+                        .width(sidebar_inner_w)
+                        .selected_text(active_cat)
+                        .show_ui(ui, |ui| {
+                            for (idx, &cat) in CATEGORIES.iter().enumerate() {
+                                if ui
+                                    .selectable_label(filter_guard.category_idx == idx, cat)
+                                    .clicked()
+                                {
+                                    filter_guard.category_idx = idx;
+                                }
+                            }
+                        });
+
+                    ui.add_space(12.0);
+                    ui.label(
+                        egui::RichText::new("SELECTED PACK")
+                            .size(10.5)
+                            .color(Color32::from_rgb(0x8e, 0x8e, 0x93))
+                            .strong(),
+                    );
+                    ui.add_space(3.0);
+
+                    let pack_name = current_pack.map_or("None", |p| p.name);
+                    egui::ComboBox::from_id_salt("pack_sel_cb")
+                        .width(sidebar_inner_w)
+                        .selected_text(pack_name)
+                        .show_ui(ui, |ui| {
+                            for p in &matching_packs {
+                                if ui
+                                    .selectable_label(
+                                        filter_guard.selected_pack_id.as_deref() == Some(p.id),
+                                        p.name,
+                                    )
+                                    .clicked()
+                                {
+                                    filter_guard.selected_pack_id = Some(p.id.to_string());
+                                }
+                            }
+                        });
+
+                    ui.add_space(14.0);
+
+                    // Pack Specs & License Card
+                    if let Some(pack) = current_pack {
+                        let card_rect = ui.available_rect_before_wrap();
+                        let card_h = 160.0;
+                        let card_box =
+                            Rect::from_min_size(card_rect.min, vec2(sidebar_inner_w, card_h));
+                        ui.painter().rect_filled(
+                            card_box,
+                            CornerRadius::same(2),
+                            Color32::from_rgb(0x30, 0x30, 0x30),
+                        );
+                        ui.painter().rect_stroke(
+                            card_box,
+                            CornerRadius::same(2),
+                            Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                            StrokeKind::Inside,
+                        );
+
+                        ui.scope_builder(
+                            egui::UiBuilder::new().max_rect(card_box.shrink(12.0)),
+                            |ui| {
+                                ui.label(
+                                    egui::RichText::new(pack.name)
+                                        .size(13.0)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                );
+                                ui.add_space(2.0);
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} • {}",
+                                            pack.format, pack.size
+                                        ))
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0x8e, 0x8e, 0x93)),
+                                    );
+                                    ui.add_space(6.0);
+                                    let l_rect = ui.available_rect_before_wrap();
+                                    let badge_box = Rect::from_min_size(
+                                        l_rect.min,
+                                        vec2(ui.spacing().interact_size.x, 16.0),
+                                    );
+                                    ui.painter().rect_filled(
+                                        badge_box,
+                                        CornerRadius::same(2),
+                                        Color32::from_rgb(0x25, 0x25, 0x26),
+                                    );
+                                    ui.painter().rect_stroke(
+                                        badge_box,
+                                        CornerRadius::same(2),
+                                        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                                        StrokeKind::Inside,
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(pack.license)
+                                            .size(10.0)
+                                            .color(Color32::from_rgb(0x6d, 0x9a, 0xc7)),
+                                    );
+                                });
+                                ui.add_space(6.0);
+                                ui.label(
+                                    egui::RichText::new(pack.description)
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0xcc, 0xd0, 0xd8)),
+                                );
+                            },
+                        );
+                        ui.add_space(card_h + 10.0);
+                    }
+                });
+
+                // Bottom-Anchored Action Group (Remove + Download CTA)
+                let bottom_y = sidebar_rect.bottom() - 68.0;
+                let is_installed =
+                    current_pack.map_or(false, |p| reg.installed.iter().any(|i| i.id == p.id));
+                let is_dl = current_pack.map_or(false, |p| {
+                    active_dl.as_ref().map_or(false, |a| a.pack_id == p.id)
+                });
+
+                if is_installed {
+                    let remove_rect = Rect::from_center_size(
+                        pos2(sidebar_rect.center().x, bottom_y - 14.0),
+                        vec2(120.0, 22.0),
+                    );
+                    let r_resp =
+                        ui.interact(remove_rect, egui::Id::unique("rm_pack"), Sense::click());
+                    let r_color = if r_resp.hovered() {
+                        Color32::from_rgb(0xff, 0x60, 0x55)
+                    } else {
+                        Color32::from_rgb(0xff, 0x45, 0x3a)
+                    };
+                    ui.painter().text(
+                        remove_rect.center(),
+                        Align2::CENTER_CENTER,
+                        format!("{}  {}", phosphor_egui::regular::TRASH, tr("Remove")),
+                        FontId::proportional(11.5),
+                        r_color,
+                    );
+                    if r_resp.clicked() {
+                        if let Some(pack) = current_pack {
+                            remove_installed_pack(pack.id);
+                        }
+                    }
+                }
+
+                let cta_rect = Rect::from_min_size(
+                    pos2(sidebar_rect.left() + 16.0, sidebar_rect.bottom() - 50.0),
+                    vec2(sidebar_inner_w, 34.0),
+                );
+                let cta_resp = ui.interact(cta_rect, egui::Id::unique("cta_dl"), Sense::click());
+
+                let (cta_bg, cta_txt, cta_fg) = if is_dl {
+                    (
+                        Color32::from_rgb(0x25, 0x25, 0x26),
+                        format!(
+                            "{}  {}",
+                            phosphor_egui::regular::ARROWS_CLOCKWISE,
+                            "Downloading…"
+                        ),
+                        Color32::from_rgb(0x51, 0xee, 0xfc),
+                    )
+                } else if is_installed {
+                    (
+                        Color32::from_rgb(0x25, 0x25, 0x26),
+                        format!("{}  {}", phosphor_egui::regular::CHECK, tr("Installed")),
+                        Color32::from_rgb(0x8e, 0x8e, 0x93),
+                    )
+                } else if cta_resp.hovered() {
+                    (
+                        Color32::from_rgb(0x18, 0x7b, 0xe5),
+                        format!(
+                            "{}  {}",
+                            phosphor_egui::regular::DOWNLOAD_SIMPLE,
+                            tr("Download Pack")
+                        ),
+                        Color32::WHITE,
+                    )
+                } else {
+                    (
+                        Color32::from_rgb(0x12, 0x69, 0xcc),
+                        format!(
+                            "{}  {}",
+                            phosphor_egui::regular::DOWNLOAD_SIMPLE,
+                            tr("Download Pack")
+                        ),
+                        Color32::WHITE,
+                    )
+                };
+
+                ui.painter()
+                    .rect_filled(cta_rect, CornerRadius::same(2), cta_bg);
+                ui.painter().rect_stroke(
+                    cta_rect,
+                    CornerRadius::same(2),
+                    Stroke::new(
+                        1.0,
+                        if is_installed || is_dl {
+                            Color32::from_rgb(0x3a, 0x3a, 0x3a)
+                        } else {
+                            cta_bg
+                        },
+                    ),
+                    StrokeKind::Inside,
+                );
+                ui.painter().text(
+                    cta_rect.center(),
+                    Align2::CENTER_CENTER,
+                    cta_txt,
+                    FontId::proportional(12.5),
+                    cta_fg,
+                );
+
+                if cta_resp.clicked() && !is_installed && !is_dl {
+                    if let Some(pack) = current_pack {
+                        start_download(pack);
+                    }
+                }
+            });
 
             drop(filter_guard);
 
@@ -1304,8 +1314,8 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
             // Render Right Main Pane
             // ---------------------------------------------------------------
             let import_btn_rect = Rect::from_center_size(
-                pos2(main_rect.right() - 100.0, main_rect.top() + 24.0),
-                vec2(164.0, 26.0),
+                pos2(main_rect.right() - 142.0, main_rect.top() + 20.0),
+                vec2(150.0, 24.0),
             );
             let imp_resp = ui.interact(
                 import_btn_rect,
@@ -1331,14 +1341,14 @@ pub fn show_manager_window(ctx: &egui::Context, s: &mut UiState) {
                     phosphor_egui::regular::FOLDER_OPEN,
                     tr("Import (.sfz / .sf2)")
                 ),
-                FontId::proportional(11.5),
+                FontId::proportional(11.0),
                 Color32::WHITE,
             );
 
-            // Installed Packs List Area
+            // Installed Packs List Area cleanly padded below the action bar
             let list_area = Rect::from_min_max(
-                pos2(main_rect.left() + 24.0, main_rect.top() + 50.0),
-                pos2(main_rect.right() - 24.0, main_rect.bottom() - 16.0),
+                pos2(main_rect.left() + 20.0, main_rect.top() + 46.0),
+                pos2(main_rect.right() - 20.0, main_rect.bottom() - 14.0),
             );
 
             let has_items = !reg.installed.is_empty() || active_dl.is_some();

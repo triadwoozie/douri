@@ -578,10 +578,7 @@ impl Engine {
             SupportedBufferSize::Unknown => None,
         };
         let mut config: StreamConfig = supported.into();
-        let default_buffer = if cfg!(target_os = "linux") { 512 } else { 256 };
-        let buffer_frames = buffer_frames
-            .or(Some(default_buffer))
-            .map(|n| clamp_buffer(n, range));
+        let buffer_frames = buffer_frames.map(|n| clamp_buffer(n, range));
         if let Some(n) = buffer_frames {
             config.buffer_size = BufferSize::Fixed(n);
         }

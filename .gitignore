@@ -38,6 +38,7 @@ Thumbs.db
 references/
 /branding-staging
 branding-staging/
+.local/
 Cache/peaks/*.peak
 Cache/
 *.peak

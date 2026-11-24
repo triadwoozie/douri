@@ -216,6 +216,8 @@ pub struct UiState {
     pub bottom: Bottom,
     /// Last import error or engine warning, shown in the menu bar.
     pub status: Option<String>,
+    pub status_at: Option<std::time::Instant>,
+    pub status_last_msg: Option<String>,
     pub tracks: tracks_area::TracksView,
     /// The region Edit > Cut / Copy put on the clipboard.
     pub region_clip: region_edit::RegionClip,
@@ -426,6 +428,8 @@ impl UiState {
             update_auto: true,
             bottom: Bottom::Mixer,
             status: None,
+            status_at: None,
+            status_last_msg: None,
             tracks: tracks_area::TracksView::default(),
             region_clip: Vec::new(),
             mixer: mixer::MixerView {
@@ -1468,7 +1472,7 @@ impl App {
             }
         }
         if s.rec.active() || !input.is_empty() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            ctx.request_repaint();
         }
     }
 
@@ -1499,7 +1503,7 @@ impl App {
                 .send(prowave_engine::Command::SetInput(Some(feed)));
         }
         if s.audio_rec.active() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            ctx.request_repaint();
         } else if s.audio_rec.listening() {
             ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
@@ -1707,7 +1711,7 @@ impl eframe::App for App {
             self.project.position_beats = map.advance(self.project.position_beats, dt);
         }
         if self.project.playing {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            ctx.request_repaint();
         }
         let master_peaks = self.sync.as_mut().map(|s| s.master_peaks());
         let mut meters = match self.sync.as_mut() {
@@ -1731,12 +1735,32 @@ impl eframe::App for App {
         self.ui
             .audio_rec
             .show_levels(&self.project, &mut meters.tracks);
-        let meters_decaying = self.ui.cpu_load > 0.02
-            || self.ui.midi_in_activity > 0.01
-            || self.ui.midi_out_activity > 0.01
-            || master_peaks.map_or(false, |(l, r)| l > 0.001 || r > 0.001);
-        if meters_decaying || crate::sound_library::active_download().is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+
+        // Auto-dismiss top-bar status notifications after 3.5 seconds
+        if let Some(ref msg) = self.ui.status {
+            let now = std::time::Instant::now();
+            if self.ui.status_last_msg.as_deref() != Some(msg.as_str()) {
+                self.ui.status_last_msg = Some(msg.clone());
+                self.ui.status_at = Some(now);
+            }
+            if let Some(at) = self.ui.status_at {
+                let ttl = std::time::Duration::from_millis(3500);
+                let elapsed = now.saturating_duration_since(at);
+                if elapsed >= ttl {
+                    self.ui.status = None;
+                    self.ui.status_at = None;
+                    self.ui.status_last_msg = None;
+                } else {
+                    ctx.request_repaint_after(ttl - elapsed);
+                }
+            }
+        } else {
+            self.ui.status_at = None;
+            self.ui.status_last_msg = None;
+        }
+
+        if crate::sound_library::active_download().is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(rx) = &self.mcp_receiver {
             while let Ok(cmd) = rx.try_recv() {

@@ -2189,7 +2189,11 @@ pub fn bar_text(light: bool) -> Color32 {
 
 /// Whether [`status_line`] has anything to say.
 pub fn has_status(p: &Project, s: &crate::UiState) -> bool {
-    s.status.is_some() || p.tracks.len() > prowave_engine::MAX_TRACKS
+    let status_active = s.status.is_some()
+        && s.status_at.map_or(true, |at| {
+            at.elapsed() < std::time::Duration::from_millis(3500)
+        });
+    status_active || p.tracks.len() > prowave_engine::MAX_TRACKS
 }
 
 /// The last error or warning, after the menus (or on its own line on macOS, where the menus
@@ -2201,6 +2205,11 @@ pub fn status_line(ui: &mut egui::Ui, p: &Project, s: &crate::UiState) {
         Color32::from_rgb(0xff, 0xb0, 0x40)
     };
     if let Some(msg) = &s.status {
+        if s.status_at.map_or(false, |at| {
+            at.elapsed() >= std::time::Duration::from_millis(3500)
+        }) {
+            return;
+        }
         // Suppress transient background rendering and underrun spam from the calm top menu bar
         if !msg.contains("Singing:") && !msg.contains("underrun") {
             let first_line = msg.lines().next().unwrap_or(msg).trim();

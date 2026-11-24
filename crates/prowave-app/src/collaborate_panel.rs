@@ -165,10 +165,14 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
     egui::Window::new("douri_collaborate_window")
         .open(&mut open)
         .title_bar(false)
+        .movable(true)
         .resizable(true)
         .collapsible(false)
-        .default_size(vec2(860.0, 580.0))
-        .min_size(vec2(640.0, 420.0))
+        .default_pos(ctx.input(|i| i.viewport_rect().center()))
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_size(vec2(560.0, 420.0))
+        .min_size(vec2(480.0, 340.0))
+        .max_size(vec2(820.0, 680.0))
         .frame(
             egui::Frame::new()
                 .fill(panel_bg)
@@ -216,6 +220,25 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, project_path:
 }
 
 fn render_window_chrome(ui: &mut Ui, s: &mut UiState, close: &mut bool) {
+    let header_rect = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 28.0));
+    let header_resp = ui.interact(
+        header_rect,
+        ui.scope_id().with("collab_header_drag"),
+        Sense::drag(),
+    );
+    if header_resp.dragged() {
+        let delta = header_resp.drag_delta();
+        if delta != egui::Vec2::ZERO {
+            let layer_id = ui.layer_id();
+            if let Some(mut state) = egui::AreaState::load(ui.ctx(), layer_id.id) {
+                state.set_left_top_pos(state.left_top_pos() + delta);
+                ui.ctx().memory_mut(|mem| {
+                    mem.areas_mut().set_state(layer_id, state);
+                });
+            }
+        }
+    }
+
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(phosphor_egui::regular::USERS)
@@ -500,11 +523,11 @@ fn render_active(
 
     let total_w = ui.available_width();
     let gap = 16.0;
-    let left_w = ((total_w - gap) * 0.42).clamp(310.0, 480.0);
-    let right_w = total_w - gap - left_w;
+    let left_w = 260.0f32.min(total_w * 0.5);
+    let right_w = (total_w - gap - left_w).max(200.0);
 
     ui.horizontal_top(|ui| {
-        // Left Column (~42%)
+        // Left Column (260px)
         ui.vertical(|ui| {
             ui.set_width(left_w);
             egui::ScrollArea::vertical()
