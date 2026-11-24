@@ -952,6 +952,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     q_swing: r.q_swing.clamp(0.0, 100.0),
                     color: r.color.map(|[r, g, b]| egui::Color32::from_rgb(r, g, b)),
                     locked: false,
+                    ..RegionParams::default()
                 },
             };
             // A take folder's notes are what its comp plays.
@@ -1008,6 +1009,8 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                 .icon
                 .as_deref()
                 .and_then(crate::track_icons::IconKind::from_name),
+            midi_in_port: None,
+            midi_in_channel: None,
             input: input_source(t.input, t.input_stereo),
             output: if usize::from(t.output) <= prowave_engine::MAX_BUSES {
                 t.output

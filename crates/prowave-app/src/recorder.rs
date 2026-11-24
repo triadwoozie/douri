@@ -225,7 +225,7 @@ pub fn capture(rec: &mut Recorder, p: &mut Project) -> Option<(usize, usize)> {
         generated: None,
         audio: None,
         missing: None,
-        params: RegionParams::default(),
+        params: p.midi_defaults,
     });
     let r = track.regions.len() - 1;
     p.selected_track = t;
@@ -276,7 +276,7 @@ fn start(rec: &mut Recorder, p: &mut Project, pedal: u8) -> Outcome {
         generated: None,
         audio: None,
         missing: None,
-        params: RegionParams::default(),
+        params: p.midi_defaults,
     });
     let r = p.tracks[t].regions.len() - 1;
     *rec = Recorder {
@@ -762,7 +762,7 @@ mod tests {
             generated: None,
             audio: None,
             missing: None,
-            params: RegionParams::default(),
+            params: p.midi_defaults,
         });
         let mut rec = Recorder::default();
         p.recording = true;

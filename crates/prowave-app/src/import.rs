@@ -103,6 +103,8 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         bass808: None,
         hosted_instrument: 0,
         icon: None,
+        midi_in_port: None,
+        midi_in_channel: None,
         midi_channel: 1,
         midi_program: None,
         midi_bank: None,

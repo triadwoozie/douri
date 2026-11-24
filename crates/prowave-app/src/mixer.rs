@@ -115,15 +115,17 @@ pub struct MixerView {
     pub plugin_controls: bool,
     /// The hosted plug-in whose own window was asked for (see `fx_ui`).
     pub plugin_editor: Option<crate::fx_ui::EditorWindow>,
+    /// Bounce project/section dialog triggered from the Stereo Out channel strip.
+    pub bounce_cmd: bool,
 }
 
 /// A channel strip's effects, sends, level and pan, as Copy Channel Strip keeps them.
 #[derive(Clone)]
 pub struct CopiedStrip {
-    inserts: Vec<Insert>,
-    sends: Vec<SendSlot>,
-    volume_db: f32,
-    pan: f32,
+    pub inserts: Vec<Insert>,
+    pub sends: Vec<SendSlot>,
+    pub volume_db: f32,
+    pub pan: f32,
 }
 
 impl Default for MixerView {
@@ -147,6 +149,7 @@ impl Default for MixerView {
             plugin_search: String::new(),
             plugin_controls: false,
             plugin_editor: None,
+            bounce_cmd: false,
         }
     }
 }
@@ -799,16 +802,21 @@ fn send_slots(
     sends: &mut Vec<SendSlot>,
     uid: egui::Id,
     inactive: bool,
-) {
+) -> Option<u16> {
     let mut remove = None;
+    let mut chosen_bus = None;
     for k in 0..rows {
         let r = Rect::from_min_size(
             pos2(area.left(), top + k as f32 * 17.0),
             vec2(area.width(), 16.0),
         );
         if k < sends.len() {
-            if !send_slot(ui, g, r, &mut sends[k], uid.with(k), inactive) {
+            let (keep, ch_bus) = send_slot(ui, g, r, &mut sends[k], uid.with(k), inactive);
+            if !keep {
                 remove = Some(k);
+            }
+            if let Some(b) = ch_bus {
+                chosen_bus = Some(b);
             }
         } else if k == sends.len() && sends.len() < MAX_SENDS {
             let resp = ui.interact(r, uid.with(("empty", k)), Sense::click());
@@ -829,12 +837,14 @@ fn send_slots(
                     level: 0.5,
                     pre: false,
                 });
+                chosen_bus = Some(bus);
             }
         }
     }
     if let Some(k) = remove {
         sends.remove(k);
     }
+    chosen_bus
 }
 
 /// Logic's send slot: a blue "Bus N" button with a round level knob beside it. Click the slot
@@ -848,11 +858,12 @@ fn send_slot(
     send: &mut crate::model::SendSlot,
     uid: egui::Id,
     inactive: bool,
-) -> bool {
+) -> (bool, Option<u16>) {
     let Some(bus) = send.bus else {
-        return false;
+        return (false, None);
     };
     let mut keep = true;
+    let mut chosen_bus = None;
     let knob_c = pos2(r.right() - 8.0, r.center().y);
     let slot_r = Rect::from_min_max(r.min, pos2(r.right() - 19.0, r.bottom()));
     let resp = ui.interact(slot_r, uid, Sense::click());
@@ -877,6 +888,7 @@ fn send_slot(
                 .clicked()
             {
                 send.bus = Some(b);
+                chosen_bus = Some(b);
                 ui.close();
             }
         }
@@ -912,7 +924,7 @@ fn send_slot(
         ],
         Stroke::new(1.4, Color32::WHITE),
     );
-    keep
+    (keep, chosen_bus)
 }
 
 /// What the user chose in an Audio FX slot's menu.
@@ -1395,6 +1407,16 @@ pub fn channel_strip(
                 ) && !x.bypass
             })
             .map(|x| (x.kind, x.params)),
+        StripKey::StereoOut => p
+            .master_inserts
+            .iter()
+            .find(|x| {
+                matches!(
+                    x.kind,
+                    prowave_engine::FxKind::ChannelEq | prowave_engine::FxKind::MultiEq
+                ) && !x.bypass
+            })
+            .map(|x| (x.kind, x.params)),
         _ => None,
     };
     let reduction = match key {
@@ -1415,9 +1437,14 @@ pub fn channel_strip(
     }
     if !vca_strip && r.show_slots {
         slot(g, row(r.setting, 16.0), tr("Setting"), SLOT_GRAY, TEXT);
-        if let StripKey::Track(i) = key {
-            setting_menu(ui, row(r.setting, 16.0), p, v, i, id(ns, (key, "setting")));
-        }
+        setting_menu(
+            ui,
+            row(r.setting, 16.0),
+            p,
+            v,
+            key,
+            id(ns, (key, "setting")),
+        );
         let gr_bar = row(r.gain_red + 1.0, 6.0);
         g.rect_filled(gr_bar, 1.0, SLOT_EMPTY);
         if reduction > 0.05 {
@@ -1433,7 +1460,52 @@ pub fn channel_strip(
                 },
             );
         }
-        eq_thumb(g, row(r.eq, 24.0), eq_params);
+        let eq_r = row(r.eq, 24.0);
+        eq_thumb(g, eq_r, eq_params);
+        let eq_resp = ui.interact(eq_r, id(ns, (key, "eq_thumb")), Sense::click());
+        if eq_resp.clicked() {
+            let ti = match key {
+                StripKey::Track(i) => i,
+                StripKey::StereoOut => MASTER_STRIP,
+                _ => usize::MAX - 1,
+            };
+            if ti != usize::MAX - 1 {
+                let ins = strip_inserts(p, ti);
+                if let Some(pos) = ins.iter().position(|x| {
+                    matches!(
+                        x.kind,
+                        prowave_engine::FxKind::ChannelEq | prowave_engine::FxKind::MultiEq
+                    )
+                }) {
+                    if v.fx_window == Some((ti, pos)) {
+                        v.fx_window = None;
+                    } else {
+                        v.fx_window = Some((ti, pos));
+                        v.inst_window = None;
+                        v.plugin_controls = false;
+                    }
+                } else {
+                    let inserts = if ti == MASTER_STRIP {
+                        &mut p.master_inserts
+                    } else if let Some(t) = p.tracks.get_mut(ti) {
+                        &mut t.inserts
+                    } else {
+                        &mut p.master_inserts
+                    };
+                    if inserts.len() < prowave_engine::MAX_INSERTS {
+                        inserts.insert(0, Insert::new(prowave_engine::FxKind::ChannelEq));
+                        if let Some((t, s)) = v.fx_window {
+                            if t == ti {
+                                v.fx_window = Some((t, s + 1));
+                            }
+                        }
+                        v.fx_window = Some((ti, 0));
+                        v.inst_window = None;
+                        v.plugin_controls = false;
+                    }
+                }
+            }
+        }
         let input_r = row(r.input, 16.0);
         match (kind, instrument) {
             (Some(TrackKind::Instrument | TrackKind::Drummer), Some(inst)) => {
@@ -1524,7 +1596,7 @@ pub fn channel_strip(
             // An Aux strip takes its signal from a bus: it has no sends of its own.
             StripKey::Track(i) if p.tracks[i].kind != TrackKind::Aux => {
                 let area = row(r.sends, 16.0);
-                send_slots(
+                if let Some(bus) = send_slots(
                     ui,
                     g,
                     area,
@@ -1533,7 +1605,9 @@ pub fn channel_strip(
                     &mut p.tracks[i].sends,
                     id(ns, (key, "send")),
                     inactive,
-                );
+                ) {
+                    p.ensure_aux_for_bus(bus);
+                }
             }
             StripKey::StereoOut => slot(g, row(r.sends, 16.0), "", SLOT_EMPTY, TEXT),
             _ => {}
@@ -1735,9 +1809,12 @@ pub fn channel_strip(
         } else {
             "-∞ dB TP".to_string()
         };
-        pk_resp.on_hover_text(format!(
-            "Master Loudness:\n• Integrated: {lufs_str}\n• True Peak: {tp_str}\n(Click peak pill to reset)"
-        ));
+        pk_resp.on_hover_ui(|ui| {
+            ui.set_max_width(220.0);
+            ui.label(format!(
+                "Master Loudness:\n• Integrated: {lufs_str}\n• True Peak: {tp_str}\n(Click peak pill to reset)"
+            ));
+        });
     }
 
     // Fader + scale + meter.
@@ -1769,7 +1846,10 @@ pub fn channel_strip(
     if let Some(db) = moved.value {
         match key {
             StripKey::Track(i) => match send_bus {
-                Some(bus) => set_send_level(&mut p.tracks[i].sends, bus, db),
+                Some(bus) => {
+                    set_send_level(&mut p.tracks[i].sends, bus, db);
+                    p.ensure_aux_for_bus(bus);
+                }
                 None => {
                     let delta = db - vol_db;
                     crate::automation::moved(&mut p.tracks[i], AutoTarget::Volume, db);
@@ -1797,18 +1877,29 @@ pub fn channel_strip(
     let s_r = Rect::from_min_size(pos2(sx + bw + 6.0, by), vec2(bw, 16.0));
     match key {
         StripKey::Track(i) => {
-            let t = &mut p.tracks[i];
-            if small_button(ui, g, m_r, id(ns, (key, "m")), "M", t.mute, MUTE_ON) {
-                t.mute = !t.mute;
+            let mute = p.tracks[i].mute;
+            let solo = p.tracks[i].solo;
+            if small_button(ui, g, m_r, id(ns, (key, "m")), "M", mute, MUTE_ON) {
+                p.set_mute(i, !mute);
             }
-            if small_button(ui, g, s_r, id(ns, (key, "s")), "S", t.solo, SOLO_ON) {
-                t.solo = !t.solo;
+            if small_button(ui, g, s_r, id(ns, (key, "s")), "S", solo, SOLO_ON) {
+                p.set_solo(i, !solo);
             }
         }
         _ => {
             slot(g, m_r, "M", SLOT_GRAY, TEXT_DIM);
             if key == StripKey::StereoOut {
-                slot(g, s_r, tr("Bnc"), SLOT_GRAY, TEXT_DIM);
+                if small_button(
+                    ui,
+                    g,
+                    s_r,
+                    id(ns, (key, "bnc")),
+                    tr("Bnc"),
+                    false,
+                    Color32::from_rgb(0x38, 0x38, 0x3c),
+                ) {
+                    v.bounce_cmd = true;
+                }
             }
         }
     }
@@ -1894,38 +1985,139 @@ fn set_send_level(sends: &mut Vec<SendSlot>, bus: u16, db: f32) {
 /// (empty for none). Click to pick a mix group, make a new one, change what the group moves
 /// together, or pick one of the project's VCA tracks.
 /// A strip's Setting slot: copy, paste or clear what is on the strip.
-fn setting_menu(ui: &Ui, r: Rect, p: &mut Project, v: &mut MixerView, i: usize, id: egui::Id) {
+fn setting_menu(ui: &Ui, r: Rect, p: &mut Project, v: &mut MixerView, key: StripKey, id: egui::Id) {
     let resp = ui.interact(r, id, Sense::click());
     egui::Popup::menu(&resp).show(|ui| {
-        ui.set_min_width(170.0);
-        let t = &mut p.tracks[i];
-        if ui.button(tr("Copy Channel Strip")).clicked() {
-            v.copied = Some(CopiedStrip {
-                inserts: t.inserts.clone(),
-                sends: t.sends.clone(),
-                volume_db: t.volume_db,
-                pan: t.pan,
-            });
+        ui.set_min_width(180.0);
+        let can_copy = match key {
+            StripKey::Track(i) => i < p.tracks.len(),
+            StripKey::StereoOut => true,
+            _ => false,
+        };
+        if ui
+            .add_enabled(can_copy, egui::Button::new(tr("Copy Channel Strip")))
+            .clicked()
+        {
+            match key {
+                StripKey::Track(i) => {
+                    let t = &p.tracks[i];
+                    v.copied = Some(CopiedStrip {
+                        inserts: t.inserts.clone(),
+                        sends: t.sends.clone(),
+                        volume_db: t.volume_db,
+                        pan: t.pan,
+                    });
+                }
+                StripKey::StereoOut => {
+                    v.copied = Some(CopiedStrip {
+                        inserts: p.master_inserts.clone(),
+                        sends: Vec::new(),
+                        volume_db: lin_to_db(p.master_vol),
+                        pan: 0.0,
+                    });
+                }
+                _ => {}
+            }
             ui.close();
         }
         let paste = egui::Button::new(tr("Paste Channel Strip"));
         if ui.add_enabled(v.copied.is_some(), paste).clicked() {
             if let Some(c) = v.copied.clone() {
-                t.inserts = c.inserts;
-                t.sends = c.sends;
-                t.volume_db = c.volume_db;
-                t.pan = c.pan;
+                match key {
+                    StripKey::Track(i) => {
+                        let t = &mut p.tracks[i];
+                        t.inserts = c.inserts;
+                        t.sends = c.sends;
+                        t.volume_db = c.volume_db;
+                        t.pan = c.pan;
+                    }
+                    StripKey::StereoOut => {
+                        p.master_inserts = c.inserts;
+                        p.master_vol = 10f32.powf(c.volume_db / 20.0).min(2.0);
+                    }
+                    _ => {}
+                }
             }
             ui.close();
         }
         ui.separator();
         if ui.button(tr("Reset Channel Strip")).clicked() {
-            t.inserts.clear();
-            t.sends.clear();
-            t.volume_db = 0.0;
-            t.pan = 0.0;
+            match key {
+                StripKey::Track(i) => {
+                    let t = &mut p.tracks[i];
+                    t.inserts.clear();
+                    t.sends.clear();
+                    t.volume_db = 0.0;
+                    t.pan = 0.0;
+                }
+                StripKey::StereoOut => {
+                    p.master_inserts.clear();
+                    p.master_vol = 1.0;
+                }
+                _ => {}
+            }
             ui.close();
         }
+        ui.separator();
+        ui.menu_button("Channel Strip Presets", |ui| {
+            let presets = [
+                (
+                    "Clean Vocal",
+                    vec![
+                        Insert::new(prowave_engine::FxKind::ChannelEq),
+                        Insert::new(prowave_engine::FxKind::Compressor),
+                    ],
+                ),
+                (
+                    "Acoustic Guitar",
+                    vec![
+                        Insert::new(prowave_engine::FxKind::ChannelEq),
+                        Insert::new(prowave_engine::FxKind::Chorus),
+                    ],
+                ),
+                (
+                    "Punchy Drums",
+                    vec![
+                        Insert::new(prowave_engine::FxKind::ChannelEq),
+                        Insert::new(prowave_engine::FxKind::Compressor),
+                        Insert::new(prowave_engine::FxKind::Overdrive),
+                    ],
+                ),
+                (
+                    "Bass DI",
+                    vec![
+                        Insert::new(prowave_engine::FxKind::ChannelEq),
+                        Insert::new(prowave_engine::FxKind::Compressor),
+                    ],
+                ),
+                (
+                    "Mastering Chain",
+                    vec![
+                        Insert::new(prowave_engine::FxKind::ChannelEq),
+                        Insert::new(prowave_engine::FxKind::Compressor),
+                        Insert::new(prowave_engine::FxKind::Limiter),
+                    ],
+                ),
+            ];
+            for (name, inserts) in presets {
+                if ui.button(name).clicked() {
+                    match key {
+                        StripKey::Track(i) => {
+                            let t = &mut p.tracks[i];
+                            t.inserts = inserts;
+                            t.volume_db = 0.0;
+                            t.pan = 0.0;
+                        }
+                        StripKey::StereoOut => {
+                            p.master_inserts = inserts;
+                            p.master_vol = 1.0;
+                        }
+                        _ => {}
+                    }
+                    ui.close();
+                }
+            }
+        });
     });
 }
 
@@ -1967,6 +2159,7 @@ fn output_slot(
                 .clicked()
             {
                 p.tracks[i].output = bus;
+                p.ensure_aux_for_bus(bus);
                 ui.close();
             }
         }
@@ -3049,5 +3242,104 @@ mod tests {
         );
         assert_eq!(insert_fill(true, true), PLUGIN_OFF, "bypass wins");
         assert_eq!(insert_fill(true, false), PLUGIN_OFF);
+    }
+
+    #[test]
+    fn copied_strip_copy_paste_reset_track_and_stereo_out() {
+        let mut p = mixer_project();
+        let mut v = MixerView::default();
+        p.tracks[0].inserts = vec![
+            Insert::new(FxKind::ChannelEq),
+            Insert::new(FxKind::Compressor),
+        ];
+        p.tracks[0].volume_db = -3.0;
+        p.tracks[0].pan = 0.25;
+
+        // Copy track 0
+        v.copied = Some(CopiedStrip {
+            inserts: p.tracks[0].inserts.clone(),
+            sends: p.tracks[0].sends.clone(),
+            volume_db: p.tracks[0].volume_db,
+            pan: p.tracks[0].pan,
+        });
+
+        // Paste to track 1
+        if let Some(c) = v.copied.clone() {
+            p.tracks[1].inserts = c.inserts;
+            p.tracks[1].volume_db = c.volume_db;
+            p.tracks[1].pan = c.pan;
+        }
+        assert_eq!(p.tracks[1].inserts.len(), 2);
+        assert_eq!(p.tracks[1].volume_db, -3.0);
+        assert_eq!(p.tracks[1].pan, 0.25);
+
+        // Reset track 1
+        p.tracks[1].inserts.clear();
+        p.tracks[1].volume_db = 0.0;
+        p.tracks[1].pan = 0.0;
+        assert!(p.tracks[1].inserts.is_empty());
+        assert_eq!(p.tracks[1].volume_db, 0.0);
+
+        // Stereo out copy/paste/reset
+        p.master_inserts = vec![Insert::new(FxKind::Limiter)];
+        p.master_vol = 0.8;
+        v.copied = Some(CopiedStrip {
+            inserts: p.master_inserts.clone(),
+            sends: Vec::new(),
+            volume_db: lin_to_db(p.master_vol),
+            pan: 0.0,
+        });
+        p.master_inserts.clear();
+        p.master_vol = 1.0;
+        assert!(p.master_inserts.is_empty());
+
+        if let Some(c) = v.copied.clone() {
+            p.master_inserts = c.inserts;
+            p.master_vol = 10f32.powf(c.volume_db / 20.0);
+        }
+        assert_eq!(p.master_inserts.len(), 1);
+        assert!((p.master_vol - 0.8).abs() < 1e-4);
+    }
+
+    #[test]
+    fn ensure_aux_for_bus_creates_aux_track() {
+        let mut p = Project::empty();
+        p.tracks.clear();
+        assert_eq!(p.tracks.len(), 0);
+        let idx1 = p.ensure_aux_for_bus(2);
+        assert_eq!(p.tracks.len(), 1);
+        assert_eq!(p.tracks[idx1].kind, TrackKind::Aux);
+        assert_eq!(p.aux_bus_of(idx1), 2);
+
+        // Calling again reuses the existing Aux track
+        let idx2 = p.ensure_aux_for_bus(2);
+        assert_eq!(idx1, idx2);
+        assert_eq!(p.tracks.len(), 1);
+    }
+
+    #[test]
+    fn group_mute_and_solo_propagate() {
+        let mut p = Project::empty();
+        p.tracks
+            .push(crate::model::Track::new("Track 1", TrackKind::Audio));
+        p.tracks
+            .push(crate::model::Track::new("Track 2", TrackKind::Audio));
+        let g = p.add_group("Drums").unwrap();
+        p.assign_group(0, Some(g));
+        p.assign_group(1, Some(g));
+
+        // Mute propagation
+        p.set_mute(0, true);
+        assert!(p.tracks[0].mute);
+        assert!(p.tracks[1].mute);
+
+        p.set_mute(0, false);
+        assert!(!p.tracks[0].mute);
+        assert!(!p.tracks[1].mute);
+
+        // Solo propagation
+        p.set_solo(1, true);
+        assert!(p.tracks[0].solo);
+        assert!(p.tracks[1].solo);
     }
 }

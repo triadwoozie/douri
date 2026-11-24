@@ -186,7 +186,7 @@ impl Generated {
 const MAX_GENERATED_BARS: usize = 1024;
 
 /// Logic Pro Region Inspector values.
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct RegionParams {
     pub mute: bool,
     /// Playback quantize grid in beats (`None` = Off).
@@ -216,6 +216,37 @@ pub struct RegionParams {
     /// Locked to SMPTE / timeline position (Logic: Lock SMPTE Position). Locked clips are protected
     /// against split, marquee cuts, and cycle clear operations.
     pub locked: bool,
+    /// Velocity scaling (Logic: Dynamics, 100% is normal, 1..=800).
+    pub dynamics: u16,
+    /// Note length scaling (Logic: Gate Time, 100% is normal, 10..=400).
+    pub gate_time: u16,
+    /// Truncate notes at region boundary (Logic: Clip Length).
+    pub clip_length: bool,
+}
+
+impl Default for RegionParams {
+    fn default() -> Self {
+        Self {
+            mute: false,
+            quantize: None,
+            transpose: 0,
+            velocity: 0,
+            gain_db: 0.0,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            fade_curve: prowave_engine::FadeCurve::EqualPower,
+            reverse: false,
+            offset_secs: 0.0,
+            crossfade: false,
+            loop_beats: 0.0,
+            q_swing: 0.0,
+            color: None,
+            locked: false,
+            dynamics: 100,
+            gate_time: 100,
+            clip_length: true,
+        }
+    }
 }
 
 /// Project Settings > Metronome: the click's level range in dB, and where it starts (the
@@ -839,6 +870,10 @@ pub struct Track {
     pub bass808: Option<prowave_engine::Bass808Spec>,
     /// A hosted CLAP, VST3 or Audio Unit instrument plug-in: its slot in `hosted_plugins`, or 0.
     pub hosted_instrument: u32,
+    /// Software instrument / MIDI input port filter (`None` = All).
+    pub midi_in_port: Option<String>,
+    /// Software instrument / MIDI input channel filter (`None` = All, or 1..=16).
+    pub midi_in_channel: Option<u8>,
     /// The icon the user picked (Track > Assign Track Icon); `None` is the automatic one.
     pub icon: Option<crate::track_icons::IconKind>,
     /// The parent of a Summing Stack (Track > Create Track Stack > Summing Stack): an Aux strip
@@ -946,6 +981,8 @@ impl Track {
             drums: None,
             bass808: None,
             hosted_instrument: 0,
+            midi_in_port: None,
+            midi_in_channel: None,
             icon: None,
             midi_channel: 1,
             midi_program: None,
@@ -1123,6 +1160,8 @@ pub struct Project {
     /// The region (track, region) the Solo tool is held on: the only one heard meanwhile
     /// (`region_solo.rs`). Not saved.
     pub region_solo: Option<(usize, usize)>,
+    /// Default MIDI region parameters (Logic Pro: Region Inspector when no region is selected).
+    pub midi_defaults: RegionParams,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1195,6 +1234,8 @@ impl Project {
             drums: None,
             bass808: None,
             hosted_instrument: 0,
+            midi_in_port: None,
+            midi_in_channel: None,
             icon: None,
             summing_stack: false,
             au_instrument: None,
@@ -1269,6 +1310,8 @@ impl Project {
             drums: None,
             bass808: None,
             hosted_instrument: 0,
+            midi_in_port: None,
+            midi_in_channel: None,
             icon: None,
             summing_stack: false,
             au_instrument: None,
@@ -1390,6 +1433,7 @@ impl Project {
             midi_in_port: None,
             midi_clock_out: None,
             midi_clock_in: None,
+            midi_defaults: RegionParams::default(),
         }
     }
 
@@ -2314,7 +2358,7 @@ impl Project {
     }
 
     /// Adds an empty MIDI region at `at_bar` (Logic: Create > MIDI Region), ready for the
-    /// Piano Roll.
+    /// Piano Roll. Inherits default parameters from `midi_defaults`.
     pub fn add_empty_region(&mut self, ti: usize, at_bar: f32) -> Option<usize> {
         let track = self.tracks.get_mut(ti)?;
         if !track.kind.has_regions() || track.kind == TrackKind::Audio {
@@ -2329,7 +2373,7 @@ impl Project {
             folder: None,
             audio: None,
             missing: None,
-            params: RegionParams::default(),
+            params: self.midi_defaults,
             generated: None,
         });
         self.song_rev += 1;
@@ -2355,7 +2399,7 @@ impl Project {
             folder: None,
             audio: None,
             missing: None,
-            params: RegionParams::default(),
+            params: self.midi_defaults,
             generated: None,
         });
         let ri = track.regions.len() - 1;
@@ -2705,6 +2749,21 @@ impl Project {
     /// Whether an Aux strip listens to `bus`.
     pub fn bus_has_aux(&self, bus: u16) -> bool {
         bus != 0 && (0..self.tracks.len()).any(|i| self.aux_bus_of(i) == bus)
+    }
+
+    /// Ensures an Aux track exists that listens to `bus`. If none exists, creates one and returns its index.
+    pub fn ensure_aux_for_bus(&mut self, bus: u16) -> usize {
+        if bus == 0 {
+            return 0;
+        }
+        if let Some(i) = (0..self.tracks.len()).find(|&i| self.aux_bus_of(i) == bus) {
+            return i;
+        }
+        let mut aux = Track::new(format!("Aux {bus}"), TrackKind::Aux);
+        aux.aux_bus = bus;
+        self.tracks.push(aux);
+        self.song_rev += 1;
+        self.tracks.len() - 1
     }
 
     /// Whether track `i` is muted, by its own Mute or by its VCA's.

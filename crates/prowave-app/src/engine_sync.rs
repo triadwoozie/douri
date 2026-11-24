@@ -432,11 +432,25 @@ pub(crate) fn region_notes(
                 n.pitch as i32 + rp.transpose as i32 + tp.transpose as i32
             };
             let vel = (n.vel as i32 + rp.velocity as i32 + tp.velocity as i32).clamp(1, 127);
+            let dynamic_vel = if rp.dynamics != 0 && rp.dynamics != 100 {
+                ((vel as f32) * (rp.dynamics as f32 / 100.0)).round() as i32
+            } else {
+                vel
+            };
+            let vel = dynamic_vel.clamp(1, 127);
             let in_keys = (tp.key_limit.0 as i32..=tp.key_limit.1 as i32).contains(&pitch);
             let in_vels = (tp.vel_limit.0 as i32..=tp.vel_limit.1 as i32).contains(&vel);
+            let len = if rp.gate_time != 0 && rp.gate_time != 100 {
+                (n.len * (rp.gate_time as f32 / 100.0)).max(0.01)
+            } else {
+                n.len
+            };
             let start_beat = (origin + delay_beats + start as f64).max(0.0);
-            let end_beat = (origin + delay_beats + (start + n.len) as f64)
-                .min(origin + len_beats + delay_beats);
+            let end_beat = if rp.clip_length {
+                (origin + delay_beats + (start + len) as f64).min(origin + len_beats + delay_beats)
+            } else {
+                origin + delay_beats + (start + len) as f64
+            };
             if end_beat <= start_beat {
                 return None;
             }
@@ -1753,6 +1767,8 @@ mod tests {
             midi_fx: Vec::new(),
             au_instrument: None,
             au_effects: Vec::new(),
+            midi_in_port: None,
+            midi_in_channel: None,
         }
     }
 

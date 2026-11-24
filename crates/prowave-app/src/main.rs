@@ -2018,7 +2018,8 @@ impl eframe::App for App {
         if std::mem::take(&mut self.ui.import_audio_cmd) {
             self.import_audio_file(&ctx);
         }
-        if std::mem::take(&mut self.ui.bounce_cmd) {
+        if std::mem::take(&mut self.ui.bounce_cmd) || std::mem::take(&mut self.ui.mixer.bounce_cmd)
+        {
             self.start_bounce();
         }
         if std::mem::take(&mut self.ui.export_track_cmd) {
