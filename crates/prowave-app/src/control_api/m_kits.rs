@@ -1,7 +1,8 @@
 //! Methods for the drum-kit library and the Kit Browser (the Kits key of the Channel Rack):
-//! the library folders, a search of the kits, a kit's samples and where a load puts them, and
-//! loading a kit or one sample into a rack. A scan and a kit's files are read before the answer
-//! here, so a caller needs no waiting of its own.
+//! the library folders, a search of the kits, a kit's samples and where a load puts them,
+//! loading a kit or one sample into a rack, and the audition. The folders are read before the
+//! answer here; the kits' files are read after it, in the background (`listing` in the status
+//! while they are), and a kit asked for before its files are read is read then.
 use super::params::P;
 use super::protocol::RpcError;
 use super::registry::{m, p, Method, Reply, Ty};
@@ -34,21 +35,34 @@ fn status_json(cx: &Cx) -> Value {
         .iter()
         .map(|(name, kits)| json!({ "name": name, "kits": kits }))
         .collect();
+    let listed = v.index.kits.iter().filter(|k| k.listed.is_some()).count();
     json!({
         "folders": folders,
         "kits": v.index.kits.len(),
+        "listed": listed,
+        "pools": v.index.kits.iter().filter(|k| k.is_pool()).count(),
         "sources": sources,
         "scanning": v.scanning,
+        "listing": v.listing.map(|(done, total)| json!({ "done": done, "total": total })),
+        "indexing": v.indexing(),
         "scan_ms": v.last_scan.map(|d| super::params::round3(d.as_secs_f64() * 1000.0)),
+        "last_listing": v.last_listing.map(|(read, d)| json!({
+            "read": read,
+            "ms": super::params::round3(d.as_secs_f64() * 1000.0),
+        })),
         "favorites": v.settings.favorites.len(),
+        "audition": v.settings.audition,
     })
 }
 
-/// The index is there: scanned once before the first answer.
+/// The index is there: the folders read once before the first answer, and what the
+/// background scan has done since taken in.
 fn ready(cx: &mut Cx) {
     let v = &mut cx.app.ui.kits;
+    v.start();
+    v.poll();
     if v.last_scan.is_none() {
-        v.scan_now();
+        v.scan_now(false);
     }
 }
 
@@ -57,8 +71,8 @@ fn status(cx: &mut Cx, _: &P) -> Result<Reply, RpcError> {
     ok(status_json(cx))
 }
 
-fn rescan(cx: &mut Cx, _: &P) -> Result<Reply, RpcError> {
-    cx.app.ui.kits.scan_now();
+fn rescan(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
+    cx.app.ui.kits.scan_now(params.bool("full").unwrap_or(true));
     ok(status_json(cx))
 }
 
@@ -79,7 +93,7 @@ fn folders(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     }
     let v = &mut cx.app.ui.kits;
     v.set_folders(folders);
-    v.scan_now();
+    v.scan_now(false);
     ok(status_json(cx))
 }
 
@@ -109,6 +123,8 @@ fn search(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
                 "license": k.license,
                 "best": k.best,
                 "favorite": v.is_favorite(&k.path),
+                "channels": k.pads,
+                "pool": k.is_pool(),
             })
         })
         .collect();
@@ -117,6 +133,7 @@ fn search(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
 
 /// The kit in the folder `path` names, read now.
 fn read(cx: &mut Cx, params: &P) -> Result<(String, std::sync::Arc<Kit>), RpcError> {
+    ready(cx);
     let path = params.req_path("path")?;
     if !path.is_dir() {
         return Err(RpcError::not_found(format!(
@@ -129,12 +146,13 @@ fn read(cx: &mut Cx, params: &P) -> Result<(String, std::sync::Arc<Kit>), RpcErr
     Ok((path, kit))
 }
 
-fn kit_json(path: &str, kit: &Kit, limit: usize) -> Value {
+fn kit_json(path: &str, kit: &Kit, offset: usize, limit: usize) -> Value {
     let samples: Vec<Value> = kit
         .samples
         .iter()
-        .take(limit)
         .enumerate()
+        .skip(offset)
+        .take(limit)
         .map(|(i, s)| {
             json!({
                 "index": i,
@@ -157,19 +175,33 @@ fn kit_json(path: &str, kit: &Kit, limit: usize) -> Value {
             None => json!({ "channel": k + 1, "file": null, "class": null }),
         })
         .collect();
+    let classes: Vec<Value> = kit
+        .classes
+        .iter()
+        .map(|(c, n)| json!({ "class": c.id(), "files": n }))
+        .collect();
+    let audition: Vec<&str> = kit
+        .audition_samples()
+        .into_iter()
+        .map(|i| kit.samples[i].rel.as_str())
+        .collect();
     json!({
         "path": path,
         "kind": kit.kind.id(),
         "files": kit.samples.len(),
+        "classes": classes,
+        "offset": offset,
         "samples": samples,
         "channels": channels,
+        "audition": audition,
     })
 }
 
 fn get(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     let (path, kit) = read(cx, params)?;
-    let limit = params.i64("limit").unwrap_or(200).clamp(0, 10_000) as usize;
-    ok(kit_json(&path, &kit, limit))
+    let offset = params.i64("offset").unwrap_or(0).max(0) as usize;
+    let limit = params.i64("limit").unwrap_or(200).max(0) as usize;
+    ok(kit_json(&path, &kit, offset, limit))
 }
 
 fn rack_json(cx: &Cx, ti: usize) -> Value {
@@ -211,6 +243,28 @@ fn load(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     let track = rack_of(cx, params)?;
     let (path, kit) = read(cx, params)?;
     if kit.pads.is_empty() {
+        // A kit of SoundFonts alone: on a new track, as its SoundFont.
+        if let Some(i) = kit.soundfonts().first() {
+            let name = cx
+                .app
+                .ui
+                .kits
+                .index
+                .find(&path)
+                .map(|k| k.name.clone())
+                .unwrap_or_default();
+            let ti = kit_browser::load_soundfont(&mut cx.app.project, &name, &kit.path_of(*i));
+            cx.core.ids.reconcile(&cx.app.project);
+            let t = &cx.app.project.tracks[ti];
+            return ok(json!({
+                "track": state::strip_id(&cx.core.ids, ti),
+                "kit": t.name,
+                "soundfont": t.soundfont.as_ref().map(|sf| json!({
+                    "path": sf.path, "bank": sf.bank, "program": sf.program,
+                })),
+                "channels": [],
+            }));
+        }
         return Err(RpcError::failed(format!(
             "{path} has no drum samples to put on the channels"
         )));
@@ -266,6 +320,127 @@ fn assign(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     ok(rack_json(cx, ti))
 }
 
+/// Peak, RMS and, for each source and where it starts in `out`, how alike the first
+/// `window` seconds are (correlation of the left channels, -1 to 1).
+fn compare(out: &[f32], rate: u32, sources: &[(std::path::PathBuf, f64)], window: f64) -> Value {
+    let peak = out.iter().fold(0f32, |m, s| m.max(s.abs()));
+    let rms = (out
+        .iter()
+        .map(|s| f64::from(*s) * f64::from(*s))
+        .sum::<f64>()
+        / out.len().max(1) as f64)
+        .sqrt();
+    let hits: Vec<Value> = sources
+        .iter()
+        .map(|(file, at)| {
+            let corr = prowave_engine::sample_tools::decode(file, |_| true)
+                .ok()
+                .map(|buf| {
+                    let n = (window * f64::from(rate)) as usize;
+                    let start = (at * f64::from(rate)) as usize;
+                    let ratio = f64::from(buf.rate.max(1)) / f64::from(rate);
+                    let (mut sxy, mut sxx, mut syy) = (0f64, 0f64, 0f64);
+                    for k in 0..n {
+                        let Some(x) = out.get((start + k) * 2) else {
+                            break;
+                        };
+                        let pos = k as f64 * ratio;
+                        let a = pos as usize;
+                        if a + 1 >= buf.frames() {
+                            break;
+                        }
+                        let t = (pos - a as f64) as f32;
+                        let y = buf.data[a * 2] + (buf.data[(a + 1) * 2] - buf.data[a * 2]) * t;
+                        let (x, y) = (f64::from(*x), f64::from(y));
+                        sxy += x * y;
+                        sxx += x * x;
+                        syy += y * y;
+                    }
+                    if sxx > 0.0 && syy > 0.0 {
+                        sxy / (sxx * syy).sqrt()
+                    } else {
+                        0.0
+                    }
+                });
+            json!({
+                "file": file,
+                "at_seconds": at,
+                "correlation": corr.map(|c| (c * 10_000.0).round() / 10_000.0),
+            })
+        })
+        .collect();
+    json!({
+        "frames": out.len() / 2,
+        "seconds": super::params::round3(out.len() as f64 / 2.0 / f64::from(rate.max(1))),
+        "peak": (f64::from(peak) * 10_000.0).round() / 10_000.0,
+        "rms": (rms * 10_000.0).round() / 10_000.0,
+        "hits": hits,
+    })
+}
+
+fn audition(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
+    let capture = match params.str("capture") {
+        Some(c) => {
+            Some(super::params::expand_path(c).map_err(|e| RpcError::invalid("capture", e))?)
+        }
+        None => None,
+    };
+    // What is played, and where each sound starts in it.
+    let sources: Vec<(std::path::PathBuf, f64)> = if params.has("file") {
+        let file = params.req_path("file")?;
+        if !file.is_file() {
+            return Err(RpcError::not_found(format!(
+                "there is no file {}",
+                file.display()
+            )));
+        }
+        let v = &mut cx.app.ui.kits;
+        v.start();
+        v.play_file(&file);
+        vec![(file, 0.0)]
+    } else if params.has("path") {
+        let (_, kit) = read(cx, params)?;
+        let v = &mut cx.app.ui.kits;
+        v.audition_kit();
+        kit.audition_samples()
+            .into_iter()
+            .enumerate()
+            .map(|(k, i)| (kit.path_of(i), k as f64 * kit_browser::KIT_STEP_SECONDS))
+            .collect()
+    } else {
+        return Err(RpcError::invalid(
+            "file",
+            "`file` (one sample) or `path` (a kit) is needed",
+        ));
+    };
+    if sources.is_empty() {
+        return Err(RpcError::failed("there is nothing in it to play"));
+    }
+    let Some(capture) = capture else {
+        // Played on the engine's audition voice by the next frames.
+        let files: Vec<&std::path::Path> = sources.iter().map(|s| s.0.as_path()).collect();
+        return ok(json!({ "playing": files }));
+    };
+    let rate = prowave_engine::sample_tools::decode(&sources[0].0, |_| true)
+        .map(|b| b.rate)
+        .unwrap_or(44_100);
+    let out = kit_browser::capture(
+        &mut cx.app.ui.kits,
+        rate,
+        20.0,
+        std::time::Duration::from_secs(30),
+    );
+    if let Some(e) = cx.app.ui.kits.error.take() {
+        return Err(RpcError::failed(e));
+    }
+    prowave_engine::write_wav(&capture, &out, rate)
+        .map_err(|e| RpcError::failed(format!("{}: {e}", capture.display())))?;
+    let mut reply = compare(&out, rate, &sources, 0.08);
+    reply["capture"] = json!(capture);
+    reply["rate"] = json!(rate);
+    ok(reply)
+}
+
 fn favorite(cx: &mut Cx, params: &P) -> Result<Reply, RpcError> {
     let path = params.req_path("path")?.to_string_lossy().into_owned();
     let on = params.bool("on").unwrap_or(true);
@@ -283,13 +458,14 @@ pub fn methods() -> Vec<Method> {
             "the rack's track: its id (\"t3\"), its name, or its number in the list (from 1); left out: the selected track when it plays the Channel Rack, else a new Channel Rack track",
         )
     };
-    let status_result = "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}";
+    let status_result = "{folders: [{path, present, kits}], kits, listed, pools, sources: [{name, kits}], scanning, listing: {done, total} or null, indexing, scan_ms, last_listing: {read, ms}, favorites, audition}";
     let rack_result = "{track, kit, channels: [{channel, name, path}]}";
     vec![
-        m("kits.status", "The drum-kit library: its folders (present: the folder is there now), the number of kits and the sources. The first call scans the folders.",
+        m("kits.status", "The drum-kit library: its folders (present: the folder is there now), the number of kits (listed: those whose files are read and kept; pools: sources of one-sample folders shown as one) and the sources. The first call reads the folders.",
             vec![], status_result, status),
-        m("kits.rescan", "Scans the library folders again and waits for it; scan_ms is how long it took.",
-            vec![], status_result, rescan),
+        m("kits.rescan", "Reads the library folders again and waits for it (scan_ms is how long it took); then every kit's files are read again in the background (listing in kits.status while they are).",
+            vec![p("full", Ty::Bool, "false: read again only the kits never read and those whose folder has changed (default true)")],
+            status_result, rescan),
         m("kits.folders", "Sets the library folders (saved), then scans them. A folder that is not there is kept and shows present: false.",
             vec![p("folders", Ty::Arr, "the folders, a list of paths").req()],
             status_result, folders),
@@ -302,14 +478,15 @@ pub fn methods() -> Vec<Method> {
                 p("limit", Ty::Int, "most kits to return (default 50)").range(1.0, 1000.0),
                 p("offset", Ty::Int, "kits to skip (default 0)").range(0.0, 10_000_000.0),
             ],
-            "{total, offset, kits: [{path, source, name, files, license, best, favorite}]}", search),
-        m("kits.get", "Reads a kit's folder: its audio files with the class of each (kick, snare, clap, closed_hat, open_hat, rim, tom_low, tom_mid, tom_high, perc, shaker, crash, ride, 808, fx, loop, other) and the channels a load fills.",
+            "{total, offset, kits: [{path, source, name, files, license, best, favorite, channels, pool}]}", search),
+        m("kits.get", "A kit's files (from its kept listing, else read from its folder): its audio and SoundFont files with the class of each (kick, snare, clap, closed_hat, open_hat, rim, tom_low, tom_mid, tom_high, perc, shaker, crash, ride, 808, fx, loop, other, sf2), the channels a load fills and the samples its audition plays.",
             vec![
-                p("path", Ty::Str, "the kit's folder").req(),
-                p("limit", Ty::Int, "most samples to list (default 200)").range(0.0, 10_000.0),
+                p("path", Ty::Str, "the kit's folder (a pool's: its source's folder)").req(),
+                p("offset", Ty::Int, "samples to skip (default 0)").range(0.0, 100_000_000.0),
+                p("limit", Ty::Int, "most samples to list (default 200)").range(0.0, 100_000_000.0),
             ],
-            "{path, kind (files, sfz, hydrogen, drumgizmo), files, samples: [{index, file, name, class}], channels: [{channel, file, class}]}", get),
-        m("kits.load", "Loads a kit into a Channel Rack: its samples go on the channels kits.get lists; levels, pans, mutes and steps stay.",
+            "{path, kind (files, sfz, hydrogen, drumgizmo), files, classes: [{class, files}], offset, samples: [{index, file, name, class}], channels: [{channel, file, class}], audition: [file]}", get),
+        m("kits.load", "Loads a kit into a Channel Rack: its samples go on the channels kits.get lists; levels, pans, mutes and steps stay. A kit of SoundFonts alone goes on a new instrument track as its SoundFont (its drum preset when it has one).",
             vec![p("path", Ty::Str, "the kit's folder").req(), track()],
             rack_result, load).changes(),
         m("kits.assign", "Puts one audio file on one channel of a Channel Rack (empty channels are added up to it).",
@@ -319,6 +496,13 @@ pub fn methods() -> Vec<Method> {
                 track(),
             ],
             rack_result, assign).changes(),
+        m("kits.audition", "Plays one sample, or a kit's kick, snare and hat, on the audition voice as the Kit Browser does. With capture, nothing is played aloud: the audition voice's output is written to that WAV file instead and compared with the files played.",
+            vec![
+                p("file", Ty::Str, "one audio file"),
+                p("path", Ty::Str, "a kit's folder (its kick, snare and hat)"),
+                p("capture", Ty::Str, "a WAV file to write the audition into instead of playing it"),
+            ],
+            "{playing: [file]}, or with capture {capture, rate, frames, seconds, peak, rms, hits: [{file, at_seconds, correlation}]}", audition),
         m("kits.favorite", "Marks a kit as a favourite, or takes the mark off.",
             vec![
                 p("path", Ty::Str, "the kit's folder").req(),

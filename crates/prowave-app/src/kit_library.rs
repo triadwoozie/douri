@@ -5,41 +5,64 @@
 //! files itself, or whose folders are named for drum sounds (Kicks, Snares…), is a kit of its
 //! own; its source is then the library folder. Folders whose names start with `_` or `.` are
 //! passed over. A `MANIFEST.tsv` in the library folder (a header naming `source` and `kit`,
-//! and optionally `license`, `url`, `audio_or_instrument_files`) adds what it knows to the
-//! kits it lists; a `BEST.md` there ranks kits: a kit is ranked by the first line that names
-//! it (`source/kit`, or its source and its name in the cells or emphasis of one line).
+//! and optionally `license`, `url`, `audio_or_instrument_files` and
+//! `other_names_same_content`) adds what it knows to the kits it lists; a `BEST.md` there ranks
+//! kits: a kit is ranked by the first line that names it (`source/kit`, or its source and its
+//! name in the cells or emphasis of one line).
 //!
-//! The index holds a line a kit (not its files: a kit's files are read when it is opened,
-//! [`crate::kit_files`]), so a hundred thousand kits are a few megabytes and a search is a
-//! pass over their names. Nothing in a library folder is ever written.
+//! A scan has two parts. The folders are read first (a few milliseconds): the list of kits is
+//! there to browse. Then every kit's files are read, a kit at a time on a few threads, and
+//! kept ([`crate::kit_files::Listing`], one file a kit in `kit-library/kits/`), so a kit picked
+//! in the browser is made from what is kept and never waits for the library's disk. A kit
+//! whose folder has not changed since it was read is not read again unless the scan is a full
+//! one (Rescan).
+//!
+//! The index holds a line a kit, so a hundred thousand kits are a few megabytes and a search
+//! is a pass over their names. Two kinds of line stand for more than one folder: a source whose
+//! kits are nearly all one sample each (a site that gives a sample a page) is one pool, its
+//! samples listed together; and a kit the manifest says has the same files as another is left
+//! out, its name found by a search for the one shown. Nothing in a library folder is ever
+//! written.
 use crate::kit_classify::{classify_label, natural_cmp};
+use crate::kit_files::{self, Kit, Listing};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-/// One kit of the index.
+/// One kit of the index (or a pool of one-sample folders).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KitEntry {
-    /// The kit's folder.
+    /// The kit's folder (a pool's: its source's folder).
     pub path: String,
     /// The library folder it was found in.
     pub root: String,
     pub source: String,
     pub name: String,
-    /// Audio files in it, when known (the manifest's count, or the count when it was opened).
+    /// Audio and SoundFont files in it, when known (from its listing, else the manifest).
     pub files: Option<u32>,
     pub license: String,
     /// Its place in `BEST.md`, from 1.
     pub best: Option<u32>,
-    /// Source and name in small letters: what a search looks through.
+    /// When its files were read: the folder's modification time then (seconds).
+    pub listed: Option<u64>,
+    /// The channels a load fills, once its files are read.
+    pub pads: Option<u8>,
+    /// Other `source/kit` names the manifest gives the same files.
+    pub aliases: Vec<String>,
+    /// A pool: the folders (inside `path`) of the one-sample kits it stands for.
+    pub members: Vec<String>,
+    /// Source, name and other names in small letters: what a search looks through.
     hay: String,
     name_low: String,
 }
 
 impl KitEntry {
     pub fn new(root: &str, path: String, source: &str, name: &str) -> Self {
-        Self {
+        let mut k = Self {
             path,
             root: root.to_string(),
             source: source.to_string(),
@@ -47,9 +70,37 @@ impl KitEntry {
             files: None,
             license: String::new(),
             best: None,
-            hay: format!("{} {}", source.to_lowercase(), name.to_lowercase()),
-            name_low: name.to_lowercase(),
+            listed: None,
+            pads: None,
+            aliases: Vec::new(),
+            members: Vec::new(),
+            hay: String::new(),
+            name_low: String::new(),
+        };
+        k.rehay();
+        k
+    }
+
+    fn rehay(&mut self) {
+        self.name_low = self.name.to_lowercase();
+        self.hay = format!("{} {}", self.source.to_lowercase(), self.name_low);
+        for a in &self.aliases {
+            self.hay.push(' ');
+            self.hay.push_str(&a.to_lowercase());
         }
+    }
+
+    pub fn is_pool(&self) -> bool {
+        !self.members.is_empty()
+    }
+
+    /// `source/kit`, as the manifest and `BEST.md` name a kit.
+    fn key(&self) -> String {
+        format!(
+            "{}/{}",
+            self.source.to_lowercase(),
+            self.name.to_lowercase()
+        )
     }
 }
 
@@ -71,7 +122,118 @@ pub struct Index {
     pub sources: Vec<(String, usize)>,
 }
 
+/// A source becomes one pool when it has at least this many kits…
+const POOL_MIN_KITS: usize = 20;
+/// …and at least this share of them (in percent) hold one file.
+const POOL_SHARE: usize = 90;
+
+/// The lines the index shows for `raw` (the kits as found): duplicates left out (their names
+/// kept for search and their rank given to the kit shown), each pool source's one-sample kits
+/// made one line.
+fn shown(raw: Vec<KitEntry>) -> Vec<KitEntry> {
+    let by_key: HashMap<String, usize> =
+        raw.iter().enumerate().map(|(i, k)| (k.key(), i)).collect();
+    // Duplicates: the first kit (in the index's order) of a set of the same files is shown.
+    let mut order: Vec<usize> = (0..raw.len()).collect();
+    order.sort_by(|a, b| {
+        let (a, b) = (&raw[*a], &raw[*b]);
+        natural_cmp(&a.source, &b.source).then_with(|| natural_cmp(&a.name, &b.name))
+    });
+    let mut hidden: HashSet<usize> = HashSet::new();
+    let mut extra: HashMap<usize, (Vec<String>, Option<u32>)> = HashMap::new();
+    for &i in &order {
+        if hidden.contains(&i) {
+            continue;
+        }
+        for a in &raw[i].aliases {
+            let Some(&j) = by_key.get(&a.to_lowercase()) else {
+                continue;
+            };
+            if j == i || hidden.contains(&j) {
+                continue;
+            }
+            hidden.insert(j);
+            let e = extra.entry(i).or_default();
+            e.0.push(format!("{} {}", raw[j].source, raw[j].name));
+            e.1 = match (e.1, raw[j].best) {
+                (Some(x), Some(y)) => Some(x.min(y)),
+                (x, y) => x.or(y),
+            };
+        }
+    }
+    let mut kits: Vec<KitEntry> = Vec::with_capacity(raw.len());
+    for (i, mut k) in raw.into_iter().enumerate() {
+        if hidden.contains(&i) {
+            continue;
+        }
+        if let Some((names, best)) = extra.remove(&i) {
+            k.aliases = names;
+            k.best = match (k.best, best) {
+                (Some(x), Some(y)) => Some(x.min(y)),
+                (x, y) => x.or(y),
+            };
+            k.rehay();
+        }
+        kits.push(k);
+    }
+    // Pools: per library folder and source.
+    let mut groups: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for (i, k) in kits.iter().enumerate() {
+        groups
+            .entry((k.root.clone(), k.source.clone()))
+            .or_default()
+            .push(i);
+    }
+    let mut pooled: HashSet<usize> = HashSet::new();
+    let mut pools: Vec<KitEntry> = Vec::new();
+    for ((root, source), list) in groups {
+        let single: Vec<usize> = list
+            .iter()
+            .copied()
+            .filter(|i| kits[*i].files == Some(1))
+            .collect();
+        if list.len() < POOL_MIN_KITS || single.len() * 100 < list.len() * POOL_SHARE {
+            continue;
+        }
+        let first = &kits[single[0]];
+        let Some(dir) = Path::new(&first.path).parent() else {
+            continue;
+        };
+        let mut pool = KitEntry::new(&root, dir.to_string_lossy().into_owned(), &source, &source);
+        pool.license = first.license.clone();
+        pool.files = Some(single.len() as u32);
+        pool.members = single.iter().map(|i| kits[*i].name.clone()).collect();
+        pool.members.sort_by(|a, b| natural_cmp(a, b));
+        pool.listed = single
+            .iter()
+            .map(|i| kits[*i].listed)
+            .collect::<Option<Vec<u64>>>()
+            .map(|v| v.into_iter().max().unwrap_or(0));
+        pool.best = single.iter().filter_map(|i| kits[*i].best).min();
+        pools.push(pool);
+        pooled.extend(single);
+    }
+    let mut out: Vec<KitEntry> = kits
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !pooled.contains(i))
+        .map(|(_, k)| k)
+        .collect();
+    out.extend(pools);
+    out
+}
+
 impl Index {
+    /// The index of `raw`, the kits as the folders were found, and the library folders.
+    pub fn of(raw: Vec<KitEntry>, roots: Vec<RootInfo>) -> Self {
+        Index {
+            kits: shown(raw),
+            roots,
+            sources: Vec::new(),
+        }
+        .finish()
+    }
+
     fn finish(mut self) -> Self {
         self.kits.sort_by(|a, b| {
             natural_cmp(&a.source, &b.source)
@@ -92,6 +254,11 @@ impl Index {
         }
         self
     }
+
+    /// The kit (or pool) whose folder is `path`.
+    pub fn find(&self, path: &str) -> Option<&KitEntry> {
+        self.kits.iter().find(|k| k.path == path)
+    }
 }
 
 /// What a search keeps.
@@ -104,14 +271,15 @@ pub struct Filter {
 }
 
 /// The kits of `index` that pass `filter`, as indices into `index.kits`: every word of the
-/// query has to be in the kit's source or name. Kits whose name starts with the query come
-/// first; with Best on, the order is the ranking's. Kits known to hold no audio are left out.
+/// query has to be in the kit's source or name (or another name of the same files). Kits
+/// whose name starts with the query come first; with Best on, the order is the ranking's. Kits
+/// known to hold no audio and no SoundFont are left out.
 pub fn search(index: &Index, filter: &Filter, favorites: &HashSet<String>) -> Vec<u32> {
     let q = filter.query.to_lowercase();
     let words: Vec<&str> = q.split_whitespace().collect();
     let first = words.first().copied().unwrap_or("");
-    let mut out: Vec<u32> = Vec::new();
-    let mut lead = 0;
+    let mut lead: Vec<u32> = Vec::new();
+    let mut rest: Vec<u32> = Vec::new();
     for (i, k) in index.kits.iter().enumerate() {
         if k.files == Some(0)
             || (filter.best && k.best.is_none())
@@ -122,16 +290,16 @@ pub fn search(index: &Index, filter: &Filter, favorites: &HashSet<String>) -> Ve
             continue;
         }
         if !first.is_empty() && k.name_low.starts_with(first) {
-            out.insert(lead, i as u32);
-            lead += 1;
+            lead.push(i as u32);
         } else {
-            out.push(i as u32);
+            rest.push(i as u32);
         }
     }
+    lead.extend(rest);
     if filter.best {
-        out.sort_by_key(|i| index.kits[*i as usize].best.unwrap_or(u32::MAX));
+        lead.sort_by_key(|i| index.kits[*i as usize].best.unwrap_or(u32::MAX));
     }
-    out
+    lead
 }
 
 // ------------------------------------------------------------------------------- settings
@@ -142,6 +310,8 @@ pub fn search(index: &Index, filter: &Filter, favorites: &HashSet<String>) -> Ve
 pub struct Settings {
     pub folders: Vec<String>,
     pub favorites: HashSet<String>,
+    /// Audition is lit: a sample or kit picked is heard.
+    pub audition: bool,
 }
 
 /// The library folders of a new installation.
@@ -157,6 +327,7 @@ impl Default for Settings {
         Self {
             folders: default_folders(),
             favorites: HashSet::new(),
+            audition: false,
         }
     }
 }
@@ -187,14 +358,17 @@ impl Settings {
         Self {
             folders,
             favorites: list("favorites").unwrap_or_default().into_iter().collect(),
+            audition: v["audition"].as_bool().unwrap_or(false),
         }
     }
 
     pub fn to_json(&self) -> String {
         let mut fav: Vec<&String> = self.favorites.iter().collect();
         fav.sort();
-        serde_json::to_string_pretty(&json!({ "folders": self.folders, "favorites": fav }))
-            .unwrap_or_default()
+        serde_json::to_string_pretty(
+            &json!({ "folders": self.folders, "favorites": fav, "audition": self.audition }),
+        )
+        .unwrap_or_default()
     }
 
     pub fn load(dir: &Path) -> Self {
@@ -211,10 +385,20 @@ impl Settings {
 
 // ------------------------------------------------------------------------------- the scan
 
-/// A manifest's rows: (source, kit) to (audio files, license).
-type Manifest = HashMap<(String, String), (Option<u32>, String)>;
+/// What the manifest says of one kit.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ManifestRow {
+    pub files: Option<u32>,
+    pub license: String,
+    /// `source/kit` names of kits with the same files.
+    pub aliases: Vec<String>,
+}
 
-/// Reads a `MANIFEST.tsv`: a header line, then a row a kit.
+/// A manifest's rows: (source, kit) to what it says.
+pub type Manifest = HashMap<(String, String), ManifestRow>;
+
+/// Reads a `MANIFEST.tsv`: a header line, then a row a kit. Columns are found by their names
+/// in the header, so a manifest with more or fewer of them is read the same way.
 pub fn parse_manifest(text: &str) -> Manifest {
     let mut lines = text.lines();
     let Some(header) = lines.next() else {
@@ -227,22 +411,44 @@ pub fn parse_manifest(text: &str) -> Manifest {
     };
     let c_audio = col("audio_or_instrument_files").or_else(|| col("file_count"));
     let c_license = col("license");
+    let c_same = col("other_names_same_content");
     let mut out = Manifest::new();
     for line in lines {
         let f: Vec<&str> = line.split('\t').collect();
         let get = |c: usize| f.get(c).map(|s| s.trim()).unwrap_or("");
-        if get(c_source).is_empty() || get(c_kit).is_empty() {
+        let (source, kit) = (get(c_source), get(c_kit));
+        if source.is_empty() || kit.is_empty() {
             continue;
         }
+        let aliases = c_same
+            .map(|c| aliases_of(get(c), source))
+            .unwrap_or_default();
         out.insert(
-            (get(c_source).to_string(), get(c_kit).to_string()),
-            (
-                c_audio.and_then(|c| get(c).parse::<u32>().ok()),
-                c_license.map(get).unwrap_or("").to_string(),
-            ),
+            (source.to_string(), kit.to_string()),
+            ManifestRow {
+                files: c_audio.and_then(|c| get(c).parse::<u32>().ok()),
+                license: c_license.map(get).unwrap_or("").to_string(),
+                aliases,
+            },
         );
     }
     out
+}
+
+/// The other names in a manifest cell: `source/kit` (or a kit of the same source), separated
+/// by `;` or `|`. A cell that says nothing (empty, `-`, `none`) names none.
+fn aliases_of(cell: &str, source: &str) -> Vec<String> {
+    cell.split([';', '|'])
+        .map(str::trim)
+        .filter(|a| !a.is_empty() && *a != "-" && !a.eq_ignore_ascii_case("none"))
+        .map(|a| {
+            if a.contains('/') {
+                a.to_string()
+            } else {
+                format!("{source}/{a}")
+            }
+        })
+        .collect()
 }
 
 /// The pieces of a `BEST.md` line that can name a kit or a source: table cells, link texts,
@@ -423,9 +629,10 @@ pub fn scan_root(root: &str) -> Option<Vec<KitEntry>> {
         }
         for sub in subs {
             let mut k = KitEntry::new(root, join(root, &format!("{top}/{sub}")), &top, &sub);
-            if let Some((files, license)) = manifest.get(&(top.clone(), sub)) {
-                k.files = *files;
-                k.license = license.clone();
+            if let Some(row) = manifest.get(&(top.clone(), sub)) {
+                k.files = row.files;
+                k.license = row.license.clone();
+                k.aliases = row.aliases.clone();
             }
             kits.push(k);
         }
@@ -444,14 +651,15 @@ pub fn scan_root(root: &str) -> Option<Vec<KitEntry>> {
 
 // ------------------------------------------------------------------------------- the cache
 
-/// The cache: for each library folder ever scanned, its kits. A folder that is not there now
-/// keeps its lines, so the list is back at once when its drive is.
+/// The cache: for each library folder ever scanned, its kits as found (before pools and
+/// duplicates are made one line). A folder that is not there now keeps its lines, so the list
+/// is back at once when its drive is. Each kit's files are kept beside it, in `kits/`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cache {
     pub roots: HashMap<String, Vec<KitEntry>>,
 }
 
-const CACHE_VERSION: u64 = 1;
+const CACHE_VERSION: u64 = 2;
 
 impl Cache {
     pub fn to_json(&self) -> String {
@@ -466,7 +674,10 @@ impl Cache {
                         k.name,
                         k.files,
                         k.license,
-                        k.best
+                        k.best,
+                        k.listed,
+                        k.pads,
+                        k.aliases,
                     ])
                 })
                 .collect();
@@ -502,6 +713,17 @@ impl Cache {
                             k.files = r[3].as_u64().map(|n| n as u32);
                             k.license = r[4].as_str().unwrap_or("").to_string();
                             k.best = r[5].as_u64().map(|n| n as u32);
+                            k.listed = r[6].as_u64();
+                            k.pads = r[7].as_u64().map(|n| n.min(255) as u8);
+                            k.aliases = r[8]
+                                .as_array()
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|s| s.as_str().map(str::to_string))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            k.rehay();
                             Some(k)
                         })
                         .collect()
@@ -520,73 +742,216 @@ impl Cache {
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
-        let tmp = dir.join("index.json.tmp");
+        let tmp = dir.join(format!("index.json.{}.tmp", std::process::id()));
         std::fs::write(&tmp, self.to_json())?;
         std::fs::rename(tmp, dir.join("index.json"))
     }
 
     /// The index of `folders` from the cache alone: the folders that are there now.
     pub fn index(&self, folders: &[String]) -> Index {
-        let mut index = Index::default();
+        let mut raw = Vec::new();
+        let mut roots = Vec::new();
         for f in folders {
             let present = Path::new(f).is_dir();
             if present {
                 if let Some(kits) = self.roots.get(f) {
-                    index.kits.extend(kits.iter().cloned());
+                    raw.extend(kits.iter().cloned());
                 }
             }
-            index.roots.push(RootInfo {
+            roots.push(RootInfo {
                 path: f.clone(),
                 present,
                 kits: 0,
             });
         }
-        index.finish()
+        Index::of(raw, roots)
     }
 }
 
-/// Scans `folders`. A count of audio files found by opening a kit (it is in `cache`) is kept
-/// where the manifest has none. Returns the index and the cache to write.
+// ------------------------------------------------------------------------------- listings
+
+/// FNV-1a: a name for a kit's listing file that stays the same from run to run.
+fn fnv(text: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+/// The file the listing of the kit in folder `kit` is kept in.
+pub fn listing_file(dir: &Path, kit: &str) -> PathBuf {
+    dir.join("kits").join(format!("{:016x}.txt", fnv(kit)))
+}
+
+/// The kept listing of the kit in folder `kit`, when there is one for that folder.
+pub fn load_listing(dir: &Path, kit: &str) -> Option<Listing> {
+    let text = std::fs::read_to_string(listing_file(dir, kit)).ok()?;
+    let (first, rest) = text.split_once('\n')?;
+    // The first line names the folder: two folders may share a file name.
+    if first != kit {
+        return None;
+    }
+    Listing::from_text(rest)
+}
+
+/// Keeps the listing of the kit in folder `kit`.
+pub fn save_listing(dir: &Path, kit: &str, listing: &Listing) -> std::io::Result<()> {
+    let file = listing_file(dir, kit);
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = file.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&tmp, format!("{kit}\n{}", listing.to_text()))?;
+    std::fs::rename(tmp, file)
+}
+
+/// The folder's modification time, in seconds.
+fn folder_time(path: &str) -> Option<u64> {
+    let t = std::fs::metadata(path).ok()?.modified().ok()?;
+    Some(
+        t.duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs()),
+    )
+}
+
+/// What the files of a kit tell the index: how many there are and how many channels a load
+/// fills.
+fn counts(kit: &Kit) -> (u32, u8) {
+    (
+        kit.samples.len() as u32,
+        kit.pads.iter().flatten().count().min(255) as u8,
+    )
+}
+
+/// A kit read for the browser, with the listings read from its disk on the way (to be kept).
+pub struct Opened {
+    pub kit: Kit,
+    /// (kit folder, its folder's time, listing).
+    pub fresh: Vec<(String, Option<u64>, Listing)>,
+}
+
+/// Makes the kit `entry` stands for: from the kept listings in `dir` where there are any,
+/// from its folder otherwise; a pool from its members'. Given up when `stop` is set.
+pub fn open(dir: Option<&Path>, entry: &KitEntry, stop: &AtomicBool) -> Opened {
+    let mut fresh = Vec::new();
+    let mut one = |path: &str| -> Listing {
+        if let Some(l) = dir.and_then(|d| load_listing(d, path)) {
+            return l;
+        }
+        let time = folder_time(path);
+        let l = kit_files::list_kit_until(Path::new(path), stop);
+        if !stop.load(Ordering::Relaxed) {
+            fresh.push((path.to_string(), time, l.clone()));
+        }
+        l
+    };
+    let root = Path::new(&entry.path);
+    let listing = if entry.is_pool() {
+        let parts = entry
+            .members
+            .iter()
+            .map(|m| {
+                let path = join(&entry.path, m);
+                (m.clone(), one(&path))
+            })
+            .collect();
+        Listing::merged(parts)
+    } else {
+        one(&entry.path)
+    };
+    Opened {
+        kit: listing.kit(root),
+        fresh,
+    }
+}
+
+// ------------------------------------------------------------------------------- the worker
+
+/// Scans `folders`: the kits as found, with what the cache knew of them (their files read,
+/// their counts). Returns the index and the cache to write.
 pub fn scan(folders: &[String], mut cache: Cache) -> (Index, Cache) {
-    let mut index = Index::default();
+    let mut raw = Vec::new();
+    let mut roots = Vec::new();
     for f in folders {
         let found = scan_root(f);
         if let Some(mut kits) = found.clone() {
             if let Some(old) = cache.roots.get(f) {
-                let counts: HashMap<&str, u32> = old
-                    .iter()
-                    .filter_map(|k| Some((k.path.as_str(), k.files?)))
-                    .collect();
-                for k in kits.iter_mut().filter(|k| k.files.is_none()) {
-                    k.files = counts.get(k.path.as_str()).copied();
+                let known: HashMap<&str, &KitEntry> =
+                    old.iter().map(|k| (k.path.as_str(), k)).collect();
+                for k in kits.iter_mut() {
+                    if let Some(o) = known.get(k.path.as_str()) {
+                        if o.listed.is_some() {
+                            k.files = o.files;
+                            k.pads = o.pads;
+                            k.listed = o.listed;
+                        } else if k.files.is_none() {
+                            k.files = o.files;
+                        }
+                    }
                 }
             }
-            index.kits.extend(kits.iter().cloned());
+            raw.extend(kits.iter().cloned());
             cache.roots.insert(f.clone(), kits);
         }
-        index.roots.push(RootInfo {
+        roots.push(RootInfo {
             path: f.clone(),
             present: found.is_some(),
             kits: 0,
         });
     }
-    (index.finish(), cache)
+    (Index::of(raw, roots), cache)
 }
-
-// ------------------------------------------------------------------------------- the worker
 
 /// What the background scan sends.
 pub enum ScanMsg {
     /// The index from the cache (the first thing sent).
     Cached(Index),
-    /// The index from the folders as they are, and how long the scan took.
-    Scanned(Index, std::time::Duration),
+    /// The index from the folders as they are, and how long reading them took. The kits'
+    /// files are read after it.
+    Scanned(Index, Duration),
+    /// Kits whose files have been read so far, of those to read, and the index with them.
+    Listing {
+        done: usize,
+        total: usize,
+        index: Index,
+    },
+    /// Every kit's files are read: the index, how many kits were read and how long it took.
+    Listed(Index, usize, Duration),
 }
 
-/// Starts a scan of `folders` on its own thread: the cached index first, then the scanned one
-/// (which is also written to the cache in `dir`).
-pub fn spawn_scan(folders: Vec<String>, dir: Option<PathBuf>) -> Receiver<ScanMsg> {
+/// Threads that read kits' files.
+const LIST_THREADS: usize = 4;
+/// How often the scan sends the index while it reads kits.
+const LISTING_EVERY: Duration = Duration::from_millis(400);
+
+/// A scan running on its own threads.
+pub struct ScanJob {
+    pub rx: Receiver<ScanMsg>,
+    stop: Arc<AtomicBool>,
+}
+
+impl ScanJob {
+    /// Stops it (the threads end at the next kit).
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for ScanJob {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Starts a scan of `folders` on its own threads: the cached index first, then the scanned
+/// one, then the kits' files are read (all of them when `full`, else the kits never read and
+/// those whose folder has changed). The cache in `dir` is written as it goes.
+pub fn spawn_scan(folders: Vec<String>, dir: Option<PathBuf>, full: bool) -> ScanJob {
     let (tx, rx) = mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
     let spawned = std::thread::Builder::new()
         .name("kit-library-scan".into())
         .spawn(move || {
@@ -594,7 +959,7 @@ pub fn spawn_scan(folders: Vec<String>, dir: Option<PathBuf>) -> Receiver<ScanMs
             if tx.send(ScanMsg::Cached(cache.index(&folders))).is_err() {
                 return;
             }
-            let started = std::time::Instant::now();
+            let started = Instant::now();
             let (index, cache) = scan(&folders, cache);
             let took = started.elapsed();
             if let Some(dir) = &dir {
@@ -602,17 +967,134 @@ pub fn spawn_scan(folders: Vec<String>, dir: Option<PathBuf>) -> Receiver<ScanMs
                     tracing::warn!("could not write the kit index: {e}");
                 }
             }
-            let _ = tx.send(ScanMsg::Scanned(index, took));
+            if tx.send(ScanMsg::Scanned(index, took)).is_err() {
+                return;
+            }
+            list_all(&folders, dir.as_deref(), cache, full, &flag, &tx);
         });
     if let Err(e) = spawned {
         tracing::warn!("could not start the kit scan: {e}");
     }
-    rx
+    ScanJob { rx, stop }
 }
 
-/// Notes in the cache in `dir` that the kit at `path` (in library folder `root`) holds
-/// `files` audio files. Background thread.
-pub fn note_count(dir: &Path, root: &str, path: &str, files: u32) {
+/// Reads the files of the kits of `cache` that need it, on [`LIST_THREADS`] threads, keeping
+/// each listing and sending the index as it goes.
+fn list_all(
+    folders: &[String],
+    dir: Option<&Path>,
+    mut cache: Cache,
+    full: bool,
+    stop: &AtomicBool,
+    tx: &mpsc::Sender<ScanMsg>,
+) {
+    let started = Instant::now();
+    // The kits to look at, the never-read ones and the ranked ones first.
+    let mut todo: Vec<(String, String, Option<u64>)> = folders
+        .iter()
+        .filter(|f| Path::new(f.as_str()).is_dir())
+        .filter_map(|f| cache.roots.get(f))
+        .flatten()
+        .map(|k| (k.root.clone(), k.path.clone(), k.listed))
+        .collect();
+    todo.sort_by_key(|t| t.2.is_some());
+    let total = todo.len();
+    let queue = Mutex::new(todo.into_iter());
+    let (res_tx, res_rx) = mpsc::channel::<(String, String, Option<u64>, Option<(u32, u8)>)>();
+    let mut read = 0usize;
+    std::thread::scope(|scope| {
+        for n in 0..LIST_THREADS {
+            let (queue, res_tx) = (&queue, res_tx.clone());
+            let spawned = std::thread::Builder::new()
+                .name(format!("kit-list-{n}"))
+                .spawn_scoped(scope, move || loop {
+                    if stop.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    let item = queue.lock().ok().and_then(|mut q| q.next());
+                    let Some((root, path, listed)) = item else {
+                        return;
+                    };
+                    let time = folder_time(&path);
+                    let kept = !full
+                        && listed.is_some()
+                        && listed == time
+                        && dir.is_some_and(|d| listing_file(d, &path).is_file());
+                    if kept {
+                        let _ = res_tx.send((root, path, time, None));
+                        continue;
+                    }
+                    let listing = kit_files::list_kit_until(Path::new(&path), stop);
+                    if stop.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    if let Some(d) = dir {
+                        if let Err(e) = save_listing(d, &path, &listing) {
+                            tracing::warn!("could not keep the files of {path}: {e}");
+                        }
+                    }
+                    let c = counts(&listing.kit(Path::new(&path)));
+                    let _ = res_tx.send((root, path, time, Some(c)));
+                });
+            if let Err(e) = spawned {
+                tracing::warn!("could not start a kit reader: {e}");
+            }
+        }
+        drop(res_tx);
+        let mut done = 0usize;
+        let mut last = Instant::now();
+        let mut slots: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        for (root, kits) in &cache.roots {
+            slots.insert(
+                root.clone(),
+                kits.iter()
+                    .enumerate()
+                    .map(|(i, k)| (k.path.clone(), i))
+                    .collect(),
+            );
+        }
+        for (root, path, time, c) in res_rx {
+            done += 1;
+            if let Some((files, pads)) = c {
+                read += 1;
+                let at = slots.get(&root).and_then(|m| m.get(&path)).copied();
+                if let (Some(i), Some(kits)) = (at, cache.roots.get_mut(&root)) {
+                    kits[i].files = Some(files);
+                    kits[i].pads = Some(pads);
+                    kits[i].listed = Some(time.unwrap_or(0));
+                }
+            }
+            if last.elapsed() >= LISTING_EVERY {
+                last = Instant::now();
+                if let Some(d) = dir {
+                    let _ = cache.save(d);
+                }
+                let _ = tx.send(ScanMsg::Listing {
+                    done,
+                    total,
+                    index: cache.index(folders),
+                });
+            }
+        }
+    });
+    if stop.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(d) = dir {
+        if let Err(e) = cache.save(d) {
+            tracing::warn!("could not write the kit index: {e}");
+        }
+    }
+    let _ = tx.send(ScanMsg::Listed(
+        cache.index(folders),
+        read,
+        started.elapsed(),
+    ));
+}
+
+/// Notes in the cache in `dir` what reading the kit at `path` (in library folder `root`)
+/// found. Background thread.
+pub fn note_listed(dir: &Path, root: &str, path: &str, time: Option<u64>, files: u32, pads: u8) {
     let mut cache = Cache::load(dir);
     let Some(k) = cache
         .roots
@@ -621,12 +1103,23 @@ pub fn note_count(dir: &Path, root: &str, path: &str, files: u32) {
     else {
         return;
     };
-    if k.files == Some(files) {
-        return;
-    }
     k.files = Some(files);
+    k.pads = Some(pads);
+    k.listed = Some(time.unwrap_or(0));
     if let Err(e) = cache.save(dir) {
         tracing::warn!("could not write the kit index: {e}");
+    }
+}
+
+/// [`note_listed`] for what [`open`] read: keeps the listings and their counts.
+pub fn keep(dir: &Path, root: &str, fresh: &[(String, Option<u64>, Listing)]) {
+    for (path, time, listing) in fresh {
+        if let Err(e) = save_listing(dir, path, listing) {
+            tracing::warn!("could not keep the files of {path}: {e}");
+            continue;
+        }
+        let (files, pads) = counts(&listing.kit(Path::new(path)));
+        note_listed(dir, root, path, *time, files, pads);
     }
 }
 
@@ -943,32 +1436,345 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    #[test]
-    fn a_count_found_by_opening_a_kit_is_kept_through_a_scan() {
-        let lib = library("count");
-        let root = lib.to_string_lossy().into_owned();
-        let data = temp("count-data");
-        let folders = vec![root.clone()];
-        let rx = spawn_scan(folders.clone(), Some(data.clone()));
+    /// Runs a scan to its end: the index after the folders are read, the one after every
+    /// kit's files are, and how many kits were read.
+    fn scan_through(folders: Vec<String>, data: &Path, full: bool) -> (Index, Index, usize) {
+        let job = spawn_scan(folders, Some(data.to_path_buf()), full);
         let mut scanned = None;
-        while let Ok(m) = rx.recv() {
-            if let ScanMsg::Scanned(i, _) = m {
-                scanned = Some(i);
+        loop {
+            match job.rx.recv().unwrap() {
+                ScanMsg::Scanned(i, _) => scanned = Some(i),
+                ScanMsg::Listed(i, read, _) => return (scanned.unwrap(), i, read),
+                _ => {}
             }
         }
-        let index = scanned.unwrap();
+    }
+
+    #[test]
+    fn every_kits_files_are_read_and_kept_then_only_changed_ones_again() {
+        let lib = library("listing");
+        let root = lib.to_string_lossy().into_owned();
+        let data = temp("listing-data");
+        let (first, listed, read) = scan_through(vec![root.clone()], &data, false);
         let path = format!("{root}/MusicRadar/909-samples");
+        assert_eq!(first.find(&path).unwrap().files, None, "not read yet");
+        assert_eq!(read, 4);
+        let k = listed.find(&path).unwrap();
+        assert_eq!((k.files, k.pads), (Some(1), Some(1)));
+        assert!(k.listed.is_some());
+        // The manifest's count gives way to what is there.
         assert_eq!(
-            index.kits.iter().find(|k| k.path == path).unwrap().files,
-            None
-        );
-        note_count(&data, &root, &path, 1);
-        let (index, _) = scan(&folders, Cache::load(&data));
-        assert_eq!(
-            index.kits.iter().find(|k| k.path == path).unwrap().files,
+            listed
+                .find(&format!("{root}/kb6/Akai MPC2000"))
+                .unwrap()
+                .files,
             Some(1)
         );
+        // Nothing changed: nothing is read again, and the counts come from the cache at once.
+        let (first, _, read) = scan_through(vec![root.clone()], &data, false);
+        assert_eq!(read, 0);
+        assert_eq!(first.find(&path).unwrap().files, Some(1));
+        // A full scan reads them all.
+        let (_, _, read) = scan_through(vec![root.clone()], &data, true);
+        assert_eq!(read, 4);
+        // A kit is made from its kept listing, with its folder gone.
+        let entry = listed.find(&path).unwrap().clone();
+        std::fs::rename(&lib, lib.with_extension("away")).unwrap();
+        let opened = open(Some(&data), &entry, &AtomicBool::new(false));
+        assert!(opened.fresh.is_empty(), "nothing read from the disk");
+        assert_eq!(opened.kit.samples[0].rel, "Kick.wav");
+        assert_eq!(opened.kit.pads, [Some(0)]);
+        // Without a kept listing the folder is read (and there is none now).
+        let opened = open(None, &entry, &AtomicBool::new(false));
+        assert!(opened.kit.samples.is_empty());
+        std::fs::rename(lib.with_extension("away"), &lib).unwrap();
+        // A changed folder is read again.
+        touch(&lib, "MusicRadar/909-samples/Snare.wav", "");
+        let old = std::time::SystemTime::now() - Duration::from_secs(3600);
+        let cache = Cache::load(&data);
+        let mut c2 = cache.clone();
+        for k in c2.roots.get_mut(&root).unwrap() {
+            if k.path == path {
+                k.listed = Some(old.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+            }
+        }
+        c2.save(&data).unwrap();
+        let (_, listed, read) = scan_through(vec![root.clone()], &data, false);
+        assert_eq!(read, 1);
+        assert_eq!(listed.find(&path).unwrap().files, Some(2));
         let _ = std::fs::remove_dir_all(lib);
         let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn listings_are_kept_by_folder() {
+        let data = temp("keep");
+        let l = Listing {
+            audio: vec!["a/kick.wav".into()],
+            ..Listing::empty()
+        };
+        save_listing(&data, "/lib/s/k", &l).unwrap();
+        assert_eq!(load_listing(&data, "/lib/s/k"), Some(l));
+        assert_eq!(load_listing(&data, "/lib/s/other"), None);
+        // Another folder whose file name is the same is not taken for this one.
+        let file = listing_file(&data, "/lib/s/k");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, text.replacen("/lib/s/k", "/lib/s/z", 1)).unwrap();
+        assert_eq!(load_listing(&data, "/lib/s/k"), None);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_source_of_one_sample_folders_is_one_pool() {
+        let dir = temp("pool");
+        for i in 0..30 {
+            let name = ["Kick", "Snare", "Closed Hat"][i % 3];
+            touch(&dir, &format!("FreeWave/{name} {i}/{name} {i}.wav"), "");
+        }
+        // One folder with more than one file stays a kit of its own.
+        touch(&dir, "FreeWave/Big Kit/kick.wav", "");
+        touch(&dir, "FreeWave/Big Kit/snare.wav", "");
+        touch(&dir, "Maker/Kit A/kick.wav", "");
+        // Listed by the manifest (without counts): folders named for drum sounds would make
+        // the source one kit otherwise.
+        let mut manifest = String::from("source\tkit\nMaker\tKit A\nFreeWave\tBig Kit\n");
+        for i in 0..30 {
+            let name = ["Kick", "Snare", "Closed Hat"][i % 3];
+            manifest.push_str(&format!("FreeWave\t{name} {i}\n"));
+        }
+        touch(&dir, "MANIFEST.tsv", &manifest);
+        let root = dir.to_string_lossy().into_owned();
+        let data = temp("pool-data");
+        let (first, listed, _) = scan_through(vec![root.clone()], &data, false);
+        assert_eq!(first.kits.len(), 32, "counts unknown: no pool yet");
+        let names: Vec<(&str, &str)> = listed
+            .kits
+            .iter()
+            .map(|k| (k.source.as_str(), k.name.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("FreeWave", "Big Kit"),
+                ("FreeWave", "FreeWave"),
+                ("Maker", "Kit A")
+            ]
+        );
+        let pool = listed.find(&format!("{root}/FreeWave")).unwrap();
+        assert!(pool.is_pool());
+        assert_eq!(pool.files, Some(30));
+        assert_eq!(pool.members.len(), 30);
+        assert_eq!(
+            listed.sources,
+            [("FreeWave".to_string(), 2), ("Maker".to_string(), 1)]
+        );
+        let kit = open(Some(&data), pool, &AtomicBool::new(false)).kit;
+        assert_eq!(kit.samples.len(), 30);
+        assert_eq!(kit.samples[0].rel, "Closed Hat 2/Closed Hat 2.wav");
+        assert!(kit.path_of(0).is_file());
+        assert_eq!(kit.pads.len(), crate::kit_classify::KIT_PADS);
+        // The pool is in the cached index the next time.
+        assert!(Cache::load(&data)
+            .index(&[root])
+            .kits
+            .iter()
+            .any(|k| k.is_pool()));
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_manifest_of_eight_or_nine_columns_and_kits_with_the_same_files() {
+        let eight =
+            "source\tkit\turl\tlicense\tfile_count\tbytes\tdate\taudio_or_instrument_files\n\
+                     A\tOne\thttps://x\tCC0\t3\t9\t2026-11-24\t2\n";
+        let m = parse_manifest(eight);
+        assert_eq!(m[&("A".to_string(), "One".to_string())].files, Some(2));
+        assert!(m[&("A".to_string(), "One".to_string())].aliases.is_empty());
+        let nine = "source\tkit\turl\tlicense\tfile_count\tbytes\tdate\taudio_or_instrument_files\tother_names_same_content\n\
+                    A\tOne\thttps://x\tCC0\t3\t9\t2026-11-24\t2\tB/Uno; Two\n\
+                    B\tUno\thttps://y\tCC0\t3\t9\t2026-11-24\t2\tA/One\n\
+                    A\tTwo\thttps://y\tCC0\t3\t9\t2026-11-24\t2\t\n\
+                    A\tThree\thttps://y\tCC0\t3\t9\t2026-11-24\t2\n";
+        let m = parse_manifest(nine);
+        assert_eq!(
+            m[&("A".to_string(), "One".to_string())].aliases,
+            ["B/Uno", "A/Two"]
+        );
+        assert!(
+            m[&("A".to_string(), "Three".to_string())]
+                .aliases
+                .is_empty(),
+            "a short row"
+        );
+        // Shown once: the first of them, found by the others' names, ranked by the best rank.
+        let mut raw = Vec::new();
+        for (s, n) in [("A", "One"), ("B", "Uno"), ("A", "Two"), ("A", "Three")] {
+            let mut k = KitEntry::new("/lib", format!("/lib/{s}/{n}"), s, n);
+            k.aliases = m[&(s.to_string(), n.to_string())].aliases.clone();
+            raw.push(k);
+        }
+        raw[1].best = Some(4);
+        let index = Index::of(raw, Vec::new());
+        let names: Vec<&str> = index.kits.iter().map(|k| k.name.as_str()).collect();
+        assert_eq!(names, ["One", "Three"]);
+        assert_eq!(index.kits[0].best, Some(4));
+        let none = HashSet::new();
+        let q = Filter {
+            query: "uno".into(),
+            ..Filter::default()
+        };
+        assert_eq!(search(&index, &q, &none), [0]);
+    }
+
+    #[test]
+    fn best_md_as_the_library_writes_it() {
+        let kits: Vec<(String, String)> = [
+            ("Hyperreal-Machines", "Roland TR-808"),
+            ("Goldbaby", "SP1200 Free"),
+            ("sfzinstruments-GitHub", "DrumGizmo.DRSKit"),
+        ]
+        .iter()
+        .map(|(s, n)| (s.to_string(), n.to_string()))
+        .collect();
+        let text = "# BEST\n\nHighest-quality sets on this drive, best first within each group.\n\n\
+            Hardware drum machines\n\n\
+            `Hyperreal-Machines/Roland TR-808` - Original TR-808 one-shots across tone, decay and snappy settings\n\
+            `Goldbaby/SP1200 Free` - Sounds sampled through a real E-mu SP-1200 by Goldbaby\n\
+            `Nobody/Not Here` - gone\n\n\
+            Acoustic multisampled kits\n\n\
+            `sfzinstruments-GitHub/DrumGizmo.DRSKit` - Multi-mic acoustic kit, 6,061 samples, CC-BY 4.0\n";
+        let got = parse_best(text, &kits);
+        assert_eq!(got.get(&0), Some(&1));
+        assert_eq!(got.get(&1), Some(&2));
+        assert_eq!(got.get(&2), Some(&3));
+    }
+
+    /// How the classifier does on a real library: every listing kept in
+    /// `$PROWAVE_KIT_LISTINGS` (a `kit-library/kits` folder), the share of kits whose first
+    /// channel is a kick, second a snare (or clap) and fourth a hat, the kits that miss, and
+    /// the commonest words of the names classed "other". Written to
+    /// `$PROWAVE_KIT_SURVEY_OUT` as JSON.
+    #[test]
+    #[ignore = "needs a real library's listings"]
+    fn classifier_survey() {
+        use crate::kit_classify::{words, DrumClass::*};
+        let dir = std::env::var("PROWAVE_KIT_LISTINGS").expect("PROWAVE_KIT_LISTINGS");
+        let mut kits = 0usize;
+        let mut drum_kits = 0usize;
+        let mut full = 0usize;
+        let (mut no_kick, mut no_snare, mut no_hat) = (0usize, 0usize, 0usize);
+        let mut other_words: HashMap<String, usize> = HashMap::new();
+        let mut misses: Vec<Value> = Vec::new();
+        let mut picks: Vec<Value> = Vec::new();
+        let mut files = 0usize;
+        let mut other_files = 0usize;
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Some((folder, rest)) = text.split_once('\n') else {
+                continue;
+            };
+            let Some(listing) = Listing::from_text(rest) else {
+                continue;
+            };
+            let kit = listing.kit(Path::new(folder));
+            kits += 1;
+            let audio: Vec<&crate::kit_files::KitSample> = kit
+                .samples
+                .iter()
+                .filter(|s| s.class != SoundFont)
+                .collect();
+            files += audio.len();
+            for s in &audio {
+                if s.class == Other {
+                    other_files += 1;
+                    let mut seen = HashSet::new();
+                    for w in words(&s.rel) {
+                        if w.chars().all(|c| c.is_ascii_digit()) || !seen.insert(w.clone()) {
+                            continue;
+                        }
+                        *other_words.entry(w).or_default() += 1;
+                    }
+                }
+            }
+            // A kit of drum one-shots: three or more audio files, not all loops.
+            let shots = audio.iter().filter(|s| s.class != Loop).count();
+            if shots < 3 {
+                continue;
+            }
+            drum_kits += 1;
+            let class_at = |k: usize| {
+                kit.pads
+                    .get(k)
+                    .copied()
+                    .flatten()
+                    .map(|i| kit.samples[i].class)
+            };
+            let kick = class_at(0) == Some(Kick);
+            let snare = matches!(class_at(1), Some(Snare | Clap));
+            let hat = matches!(class_at(3), Some(ClosedHat | OpenHat));
+            no_kick += usize::from(!kick);
+            no_snare += usize::from(!snare);
+            no_hat += usize::from(!hat);
+            let name_at = |k: usize| {
+                kit.pads
+                    .get(k)
+                    .copied()
+                    .flatten()
+                    .map(|i| kit.samples[i].rel.clone())
+            };
+            if kick && snare && hat {
+                full += 1;
+                if picks.len() < 400 {
+                    picks.push(json!([folder, name_at(0), name_at(1), name_at(3)]));
+                }
+            } else {
+                let others: Vec<&str> = audio
+                    .iter()
+                    .filter(|s| s.class == Other)
+                    .take(12)
+                    .map(|s| s.rel.as_str())
+                    .collect();
+                misses.push(json!({
+                    "kit": folder,
+                    "shots": shots,
+                    "kick": kick, "snare": snare, "hat": hat,
+                    "classes": kit.classes.iter().map(|(c, n)| format!("{}:{n}", c.id())).collect::<Vec<_>>(),
+                    "other_names": others,
+                }));
+            }
+        }
+        let mut top: Vec<(String, usize)> = other_words.into_iter().collect();
+        top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        top.truncate(150);
+        let pct = |n: usize| (n as f64 * 1000.0 / drum_kits.max(1) as f64).round() / 10.0;
+        let report = json!({
+            "kits": kits,
+            "drum_kits": drum_kits,
+            "kick_snare_hat": full,
+            "kick_snare_hat_pct": pct(full),
+            "no_kick": no_kick, "no_snare": no_snare, "no_hat": no_hat,
+            "audio_files": files,
+            "other_files": other_files,
+            "other_pct": (other_files as f64 * 1000.0 / files.max(1) as f64).round() / 10.0,
+            "other_words": top,
+            "misses": misses,
+            "picks": picks,
+        });
+        eprintln!(
+            "kits {kits}, drum kits {drum_kits}, kick+snare+hat {full} ({}%), no kick {no_kick}, no snare {no_snare}, no hat {no_hat}, other files {other_files} of {files}",
+            pct(full)
+        );
+        if let Some(out) = std::env::var_os("PROWAVE_KIT_SURVEY_OUT") {
+            std::fs::write(out, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+        }
     }
 }

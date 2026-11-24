@@ -28,10 +28,12 @@ pub enum DrumClass {
     /// A loop or a break: browsed, never put on a channel by a kit load.
     Loop,
     Other,
+    /// A SoundFont file (`.sf2`): listed with a kit's samples, never put on a rack channel.
+    SoundFont,
 }
 
 impl DrumClass {
-    pub const ALL: [DrumClass; 17] = [
+    pub const ALL: [DrumClass; 18] = [
         DrumClass::Kick,
         DrumClass::Snare,
         DrumClass::Clap,
@@ -49,6 +51,7 @@ impl DrumClass {
         DrumClass::Fx,
         DrumClass::Loop,
         DrumClass::Other,
+        DrumClass::SoundFont,
     ];
 
     /// The short name printed on tags and filter keys.
@@ -71,7 +74,13 @@ impl DrumClass {
             DrumClass::Fx => "FX",
             DrumClass::Loop => "LOOP",
             DrumClass::Other => "OTHER",
+            DrumClass::SoundFont => "SF2",
         }
+    }
+
+    /// The class a control-interface name means.
+    pub fn from_id(id: &str) -> Option<DrumClass> {
+        DrumClass::ALL.into_iter().find(|c| c.id() == id)
     }
 
     /// The name the control interface uses.
@@ -94,6 +103,7 @@ impl DrumClass {
             DrumClass::Fx => "fx",
             DrumClass::Loop => "loop",
             DrumClass::Other => "other",
+            DrumClass::SoundFont => "sf2",
         }
     }
 }
@@ -145,7 +155,7 @@ fn is_loop(w: &[String]) -> bool {
     any(
         w,
         &[
-            "loop", "loops", "bpm", "break", "breaks", "groove", "grooves",
+            "loop", "loops", "bpm", "break", "breaks", "groove", "grooves", "fill", "fills",
         ],
     ) || w
         .iter()
@@ -158,9 +168,16 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
     // Hats first: "open" and "closed" belong to them.
     let hat = any(
         w,
-        &["hat", "hats", "hh", "hhat", "chh", "ohh", "hhc", "hho"],
-    ) || holds(w, &["hihat", "hi-hat", "highhat"])
-        || pair(w, &["hi", "high"], &["hat", "hats"])
+        &[
+            "hat", "hats", "hh", "hhat", "chh", "ohh", "hhc", "hho", "cht", "oht",
+        ],
+    ) || holds(
+        w,
+        &[
+            "hihat", "hi-hat", "highhat", "hithat", "clhat", "ophat", "opnhat", "chhat", "clhh",
+            "ophh",
+        ],
+    ) || pair(w, &["hi", "high"], &["hat", "hats"])
         || w.iter().any(|t| {
             (t.ends_with("hat") || t.ends_with("hats"))
                 && ["open", "closed", "close", "cl", "op", "o", "c", "pedal"]
@@ -169,8 +186,14 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
         });
     let hat_code = any(w, &["ch", "oh"]) && !holds(w, &["tom", "conga", "bongo"]);
     if hat || hat_code {
-        let open = any(w, &["open", "opn", "op", "ohh", "oh", "hho", "o"])
-            || w.iter().any(|t| t.starts_with("open"));
+        let open = any(w, &["open", "opn", "op", "ohh", "oh", "hho", "o", "oht"])
+            || w.iter().any(|t| {
+                t.starts_with("open")
+                    || t.ends_with("ophat")
+                    || t.ends_with("opnhat")
+                    || t.ends_with("ophh")
+                    || t == "ohat"
+            });
         let closed = any(
             w,
             &[
@@ -179,7 +202,7 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
         );
         return Some(if open && !closed { OpenHat } else { ClosedHat });
     }
-    if holds(w, &["clap"]) || any(w, &["clp", "cp"]) {
+    if holds(w, &["clap", "snap"]) || any(w, &["clp", "cp"]) {
         return Some(Clap);
     }
     if holds(w, &["rimshot", "sidestick", "xstick"])
@@ -191,11 +214,30 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
     if holds(w, &["snare"]) || any(w, &["snr", "sn", "sd", "snar", "snares", "sdrum"]) {
         return Some(Snare);
     }
-    if holds(w, &["kick", "bassdrum", "bdrum"])
-        || any(w, &["kik", "kck", "bd", "kd", "kicks", "bds"])
+    if holds(w, &["kick", "bassdrum", "bdrum", "kik"])
+        || any(
+            w,
+            &["kik", "kck", "bd", "kd", "kicks", "bds", "kdrum", "kikz"],
+        )
         || pair(w, &["bass", "base"], &["drum", "drums"])
     {
         return Some(Kick);
+    }
+    // "hitom", "lotom", "midtom": a tom run together with where it sits.
+    let joined_tom = w.iter().find_map(|t| {
+        [
+            "hitom", "htom", "lotom", "ltom", "midtom", "mtom", "flrtom", "ftom",
+        ]
+        .iter()
+        .find(|j| t.ends_with(*j) || t.ends_with(&format!("{j}s")))
+        .map(|j| j.chars().next().unwrap_or('m'))
+    });
+    if let Some(c) = joined_tom {
+        return Some(match c {
+            'h' => TomHigh,
+            'l' | 'f' => TomLow,
+            _ => TomMid,
+        });
     }
     let tom_word = w
         .iter()
@@ -217,7 +259,9 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
     if any(w, &["ride", "rides", "rd"]) {
         return Some(Ride);
     }
-    if holds(w, &["crash", "cymbal", "splash", "china"]) || any(w, &["cym", "cymb", "cy", "cr"]) {
+    if holds(w, &["crash", "cymbal", "cymbl", "splash", "china"])
+        || any(w, &["cym", "cymb", "cy", "cr"])
+    {
         return Some(Crash);
     }
     if holds(w, &["shaker", "maraca", "tambourine", "cabasa"]) || any(w, &["shk", "tamb", "ma"]) {
@@ -238,6 +282,7 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
             "agogo",
             "tabla",
             "djembe",
+            "cajon",
             "udu",
             "cuica",
             "whistle",
@@ -262,8 +307,9 @@ fn class_of(w: &[String]) -> Option<DrumClass> {
     if any(
         w,
         &[
-            "fx", "sfx", "noise", "riser", "sweep", "impact", "vox", "vocal", "chant", "zap",
-            "laser", "scratch", "reverse", "rev", "stab", "hit", "hits",
+            "fx", "sfx", "noise", "riser", "risers", "sweep", "sweeps", "impact", "impacts", "vox",
+            "vocal", "vocals", "chant", "chants", "adlib", "adlibs", "tag", "tags", "zap", "laser",
+            "scratch", "reverse", "rev", "stab", "hit", "hits",
         ],
     ) {
         return Some(Fx);
@@ -332,10 +378,48 @@ pub fn classify(path: &str) -> DrumClass {
     if fw.first().is_some_and(|t| t == "808") {
         return DrumClass::Bass808;
     }
-    folders
+    // Stretched spellings: "haaatt", "snaaar", "kiiick".
+    let squashed: Vec<String> = fw.iter().map(|t| squash(t)).collect();
+    if let Some(c) = class_of(&squashed) {
+        return c;
+    }
+    // A letter before a number: "K01", "S 2", "H03" (kick, snare, hat).
+    for p in fw.windows(2) {
+        if p[1].chars().all(|c| c.is_ascii_digit()) {
+            match p[0].as_str() {
+                "k" => return DrumClass::Kick,
+                "s" => return DrumClass::Snare,
+                "h" => return DrumClass::ClosedHat,
+                _ => {}
+            }
+        }
+    }
+    if let Some(c) = folders.iter().find_map(|w| class_of(w)) {
+        return c;
+    }
+    // An 808 named among other words ("BWB MINI RNB 808 (5)"), not a machine's name.
+    let machine = |t: &str| matches!(t, "tr" | "e" | "td" | "rx" | "tb");
+    if fw
         .iter()
-        .find_map(|w| class_of(w))
-        .unwrap_or(DrumClass::Other)
+        .enumerate()
+        .any(|(i, t)| t == "808" && (i == 0 || !machine(&fw[i - 1])))
+    {
+        return DrumClass::Bass808;
+    }
+    DrumClass::Other
+}
+
+/// A word with every run of one letter made one ("haaatt" is "hat").
+fn squash(t: &str) -> String {
+    let mut out = String::with_capacity(t.len());
+    let mut last = None;
+    for c in t.chars() {
+        if Some(c) != last || c.is_ascii_digit() {
+            out.push(c);
+        }
+        last = Some(c);
+    }
+    out
 }
 
 /// The class of a name alone (an instrument of a kit definition: "Snare Drum 1").
@@ -613,6 +697,35 @@ mod tests {
             ("JazzFunkKit/bop kick - snares off - 6.flac", Kick),
             ("JazzFunkKit/rimshot - snares on - 9.flac", Rim),
             ("JazzFunkKit/snare - snares on - 2.flac", Snare),
+        ] {
+            assert_eq!(classify(path), want, "{path}");
+        }
+        // What the library's kits name them on 2026-11-24.
+        for (path, want) in [
+            ("[KB6]_Casio_SK1/skclhat.wav", ClosedHat),
+            ("[KB6]_Casio_SK1/skophat.wav", OpenHat),
+            ("[KB6]_Casio_SK1/skhitom.wav", TomHigh),
+            ("[KB6]_Casio_SK1/sklotom.wav", TomLow),
+            ("did it again/did it again haaatt.wav", ClosedHat),
+            ("did it again/did it again ooohat.wav", OpenHat),
+            ("did it again/did it again snaaar.wav", Snare),
+            ("Dust-and-Grain/WAV/DG-K01-crate-weight.wav", Kick),
+            ("Dust-and-Grain/WAV/DG-S02-dry.wav", Snare),
+            ("Dust-and-Grain/WAV/DG-H01-needle.wav", ClosedHat),
+            ("Kick/KDrum-03.wav", Kick),
+            ("Lucky You Drumkit/BWB MINI RNB 808  (5).wav", Bass808),
+            ("Snaps/Snap 3.wav", Clap),
+            ("Snare fills/Demo Drum Fills.wav", Loop),
+            ("Percussion/Cajon Slap.wav", Perc),
+            ("Vox/Producer Tag 2.wav", Fx),
+            ("[KB6]_Roland_TR-808/TR 808 1.wav", Other),
+            ("BURNT SKIES/HITHAT CEREAL.wav", ClosedHat),
+            ("Boss DR-110/DR110CHT.WAV", ClosedHat),
+            ("Boss DR-110/DR110OHT.WAV", OpenHat),
+            ("Korg_KPR77/KPRCLHH.WAV", ClosedHat),
+            ("Korg_KPR77/KPROPHH.WAV", OpenHat),
+            ("Korg_KPR77/KPRCYMBL.WAV", Crash),
+            ("Broccoli Drum Kit/KWKIK093_2.wav", Kick),
         ] {
             assert_eq!(classify(path), want, "{path}");
         }

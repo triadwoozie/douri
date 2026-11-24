@@ -25,6 +25,10 @@ exclude = [
     "crates/mi-plaits-dsp",
     "crates/mi-dsp",
     "crates/chip-dsp",
+    # The plug-in builds of the native instruments and effects: a workspace of their own (see
+    # crates/prowave-plug/README.md), so the plug-in framework stays out of the program's lock
+    # file and checks.
+    "crates/prowave-plug",
 ]
 
 [profile.release]

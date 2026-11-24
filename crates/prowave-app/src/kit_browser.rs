@@ -3,22 +3,29 @@
 //! picked, with what each one is; and the rack's first sixteen channels as pads.
 //!
 //! Load Kit puts the kit on the rack's channels ([`crate::kit_files::Kit::pads`]): the steps
-//! stay, so a pattern plays the new kit. A sample goes on one channel by a double-click (the
-//! pad that is lit) or by dragging it onto a pad here or onto a channel of the rack. Nothing
-//! sounds until its key is pressed: the triangle of a sample plays that sample, Audition the
-//! kit's first channels one after the other, both on the engine's audition voice.
+//! stay, so a pattern plays the new kit (a kit of SoundFonts alone goes on a new track as its
+//! SoundFont instead). A sample goes on one channel by a double-click or Return (the pad that
+//! is lit), or by dragging it onto a pad here, onto a channel of the rack or onto its Add
+//! Channel key. The triangle of a sample plays that sample on the engine's audition voice; with
+//! Audition lit, picking a sample plays it and picking a kit plays its kick, snare and hat.
 //!
-//! The index is made on a background thread ([`crate::kit_library`]) and a kit's files are
-//! read on another when it is picked, so neither the window nor the audio waits for a disk. A
-//! library folder that is not there (a drive that is not mounted) shows an unlit lamp in
-//! Folders and nothing else.
+//! The keys, while the window has them (it was clicked last): Up and Down move through the
+//! list the arrows are in (the kits, or the kit's samples), Right goes to the samples and Left
+//! back to the kits, Return loads the kit or puts the sample on the lit pad. Up, Down and
+//! Return also work while the search field has the keys.
+//!
+//! The index is made on background threads ([`crate::kit_library`]): the list of kits is there
+//! at once from the cache, the folders are read in milliseconds, and the kits' files are read
+//! after that while the list is in use. A kit picked is made from its kept listing, so neither
+//! the window nor the audio waits for a disk. A library folder that is not there (a drive that
+//! is not mounted) shows an unlit lamp in Folders, marked missing, and nothing else.
 use crate::channel_rack::{self, SampleDrag};
 use crate::gear::{self, LedAt};
 use crate::hw::{self, Cap};
 use crate::i18n::tr;
 use crate::kit_classify::{DrumClass, KIT_PADS};
-use crate::kit_files::{self, Kit};
-use crate::kit_library::{self, Filter, Index, ScanMsg, Settings};
+use crate::kit_files::Kit;
+use crate::kit_library::{self, Filter, Index, KitEntry, Opened, ScanJob, ScanMsg, Settings};
 use crate::midi_monitor::hw_utilities as hu;
 use crate::model::Project;
 use crate::theme::{self, Face};
@@ -41,9 +48,8 @@ const GAP: f32 = 10.0;
 const TAIL_SECONDS: f64 = 0.6;
 /// The longest a sample is played for.
 const MAX_AUDITION_SECONDS: f64 = 8.0;
-/// A kit's audition: this many of its channels, one every `KIT_STEP_SECONDS`.
-const KIT_HITS: usize = 8;
-const KIT_STEP_SECONDS: f64 = 0.3;
+/// A kit's audition: its hits one every `KIT_STEP_SECONDS`, each at most `KIT_HIT_SECONDS`.
+pub const KIT_STEP_SECONDS: f64 = 0.3;
 const KIT_HIT_SECONDS: f64 = 0.9;
 
 /// What is on the audition voice.
@@ -58,6 +64,14 @@ struct Playing {
 /// A sound read for the audition: the buffer (sound and silence) and where the sound ends.
 type Ready = Result<(SampleBuf, f32), String>;
 
+/// The list the arrow keys move in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Column {
+    #[default]
+    Kits,
+    Samples,
+}
+
 #[derive(Default)]
 pub struct KitBrowser {
     pub open: bool,
@@ -66,10 +80,15 @@ pub struct KitBrowser {
     data: Option<PathBuf>,
     pub settings: Settings,
     pub index: Index,
+    /// The folders are being read.
     pub scanning: bool,
-    /// How long the last scan of the folders took.
+    /// While the kits' files are read: kits done and kits to do.
+    pub listing: Option<(usize, usize)>,
+    /// How long the last reading of the folders took.
     pub last_scan: Option<Duration>,
-    scan_rx: Option<Receiver<ScanMsg>>,
+    /// The last reading of the kits' files: how many were read and how long it took.
+    pub last_listing: Option<(usize, Duration)>,
+    scan: Option<ScanJob>,
     pub filter: Filter,
     /// Bumped when the index or the favourites change.
     rev: u64,
@@ -78,17 +97,28 @@ pub struct KitBrowser {
     /// The kit picked (its folder).
     pub selected: Option<String>,
     kit: Option<Arc<Kit>>,
-    kit_rx: Option<(String, Receiver<Kit>)>,
+    kit_rx: Option<(String, Receiver<Opened>)>,
     kit_stop: Option<Arc<AtomicBool>>,
     class: Option<DrumClass>,
+    /// The sample picked in the kit's list (an index into its samples).
+    pub sample: Option<usize>,
+    /// The list the arrows move in.
+    pub column: Column,
+    /// The window has the keys: the last click was in it.
+    pub keys: bool,
+    /// Where the window was the last frame.
+    rect: Option<Rect>,
     /// The rack channel a double-clicked sample goes on.
     pub pad: usize,
     pub show_folders: bool,
     scroll_to: Option<usize>,
+    scroll_sample: Option<usize>,
     want: Option<(String, Receiver<Ready>)>,
     send: Option<(String, Arc<SampleBuf>, f32)>,
     playing: Option<Playing>,
     stop: bool,
+    /// The kit whose audition waits for its files (Audition lit).
+    kit_audition_due: bool,
     pub error: Option<String>,
 }
 
@@ -120,22 +150,31 @@ impl KitBrowser {
         if let Some(dir) = &self.data {
             self.settings = Settings::load(dir);
         }
-        self.rescan();
+        self.rescan_with(false);
     }
 
-    /// Scans the folders again in the background.
+    /// Scans the folders again in the background and reads every kit's files again.
     pub fn rescan(&mut self) {
+        self.rescan_with(true);
+    }
+
+    /// Scans the folders in the background; the kits' files are read again for every kit
+    /// when `full`, else for the kits never read and those whose folder has changed.
+    pub fn rescan_with(&mut self, full: bool) {
         self.scanning = true;
-        self.scan_rx = Some(kit_library::spawn_scan(
+        self.listing = None;
+        self.scan = Some(kit_library::spawn_scan(
             self.settings.folders.clone(),
             self.data.clone(),
+            full,
         ));
     }
 
-    /// Scans the folders now, on this thread (the control interface, which waits for it).
-    pub fn scan_now(&mut self) -> Duration {
+    /// Reads the folders now, on this thread (the control interface, which waits for it);
+    /// the kits' files are then read in the background (every kit's when `full`).
+    pub fn scan_now(&mut self, full: bool) -> Duration {
         self.start();
-        self.scan_rx = None;
+        self.scan = None;
         let cache = self
             .data
             .as_deref()
@@ -150,8 +189,9 @@ impl KitBrowser {
             }
         }
         self.take_index(index);
-        self.scanning = false;
         self.last_scan = Some(took);
+        // The background scan reads the folders again (milliseconds) and then the kits.
+        self.rescan_with(full);
         took
     }
 
@@ -170,10 +210,10 @@ impl KitBrowser {
 
     /// Takes what the background threads have done.
     pub fn poll(&mut self) {
-        if let Some(rx) = self.scan_rx.take() {
+        if let Some(job) = self.scan.take() {
             let mut done = false;
             loop {
-                match rx.try_recv() {
+                match job.rx.try_recv() {
                     Ok(ScanMsg::Cached(index)) => {
                         if self.index.kits.is_empty() {
                             self.take_index(index);
@@ -182,7 +222,20 @@ impl KitBrowser {
                     Ok(ScanMsg::Scanned(index, took)) => {
                         self.take_index(index);
                         self.last_scan = Some(took);
+                        self.scanning = false;
                         // Nothing anywhere: the folders are what there is to look at.
+                        if self.index.kits.is_empty() {
+                            self.show_folders = true;
+                        }
+                    }
+                    Ok(ScanMsg::Listing { done, total, index }) => {
+                        self.take_index(index);
+                        self.listing = Some((done, total));
+                    }
+                    Ok(ScanMsg::Listed(index, read, took)) => {
+                        self.take_index(index);
+                        self.listing = None;
+                        self.last_listing = Some((read, took));
                         if self.index.kits.is_empty() {
                             self.show_folders = true;
                         }
@@ -198,60 +251,86 @@ impl KitBrowser {
             }
             if done {
                 self.scanning = false;
+                self.listing = None;
             } else {
-                self.scan_rx = Some(rx);
+                self.scan = Some(job);
             }
         }
         if let Some((path, rx)) = self.kit_rx.take() {
             match rx.try_recv() {
-                Ok(kit) => self.take_kit(&path, kit),
+                Ok(opened) => self.take_kit(&path, opened),
                 Err(TryRecvError::Empty) => self.kit_rx = Some((path, rx)),
                 Err(TryRecvError::Disconnected) => {}
             }
         }
     }
 
-    fn take_kit(&mut self, path: &str, kit: Kit) {
-        // The index learns how many audio files the kit has.
-        let files = kit.samples.len() as u32;
+    /// Whether a scan is still at work (reading the folders or the kits' files).
+    pub fn indexing(&self) -> bool {
+        self.scan.is_some()
+    }
+
+    fn take_kit(&mut self, path: &str, opened: Opened) {
+        let Opened { kit, fresh } = opened;
+        // What was read from the disk is kept, and the index learns the kit's counts.
         if let Some(k) = self.index.kits.iter_mut().find(|k| k.path == path) {
-            if k.files != Some(files) {
-                k.files = Some(files);
+            k.files = Some(kit.samples.len() as u32);
+            k.pads = Some(kit.pads.iter().flatten().count().min(255) as u8);
+            if !fresh.is_empty() {
                 if let Some(dir) = self.data.clone() {
-                    let (root, path) = (k.root.clone(), path.to_string());
+                    let root = k.root.clone();
                     let _ = std::thread::Builder::new()
-                        .name("kit-count".into())
-                        .spawn(move || kit_library::note_count(&dir, &root, &path, files));
+                        .name("kit-keep".into())
+                        .spawn(move || kit_library::keep(&dir, &root, &fresh));
                 }
             }
         }
         if self.selected.as_deref() == Some(path) {
             self.kit = Some(Arc::new(kit));
             self.class = None;
+            self.sample = None;
+            if std::mem::take(&mut self.kit_audition_due) {
+                self.audition_kit();
+            }
         }
     }
 
-    /// Picks the kit in folder `path` and reads its files in the background.
+    /// The index's line for the kit in folder `path` (one not in the index: a plain folder).
+    fn entry(&self, path: &str) -> KitEntry {
+        self.index.find(path).cloned().unwrap_or_else(|| {
+            let name = Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            KitEntry::new("", path.to_string(), "", &name)
+        })
+    }
+
+    /// Picks the kit in folder `path`: it is made from its kept listing (or read from its
+    /// folder when it has none yet) on another thread. With Audition lit it is heard.
     pub fn select(&mut self, path: &str) {
         if self.selected.as_deref() == Some(path) {
             return;
         }
         self.selected = Some(path.to_string());
         self.kit = None;
+        self.sample = None;
+        self.kit_audition_due = self.settings.audition;
         // The read of the kit picked before is given up.
         if let Some(stop) = self.kit_stop.take() {
             stop.store(true, Ordering::Relaxed);
         }
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
-        let root = PathBuf::from(path);
+        let entry = self.entry(path);
+        let data = self.data.clone();
         let flag = stop.clone();
         let spawned = std::thread::Builder::new()
             .name("kit-read".into())
             .spawn(move || {
-                let kit = kit_files::read_kit_until(&root, &flag);
+                let opened = kit_library::open(data.as_deref(), &entry, &flag);
                 if !flag.load(Ordering::Relaxed) {
-                    let _ = tx.send(kit);
+                    let _ = tx.send(opened);
                 }
             });
         if spawned.is_ok() {
@@ -260,21 +339,91 @@ impl KitBrowser {
         }
     }
 
-    /// Picks the kit and reads it now, on this thread (the control interface).
+    /// Picks the kit and makes it now, on this thread (the control interface).
     pub fn select_now(&mut self, path: &str) -> Arc<Kit> {
         if let Some(stop) = self.kit_stop.take() {
             stop.store(true, Ordering::Relaxed);
         }
         self.selected = Some(path.to_string());
         self.kit_rx = None;
-        let kit = kit_files::read_kit(Path::new(path));
-        self.take_kit(path, kit.clone());
+        let entry = self.entry(path);
+        let opened = kit_library::open(self.data.as_deref(), &entry, &AtomicBool::new(false));
+        let kit = opened.kit.clone();
+        self.take_kit(path, opened);
         self.kit.clone().unwrap_or_else(|| Arc::new(kit))
     }
 
-    /// The kit picked, once its files are read.
+    /// The kit picked, once it is made.
     pub fn kit(&self) -> Option<&Arc<Kit>> {
         self.kit.as_ref()
+    }
+
+    /// Picks sample `i` of the kit; with Audition lit it is heard.
+    pub fn pick_sample(&mut self, i: usize) {
+        let Some(kit) = self.kit.clone() else { return };
+        if i >= kit.samples.len() {
+            return;
+        }
+        self.sample = Some(i);
+        self.column = Column::Samples;
+        if self.settings.audition {
+            self.audition_sample(i, false);
+        }
+    }
+
+    /// Plays sample `i` of the kit picked, from its start; `toggle`: when it is the one
+    /// playing, it stops instead (its triangle).
+    pub fn audition_sample(&mut self, i: usize, toggle: bool) {
+        let Some(kit) = self.kit.clone() else { return };
+        if kit
+            .samples
+            .get(i)
+            .is_none_or(|s| s.class == DrumClass::SoundFont)
+        {
+            return;
+        }
+        let path = kit.path_of(i);
+        self.audition(
+            format!("sample:{}", path.display()),
+            vec![path],
+            false,
+            toggle,
+        );
+    }
+
+    /// Plays any audio file on the audition voice, from its start.
+    pub fn play_file(&mut self, path: &Path) {
+        let key = format!("sample:{}", path.display());
+        self.audition(key, vec![path.to_path_buf()], false, false);
+    }
+
+    /// Plays the kick, snare and hat of the kit picked.
+    pub fn audition_kit(&mut self) {
+        let Some(kit) = self.kit.clone() else { return };
+        let Some(sel) = self.selected.clone() else {
+            return;
+        };
+        let paths: Vec<PathBuf> = kit
+            .audition_samples()
+            .into_iter()
+            .map(|i| kit.path_of(i))
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        self.audition(format!("kit:{sel}"), paths, true, false);
+    }
+
+    /// Lights or puts out Audition (kept with the settings).
+    pub fn set_audition(&mut self, on: bool) {
+        if self.settings.audition == on {
+            return;
+        }
+        self.settings.audition = on;
+        self.save_settings();
+        if !on {
+            self.stop_audition();
+        }
     }
 
     /// The kits the filter keeps, as indices into the index.
@@ -304,7 +453,14 @@ impl KitBrowser {
             .filter(|f| !f.trim().is_empty() && seen.insert(f.clone()))
             .collect();
         self.save_settings();
-        self.rescan();
+        self.rescan_with(false);
+    }
+
+    /// Adds a library folder (what Add Folder does with the folder picked) and scans.
+    pub fn add_folder(&mut self, dir: &Path) {
+        let mut list = self.settings.folders.clone();
+        list.push(dir.to_string_lossy().into_owned());
+        self.set_folders(list);
     }
 
     pub fn set_favorite(&mut self, path: &str, on: bool) {
@@ -328,23 +484,15 @@ impl KitBrowser {
         let Some(path) = &self.selected else {
             return String::new();
         };
-        self.index
-            .kits
-            .iter()
-            .find(|k| &k.path == path)
-            .map(|k| k.name.clone())
-            .unwrap_or_else(|| {
-                Path::new(path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-            })
+        self.entry(path).name
     }
 
-    fn audition(&mut self, key: String, paths: Vec<PathBuf>, kit: bool) {
-        // The same key again stops it.
-        if self.playing.as_ref().is_some_and(|p| p.key == key)
-            || self.want.as_ref().is_some_and(|w| w.0 == key)
+    /// Plays `paths` (a kit's hits one after the other when `kit`) as `key`. `toggle`: the
+    /// same key again stops it.
+    fn audition(&mut self, key: String, paths: Vec<PathBuf>, kit: bool, toggle: bool) {
+        if toggle
+            && (self.playing.as_ref().is_some_and(|p| p.key == key)
+                || self.want.as_ref().is_some_and(|w| w.0 == key))
         {
             self.stop_audition();
             return;
@@ -363,6 +511,10 @@ impl KitBrowser {
                 });
             });
         if spawned.is_ok() {
+            // What was asked before and is not playing yet is given up; what plays is
+            // replaced when the new sound is ready.
+            self.send = None;
+            self.stop = false;
             self.want = Some((key, rx));
         }
     }
@@ -375,7 +527,8 @@ impl KitBrowser {
         }
     }
 
-    fn audition_key(&self) -> Option<&str> {
+    /// What is playing, or about to: `sample:<file>` or `kit:<folder>`.
+    pub fn audition_key(&self) -> Option<&str> {
         self.playing
             .as_ref()
             .map(|p| p.key.as_str())
@@ -385,6 +538,7 @@ impl KitBrowser {
 
     fn busy(&self) -> bool {
         self.scanning
+            || self.scan.is_some()
             || self.kit_rx.is_some()
             || self.want.is_some()
             || self.send.is_some()
@@ -399,19 +553,53 @@ pub fn pad_paths(kit: &Kit) -> Vec<Option<PathBuf>> {
 }
 
 /// Loads the kit picked into the rack of the selected track (a new rack track when the
-/// selected track has none). Returns the track.
+/// selected track has none); a kit of SoundFonts alone goes on a new instrument track as its
+/// SoundFont (the drum preset when it has one). Returns the track.
 pub fn load_selected(v: &mut KitBrowser, p: &mut Project) -> Option<usize> {
     let kit = v.kit.clone()?;
-    if kit.pads.is_empty() {
-        return None;
-    }
     let name = v.selected_name();
+    if kit.pads.is_empty() {
+        let sf = kit.soundfonts().first().map(|i| kit.path_of(*i))?;
+        return Some(load_soundfont(p, &name, &sf));
+    }
     Some(channel_rack::load_kit(
         p,
         channel_rack::rack_track(p),
         &name,
         &pad_paths(&kit),
     ))
+}
+
+/// A new instrument track named `name` playing the SoundFont `path`: its first drum preset
+/// (bank 128), else its first preset. Returns the track.
+pub fn load_soundfont(p: &mut Project, name: &str, path: &Path) -> usize {
+    let path = path.to_string_lossy().into_owned();
+    let (bank, program) = match crate::soundfonts::load(&path) {
+        Ok(sf) => {
+            let presets = sf.presets();
+            presets
+                .iter()
+                .find(|pr| pr.bank == 128)
+                .or(presets.first())
+                .map_or((0, 0), |pr| (pr.bank, pr.program))
+        }
+        Err(e) => {
+            tracing::warn!("{e}");
+            (0, 0)
+        }
+    };
+    let ti = p.add_track(crate::model::TrackKind::Instrument);
+    if !name.is_empty() {
+        p.tracks[ti].name = name.to_string();
+    }
+    p.tracks[ti].soundfont = Some(crate::model::SoundFontUse {
+        path,
+        bank,
+        program,
+    });
+    p.selected_track = ti;
+    p.song_rev += 1;
+    ti
 }
 
 /// Puts `path` on channel `channel` of the selected track's rack (a new rack track when the
@@ -447,20 +635,37 @@ fn with_tail(mut buf: SampleBuf, seconds: f64) -> (SampleBuf, f32) {
     (buf, end)
 }
 
+/// The first `seconds` of a file (all of it when shorter): the rest is not read, so a long
+/// loop on a slow disk is heard as soon as its start is.
+fn decode_head(path: &Path, seconds: f64) -> Result<SampleBuf, String> {
+    let head: std::cell::RefCell<Option<SampleBuf>> = std::cell::RefCell::new(None);
+    let whole = prowave_engine::sample_tools::decode_with_head(
+        path,
+        seconds,
+        |b| *head.borrow_mut() = Some(b),
+        // Stop reading once the head is there.
+        |_| head.borrow().is_none(),
+    );
+    match head.into_inner() {
+        Some(h) => Ok(h),
+        None => whole,
+    }
+}
+
 fn sample_preview(path: &Path) -> Ready {
-    let buf = prowave_engine::sample_tools::decode(path, |_| true)?;
+    let buf = decode_head(path, MAX_AUDITION_SECONDS)?;
     if buf.frames() < 2 {
         return Err(format!("{}: empty", path.display()));
     }
     Ok(with_tail(buf, MAX_AUDITION_SECONDS))
 }
 
-/// The first samples of a kit's channels, one after the other.
+/// A kit's hits one after the other, each in its place (a file that cannot be read leaves
+/// its place silent).
 fn kit_preview(paths: &[PathBuf]) -> Ready {
     let mut out: Option<SampleBuf> = None;
-    let mut hit = 0usize;
-    for path in paths.iter().take(KIT_HITS) {
-        let Ok(buf) = prowave_engine::sample_tools::decode(path, |_| true) else {
+    for (hit, path) in paths.iter().enumerate() {
+        let Ok(buf) = decode_head(path, KIT_HIT_SECONDS) else {
             continue;
         };
         if buf.frames() < 2 {
@@ -491,9 +696,16 @@ fn kit_preview(paths: &[PathBuf]) -> Ready {
                 mix.data[(start + i) * 2 + c] += s * g;
             }
         }
-        hit += 1;
     }
-    let mix = out.ok_or_else(|| "nothing to play".to_string())?;
+    let mut mix = out.ok_or_else(|| "nothing to play".to_string())?;
+    // Hits that ring into each other are not let past full scale.
+    let peak = mix.data.iter().fold(0f32, |m, s| m.max(s.abs()));
+    if peak > 0.98 {
+        let g = 0.98 / peak;
+        for s in &mut mix.data {
+            *s *= g;
+        }
+    }
     Ok(with_tail(mix, f64::MAX))
 }
 
@@ -560,6 +772,41 @@ pub fn pump(v: &mut KitBrowser, remote: Option<&mut AuditionRemote>) {
         }
     }
     remote.collect();
+}
+
+/// Plays what the browser has been asked to audition on an audition voice of its own, as the
+/// engine's plays it, and returns what came out (stereo, interleaved, at `rate`): the
+/// audition heard without a sound card, for the control interface and the tests. Waits up to
+/// `wait` for the sound to be read; ends when the browser stops the voice, or at `max_seconds`.
+pub fn capture(v: &mut KitBrowser, rate: u32, max_seconds: f64, wait: Duration) -> Vec<f32> {
+    const BLOCK: usize = 256;
+    let (mut voice, mut remote) = prowave_engine::Auditioner::new(rate);
+    let started = std::time::Instant::now();
+    while v.want.is_some() && started.elapsed() < wait {
+        pump(v, Some(&mut remote));
+        if v.want.is_some() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    let mut out = Vec::new();
+    let most = (max_seconds * f64::from(rate)) as usize;
+    let mut began = false;
+    while out.len() / 2 < most {
+        pump(v, Some(&mut remote));
+        began |= v.playing.is_some();
+        if began && v.playing.is_none() && v.send.is_none() && !v.stop {
+            break;
+        }
+        voice.begin_block();
+        for _ in 0..BLOCK {
+            let (l, r) = voice.frame(f64::NAN, 0.0);
+            out.push(l);
+            out.push(r);
+        }
+        voice.end_block();
+    }
+    remote.collect();
+    out
 }
 
 // ------------------------------------------------------------------------------- drawing
@@ -662,6 +909,7 @@ fn number(n: usize) -> String {
 struct Act {
     load: bool,
     assign: Option<(usize, PathBuf)>,
+    soundfont: Option<PathBuf>,
 }
 
 /// The rack's channels as the pads show them: (name, has a sample).
@@ -677,6 +925,11 @@ fn rack_pads(p: &Project) -> Vec<(String, bool)> {
         .unwrap_or_default()
 }
 
+/// The window's id.
+fn window_id() -> Id {
+    Id::unique("prowave_kit_browser")
+}
+
 /// The Kit Browser's window.
 pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     let v = &mut s.kits;
@@ -684,10 +937,22 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
         if v.audition_key().is_some() {
             v.stop_audition();
         }
+        v.rect = None;
         return;
     }
     v.start();
     v.poll();
+    let id = window_id();
+    // The keys are the window's from when it opens, and after a click in it, until a click
+    // somewhere else.
+    if v.rect.is_none() {
+        v.keys = true;
+    }
+    if ctx.input(|i| i.pointer.any_pressed()) {
+        if let Some(at) = ctx.input(|i| i.pointer.press_origin()) {
+            v.keys = ctx.layer_id_at(at).is_some_and(|l| l.id == id);
+        }
+    }
     let name = v.selected_name();
     let title = tr("Kits").to_uppercase();
     let plate = gear::Plate {
@@ -696,12 +961,12 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
         strip: None,
         reset: false,
     };
-    let id = Id::unique("prowave_kit_browser");
     let pads = rack_pads(p);
     let mut act = Act::default();
     let (head, _) = gear::unit_window(ctx, id, WIDTH, &plate, None, |ui| {
         body(ui, id, v, &pads, &mut act);
     });
+    v.rect = ctx.memory(|m| m.area_rect(id)).or(Some(Rect::NOTHING));
     if head.close {
         v.open = false;
         v.stop_audition();
@@ -711,6 +976,13 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     }
     if let Some((channel, path)) = act.assign {
         assign(p, channel, &path);
+    }
+    if let Some(path) = act.soundfont {
+        let name = path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        load_soundfont(p, &name, &path);
     }
     // The sample being dragged, by the pointer.
     if let (Some(drag), Some(at)) = (
@@ -736,6 +1008,108 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     }
     if v.busy() {
         ctx.request_repaint_after(Duration::from_millis(40));
+    }
+}
+
+/// The arrow keys and Return pressed for the window this frame.
+#[derive(Default)]
+struct Nav {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+    enter: bool,
+}
+
+/// Takes the window's keys out of the input, so the arrange area does not also get them:
+/// Up, Down and Return while the search field has the keys (`typing`); those and Left and
+/// Right while the window has them.
+fn take_keys(ui: &Ui, typing: bool) -> Nav {
+    use egui::{Key, Modifiers};
+    ui.input_mut(|i| {
+        let mut take = |k: Key| i.consume_key(Modifiers::NONE, k);
+        Nav {
+            up: take(Key::ArrowUp),
+            down: take(Key::ArrowDown),
+            enter: take(Key::Enter),
+            left: !typing && take(Key::ArrowLeft),
+            right: !typing && take(Key::ArrowRight),
+        }
+    })
+}
+
+/// The samples the list shows: all of them, or those of the class whose key is lit.
+fn shown_samples(v: &KitBrowser) -> Vec<usize> {
+    let Some(kit) = &v.kit else {
+        return Vec::new();
+    };
+    (0..kit.samples.len())
+        .filter(|i| v.class.is_none_or(|c| kit.samples[*i].class == c))
+        .collect()
+}
+
+/// What the arrows and Return do.
+fn navigate(v: &mut KitBrowser, nav: &Nav, typing: bool, act: &mut Act) {
+    if typing || nav.left {
+        v.column = Column::Kits;
+    }
+    if nav.right && v.kit.is_some() {
+        v.column = Column::Samples;
+        if v.sample.is_none() {
+            if let Some(first) = shown_samples(v).first() {
+                v.pick_sample(*first);
+                v.scroll_sample = Some(0);
+            }
+        }
+        return;
+    }
+    let step: i64 = match (nav.up, nav.down) {
+        (true, false) => -1,
+        (false, true) => 1,
+        _ => 0,
+    };
+    match v.column {
+        Column::Kits => {
+            let results: Vec<u32> = v.results().to_vec();
+            if step != 0 && !results.is_empty() {
+                let at = v.selected.as_ref().and_then(|sel| {
+                    results
+                        .iter()
+                        .position(|i| &v.index.kits[*i as usize].path == sel)
+                });
+                let to = match at {
+                    Some(a) => (a as i64 + step).clamp(0, results.len() as i64 - 1) as usize,
+                    None => 0,
+                };
+                let path = v.index.kits[results[to] as usize].path.clone();
+                v.select(&path);
+                v.scroll_to = Some(to);
+            }
+            if nav.enter {
+                act.load = true;
+            }
+        }
+        Column::Samples => {
+            let shown = shown_samples(v);
+            if step != 0 && !shown.is_empty() {
+                let at = v.sample.and_then(|s| shown.iter().position(|i| *i == s));
+                let to = match at {
+                    Some(a) => (a as i64 + step).clamp(0, shown.len() as i64 - 1) as usize,
+                    None => 0,
+                };
+                v.pick_sample(shown[to]);
+                v.scroll_sample = Some(to);
+            }
+            if nav.enter {
+                if let (Some(kit), Some(i)) = (v.kit.clone(), v.sample) {
+                    if kit.samples[i].class == DrumClass::SoundFont {
+                        act.soundfont = Some(kit.path_of(i));
+                    } else {
+                        act.assign = Some((v.pad, kit.path_of(i)));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -782,6 +1156,12 @@ fn body(ui: &mut Ui, id: Id, v: &mut KitBrowser, pads: &[(String, bool)], act: &
                 .desired_width(field.width() - 12.0),
         )
     });
+    // The keys: the search field's, or the window's while no other field has them.
+    let typing = edit.has_focus() || edit.lost_focus();
+    if typing || (v.keys && !ui.ctx().egui_wants_keyboard_input()) {
+        let nav = take_keys(ui, typing);
+        navigate(v, &nav, typing, act);
+    }
     let mut x = field.right() + 10.0;
     let lit = [
         !v.filter.best && !v.filter.favorites,
@@ -828,7 +1208,7 @@ fn body(ui: &mut Ui, id: Id, v: &mut KitBrowser, pads: &[(String, bool)], act: &
         );
         let kit = Rect::from_min_max(pos2(kits.right() + GAP, lists.top()), lists.max);
         source_list(ui, id, v, sources);
-        kit_list(ui, id, v, kits, edit.has_focus(), act);
+        kit_list(ui, id, v, kits, act);
         kit_pane(ui, id, v, kit, act);
     }
     y = lists.bottom() + 14.0;
@@ -892,7 +1272,10 @@ fn body(ui: &mut Ui, id: Id, v: &mut KitBrowser, pads: &[(String, bool)], act: &
     y += 2.0 * 46.0 + 14.0 - 6.0;
 
     // ---- the foot: Load Kit, Audition, Folders
-    let can_load = v.kit.as_ref().is_some_and(|k| !k.pads.is_empty());
+    let can_load = v
+        .kit
+        .as_ref()
+        .is_some_and(|k| !k.pads.is_empty() || !k.soundfonts().is_empty());
     let r = Rect::from_min_size(pos2(left, y), vec2(170.0, 30.0));
     if can_load {
         if gear::key(
@@ -921,38 +1304,28 @@ fn body(ui: &mut Ui, id: Id, v: &mut KitBrowser, pads: &[(String, bool)], act: &
             false,
         );
     }
+    // Audition: lit, a sample or kit picked is heard; lighting it plays what is picked.
     let r = Rect::from_min_size(pos2(r.right() + 8.0, y), vec2(140.0, 30.0));
-    let kit_key = v.selected.clone().map(|s| format!("kit:{s}"));
-    let kit_playing = kit_key.is_some() && v.audition_key() == kit_key.as_deref();
-    if can_load {
-        if gear::key(
-            ui,
-            r,
-            id.with("audition"),
-            tr("Audition"),
-            Cap::Bone,
-            LedAt::Left,
-            kit_playing,
-            kit_playing,
-        )
-        .clicked()
-        {
-            if let (Some(kit), Some(key)) = (v.kit.clone(), kit_key) {
-                let paths: Vec<PathBuf> = pad_paths(&kit).into_iter().flatten().collect();
-                v.audition(key, paths, true);
+    let on = v.settings.audition;
+    if gear::key(
+        ui,
+        r,
+        id.with("audition"),
+        tr("Audition"),
+        Cap::Bone,
+        LedAt::Left,
+        on,
+        on,
+    )
+    .clicked()
+    {
+        v.set_audition(!on);
+        if !on {
+            match (v.column, v.sample) {
+                (Column::Samples, Some(i)) => v.audition_sample(i, false),
+                _ => v.audition_kit(),
             }
         }
-    } else {
-        hu::key(
-            ui,
-            r,
-            id.with("audition_off"),
-            Cap::Bone,
-            false,
-            Some(false),
-            &tr("Audition").to_uppercase(),
-            false,
-        );
     }
     let r = Rect::from_min_max(pos2(right - 130.0, y), pos2(right, y + 30.0));
     if gear::key(
@@ -969,8 +1342,8 @@ fn body(ui: &mut Ui, id: Id, v: &mut KitBrowser, pads: &[(String, bool)], act: &
     {
         v.show_folders = !v.show_folders;
     }
-    // The lamp beside Folders is lit while the folders are being read.
-    if v.scanning {
+    // The lamp beside Folders is lit while the folders or the kits' files are being read.
+    if v.scanning || v.indexing() {
         hw::led_sized(&g, pos2(r.left() - 14.0, r.center().y), 3.0, true);
     }
 }
@@ -1033,39 +1406,11 @@ fn source_list(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect) {
     }
 }
 
-fn kit_list(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, keys: bool, act: &mut Act) {
+fn kit_list(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, act: &mut Act) {
     let g = ui.painter().clone();
     let inner = floor(&g, rect, tr("Kit"));
     let results: Vec<u32> = v.results().to_vec();
-    let at = v.selected.as_ref().and_then(|sel| {
-        results
-            .iter()
-            .position(|i| &v.index.kits[*i as usize].path == sel)
-    });
-    // Arrows and Return while the search field has the keys.
     let mut pick: Option<String> = None;
-    if keys && !results.is_empty() {
-        let (down, up, enter) = ui.input(|i| {
-            (
-                i.key_pressed(egui::Key::ArrowDown),
-                i.key_pressed(egui::Key::ArrowUp),
-                i.key_pressed(egui::Key::Enter),
-            )
-        });
-        let to = match (down, up, at) {
-            (true, _, Some(a)) => Some((a + 1).min(results.len() - 1)),
-            (true, _, None) => Some(0),
-            (_, true, Some(a)) => Some(a.saturating_sub(1)),
-            _ => None,
-        };
-        if let Some(to) = to {
-            pick = Some(v.index.kits[results[to] as usize].path.clone());
-            v.scroll_to = Some(to);
-        }
-        if enter {
-            act.load = true;
-        }
-    }
     let mut fav: Option<(String, bool)> = None;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.set_clip_rect(inner.intersect(ui.clip_rect()));
@@ -1137,6 +1482,7 @@ fn kit_list(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, keys: bool, act
         v.set_favorite(&path, on);
     }
     if let Some(path) = pick {
+        v.column = Column::Kits;
         v.select(&path);
     }
 }
@@ -1148,7 +1494,7 @@ fn kit_pane(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, act: &mut Act) 
     let entry = v
         .selected
         .as_ref()
-        .and_then(|sel| v.index.kits.iter().find(|k| &k.path == sel))
+        .and_then(|sel| v.index.find(sel))
         .cloned();
     let glass = Rect::from_min_max(
         pos2(rect.left(), rect.top() + 2.0),
@@ -1199,15 +1545,8 @@ fn kit_pane(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, act: &mut Act) 
     }
     // The classes the kit holds: a key each, lit when the list shows that class alone.
     let mut y = glass.bottom() + 8.0;
-    let mut classes: Vec<(DrumClass, usize)> = Vec::new();
-    if let Some(k) = &kit {
-        for c in DrumClass::ALL {
-            let n = k.samples.iter().filter(|s| s.class == c).count();
-            if n > 0 {
-                classes.push((c, n));
-            }
-        }
-    }
+    let classes: Vec<(DrumClass, usize)> =
+        kit.as_ref().map(|k| k.classes.clone()).unwrap_or_default();
     if classes.len() > 1 {
         let mut x = rect.left();
         for (c, _) in &classes {
@@ -1241,86 +1580,120 @@ fn kit_pane(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect, act: &mut Act) 
     let Some(kit) = kit else {
         return;
     };
-    let shown: Vec<usize> = (0..kit.samples.len())
-        .filter(|i| v.class.is_none_or(|c| kit.samples[*i].class == c))
-        .collect();
+    let shown = shown_samples(v);
     let playing = v.audition_key().map(str::to_string);
     let mut hear: Option<usize> = None;
+    let mut pick: Option<usize> = None;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.set_clip_rect(inner.intersect(ui.clip_rect()));
     child.spacing_mut().item_spacing = vec2(0.0, 0.0);
-    egui::ScrollArea::vertical()
+    let mut area = egui::ScrollArea::vertical()
         .id_salt(id.with(("samples", v.selected.as_deref().unwrap_or(""))))
-        .auto_shrink([false, false])
-        .show_rows(&mut child, ROW, shown.len(), |ui, range| {
-            for row in range {
-                let i = shown[row];
-                let sample = &kit.samples[i];
-                let (r, resp) = ui
-                    .allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click_and_drag());
-                let well =
-                    Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(20.0, 20.0));
-                let hear_resp = ui.interact(well, id.with(("hear", i)), Sense::click());
-                let g = ui.painter();
-                let on_pad = kit.pads.contains(&Some(i));
-                let (ink, _) = row_look(g, r, false, resp.hovered() || hear_resp.hovered());
-                let path = kit.path_of(i);
-                let key = format!("sample:{}", path.display());
-                hu::well(g, well);
+        .auto_shrink([false, false]);
+    if let Some(row) = v.scroll_sample.take() {
+        let want = (row as f32 * ROW - inner.height() / 2.0 + ROW / 2.0).max(0.0);
+        area = area.vertical_scroll_offset(want);
+    }
+    let picked = v.sample;
+    let keys_here = v.column == Column::Samples;
+    area.show_rows(&mut child, ROW, shown.len(), |ui, range| {
+        for row in range {
+            let i = shown[row];
+            let sample = &kit.samples[i];
+            let sf2 = sample.class == DrumClass::SoundFont;
+            let (r, resp) = ui.allocate_exact_size(
+                vec2(ui.available_width(), ROW),
+                if sf2 {
+                    Sense::click()
+                } else {
+                    Sense::click_and_drag()
+                },
+            );
+            let well =
+                Rect::from_center_size(pos2(r.left() + 17.0, r.center().y), vec2(20.0, 20.0));
+            let hear_resp = ui.interact(well, id.with(("hear", i)), Sense::click());
+            let g = ui.painter();
+            let on_pad = kit.pads.contains(&Some(i));
+            let selected = picked == Some(i);
+            let (ink, _) = row_look(g, r, selected, resp.hovered() || hear_resp.hovered());
+            // The row the arrows are on, while they move in the samples: an orange edge.
+            if selected && keys_here {
+                g.rect_stroke(
+                    r.shrink2(vec2(2.0, 1.0)),
+                    3.0,
+                    Stroke::new(1.5, theme::ORANGE),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let path = kit.path_of(i);
+            let key = format!("sample:{}", path.display());
+            hu::well(g, well);
+            if !sf2 {
                 play_glyph(
                     g,
                     well.center(),
                     playing.as_deref() == Some(key.as_str()),
                     theme::INK,
                 );
-                let tag = hu::tag(
-                    g,
-                    pos2(
-                        r.right() - 8.0 - hw::silk_width(g, sample.class.tag(), 8.5) - 10.0,
-                        r.center().y,
-                    ),
-                    sample.class.tag(),
-                    8.5,
-                );
-                // A lamp on the samples a kit load puts on the channels.
-                if on_pad {
-                    hw::led_sized(g, pos2(tag.left() - 9.0, r.center().y), 2.5, true);
-                }
-                let name_x = well.right() + 8.0;
-                let name = hw::fit(
-                    g,
-                    &sample.name,
-                    Face::Bold,
-                    11.0,
-                    tag.left() - 18.0 - name_x,
-                );
-                hw::text(
-                    g,
-                    pos2(name_x, r.center().y),
-                    Align2::LEFT_CENTER,
-                    &name,
-                    Face::Bold,
-                    11.0,
-                    ink,
-                );
-                if hear_resp.clicked() {
-                    hear = Some(i);
-                } else if resp.double_clicked() {
+            }
+            let tag = hu::tag(
+                g,
+                pos2(
+                    r.right() - 8.0 - hw::silk_width(g, sample.class.tag(), 8.5) - 10.0,
+                    r.center().y,
+                ),
+                sample.class.tag(),
+                8.5,
+            );
+            // A lamp on the samples a kit load puts on the channels.
+            if on_pad {
+                hw::led_sized(g, pos2(tag.left() - 9.0, r.center().y), 2.5, true);
+            }
+            let name_x = well.right() + 8.0;
+            let name = hw::fit(
+                g,
+                &sample.name,
+                Face::Bold,
+                11.0,
+                tag.left() - 18.0 - name_x,
+            );
+            hw::text(
+                g,
+                pos2(name_x, r.center().y),
+                Align2::LEFT_CENTER,
+                &name,
+                Face::Bold,
+                11.0,
+                ink,
+            );
+            if hear_resp.clicked() {
+                hear = Some(i);
+            } else if resp.double_clicked() {
+                if sf2 {
+                    act.soundfont = Some(path.clone());
+                } else {
                     act.assign = Some((v.pad, path.clone()));
                 }
-                if resp.drag_started() {
-                    resp.dnd_set_drag_payload(SampleDrag(path));
-                }
+            } else if resp.clicked() {
+                pick = Some(i);
             }
-        });
+            if !sf2 && resp.drag_started() {
+                resp.dnd_set_drag_payload(SampleDrag(path));
+            }
+        }
+    });
     if let Some(i) = hear {
-        let path = kit.path_of(i);
-        v.audition(format!("sample:{}", path.display()), vec![path], false);
+        v.sample = Some(i);
+        v.column = Column::Samples;
+        v.audition_sample(i, true);
+    } else if let Some(i) = pick {
+        v.pick_sample(i);
     }
 }
 
-/// The library folders: a lamp (lit when the folder is there), the folder, its kits, Remove;
-/// then Add Folder and Rescan, and what the last scan found.
+/// The library folders: a lamp (lit when the folder is there), the folder (marked missing when
+/// it is not there), its kits, Remove; then Add Folder and Rescan, and what the last scan found
+/// (the kits whose files are read so far, while they are being read).
 fn folders(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect) {
     let g = ui.painter().clone();
     let inner = floor(&g, rect, tr("Folders"));
@@ -1346,7 +1719,12 @@ fn folders(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect) {
         if present {
             gear::lcd_chip(&g, count, "", &info.map_or(0, |r| r.kits).to_string());
         }
-        let shown = hw::fit(&g, f, Face::Bold, 11.5, count.left() - r.left() - 34.0);
+        let text = if present {
+            f.clone()
+        } else {
+            format!("{f} · {}", tr("missing"))
+        };
+        let shown = hw::fit(&g, &text, Face::Bold, 11.5, count.left() - r.left() - 34.0);
         hw::text(
             &g,
             pos2(r.left() + 24.0, r.center().y),
@@ -1392,9 +1770,7 @@ fn folders(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect) {
     .clicked()
     {
         if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-            let mut list = v.settings.folders.clone();
-            list.push(dir.to_string_lossy().into_owned());
-            v.set_folders(list);
+            v.add_folder(&dir);
         }
     }
     let rescan = Rect::from_min_size(pos2(add.right() + 8.0, y), vec2(120.0, 28.0));
@@ -1405,23 +1781,29 @@ fn folders(ui: &mut Ui, id: Id, v: &mut KitBrowser, rect: Rect) {
         tr("Rescan"),
         Cap::Bone,
         LedAt::Left,
-        v.scanning,
+        v.scanning || v.indexing(),
         false,
     )
     .clicked()
     {
         v.rescan();
     }
-    if let Some(took) = v.last_scan {
-        let ms = took.as_secs_f64() * 1000.0;
-        let text = if ms < 10.0 {
-            format!("{ms:.1} ms")
-        } else {
-            format!("{ms:.0} ms")
-        };
+    let text = if let Some((done, total)) = v.listing {
+        Some(format!("{} / {}", number(done), number(total)))
+    } else {
+        v.last_scan.map(|took| {
+            let ms = took.as_secs_f64() * 1000.0;
+            if ms < 10.0 {
+                format!("{ms:.1} ms")
+            } else {
+                format!("{ms:.0} ms")
+            }
+        })
+    };
+    if let Some(text) = text {
         gear::lcd_chip(
             &g,
-            Rect::from_min_size(pos2(inner.right() - 6.0 - 120.0, y), vec2(120.0, 28.0)),
+            Rect::from_min_size(pos2(inner.right() - 6.0 - 150.0, y), vec2(150.0, 28.0)),
             "",
             &text,
         );
@@ -1501,7 +1883,7 @@ mod tests {
     fn wait(v: &mut KitBrowser) {
         for _ in 0..2000 {
             v.poll();
-            if !v.scanning && v.kit_rx.is_none() {
+            if !v.scanning && !v.indexing() && v.kit_rx.is_none() {
                 return;
             }
             std::thread::sleep(Duration::from_millis(2));
@@ -1609,15 +1991,38 @@ mod tests {
             lib.join("Machines/LinnDrum/sd.wav"),
         ];
         let (mix, end) = kit_preview(&paths).unwrap();
-        let second = (KIT_STEP_SECONDS * 44_100.0) as usize;
-        assert!(mix.data[second * 2 + 200..second * 2 + 2000]
+        let step = (KIT_STEP_SECONDS * 44_100.0) as usize;
+        // The file that cannot be read keeps its place, silent.
+        assert!(mix.data[(step + 6000) * 2..(2 * step) * 2]
+            .iter()
+            .all(|s| *s == 0.0));
+        assert!(mix.data[(2 * step + 200) * 2..(2 * step + 2000) * 2]
             .iter()
             .any(|s| s.abs() > 0.1));
         assert!(end > 0.3 && end < 1.0);
         assert!(kit_preview(&[]).is_err());
+        // A long file: only its head is read for a preview.
+        let long = lib.join("long.wav");
+        write_wav(&long, 12.0, 220.0);
+        let head = decode_head(&long, 1.0).unwrap();
+        assert!(
+            (44_100..44_100 * 3).contains(&head.frames()),
+            "{}",
+            head.frames()
+        );
+        assert_eq!(
+            decode_head(&kick, 8.0).unwrap().frames(),
+            5292,
+            "a short one whole"
+        );
+        // Hits that ring into each other stay under full scale.
+        let loud = lib.join("loud.wav");
+        write_wav(&loud, 0.8, 60.0);
+        let (mix, _) = kit_preview(&[loud.clone(), loud.clone(), loud]).unwrap();
+        assert!(mix.data.iter().all(|s| s.abs() <= 0.981));
         // Without an engine nothing is left waiting.
         let mut v = KitBrowser::with(None, Vec::new());
-        v.audition("sample:x".into(), vec![kick], false);
+        v.audition("sample:x".into(), vec![kick], false, true);
         for _ in 0..500 {
             pump(&mut v, None);
             if v.want.is_none() {
@@ -1627,6 +2032,344 @@ mod tests {
         }
         assert!(v.audition_key().is_none() && !v.busy());
         let _ = std::fs::remove_dir_all(lib);
+    }
+
+    /// The window and the Channel Rack under it, as the app draws them, for a harness that
+    /// feeds them pointer and key events. The project and the state are reached through
+    /// pointers so a test can look at them between frames.
+    fn draw(p: *mut Project, s: *mut crate::UiState) -> impl FnMut(&mut Ui) {
+        move |ui: &mut Ui| {
+            // SAFETY: the harness calls this on the test's thread, one frame at a time; the
+            // project and state outlive the closure and are only read between frames.
+            let (p, s) = unsafe { (&mut *p, &mut *s) };
+            crate::theme::apply(ui.ctx());
+            let rack = Rect::from_min_size(pos2(0.0, 820.0), vec2(1400.0, 720.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rack), |ui| {
+                channel_rack::show(ui, p, s);
+            });
+            show(ui.ctx(), p, s);
+        }
+    }
+
+    fn harness() -> crate::ui_test::Harness {
+        crate::ui_test::Harness::new(1400.0, 1560.0)
+    }
+
+    /// Where the widget `id` was drawn the last frame.
+    fn at(h: &crate::ui_test::Harness, id: Id) -> Rect {
+        h.ctx
+            .read_response(id)
+            .unwrap_or_else(|| panic!("{id:?} was not drawn"))
+            .rect
+    }
+
+    /// Frames until `done`.
+    fn frames_until(
+        h: &mut crate::ui_test::Harness,
+        ui: &mut impl FnMut(&mut Ui),
+        done: impl Fn() -> bool,
+    ) {
+        for _ in 0..3000 {
+            h.frame(vec![], &mut *ui);
+            if done() {
+                h.settle(&mut *ui);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        panic!("the background work did not finish");
+    }
+
+    fn open_browser(name: &str) -> (PathBuf, PathBuf, Box<Project>, Box<crate::UiState>) {
+        let lib = library(name);
+        let data = temp(&format!("{name}-data"));
+        let mut s = Box::new(crate::UiState::new());
+        s.kits = KitBrowser::with(Some(data.clone()), vec![lib.to_string_lossy().into_owned()]);
+        s.kits.open = true;
+        s.kits.rescan();
+        wait(&mut s.kits);
+        (lib, data, Box::new(Project::empty()), s)
+    }
+
+    fn key_event(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn the_arrows_move_through_kits_and_samples_and_return_loads_and_assigns() {
+        let (lib, data, mut p, mut s) = open_browser("keys");
+        let (pp, sp): (*mut Project, *mut crate::UiState) = (&mut *p, &mut *s);
+        // SAFETY (every `unsafe` below): read between frames on this thread.
+        let st = || unsafe { &*sp };
+        let mut ui = draw(pp, sp);
+        let mut h = harness();
+        h.settle(&mut ui);
+        let kit_read = || st().kits.kit_rx.is_none();
+        // The window has the keys when it opens: Down picks the first kit, then the next.
+        h.key(egui::Key::ArrowDown, &mut ui);
+        frames_until(&mut h, &mut ui, kit_read);
+        assert_eq!(st().kits.selected_name(), "LinnDrum");
+        h.key(egui::Key::ArrowDown, &mut ui);
+        frames_until(&mut h, &mut ui, kit_read);
+        assert_eq!(st().kits.selected_name(), "Roland TR-808");
+        assert_eq!(st().kits.kit().unwrap().samples.len(), 18);
+        h.key(egui::Key::ArrowUp, &mut ui);
+        frames_until(&mut h, &mut ui, kit_read);
+        assert_eq!(st().kits.selected_name(), "LinnDrum");
+        // Right: into the samples (chh, kick, sd), the first picked; Down, the next ones.
+        h.key(egui::Key::ArrowRight, &mut ui);
+        assert_eq!(
+            (st().kits.column, st().kits.sample),
+            (Column::Samples, Some(0))
+        );
+        h.key(egui::Key::ArrowDown, &mut ui);
+        h.key(egui::Key::ArrowDown, &mut ui);
+        h.key(egui::Key::ArrowDown, &mut ui);
+        assert_eq!(st().kits.sample, Some(2), "the last of three stays picked");
+        // Return puts the sample on the lit pad (the first): a new rack.
+        h.key(egui::Key::Enter, &mut ui);
+        let rack = || {
+            let p = unsafe { &*pp };
+            let ti = channel_rack::rack_track(p).unwrap();
+            let slot = p.tracks[ti].au_instrument.as_ref().unwrap();
+            (
+                channel_rack::kit_of(&slot.state),
+                channel_rack::decode(&slot.state),
+            )
+        };
+        assert_eq!(rack().1[0].name, "sd");
+        // Left: back in the kits; Return loads the kit picked.
+        h.key(egui::Key::ArrowLeft, &mut ui);
+        h.key(egui::Key::Enter, &mut ui);
+        let (kit, channels) = rack();
+        let names: Vec<&str> = channels.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["kick", "sd", "", "chh"]);
+        assert_eq!(kit, "LinnDrum");
+        // The arrows were the window's: nothing drawn after it saw them.
+        let mut seen = false;
+        h.frame(vec![key_event(egui::Key::ArrowDown)], |u| {
+            ui(u);
+            seen = u.input(|i| i.key_pressed(egui::Key::ArrowDown));
+        });
+        assert!(!seen);
+        // A click outside the window: the keys are the arrange area's again.
+        h.click(pos2(1380.0, 1550.0), &mut ui);
+        assert!(!st().kits.keys);
+        let mut seen = false;
+        h.frame(vec![key_event(egui::Key::ArrowDown)], |u| {
+            ui(u);
+            seen = u.input(|i| i.key_pressed(egui::Key::ArrowDown));
+        });
+        assert!(seen);
+        // A click in the window: its keys again.
+        let search = at(&h, window_id().with("folders")).center();
+        h.click(search, &mut ui);
+        h.click(search, &mut ui);
+        assert!(st().kits.keys);
+        drop(ui);
+        let _ = std::fs::remove_dir_all(lib);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_sample_dragged_lands_on_a_pad_a_rack_channel_and_add_channel() {
+        let (lib, data, mut p, mut s) = open_browser("drag");
+        let path = format!("{}/Machines/Roland TR-808", lib.display());
+        s.kits.select(&path);
+        wait(&mut s.kits);
+        load_selected(&mut s.kits, &mut p);
+        let kit = s.kits.kit().unwrap().clone();
+        let ti = channel_rack::rack_track(&p).unwrap();
+        let (pp, sp): (*mut Project, *mut crate::UiState) = (&mut *p, &mut *s);
+        let channels = || {
+            // SAFETY: read between frames on this thread.
+            let p = unsafe { &*pp };
+            channel_rack::decode(&p.tracks[ti].au_instrument.as_ref().unwrap().state)
+        };
+        assert_eq!(channels().len(), 16);
+        let mut ui = draw(pp, sp);
+        let mut h = harness();
+        h.settle(&mut ui);
+        let id = window_id();
+        let index = |n: &str| kit.samples.iter().position(|x| x.name == n).unwrap();
+        // A sample's row: right of its triangle.
+        let row = |h: &crate::ui_test::Harness, i: usize| {
+            at(h, id.with(("hear", i))).center() + vec2(120.0, 0.0)
+        };
+        let mut drag = |h: &mut crate::ui_test::Harness, from: Pos2, to: Pos2| {
+            h.drag(
+                &[from, from + vec2(20.0, 10.0), to - vec2(6.0, 6.0), to],
+                egui::PointerButton::Primary,
+                &mut ui,
+            );
+        };
+        // Onto pad 5 of the window.
+        let (from, to) = (
+            row(&h, index("CB")),
+            at(&h, id.with(("pad", 4usize))).center(),
+        );
+        drag(&mut h, from, to);
+        assert_eq!(channels()[4].name, "CB");
+        // Onto the rack's third channel.
+        let (from, to) = (
+            row(&h, index("CL")),
+            at(&h, Id::unique(("rack_name", 2usize))).center(),
+        );
+        drag(&mut h, from, to);
+        assert_eq!(channels()[2].name, "CL");
+        // Onto Add Channel: a seventeenth channel.
+        let (from, to) = (
+            row(&h, index("CB")),
+            at(&h, Id::unique("rack_add")).center(),
+        );
+        drag(&mut h, from, to);
+        let after = channels();
+        assert_eq!(after.len(), 17);
+        assert_eq!(after[16].name, "CB");
+        assert!(after[16].path.ends_with("CB/CB.wav"), "{}", after[16].path);
+        let _ = std::fs::remove_dir_all(lib);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    /// Correlation of the left channels of `a` (from frame `at`) and `b`, over `n` frames.
+    fn likeness(a: &[f32], at: usize, b: &[f32], n: usize) -> f64 {
+        let (mut xy, mut xx, mut yy) = (0f64, 0f64, 0f64);
+        for k in 0..n {
+            let (Some(x), Some(y)) = (a.get((at + k) * 2), b.get(k * 2)) else {
+                break;
+            };
+            let (x, y) = (f64::from(*x), f64::from(*y));
+            xy += x * y;
+            xx += x * x;
+            yy += y * y;
+        }
+        xy / (xx * yy).sqrt().max(1e-12)
+    }
+
+    #[test]
+    fn audition_lit_plays_each_sample_and_each_kit_as_it_is_picked() {
+        let (lib, data, mut p, mut s) = open_browser("audition");
+        assert!(!s.kits.settings.audition, "off at first");
+        let (pp, sp): (*mut Project, *mut crate::UiState) = (&mut *p, &mut *s);
+        // SAFETY (every `unsafe` below): used between frames on this thread.
+        let st = || unsafe { &mut *sp };
+        let mut ui = draw(pp, sp);
+        let mut h = harness();
+        h.settle(&mut ui);
+        let rate = 44_100usize;
+        let kit_read = || st().kits.kit_rx.is_none() && st().kits.kit().is_some();
+        // Audition off: picking a kit plays nothing.
+        h.key(egui::Key::ArrowDown, &mut ui);
+        frames_until(&mut h, &mut ui, kit_read);
+        assert!(st().kits.audition_key().is_none());
+        // Light it (its key in the window): it is kept, and it plays the kit picked: its kick,
+        // snare and hat.
+        h.click(at(&h, window_id().with("audition")).center(), &mut ui);
+        assert!(st().kits.settings.audition);
+        assert!(Settings::load(&data).audition, "kept");
+        let linn = lib.join("Machines/LinnDrum");
+        assert_eq!(
+            st().kits.audition_key(),
+            Some(format!("kit:{}", linn.display()).as_str())
+        );
+        let out = capture(&mut st().kits, 44_100, 5.0, Duration::from_secs(10));
+        let step = (KIT_STEP_SECONDS * 44_100.0) as usize;
+        let skip = rate / 100;
+        for (k, f) in ["kick.wav", "sd.wav", "chh.wav"].iter().enumerate() {
+            let src = prowave_engine::sample_tools::decode(&linn.join(f), |_| true).unwrap();
+            // Past the voice's fade in, the first 50 ms of each hit are the file.
+            let c = likeness(&out, k * step + skip, &src.data[skip * 2..], rate / 20);
+            assert!(c > 0.99, "{f}: {c}");
+        }
+        assert!(out.len() / 2 < rate * 2, "it stops after the hits");
+        // Down to the next kit: it is heard as it is picked.
+        h.key(egui::Key::ArrowDown, &mut ui);
+        frames_until(&mut h, &mut ui, kit_read);
+        let tr808 = lib.join("Machines/Roland TR-808");
+        assert_eq!(
+            st().kits.audition_key(),
+            Some(format!("kit:{}", tr808.display()).as_str())
+        );
+        let out = capture(&mut st().kits, 44_100, 5.0, Duration::from_secs(10));
+        let kick =
+            prowave_engine::sample_tools::decode(&tr808.join("BD/BD0000.wav"), |_| true).unwrap();
+        assert!(likeness(&out, skip, &kick.data[skip * 2..], rate / 20) > 0.99);
+        // Into the samples: each one is heard as the arrows reach it.
+        h.key(egui::Key::ArrowRight, &mut ui);
+        h.key(egui::Key::ArrowDown, &mut ui);
+        let kit = st().kits.kit().unwrap().clone();
+        let i = st().kits.sample.unwrap();
+        assert_eq!(i, 1);
+        let file = kit.path_of(i);
+        assert_eq!(
+            st().kits.audition_key(),
+            Some(format!("sample:{}", file.display()).as_str())
+        );
+        let out = capture(&mut st().kits, 44_100, 5.0, Duration::from_secs(10));
+        let src = prowave_engine::sample_tools::decode(&file, |_| true).unwrap();
+        let sound = src.frames();
+        assert!(
+            out.len() / 2 >= sound,
+            "the whole sample: {} of {sound}",
+            out.len() / 2
+        );
+        let c = likeness(&out, skip, &src.data[skip * 2..], sound - skip);
+        assert!(c > 0.995, "{c}");
+        let peak = out.iter().fold(0f32, |m, x| m.max(x.abs()));
+        assert!(peak > 0.3, "{peak}");
+        // Its triangle while it plays stops it.
+        st().kits.audition_sample(i, false);
+        st().kits.audition_sample(i, true);
+        assert!(st().kits.audition_key().is_none());
+        drop(ui);
+        let _ = std::fs::remove_dir_all(lib);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_kit_of_a_hundred_thousand_samples_draws_in_a_frame() {
+        let mut s = Box::new(crate::UiState::new());
+        s.kits = KitBrowser::with(None, Vec::new());
+        s.kits.open = true;
+        let listing = crate::kit_files::Listing {
+            audio: (0..100_000)
+                .map(|i| {
+                    let (dir, name) = [
+                        ("Kicks", "Kick"),
+                        ("Snares", "Snare"),
+                        ("Hats", "Hat"),
+                        ("Perc", "Conga"),
+                    ][i % 4];
+                    format!("{dir}/{name} {i}.wav")
+                })
+                .collect(),
+            ..crate::kit_files::Listing::empty()
+        };
+        s.kits.selected = Some("/lib/Huge".into());
+        s.kits.kit = Some(Arc::new(listing.kit(Path::new("/lib/Huge"))));
+        let mut p = Box::new(Project::empty());
+        let (pp, sp): (*mut Project, *mut crate::UiState) = (&mut *p, &mut *s);
+        let mut ui = draw(pp, sp);
+        let mut h = harness();
+        h.settle(&mut ui);
+        h.key(egui::Key::ArrowRight, &mut ui);
+        let started = std::time::Instant::now();
+        for _ in 0..10 {
+            h.key(egui::Key::ArrowDown, &mut ui);
+        }
+        let per = started.elapsed() / 10;
+        drop(ui);
+        assert_eq!(s.kits.column, Column::Samples);
+        assert_eq!(s.kits.sample, Some(10));
+        // Debug build: far above what a frame takes, far below a stall.
+        assert!(per < Duration::from_millis(150), "{per:?} a frame");
+        eprintln!("a frame with a 100,000-sample kit: {per:?}");
     }
 
     /// The window with a kit picked, the folders, and the rack with a kit loaded.
@@ -1659,6 +2402,10 @@ mod tests {
         s.kits.set_favorite(&path, true);
         load_selected(&mut s.kits, &mut p);
         s.kits.pad = 2;
+        // Audition lit, the arrows in the samples, the fourth one picked.
+        s.kits.settings.audition = true;
+        s.kits.column = Column::Samples;
+        s.kits.sample = Some(3);
         let dir = std::env::var_os("PROWAVE_UI_PNG_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(std::env::temp_dir);

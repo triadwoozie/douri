@@ -1,15 +1,17 @@
-//! Reads one drum kit from its folder: every audio file in it with its class, and, when the
-//! kit comes with a definition (an SFZ file, a Hydrogen `drumkit.xml` or a DrumGizmo kit), the
-//! instruments that definition names: one sample each, the loudest velocity layer, with the
-//! class its name or its General MIDI note gives. [`Kit::pads`] is what a kit load puts on the
-//! Channel Rack. Nothing in the folder is changed. Runs on a background thread.
+//! Reads one drum kit from its folder: every audio file in it with its class, its SoundFont
+//! files, and, when the kit comes with a definition (an SFZ file, a Hydrogen `drumkit.xml` or a
+//! DrumGizmo kit), the instruments that definition names: one sample each, the loudest velocity
+//! layer, with the class its name or its General MIDI note gives. [`Kit::pads`] is what a kit
+//! load puts on the Channel Rack. Nothing in the folder is changed. Runs on a background thread.
+//!
+//! What is read from the folder is a [`Listing`]; the library's index keeps one for every kit
+//! (`kit-library/kits/` in the settings folder), so a kit picked in the browser is made from it
+//! without reading the library's disk.
 use crate::kit_classify::{classify, classify_label, gm_class, natural_cmp, DrumClass};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Most audio files read from one kit.
-pub const MAX_KIT_FILES: usize = 10_000;
 /// A definition file larger than this is not read.
 const MAX_DEFINITION_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -24,6 +26,13 @@ pub enum KitKind {
 }
 
 impl KitKind {
+    pub const ALL: [KitKind; 4] = [
+        KitKind::Files,
+        KitKind::Sfz,
+        KitKind::Hydrogen,
+        KitKind::DrumGizmo,
+    ];
+
     pub fn id(self) -> &'static str {
         match self {
             KitKind::Files => "files",
@@ -32,9 +41,13 @@ impl KitKind {
             KitKind::DrumGizmo => "drumgizmo",
         }
     }
+
+    pub fn from_id(id: &str) -> Option<KitKind> {
+        KitKind::ALL.into_iter().find(|k| k.id() == id)
+    }
 }
 
-/// One audio file of a kit.
+/// One file of a kit: an audio file, or a SoundFont (class [`DrumClass::SoundFont`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KitSample {
     /// Its path inside the kit folder, with `/`.
@@ -49,17 +62,57 @@ pub struct KitSample {
 pub struct Kit {
     pub root: PathBuf,
     pub kind: KitKind,
-    /// Every audio file, sorted by path.
+    /// Every audio file, sorted by path, then the SoundFont files.
     pub samples: Vec<KitSample>,
     /// The channels a kit load fills: indices into `samples`, `None` an empty channel.
     pub pads: Vec<Option<usize>>,
-    /// More than [`MAX_KIT_FILES`] audio files were there; the rest were left out.
-    pub cut: bool,
+    /// The classes the kit holds and how many samples of each, in [`DrumClass::ALL`]'s order.
+    pub classes: Vec<(DrumClass, usize)>,
 }
 
 impl Kit {
     pub fn path_of(&self, i: usize) -> PathBuf {
         self.root.join(&self.samples[i].rel)
+    }
+
+    /// The audio files (not the SoundFonts).
+    pub fn audio_count(&self) -> usize {
+        self.samples
+            .iter()
+            .filter(|s| s.class != DrumClass::SoundFont)
+            .count()
+    }
+
+    /// The kit's SoundFont files, as indices into `samples`.
+    pub fn soundfonts(&self) -> Vec<usize> {
+        (0..self.samples.len())
+            .filter(|i| self.samples[*i].class == DrumClass::SoundFont)
+            .collect()
+    }
+
+    /// What the kit plays when it is auditioned: its kick, its snare and its hat from the
+    /// channels a load fills (a clap or a rim when there is no snare, an open hat when there is
+    /// no closed one); a kit without any of them plays its first three channels.
+    pub fn audition_samples(&self) -> Vec<usize> {
+        use DrumClass::*;
+        let on: Vec<usize> = self.pads.iter().flatten().copied().collect();
+        let first = |list: &[DrumClass]| {
+            list.iter()
+                .find_map(|c| on.iter().copied().find(|i| self.samples[*i].class == *c))
+        };
+        let picked: Vec<usize> = [
+            first(&[Kick]),
+            first(&[Snare, Clap, Rim]),
+            first(&[ClosedHat, OpenHat]),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if picked.is_empty() {
+            on.into_iter().take(3).collect()
+        } else {
+            picked
+        }
     }
 }
 
@@ -75,13 +128,23 @@ fn is_audio(name: &str) -> bool {
     crate::import::is_audio_path(Path::new(name))
 }
 
-/// Every audio file and every `.sfz` and `.xml` file under `root` (paths inside it, with `/`),
-/// sorted; hidden files and `__MACOSX` are skipped. It ends at [`MAX_KIT_FILES`] audio files, and
-/// when `stop` is set (the kit is no longer wanted: a slow disk is not read for nothing).
-fn walk(root: &Path, stop: &AtomicBool) -> (Vec<String>, Vec<String>, bool) {
-    let mut audio = Vec::new();
-    let mut defs = Vec::new();
-    let mut cut = false;
+fn is_soundfont(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".sf2")
+}
+
+/// What a walk of a kit's folder finds (paths inside it, with `/`).
+#[derive(Default)]
+struct Walked {
+    audio: Vec<String>,
+    defs: Vec<String>,
+    soundfonts: Vec<String>,
+}
+
+/// Every audio, SoundFont, `.sfz` and `.xml` file under `root`, sorted; hidden files and
+/// `__MACOSX` are skipped. It ends early when `stop` is set (the kit is no longer wanted: a
+/// slow disk is not read for nothing).
+fn walk(root: &Path, stop: &AtomicBool) -> Walked {
+    let mut w = Walked::default();
     let mut stack = vec![(root.to_path_buf(), String::new(), 0usize)];
     'dirs: while let Some((dir, prefix, depth)) = stack.pop() {
         let Ok(read) = std::fs::read_dir(&dir) else {
@@ -106,27 +169,26 @@ fn walk(root: &Path, stop: &AtomicBool) -> (Vec<String>, Vec<String>, bool) {
                     stack.push((e.path(), rel, depth + 1));
                 }
             } else if is_audio(&name) {
-                if audio.len() >= MAX_KIT_FILES {
-                    cut = true;
-                    break 'dirs;
-                }
-                audio.push(rel);
+                w.audio.push(rel);
+            } else if is_soundfont(&name) {
+                w.soundfonts.push(rel);
             } else {
                 let low = name.to_ascii_lowercase();
                 if low.ends_with(".sfz") || low.ends_with(".xml") {
-                    defs.push(rel);
+                    w.defs.push(rel);
                 }
             }
         }
     }
-    audio.sort_by(|a, b| natural_cmp(a, b));
-    defs.sort_by(|a, b| {
+    w.audio.sort_by(|a, b| natural_cmp(a, b));
+    w.soundfonts.sort_by(|a, b| natural_cmp(a, b));
+    w.defs.sort_by(|a, b| {
         a.matches('/')
             .count()
             .cmp(&b.matches('/').count())
             .then_with(|| natural_cmp(a, b))
     });
-    (audio, defs, cut)
+    w
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -568,35 +630,218 @@ pub fn parse_drumgizmo(
 
 // ------------------------------------------------------------------------------------ the kit
 
-/// Finds a sample a definition names among the kit's files (the case of letters may differ).
-fn find_sample(samples: &[KitSample], rel: &str) -> Option<usize> {
-    samples
-        .iter()
-        .position(|s| s.rel == rel)
-        .or_else(|| samples.iter().position(|s| s.rel.eq_ignore_ascii_case(rel)))
+/// What is read from a kit's folder: its files and what its definition says. A [`Kit`] is made
+/// from it ([`Listing::kit`]) without the disk; the library's index keeps one for every kit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listing {
+    pub kind: KitKind,
+    /// The audio files, sorted (paths inside the kit, with `/`).
+    pub audio: Vec<String>,
+    pub soundfonts: Vec<String>,
+    /// The definition's instruments that are among `audio`, in its order, with the class it
+    /// gives them.
+    pub instruments: Vec<(String, Option<DrumClass>)>,
+}
+
+/// The first line of a kept listing.
+const LISTING_HEAD: &str = "prowave-kit-listing\t1";
+
+impl Listing {
+    pub fn empty() -> Self {
+        Self {
+            kind: KitKind::Files,
+            audio: Vec::new(),
+            soundfonts: Vec::new(),
+            instruments: Vec::new(),
+        }
+    }
+
+    /// Audio and SoundFont files.
+    #[cfg(test)]
+    pub fn files(&self) -> usize {
+        self.audio.len() + self.soundfonts.len()
+    }
+
+    /// The listing as text: a line a file (`a` audio, `s` SoundFont, `i` an instrument with
+    /// its class), tab-separated. A path holds no tab or line break on the disks this reads;
+    /// a file whose name does is left out.
+    pub fn to_text(&self) -> String {
+        let ok = |r: &String| !r.contains(['\t', '\n', '\r']);
+        let mut out =
+            String::with_capacity(self.audio.iter().map(|a| a.len() + 3).sum::<usize>() + 64);
+        out.push_str(LISTING_HEAD);
+        out.push('\n');
+        out.push_str("kind\t");
+        out.push_str(self.kind.id());
+        out.push('\n');
+        for (rel, class) in self.instruments.iter().filter(|i| ok(&i.0)) {
+            out.push_str("i\t");
+            out.push_str(class.map_or("-", |c| c.id()));
+            out.push('\t');
+            out.push_str(rel);
+            out.push('\n');
+        }
+        for rel in self.audio.iter().filter(|r| ok(r)) {
+            out.push_str("a\t");
+            out.push_str(rel);
+            out.push('\n');
+        }
+        for rel in self.soundfonts.iter().filter(|r| ok(r)) {
+            out.push_str("s\t");
+            out.push_str(rel);
+            out.push('\n');
+        }
+        out
+    }
+
+    /// A listing from [`Listing::to_text`]; `None` when the text is not one.
+    pub fn from_text(text: &str) -> Option<Self> {
+        let mut lines = text.lines();
+        if lines.next()? != LISTING_HEAD {
+            return None;
+        }
+        let mut l = Listing::empty();
+        for line in lines {
+            let (tag, rest) = line.split_once('\t')?;
+            match tag {
+                "kind" => l.kind = KitKind::from_id(rest)?,
+                "a" => l.audio.push(rest.to_string()),
+                "s" => l.soundfonts.push(rest.to_string()),
+                "i" => {
+                    let (class, rel) = rest.split_once('\t')?;
+                    l.instruments
+                        .push((rel.to_string(), DrumClass::from_id(class)));
+                }
+                _ => return None,
+            }
+        }
+        Some(l)
+    }
+
+    /// Several kits as one (a pool of one-sample folders): each one's files under its folder.
+    pub fn merged(parts: Vec<(String, Listing)>) -> Listing {
+        let mut l = Listing::empty();
+        for (folder, part) in parts {
+            l.audio
+                .extend(part.audio.into_iter().map(|r| format!("{folder}/{r}")));
+            l.soundfonts
+                .extend(part.soundfonts.into_iter().map(|r| format!("{folder}/{r}")));
+        }
+        l.audio.sort_by(|a, b| natural_cmp(a, b));
+        l.soundfonts.sort_by(|a, b| natural_cmp(a, b));
+        l
+    }
+
+    /// The kit in `root` this listing is of.
+    pub fn kit(&self, root: &Path) -> Kit {
+        let mut samples: Vec<KitSample> = self
+            .audio
+            .iter()
+            .map(|rel| sample(rel.clone(), classify(rel)))
+            .collect();
+        let at: HashMap<&str, usize> = self
+            .audio
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.as_str(), i))
+            .collect();
+        let instruments: Vec<(usize, Option<DrumClass>)> = self
+            .instruments
+            .iter()
+            .filter_map(|(rel, c)| at.get(rel.as_str()).map(|i| (*i, *c)))
+            .collect();
+        // A definition's word on a sample's class is better than its file name's.
+        for (s, class) in &instruments {
+            if let Some(c) = class {
+                samples[*s].class = *c;
+            }
+        }
+        let pads = if instruments.is_empty() {
+            let classes: Vec<DrumClass> = samples.iter().map(|s| s.class).collect();
+            crate::kit_classify::pads(&classes)
+        } else {
+            // One sample an instrument: the other velocity layers stay off the channels.
+            let classes: Vec<DrumClass> =
+                instruments.iter().map(|(s, _)| samples[*s].class).collect();
+            crate::kit_classify::pads(&classes)
+                .into_iter()
+                .map(|p| p.map(|i| instruments[i].0))
+                .collect()
+        };
+        samples.extend(
+            self.soundfonts
+                .iter()
+                .map(|rel| sample(rel.clone(), DrumClass::SoundFont)),
+        );
+        let classes = DrumClass::ALL
+            .into_iter()
+            .map(|c| (c, samples.iter().filter(|s| s.class == c).count()))
+            .filter(|(_, n)| *n > 0)
+            .collect();
+        Kit {
+            root: root.to_path_buf(),
+            kind: self.kind,
+            samples,
+            pads,
+            classes,
+        }
+    }
+}
+
+fn sample(rel: String, class: DrumClass) -> KitSample {
+    let file = rel.rsplit('/').next().unwrap_or(&rel);
+    let name = file.rsplit_once('.').map_or(file, |(s, _)| s).to_string();
+    KitSample { rel, name, class }
+}
+
+/// The kit's audio files by path, as they are and in small letters: a definition may name a
+/// file with the case of its letters changed.
+struct Lookup<'a> {
+    exact: HashMap<&'a str, usize>,
+    lower: HashMap<String, usize>,
+}
+
+impl<'a> Lookup<'a> {
+    fn new(audio: &'a [String]) -> Self {
+        Self {
+            exact: audio
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (a.as_str(), i))
+                .collect(),
+            lower: audio
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (a.to_lowercase(), i))
+                .collect(),
+        }
+    }
+
+    fn find(&self, rel: &str) -> Option<usize> {
+        self.exact
+            .get(rel)
+            .or_else(|| self.lower.get(&rel.to_lowercase()))
+            .copied()
+    }
 }
 
 /// Reads the kit in `root`.
+#[cfg(test)]
 pub fn read_kit(root: &Path) -> Kit {
-    read_kit_until(root, &AtomicBool::new(false))
+    list_kit_until(root, &AtomicBool::new(false)).kit(root)
 }
 
-/// [`read_kit`], given up when `stop` is set (what it returns then is not the whole kit).
-pub fn read_kit_until(root: &Path, stop: &AtomicBool) -> Kit {
-    let (audio, defs, cut) = walk(root, stop);
-    let mut samples: Vec<KitSample> = audio
-        .into_iter()
-        .map(|rel| {
-            let file = rel.rsplit('/').next().unwrap_or(&rel);
-            let name = file.rsplit_once('.').map_or(file, |(s, _)| s).to_string();
-            let class = classify(&rel);
-            KitSample { rel, name, class }
-        })
-        .collect();
+/// Reads what is in the kit's folder `root`, given up when `stop` is set.
+pub fn list_kit_until(root: &Path, stop: &AtomicBool) -> Listing {
+    let w = walk(root, stop);
+    let lookup = Lookup::new(&w.audio);
     // The first definition that names samples that are there.
     let mut kind = KitKind::Files;
-    let mut instruments: Vec<(usize, Option<DrumClass>)> = Vec::new();
-    for def in defs.iter().take(64) {
+    let mut instruments: Vec<(String, Option<DrumClass>)> = Vec::new();
+    for def in w.defs.iter().take(64) {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
         let Some(text) = read_text(&root.join(def)) else {
             continue;
         };
@@ -611,9 +856,13 @@ pub fn read_kit_until(root: &Path, stop: &AtomicBool) -> Kit {
         } else {
             continue;
         };
-        let here: Vec<(usize, Option<DrumClass>)> = list
+        let mut seen = std::collections::HashSet::new();
+        let here: Vec<(String, Option<DrumClass>)> = list
             .iter()
-            .filter_map(|i| find_sample(&samples, &i.rel).map(|s| (s, i.class)))
+            .filter_map(|i| {
+                let s = lookup.find(&i.rel)?;
+                seen.insert(s).then(|| (w.audio[s].clone(), i.class))
+            })
             .collect();
         if !here.is_empty() {
             kind = k;
@@ -621,29 +870,11 @@ pub fn read_kit_until(root: &Path, stop: &AtomicBool) -> Kit {
             break;
         }
     }
-    // A definition's word on a sample's class is better than its file name's.
-    for (s, class) in &instruments {
-        if let Some(c) = class {
-            samples[*s].class = *c;
-        }
-    }
-    let pads = if instruments.is_empty() {
-        let classes: Vec<DrumClass> = samples.iter().map(|s| s.class).collect();
-        crate::kit_classify::pads(&classes)
-    } else {
-        // One sample an instrument: the other velocity layers stay off the channels.
-        let classes: Vec<DrumClass> = instruments.iter().map(|(s, _)| samples[*s].class).collect();
-        crate::kit_classify::pads(&classes)
-            .into_iter()
-            .map(|p| p.map(|i| instruments[i].0))
-            .collect()
-    };
-    Kit {
-        root: root.to_path_buf(),
+    Listing {
         kind,
-        samples,
-        pads,
-        cut,
+        audio: w.audio,
+        soundfonts: w.soundfonts,
+        instruments,
     }
 }
 
@@ -858,5 +1089,114 @@ mod tests {
         let empty = read_kit(&dir.join("nothing-here"));
         assert!(empty.samples.is_empty() && empty.pads.is_empty());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_listing_kept_as_text_gives_the_same_kit() {
+        let dir = temp("listing");
+        touch(&dir, "drumkit.xml", HYDROGEN);
+        for f in [
+            "kick-soft.flac",
+            "kick-hard.flac",
+            "sn.wav",
+            "a.wav",
+            "extra.wav",
+            "GM.sf2",
+        ] {
+            touch(&dir, f, "");
+        }
+        let listing = list_kit_until(&dir, &AtomicBool::new(false));
+        assert_eq!(listing.kind, KitKind::Hydrogen);
+        assert_eq!(listing.files(), 6);
+        let text = listing.to_text();
+        let again = Listing::from_text(&text).unwrap();
+        assert_eq!(again, listing);
+        assert_eq!(again.kit(&dir), read_kit(&dir));
+        assert!(Listing::from_text("something else\nkind\tfiles\n").is_none());
+        assert!(Listing::from_text(&text.replace("kind\thydrogen", "kind\tnope")).is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_kit_of_more_than_ten_thousand_files_is_read_whole() {
+        let dir = temp("big");
+        for i in 0..10_050 {
+            let class = ["Kick", "Snare", "Hat"][i % 3];
+            touch(&dir, &format!("{class}s/{class} {i}.wav"), "");
+        }
+        let kit = read_kit(&dir);
+        assert_eq!(kit.samples.len(), 10_050);
+        assert_eq!(kit.classes.len(), 3);
+        assert_eq!(kit.classes[0], (Kick, 3350));
+        assert_eq!(kit.pads.len(), crate::kit_classify::KIT_PADS);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn soundfonts_are_listed_and_never_on_a_channel() {
+        let dir = temp("sf2");
+        touch(&dir, "Drums.SF2", "");
+        touch(&dir, "sub/More.sf2", "");
+        let kit = read_kit(&dir);
+        assert_eq!(kit.samples.len(), 2);
+        assert!(kit.pads.is_empty());
+        assert_eq!(kit.soundfonts(), [0, 1]);
+        assert_eq!(kit.audio_count(), 0);
+        assert_eq!(kit.classes, [(SoundFont, 2)]);
+        touch(&dir, "kick.wav", "");
+        let kit = read_kit(&dir);
+        assert_eq!(kit.samples[0].rel, "kick.wav", "audio first");
+        assert_eq!(kit.pads, [Some(0)]);
+        assert_eq!(kit.soundfonts(), [1, 2]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_pool_is_its_folders_files_together() {
+        let part = |files: &[&str]| Listing {
+            audio: files.iter().map(|f| f.to_string()).collect(),
+            ..Listing::empty()
+        };
+        let pool = Listing::merged(vec![
+            ("Snare 2".into(), part(&["Snare 2.wav"])),
+            ("Kick 1".into(), part(&["Kick 1.wav"])),
+            ("Hat".into(), part(&["Closed Hat.wav"])),
+        ]);
+        assert_eq!(
+            pool.audio,
+            [
+                "Hat/Closed Hat.wav",
+                "Kick 1/Kick 1.wav",
+                "Snare 2/Snare 2.wav"
+            ]
+        );
+        let kit = pool.kit(Path::new("/lib/Pool"));
+        assert_eq!(kit.pads, [Some(1), Some(2), None, Some(0)]);
+        assert_eq!(kit.path_of(1), Path::new("/lib/Pool/Kick 1/Kick 1.wav"));
+    }
+
+    #[test]
+    fn a_kit_is_auditioned_by_its_kick_snare_and_hat() {
+        let l = Listing {
+            audio: ["crash.wav", "hat.wav", "kick.wav", "perc.wav", "snare.wav"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            ..Listing::empty()
+        };
+        let kit = l.kit(Path::new("/k"));
+        let names: Vec<&str> = kit
+            .audition_samples()
+            .iter()
+            .map(|i| kit.samples[*i].name.as_str())
+            .collect();
+        assert_eq!(names, ["kick", "snare", "hat"]);
+        // Nothing of the three: the first channels.
+        let l = Listing {
+            audio: vec!["a.wav".into(), "b.wav".into()],
+            ..Listing::empty()
+        };
+        let kit = l.kit(Path::new("/k"));
+        assert_eq!(kit.audition_samples(), [0, 1]);
     }
 }

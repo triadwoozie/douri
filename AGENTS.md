@@ -15,9 +15,10 @@ is not built. `README.md` has a status count made from the code (`cargo xtask st
 | Path | What it is | Main files |
 | :--- | :--- | :--- |
 | `crates/prowave-engine` | The real-time engine and everything that makes or changes sound. | `core.rs` (`EngineCore::process`, the `Command` enum), `output.rs` (cpal stream, the command sender), `duplex.rs` (macOS input and output in one callback), `wasapi.rs` (Windows output), `disk.rs` and `mapped.rs` (audio files streamed from disk), `capture.rs` (recording), `fx.rs`, `convolver.rs` and `native_fx/` (effects), `routing.rs` (sends, buses, automation), `synth.rs`, `soundfont.rs`, `sample_rack.rs` (instruments), `arp.rs` (the Arpeggiator's note generator: it makes the notes of a track's regions ahead of time for the app's `midi_fx.rs`, and plays the keys played live inside `core.rs`), `plugin_track.rs`, `au.rs`, `vst3.rs`, `plugin_handle.rs` (plug-in hosting, macOS), `prerender.rs` (playback threads), `tempo_map.rs`, `triple.rs` (lock-free state for the interface), `flex.rs`, `analysis.rs`, `note_render.rs` (offline audio work), `reference_match/` (Match to Reference: the Matchering port; its parity test runs the Python original from `tools/matchering/`) |
-| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `autosave.rs` and `recovery.rs` (recovery copies, the session folder), `crash_log.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `channel_rack.rs` and the Kit Browser on its Kits key (`kit_browser.rs` the window, `kit_library.rs` the index of the library folders, made on a background thread and cached, `kit_files.rs` one kit's files and its SFZ, Hydrogen or DrumGizmo definition, `kit_classify.rs` what a sample is and which channel it goes on), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
+| `crates/prowave-app` | The desktop program (binary `prowave`): every window, menu and editor. | `main.rs`, `model.rs` (the project in memory), `engine_sync.rs` (turns the project into engine commands), `project_io.rs` (open and save), `menus.rs`, `file_commands.rs`, `autosave.rs` and `recovery.rs` (recovery copies, the session folder), `crash_log.rs`, `tracks_area.rs`, `mixer.rs`, `piano_roll.rs`, `transport.rs`, `plugins.rs` and `vst3_scan.rs` (plug-in lists, scan, crash list), `channel_rack.rs` and the Kit Browser on its Kits key (`kit_browser.rs` the window, `kit_library.rs` the index of the library folders, made on background threads and cached with a listing of every kit's files, `kit_files.rs` one kit's files and its SFZ, Hydrogen or DrumGizmo definition, `kit_classify.rs` what a sample is and which channel it goes on), `theme.rs` and `hw.rs` (the look), `i18n.rs` and `locales/` (translations) |
 | `crates/prowave-project` | The `.prowave` file format: a zip with `project.json` and `media/`. | `lib.rs` |
 | `xtask` | The checks, run as `cargo xtask <task>`. | `main.rs`, `bench.rs`, `status.rs` |
+| `crates/prowave-plug` | The built-in instruments and effects as VST3, CLAP and Audio Unit plug-ins, one bundle each (nih-plug). A workspace of its own, not a member of this one: see its `README.md`. | `core.rs` (the audio thread), `params.rs`, `editor/`, `tools/build-plugins.sh` |
 
 The Singer's and Vocal Top Line's voice engines are vendored, not workspace members, and not
 linted or tested as ours: `crates/chimera` (CHIMERA, Rust, MIT, upstream eeb0c19),
@@ -41,6 +42,12 @@ The app's side is `crates/prowave-app/src/control_api/` (`registry.rs` is the on
 methods; `mod.rs` says how a request travels), the client and MCP server is the crate
 `crates/prowavectl`, and `docs/CONTROL-API.md` is the reference (its method table is made from
 the registry; a test fails when it is stale).
+
+`crates/prowave-plug` is left out of this workspace (`exclude` in `Cargo.toml`), so
+`cargo xtask check`, `--workspace` and `cargo deny` do not cover it; check it with
+`cargo clippy --manifest-path crates/prowave-plug/Cargo.toml --all-targets -- -D warnings` and
+`cargo test --manifest-path crates/prowave-plug/Cargo.toml`, and build the bundles with
+`bash crates/prowave-plug/tools/build-plugins.sh OUT` (its README says what that needs).
 
 There are no other crates. Earlier versions of this file named `prowave-dsp`,
 `prowave-instruments`, `prowave-midi`, `prowave-mixer`, `prowave-plugin-host`, `prowave-ui`,

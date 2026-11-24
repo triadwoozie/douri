@@ -1795,16 +1795,23 @@
       "group": "kits",
       "name": "kits.status",
       "params": [],
-      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
-      "summary": "The drum-kit library: its folders (present: the folder is there now), the number of kits and the sources. The first call scans the folders."
+      "result": "{folders: [{path, present, kits}], kits, listed, pools, sources: [{name, kits}], scanning, listing: {done, total} or null, indexing, scan_ms, last_listing: {read, ms}, favorites, audition}",
+      "summary": "The drum-kit library: its folders (present: the folder is there now), the number of kits (listed: those whose files are read and kept; pools: sources of one-sample folders shown as one) and the sources. The first call reads the folders."
     },
     {
       "changes_project": false,
       "group": "kits",
       "name": "kits.rescan",
-      "params": [],
-      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
-      "summary": "Scans the library folders again and waits for it; scan_ms is how long it took."
+      "params": [
+        {
+          "description": "false: read again only the kits never read and those whose folder has changed (default true)",
+          "name": "full",
+          "required": false,
+          "type": "boolean"
+        }
+      ],
+      "result": "{folders: [{path, present, kits}], kits, listed, pools, sources: [{name, kits}], scanning, listing: {done, total} or null, indexing, scan_ms, last_listing: {read, ms}, favorites, audition}",
+      "summary": "Reads the library folders again and waits for it (scan_ms is how long it took); then every kit's files are read again in the background (listing in kits.status while they are)."
     },
     {
       "changes_project": false,
@@ -1818,7 +1825,7 @@
           "type": "array"
         }
       ],
-      "result": "{folders: [{path, present, kits}], kits, sources: [{name, kits}], scanning, scan_ms, favorites}",
+      "result": "{folders: [{path, present, kits}], kits, listed, pools, sources: [{name, kits}], scanning, listing: {done, total} or null, indexing, scan_ms, last_listing: {read, ms}, favorites, audition}",
       "summary": "Sets the library folders (saved), then scans them. A folder that is not there is kept and shows present: false."
     },
     {
@@ -1867,7 +1874,7 @@
           "type": "integer"
         }
       ],
-      "result": "{total, offset, kits: [{path, source, name, files, license, best, favorite}]}",
+      "result": "{total, offset, kits: [{path, source, name, files, license, best, favorite, channels, pool}]}",
       "summary": "The kits whose source or name holds every word of the query, as the Kit Browser lists them."
     },
     {
@@ -1876,22 +1883,30 @@
       "name": "kits.get",
       "params": [
         {
-          "description": "the kit's folder",
+          "description": "the kit's folder (a pool's: its source's folder)",
           "name": "path",
           "required": true,
           "type": "string"
         },
         {
+          "description": "samples to skip (default 0)",
+          "max": 100000000.0,
+          "min": 0.0,
+          "name": "offset",
+          "required": false,
+          "type": "integer"
+        },
+        {
           "description": "most samples to list (default 200)",
-          "max": 10000.0,
+          "max": 100000000.0,
           "min": 0.0,
           "name": "limit",
           "required": false,
           "type": "integer"
         }
       ],
-      "result": "{path, kind (files, sfz, hydrogen, drumgizmo), files, samples: [{index, file, name, class}], channels: [{channel, file, class}]}",
-      "summary": "Reads a kit's folder: its audio files with the class of each (kick, snare, clap, closed_hat, open_hat, rim, tom_low, tom_mid, tom_high, perc, shaker, crash, ride, 808, fx, loop, other) and the channels a load fills."
+      "result": "{path, kind (files, sfz, hydrogen, drumgizmo), files, classes: [{class, files}], offset, samples: [{index, file, name, class}], channels: [{channel, file, class}], audition: [file]}",
+      "summary": "A kit's files (from its kept listing, else read from its folder): its audio and SoundFont files with the class of each (kick, snare, clap, closed_hat, open_hat, rim, tom_low, tom_mid, tom_high, perc, shaker, crash, ride, 808, fx, loop, other, sf2), the channels a load fills and the samples its audition plays."
     },
     {
       "changes_project": true,
@@ -1912,7 +1927,7 @@
         }
       ],
       "result": "{track, kit, channels: [{channel, name, path}]}",
-      "summary": "Loads a kit into a Channel Rack: its samples go on the channels kits.get lists; levels, pans, mutes and steps stay."
+      "summary": "Loads a kit into a Channel Rack: its samples go on the channels kits.get lists; levels, pans, mutes and steps stay. A kit of SoundFonts alone goes on a new instrument track as its SoundFont (its drum preset when it has one)."
     },
     {
       "changes_project": true,
@@ -1942,6 +1957,33 @@
       ],
       "result": "{track, kit, channels: [{channel, name, path}]}",
       "summary": "Puts one audio file on one channel of a Channel Rack (empty channels are added up to it)."
+    },
+    {
+      "changes_project": false,
+      "group": "kits",
+      "name": "kits.audition",
+      "params": [
+        {
+          "description": "one audio file",
+          "name": "file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a kit's folder (its kick, snare and hat)",
+          "name": "path",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "a WAV file to write the audition into instead of playing it",
+          "name": "capture",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "result": "{playing: [file]}, or with capture {capture, rate, frames, seconds, peak, rms, hits: [{file, at_seconds, correlation}]}",
+      "summary": "Plays one sample, or a kit's kick, snare and hat, on the audition voice as the Kit Browser does. With capture, nothing is played aloud: the audition voice's output is written to that WAV file instead and compared with the files played."
     },
     {
       "changes_project": false,

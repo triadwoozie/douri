@@ -5,6 +5,51 @@ being released into the GitHub Release notes, so keep one `## <version>` heading
 
 ## Unreleased
 
+### 2026-11-24: the Kit Browser at the library's size
+
+- A kit picked opens at once: a scan reads the library folders first (the list is there in
+  milliseconds), then every kit's files on four background threads, and keeps a listing a kit
+  in `kit-library/kits/`. A kit is made from its listing; the library's disk is read again only
+  for kits never read, kits whose folder changed, and on Rescan (all of them). The list, the
+  search and picking kits all work while the files are read; the Folders panel shows how many
+  kits are read so far.
+- No limit on a kit's files (it was 10,000); the lists draw only the rows in view.
+- Arrow keys: Up and Down move through the kits or the samples, Right goes into the samples and
+  Left back, Return loads the kit or puts the sample on the lit pad. The window has the keys
+  from when it opens and while it was the last thing clicked, and the arrange area does not
+  also get them.
+- Audition is a key that stays lit (off at first, kept): picking a sample plays it, and picking
+  a kit, by click or arrow, plays its kick, snare and hat. Lighting it plays what is picked.
+  The triangle of a sample still plays it with Audition out.
+- SoundFont files are listed with a kit's samples (SF2) and counted when the kit is read; a kit
+  of SoundFonts alone loads onto a new instrument track as its SoundFont (its drum preset when
+  it has one), as does a double-click or Return on an SF2 row.
+- A source whose kits are nearly all one sample each (90 % of 20 or more, such as a site that
+  gives each sample a page) is one pool: one line, its samples listed together.
+- `MANIFEST.tsv` is read by its header's column names, with eight or nine columns; kits its
+  `other_names_same_content` column says hold the same files are shown once, found by any of
+  their names and ranked by the best rank among them.
+- A library folder that is not there is marked missing in Folders.
+- `prowavectl`: `kits.status` reports `listed`, `pools`, `listing` and `indexing`;
+  `kits.rescan` takes `full`; `kits.get` pages with `offset` and lists classes and the
+  audition's samples; `kits.load` loads a SoundFont kit; new `kits.audition` plays a sample or
+  a kit, or with `capture` writes what the audition voice plays to a WAV file and compares it
+  with the files.
+
+### 2026-11-24: the built-in instruments and effects as plug-ins
+
+Checked by tests, `auval`, `prowave --vst3-check` and offline renders only; nothing was played
+or listened to, and no host program opened a window.
+
+- Each built-in instrument and effect of the public build is also a plug-in for other music
+  programs: VST3, CLAP and Audio Unit, universal (Apple silicon and Intel), named "Pro Wave"
+  and its name ("Pro Wave Kick", "Pro Wave Tune") so they are listed together. Seventeen
+  instruments and ten effects. Each has the parameters, value texts and pages of its window in
+  Pro Wave, the Hardware look, and the presets in a menu on the faceplate. Instruments take
+  notes, velocity, pitch bend, the sustain pedal and the "all off" controllers; effects report
+  their latency. Built by `crates/prowave-plug/tools/build-plugins.sh`; see
+  `crates/prowave-plug/README.md`. The bundles are not notarized.
+
 ## 0.3.1
 
 ### 2026-11-24: more free plug-ins

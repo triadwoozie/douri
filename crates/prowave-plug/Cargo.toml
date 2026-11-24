@@ -1,0 +1,49 @@
+# Pro Wave's built-in instruments and effects as VST3, CLAP and Audio Unit plug-ins (one bundle
+# per instrument or effect; see README.md). Its own workspace, apart from the program's: the
+# plug-in framework (nih-plug, ISC, from git) and its dependencies stay out of the program's
+# lock file, `cargo deny` and `cargo xtask check`.
+[workspace]
+resolver = "2"
+members = ["."]
+
+[package]
+name = "prowave-plug"
+version = "0.3.1"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+description = "Pro Wave's built-in instruments and effects as VST3, CLAP and Audio Unit plug-ins"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# The public build of the engine: none of the private build's parts.
+prowave-engine = { path = "../prowave-engine", default-features = false }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "de421011f41a6d10fc8c7a6084e4f4dee0143683", features = ["assert_process_allocs"] }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "de421011f41a6d10fc8c7a6084e4f4dee0143683" }
+
+[build-dependencies]
+# build.rs reads the instrument's or effect's name and kind from the engine's tables.
+prowave-engine = { path = "../prowave-engine", default-features = false }
+
+[dev-dependencies]
+# The allocation checker nih-plug installs as the global allocator in debug builds, set to
+# count instead of abort so the tests can report it.
+assert_no_alloc = { git = "https://github.com/robbert-vdh/rust-assert-no-alloc.git", branch = "feature/nested-permit-forbid", features = ["backtrace", "log", "warn_debug"] }
+clap-sys = { git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156" }
+libloading = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = 3
+
+# As in the program's workspace: these engines are far too slow unoptimised for the tests.
+[profile.dev.package.circuit-dsp]
+opt-level = 3
+[profile.dev.package.mi-plaits-dsp]
+opt-level = 3
+[profile.dev.package.prowave-engine]
+opt-level = 2
