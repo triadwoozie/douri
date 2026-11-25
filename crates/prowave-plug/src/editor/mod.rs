@@ -25,7 +25,7 @@ use gear::{Cap, Change, Control, LedAt, CELL_H, CELL_W};
 use nih_plug::prelude::*;
 use nih_plug_egui::egui::{self, pos2, vec2, Align2, Pos2, Rect, Sense, Ui};
 use nih_plug_egui::{create_egui_editor, EguiState};
-use prowave_engine::native_inst::{fm6, wave_draw};
+use prowave_engine::native_inst::{digital_osc, fm6, macro_osc, monstro, wave_draw};
 use prowave_engine::NativeFxInfo;
 use std::sync::{Arc, Mutex};
 
@@ -43,6 +43,20 @@ const SHAPE_ROW_H: f32 = 40.0;
 fn draws_wave(info: &NativeFxInfo) -> bool {
     info.id == wave_draw::ID
 }
+
+/// Whether the instrument draws a live hardware phosphor scope.
+fn has_phosphor_scope(info: &NativeFxInfo) -> bool {
+    matches!(
+        info.id,
+        fm6::ID
+            | macro_osc::ID
+            | digital_osc::ID
+            | monstro::ID
+            | prowave_engine::native_fx::spectral::ID
+    )
+}
+
+const SCOPE_H: f32 = 58.0;
 
 /// Whether the instrument reads voices from .syx files (FM6).
 fn loads_syx(info: &NativeFxInfo) -> bool {
@@ -124,6 +138,8 @@ fn body_size(info: &NativeFxInfo, pages: &[Page]) -> (f32, f32) {
     let keys_h = if keys > 0 { PAGE_ROW_H } else { 0.0 };
     let graph_h = if draws_wave(info) {
         GRAPH_H + SHAPE_ROW_H
+    } else if has_phosphor_scope(info) {
+        SCOPE_H + 8.0
     } else {
         0.0
     };
@@ -436,6 +452,40 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
                 set_once(&mut out, k, v);
             }
             y += GRAPH_H + SHAPE_ROW_H;
+        } else if has_phosphor_scope(info) {
+            let scope_rect = Rect::from_min_size(
+                pos2(rect.left() + PAD, y),
+                vec2(width - PAD * 2.0, SCOPE_H),
+            );
+            let g = ui.painter();
+            g.rect_filled(scope_rect, 6.0, egui::Color32::from_rgb(0x0c, 0x1f, 0x1d));
+            g.rect_stroke(
+                scope_rect,
+                6.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x1b, 0x3d, 0x38)),
+                egui::StrokeKind::Inside,
+            );
+            let inner = scope_rect.shrink(4.0);
+            let p0 = vals.first().copied().unwrap_or(0) as f32;
+            let p1 = vals.get(1).copied().unwrap_or(0) as f32;
+            let mod_depth = (p0.abs() * 0.05 + 0.5).clamp(0.5, 4.0);
+            let ratio = (p1.abs() * 0.1 + 1.0).clamp(1.0, 5.0);
+            let pts: Vec<Pos2> = (0..64)
+                .map(|i| {
+                    let t = i as f32 / 63.0;
+                    let ph = t * std::f32::consts::TAU * 2.0;
+                    let s = (ph + mod_depth * (ph * ratio).sin()).sin();
+                    pos2(
+                        inner.left() + t * inner.width(),
+                        inner.center().y - s * (inner.height() * 0.42),
+                    )
+                })
+                .collect();
+            g.add(egui::Shape::line(
+                pts,
+                egui::Stroke::new(1.8, egui::Color32::from_rgb(0x38, 0xd9, 0xa9)),
+            ));
+            y += SCOPE_H + 8.0;
         }
         let keys = top_keys(info, pages);
         if keys > 0 {

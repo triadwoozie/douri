@@ -640,6 +640,38 @@ fn header(
                         edited.params = edited.kind.defaults();
                     }
                     let mut bypass = edited.bypass;
+                    let (sw_rect, _) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::hover());
+                    if crate::widgets::daw_rocker_switch(
+                        ui,
+                        sw_rect,
+                        ui.make_persistent_id(("fx_pwr", edited.label())),
+                        !bypass,
+                        false,
+                    ) {
+                        bypass = !bypass;
+                        edited.bypass = bypass;
+                    }
+                    let plate_label = match edited.kind {
+                        FxKind::Overdrive | FxKind::LemonDist | FxKind::Amp => "DRIVE",
+                        FxKind::Limiter | FxKind::LemonLimiter | FxKind::LemonClip => "LIMIT",
+                        FxKind::Compressor | FxKind::MultiComp => "COMP",
+                        _ => "ACTIVE",
+                    };
+                    let (pl_rect, _) = ui.allocate_exact_size(vec2(52.0, 20.0), Sense::hover());
+                    if crate::widgets::daw_backlit_plate(
+                        ui,
+                        pl_rect,
+                        ui.make_persistent_id(("fx_plate", edited.label())),
+                        plate_label,
+                        !bypass,
+                        matches!(
+                            edited.kind,
+                            FxKind::Overdrive | FxKind::LemonDist | FxKind::Amp
+                        ),
+                    ) {
+                        bypass = !bypass;
+                        edited.bypass = bypass;
+                    }
                     let response = ui.add(
                         egui::Button::new(
                             RichText::new(tr("Bypass")).size(10.5).color(if bypass {
@@ -715,6 +747,95 @@ fn knob_rack(
     edits: &mut Vec<Edit>,
 ) {
     let cells = insert.kind.params().len();
+    // Hardware auxiliary controls for specific built-in FX engines.
+    if insert.kind == FxKind::Filter && cells >= 3 {
+        ui.horizontal(|ui| {
+            let (sel_rect, _) = ui.allocate_exact_size(vec2(128.0, 76.0), Sense::hover());
+            let mode = insert.params[2].round().clamp(0.0, 2.0) as usize;
+            if let Some(next) = crate::widgets::daw_radial_selector(
+                ui,
+                sel_rect,
+                ui.make_persistent_id(("filter_mode", slot)),
+                &["LP", "HP", "BP"],
+                mode,
+            ) {
+                edits.push(Edit {
+                    param: 2,
+                    value: next as f32,
+                    ended: true,
+                });
+            }
+        });
+        ui.add_space(4.0);
+    } else if matches!(insert.kind, FxKind::Overdrive | FxKind::LemonDist) && cells >= 3 {
+        let infos = insert.kind.params();
+        let mut norm_vals = [
+            infos[0].to_norm(insert.params[0]),
+            infos[1].to_norm(insert.params[1]),
+            infos[2].to_norm(insert.params[2]),
+        ];
+        ui.horizontal(|ui| {
+            let (xyz_rect, _) = ui.allocate_exact_size(vec2(150.0, 82.0), Sense::hover());
+            if crate::widgets::daw_xyz_sliders(
+                ui,
+                xyz_rect,
+                ui.make_persistent_id(("drive_xyz", slot)),
+                &["DRIVE", "TONE", "MIX"],
+                &mut norm_vals,
+                true,
+            ) {
+                for (k, &nv) in norm_vals.iter().enumerate() {
+                    edits.push(Edit {
+                        param: k,
+                        value: infos[k].from_norm(nv),
+                        ended: false,
+                    });
+                }
+            }
+            let (led_rect, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
+            let boosted = insert.params[0] > infos[0].default + 1.0;
+            if crate::widgets::daw_led_button(
+                ui,
+                led_rect.center(),
+                9.0,
+                ui.make_persistent_id(("drive_led", slot)),
+                boosted,
+                true,
+            ) {
+                let target_v = if boosted {
+                    infos[0].default
+                } else {
+                    (infos[0].max * 0.6).max(infos[0].default + 6.0)
+                };
+                edits.push(Edit {
+                    param: 0,
+                    value: target_v.clamp(infos[0].min, infos[0].max),
+                    ended: true,
+                });
+            }
+        });
+        ui.add_space(4.0);
+    } else if matches!(
+        insert.kind,
+        FxKind::Compressor | FxKind::MultiComp | FxKind::Limiter
+    ) {
+        ui.horizontal(|ui| {
+            let (led_rect, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
+            let on = !insert.bypass;
+            if crate::widgets::daw_led_button(
+                ui,
+                led_rect.center(),
+                8.5,
+                ui.make_persistent_id(("dyn_led", slot)),
+                on,
+                false,
+            ) {
+                insert.bypass = !insert.bypass;
+            }
+            ui.label(RichText::new("ENGAGE").size(9.5).color(DIM));
+        });
+        ui.add_space(2.0);
+    }
     ui.horizontal_wrapped(|ui| {
         for k in 0..cells {
             let info = &insert.kind.params()[k];
@@ -2861,6 +2982,17 @@ fn drive_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accen
             })
             .collect();
         g.add(Shape::line(pts, Stroke::new(2.0, accent)));
+        let scope_rect = Rect::from_min_max(
+            pos2(rect.right() - 124.0, rect.top() + 10.0),
+            pos2(rect.right() - 10.0, rect.top() + 58.0),
+        );
+        let scope_samples: Vec<f32> = (0..48)
+            .map(|i| {
+                let ph = i as f32 / 47.0 * std::f32::consts::TAU * 2.0;
+                ((ph.sin() * drive).tanh() / norm).clamp(-1.0, 1.0)
+            })
+            .collect();
+        crate::widgets::daw_phosphor_scope(g, scope_rect, &scope_samples);
         g.text(
             pos2(rect.left() + 12.0, rect.bottom() - 8.0),
             Align2::LEFT_BOTTOM,
