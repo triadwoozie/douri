@@ -1,6 +1,6 @@
 [package]
 name = "douri-installer"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 edition = "2021"
 description = "Installer for Dōri Digital Audio Workstation"
 license = "GPL-3.0-or-later"

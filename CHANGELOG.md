@@ -2,6 +2,14 @@
 
 What changed in each Dōri release.
 
+## [0.1.0-alpha.9] - 2026-11-25
+
+- **Drag-to-Track-Header & Drum Kit Designer**: Added `Create New Track using:` modal (`Quick Sampler (Original)`, `Quick Sampler (Optimized)`, `Drum Kit Designer` collapsible Summing Track Stack + groove MIDI, `Sampler (Zone Per Note)`) and `Add Region to Loops Library` tagged user loop persistence.
+- **Modern Vector DAW Controls & Hardware Widgets**: Replaced legacy knobs with `daw_knob` flat-bevel vector knobs, switched Macro Controls `Drive` to continuous scaling, and wired `daw_rocker_switch`, `daw_led_button`, `daw_backlit_plate`, `daw_radial_selector`, `daw_xyz_sliders`, and `daw_phosphor_scope` across `fx_ui.rs` and `prowave-plug`.
+- **Opaque Panels & Window Control Glow**: Restored opaque `#1c1c1e` panel/window fills across workspace drawers and added Yellow/Green/Red translucent inner-glow hover states to title-bar window controls.
+- **Cycle Repeat Transport Fix**: Pressing `Space` with Cycle Repeat enabled starts playback from the selected range start (`#4`).
+- **Docs**: Updated `AGENTS.md` and `README.md` attributions.
+
 ## Unreleased (Transit & LMMS Integration)
 
 ### Audio Engine & Platform Backends
