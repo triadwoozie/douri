@@ -2086,6 +2086,9 @@ fn menu_style(light: bool) -> impl Fn(&mut egui::Style) + Send + Sync + 'static 
         } else {
             Color32::from_rgb(0x28, 0x29, 0x2d)
         };
+        style.spacing.button_padding = egui::vec2(10.0, 4.0);
+        style.spacing.menu_margin = egui::Margin::same(6);
+        style.spacing.window_margin = egui::Margin::same(6);
         let v = &mut style.visuals;
         v.window_fill = l.menu;
         v.window_stroke = Stroke::new(1.0, l.separator);
@@ -2093,10 +2096,13 @@ fn menu_style(light: bool) -> impl Fn(&mut egui::Style) + Send + Sync + 'static 
         v.override_text_color = None;
         v.widgets.noninteractive.fg_stroke.color = l.text;
         v.widgets.inactive.fg_stroke.color = l.bar_text;
+        v.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
         v.widgets.hovered.weak_bg_fill = hover_fill;
         v.widgets.hovered.fg_stroke.color = l.bar_text;
+        v.widgets.open.corner_radius = egui::CornerRadius::same(6);
         v.widgets.open.weak_bg_fill = hover_fill;
         v.widgets.open.fg_stroke.color = l.bar_text;
+        v.widgets.active.corner_radius = egui::CornerRadius::same(6);
         v.widgets.active.fg_stroke.color = l.bar_text;
     }
 }

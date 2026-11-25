@@ -370,7 +370,7 @@ fn note_name(n: u8) -> String {
     format!("{}{}", NAMES[(n % 12) as usize], n as i32 / 12 - 2)
 }
 
-/// Disclosure triangle + "Title: name" section header. Returns true when toggled.
+/// Section header: "Title: name" on the left and a disclosure chevron on the right.
 fn section_header(
     ui: &Ui,
     g: &Painter,
@@ -384,53 +384,53 @@ fn section_header(
     g.rect_filled(r, 0.0, HEADER_BG);
     g.line_segment(
         [r.left_bottom(), r.right_bottom()],
-        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
-    let c = pos2(r.left() + 12.0, r.center().y);
-    let tri = if open {
-        vec![
-            c + vec2(-4.0, -2.0),
-            c + vec2(4.0, -2.0),
-            c + vec2(0.0, 3.0),
-        ]
-    } else {
-        vec![
-            c + vec2(-2.0, -4.0),
-            c + vec2(3.0, 0.0),
-            c + vec2(-2.0, 4.0),
-        ]
-    };
-    g.add(Shape::convex_polygon(tri, TEXT, Stroke::NONE));
     let t = g.text(
-        pos2(r.left() + 24.0, r.center().y),
+        pos2(r.left() + 12.0, r.center().y),
         Align2::LEFT_CENTER,
         title,
         FontId::proportional(12.5),
-        TEXT_DIM,
+        TEXT,
     );
     let name_left = t.right() + 5.0;
     let font = FontId::proportional(12.5);
-    let shown = crate::mixer::elide(g, name, &font, r.right() - 8.0 - name_left);
+    let shown = crate::mixer::elide(g, name, &font, (r.right() - 28.0 - name_left).max(20.0));
     g.text(
         pos2(name_left, r.center().y),
         Align2::LEFT_CENTER,
         shown,
         font,
-        TEXT,
+        TEXT_DIM,
     );
+    let c = pos2(r.right() - 14.0, r.center().y);
+    let chev = if open {
+        vec![
+            c + vec2(-4.0, -2.0),
+            c + vec2(0.0, 2.0),
+            c + vec2(4.0, -2.0),
+        ]
+    } else {
+        vec![
+            c + vec2(-2.0, -4.0),
+            c + vec2(2.0, 0.0),
+            c + vec2(-2.0, 4.0),
+        ]
+    };
+    g.add(Shape::line(chev, Stroke::new(1.4, TEXT_DIM)));
     resp
 }
 
-fn label(g: &Painter, label_right: f32, y: f32, text: &str, enabled: bool) {
+fn label(g: &Painter, label_x: f32, y: f32, text: &str, enabled: bool) {
     let col = if enabled {
-        Color32::from_rgb(0xa0, 0xa0, 0xa6)
+        Color32::from_rgb(0xc6, 0xc6, 0xcc)
     } else {
-        Color32::from_rgb(0x60, 0x60, 0x65)
+        Color32::from_rgb(0x64, 0x64, 0x6a)
     };
     let clean = text.trim_end_matches(':');
     g.text(
-        pos2(label_right, y + ROW_H / 2.0),
-        Align2::RIGHT_CENTER,
+        pos2(label_x, y + ROW_H / 2.0),
+        Align2::LEFT_CENTER,
         clean,
         FontId::proportional(11.5),
         col,
@@ -714,7 +714,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 let left = ui.cursor().left();
                 let w = ui.available_width();
                 let label_col_w = (w * 0.44).clamp(112.0, 150.0);
-                let label_right = left + label_col_w - 6.0;
+                let label_right = left + 12.0;
                 let vx = left + label_col_w;
                 let vw = (w - label_col_w - 12.0).max(40.0);
 
@@ -843,23 +843,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         if ui.interact(more, id("more"), Sense::click()).clicked() {
                             s.inspector.more_open = !s.inspector.more_open;
                         }
-                        let c = pos2(left + 12.0, more.center().y);
-                        let tri = if s.inspector.more_open {
+                        let c = pos2(more.right() - 14.0, more.center().y);
+                        let chev = if s.inspector.more_open {
                             vec![
-                                c + vec2(-3.5, -2.0),
-                                c + vec2(3.5, -2.0),
-                                c + vec2(0.0, 2.5),
+                                c + vec2(-3.5, -1.5),
+                                c + vec2(0.0, 2.0),
+                                c + vec2(3.5, -1.5),
                             ]
                         } else {
                             vec![
-                                c + vec2(-2.0, -3.5),
-                                c + vec2(2.5, 0.0),
-                                c + vec2(-2.0, 3.5),
+                                c + vec2(-1.5, -3.5),
+                                c + vec2(2.0, 0.0),
+                                c + vec2(-1.5, 3.5),
                             ]
                         };
-                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.add(Shape::line(chev, Stroke::new(1.2, TEXT_DIM)));
                         g_upper.text(
-                            pos2(left + 22.0, more.center().y),
+                            pos2(left + 12.0, more.center().y),
                             Align2::LEFT_CENTER,
                             tr("More"),
                             FontId::proportional(11.5),
@@ -1122,23 +1122,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         if ui.interact(more, id("more"), Sense::click()).clicked() {
                             s.inspector.more_open = !s.inspector.more_open;
                         }
-                        let c = pos2(left + 12.0, more.center().y);
-                        let tri = if s.inspector.more_open {
+                        let c = pos2(more.right() - 14.0, more.center().y);
+                        let chev = if s.inspector.more_open {
                             vec![
-                                c + vec2(-3.5, -2.0),
-                                c + vec2(3.5, -2.0),
-                                c + vec2(0.0, 2.5),
+                                c + vec2(-3.5, -1.5),
+                                c + vec2(0.0, 2.0),
+                                c + vec2(3.5, -1.5),
                             ]
                         } else {
                             vec![
-                                c + vec2(-2.0, -3.5),
-                                c + vec2(2.5, 0.0),
-                                c + vec2(-2.0, 3.5),
+                                c + vec2(-1.5, -3.5),
+                                c + vec2(2.0, 0.0),
+                                c + vec2(-1.5, 3.5),
                             ]
                         };
-                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.add(Shape::line(chev, Stroke::new(1.2, TEXT_DIM)));
                         g_upper.text(
-                            pos2(left + 22.0, more.center().y),
+                            pos2(left + 12.0, more.center().y),
                             Align2::LEFT_CENTER,
                             tr("More"),
                             FontId::proportional(11.5),
@@ -1442,23 +1442,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         if ui.interact(more, id("more"), Sense::click()).clicked() {
                             s.inspector.more_open = !s.inspector.more_open;
                         }
-                        let c = pos2(left + 12.0, more.center().y);
-                        let tri = if s.inspector.more_open {
+                        let c = pos2(more.right() - 14.0, more.center().y);
+                        let chev = if s.inspector.more_open {
                             vec![
-                                c + vec2(-3.5, -2.0),
-                                c + vec2(3.5, -2.0),
-                                c + vec2(0.0, 2.5),
+                                c + vec2(-3.5, -1.5),
+                                c + vec2(0.0, 2.0),
+                                c + vec2(3.5, -1.5),
                             ]
                         } else {
                             vec![
-                                c + vec2(-2.0, -3.5),
-                                c + vec2(2.5, 0.0),
-                                c + vec2(-2.0, 3.5),
+                                c + vec2(-1.5, -3.5),
+                                c + vec2(2.0, 0.0),
+                                c + vec2(-1.5, 3.5),
                             ]
                         };
-                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.add(Shape::line(chev, Stroke::new(1.2, TEXT_DIM)));
                         g_upper.text(
-                            pos2(left + 22.0, more.center().y),
+                            pos2(left + 12.0, more.center().y),
                             Align2::LEFT_CENTER,
                             tr("More"),
                             FontId::proportional(11.5),

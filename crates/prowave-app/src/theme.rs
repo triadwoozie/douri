@@ -88,7 +88,7 @@ pub fn apply(ctx: &egui::Context) {
     v.selection.stroke = Stroke::new(1.0, ACCENT_BLUE);
 
     // Corner radius
-    let r = CornerRadius::same(5);
+    let r = CornerRadius::same(6);
     v.widgets.inactive.corner_radius = r;
     v.widgets.hovered.corner_radius = r;
     v.widgets.active.corner_radius = r;
@@ -96,8 +96,9 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals(v);
     ctx.global_style_mut(|s| {
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
-        s.spacing.button_padding = egui::vec2(8.0, 4.0);
-        s.spacing.window_margin = egui::Margin::same(10);
+        s.spacing.button_padding = egui::vec2(10.0, 4.0);
+        s.spacing.menu_margin = egui::Margin::same(6);
+        s.spacing.window_margin = egui::Margin::same(6);
         s.text_styles
             .insert(egui::TextStyle::Body, egui::FontId::proportional(12.5));
         s.text_styles

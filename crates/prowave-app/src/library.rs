@@ -1320,7 +1320,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
 
-    let sort_w = 78.0;
+    let sort_w = 98.0;
     let sort_r = Rect::from_min_size(pos2(left + 8.0, fy), vec2(sort_w, 20.0));
     let sort_labels = ["Relevance", "Name", "Category"];
     let sort_resp = crate::widgets::popup_button(
