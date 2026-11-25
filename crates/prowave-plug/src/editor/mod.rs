@@ -462,7 +462,7 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
             g.rect_stroke(
                 scope_rect,
                 6.0,
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x1b, 0x3d, 0x38)),
+                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(0x1b, 0x3d, 0x38)),
                 egui::StrokeKind::Inside,
             );
             let inner = scope_rect.shrink(4.0);
@@ -483,7 +483,7 @@ pub fn draw(ctx: &egui::Context, params: &PlugParams, st: &mut State, vals: &[i3
                 .collect();
             g.add(egui::Shape::line(
                 pts,
-                egui::Stroke::new(1.8, egui::Color32::from_rgb(0x38, 0xd9, 0xa9)),
+                egui::Stroke::new(1.8_f32, egui::Color32::from_rgb(0x38, 0xd9, 0xa9)),
             ));
             y += SCOPE_H + 8.0;
         }
