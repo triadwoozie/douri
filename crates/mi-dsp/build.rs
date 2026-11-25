@@ -39,6 +39,7 @@ fn main() {
         .flag_if_supported("-fvisibility=hidden")
         // The code reads floats as integers through pointer casts (the phase vocoder keeps
         // its phases in the FFT's buffer): the optimiser must not assume it does not.
+        .define("_USE_MATH_DEFINES", None)
         .flag_if_supported("-fno-strict-aliasing");
     // Per-sample synthesis: unoptimised, it does not run in real time.
     build.opt_level(3);

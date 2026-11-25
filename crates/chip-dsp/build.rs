@@ -38,6 +38,7 @@ fn main() {
         .include("shim")
         // The FM core's portable path: its NEON path needs an assembly file that is not here.
         .define("MSFA_FORCE_SCALAR", None)
+        .define("_USE_MATH_DEFINES", None)
         .files(sources)
         // The cores are upstream's code, built as they are: their warnings are not ours to fix.
         .warnings(false)
