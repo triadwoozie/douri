@@ -1891,13 +1891,15 @@ impl eframe::App for App {
             .exact_size(58.0)
             .frame(egui::Frame::new().fill(crate::theme::CHROME_BG))
             .show(ui, |ui| transport::control_bar(ui, p, s, master_peaks));
+        let opaque_panel_frame =
+            egui::Frame::side_top_panel(ui.style()).fill(egui::Color32::from_rgb(28, 28, 30));
         if s.show_library {
             egui::Panel::left("library")
                 .resizable(true)
                 .min_size(240.0)
                 .max_size(480.0)
                 .default_size(300.0)
-                .frame(egui::Frame::new())
+                .frame(opaque_panel_frame)
                 .show(ui, |ui| library::show(ui, p, s));
         }
         if s.show_inspector {
@@ -1906,22 +1908,25 @@ impl eframe::App for App {
                 .default_size(276.0)
                 .min_size(240.0)
                 .max_size(440.0)
-                .frame(egui::Frame::new().fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e)))
+                .frame(opaque_panel_frame)
                 .show(ui, |ui| inspector::show(ui, p, s, &meters));
         }
         if s.show_toolbar {
             egui::Panel::top("toolbar")
                 .exact_size(side_panes::TOOLBAR_HEIGHT)
+                .frame(opaque_panel_frame)
                 .show(ui, |ui| side_panes::toolbar(ui, p, s));
         }
         if s.browser.open.is_some() {
             egui::Panel::right("browser")
                 .exact_size(file_browser::WIDTH)
+                .frame(opaque_panel_frame)
                 .show(ui, |ui| file_browser::show(ui, s));
         }
         if s.show_notes {
             egui::Panel::right("notes")
                 .exact_size(side_panes::NOTES_WIDTH)
+                .frame(opaque_panel_frame)
                 .show(ui, |ui| side_panes::note_pad(ui, p));
         }
         if s.show_lists {
@@ -1931,8 +1936,8 @@ impl eframe::App for App {
                 .default_size(360.0)
                 .max_size(440.0)
                 .frame(
-                    egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(0x14, 0x15, 0x18))
+                    egui::Frame::side_top_panel(ui.style())
+                        .fill(egui::Color32::from_rgb(28, 28, 30))
                         .stroke(egui::Stroke::new(
                             1.0,
                             egui::Color32::from_rgb(0x2e, 0x31, 0x38),
@@ -1970,7 +1975,7 @@ impl eframe::App for App {
                 } else {
                     240.0
                 })
-                .frame(egui::Frame::new());
+                .frame(opaque_panel_frame);
             panel.show(ui, |ui| match s.bottom {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),

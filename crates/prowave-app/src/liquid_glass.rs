@@ -445,7 +445,7 @@ pub fn glass_pill<R>(
 pub fn glass_window(name: impl Into<egui::WidgetText>) -> egui::Window<'static> {
     egui::Window::new(name).frame(
         egui::Frame::window(&egui::Style::default())
-            .fill(Color32::from_rgba_premultiplied(24, 24, 27, 230))
+            .fill(Color32::from_rgb(28, 28, 30))
             .stroke(Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)))
             .corner_radius(CornerRadius::same(12))
             .inner_margin(egui::Margin::same(12))
