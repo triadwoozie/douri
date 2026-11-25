@@ -208,7 +208,7 @@ pub fn enumerate_asio_drivers() -> Vec<AsioDriverDesc> {
         for &root in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
             let subkey = windows::core::w!("SOFTWARE\\ASIO");
             let mut key = HKEY::default();
-            let res = unsafe { RegOpenKeyExW(root, subkey, 0, KEY_READ, &mut key) };
+            let res = unsafe { RegOpenKeyExW(root, subkey, Some(0), KEY_READ, &mut key) };
             if res.is_ok() {
                 let mut index = 0u32;
                 let mut name_buf = [0u16; 256];
@@ -218,10 +218,10 @@ pub fn enumerate_asio_drivers() -> Vec<AsioDriverDesc> {
                         RegEnumKeyExW(
                             key,
                             index,
-                            windows::core::PWSTR(name_buf.as_mut_ptr()),
+                            Some(windows::core::PWSTR(name_buf.as_mut_ptr())),
                             &mut name_len,
                             None,
-                            windows::core::PWSTR::null(),
+                            None,
                             None,
                             None,
                         )
@@ -238,7 +238,7 @@ pub fn enumerate_asio_drivers() -> Vec<AsioDriverDesc> {
                         .chain(std::iter::once(0))
                         .collect();
                     if unsafe {
-                        RegOpenKeyExW(key, PCWSTR(child_w.as_ptr()), 0, KEY_READ, &mut child)
+                        RegOpenKeyExW(key, PCWSTR(child_w.as_ptr()), Some(0), KEY_READ, &mut child)
                     }
                     .is_ok()
                     {
@@ -261,7 +261,9 @@ pub fn enumerate_asio_drivers() -> Vec<AsioDriverDesc> {
                         } else {
                             String::new()
                         };
-                        unsafe { RegCloseKey(child) };
+                        unsafe {
+                            let _ = RegCloseKey(child);
+                        };
 
                         if !drivers
                             .iter()
@@ -276,7 +278,9 @@ pub fn enumerate_asio_drivers() -> Vec<AsioDriverDesc> {
                     }
                     index += 1;
                 }
-                unsafe { RegCloseKey(key) };
+                unsafe {
+                    let _ = RegCloseKey(key);
+                };
             }
         }
         drivers

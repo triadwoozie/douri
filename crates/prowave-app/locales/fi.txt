@@ -35,7 +35,6 @@ More = Lisää
 Dynamics: = Dynamiikka:
 Gate Time: = Gate-aika:
 Clip Length: = Leikkeen pituus:
-Score: = Nuotit:
 Q-Velocity: = Q-velositeetti:
 Q-Length: = Q-pituus:
 Q-Flam: = Q-flam:

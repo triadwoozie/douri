@@ -35,7 +35,6 @@ More = Plus
 Dynamics: = Dynamique :
 Gate Time: = Durée de gate :
 Clip Length: = Long. de clip :
-Score: = Partition :
 Q-Velocity: = Q-Vélocité :
 Q-Length: = Q-Longueur :
 Q-Flam: = Q-Flam :

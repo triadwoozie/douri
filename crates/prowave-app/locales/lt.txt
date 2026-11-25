@@ -35,7 +35,6 @@ More = Daugiau
 Dynamics: = Dinamika:
 Gate Time: = Vartų laikas:
 Clip Length: = Klipo ilgis:
-Score: = Partitūra:
 Q-Velocity: = Q-stiprumas:
 Q-Length: = Q-ilgis:
 Q-Flam: = Q-flam:

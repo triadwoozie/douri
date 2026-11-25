@@ -90,7 +90,11 @@ pub struct ControlDoc {
     pub val: u16,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+fn default_q_strength() -> f32 {
+    100.0
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct RegionDoc {
     pub name: String,
@@ -142,6 +146,56 @@ pub struct RegionDoc {
     pub drummer: Option<DrummerDoc>,
     /// Flex Time and Flex Pitch edits of an audio region (`audio` is then the recording).
     pub flex: Option<FlexDoc>,
+    #[serde(default)]
+    pub q_velocity: f32,
+    #[serde(default)]
+    pub q_length: f32,
+    #[serde(default)]
+    pub q_flam: i16,
+    #[serde(default)]
+    pub q_range: u8,
+    #[serde(default = "default_q_strength")]
+    pub q_strength: f32,
+}
+
+impl Default for RegionDoc {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            start_bar: 0.0,
+            len_bars: 0.0,
+            notes: Vec::new(),
+            controls: Vec::new(),
+            takes: Vec::new(),
+            comp: Vec::new(),
+            audio: None,
+            audio_source: String::new(),
+            audio_start: 0,
+            audio_frames: None,
+            mute: false,
+            quantize: None,
+            transpose: 0,
+            velocity: 0,
+            gain_db: 0.0,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            fade_curve: String::new(),
+            reverse: false,
+            offset_secs: 0.0,
+            crossfade: false,
+            loop_beats: 0.0,
+            q_swing: 0.0,
+            color: None,
+            pattern: None,
+            drummer: None,
+            flex: None,
+            q_velocity: 0.0,
+            q_length: 0.0,
+            q_flam: 0,
+            q_range: 0,
+            q_strength: 100.0,
+        }
+    }
 }
 
 /// The Flex edit of an audio region.

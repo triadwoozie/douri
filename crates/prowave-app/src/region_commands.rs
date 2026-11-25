@@ -662,6 +662,33 @@ pub(crate) fn spread_params(
             if before.quantize != after.quantize {
                 q.quantize = after.quantize;
             }
+            if before.q_swing != after.q_swing {
+                q.q_swing = after.q_swing;
+            }
+            if before.q_velocity != after.q_velocity {
+                q.q_velocity = after.q_velocity;
+            }
+            if before.q_length != after.q_length {
+                q.q_length = after.q_length;
+            }
+            if before.q_flam != after.q_flam {
+                q.q_flam = after.q_flam;
+            }
+            if before.q_range != after.q_range {
+                q.q_range = after.q_range;
+            }
+            if before.q_strength != after.q_strength {
+                q.q_strength = after.q_strength;
+            }
+            if before.dynamics != after.dynamics {
+                q.dynamics = after.dynamics;
+            }
+            if before.gate_time != after.gate_time {
+                q.gate_time = after.gate_time;
+            }
+            if before.clip_length != after.clip_length {
+                q.clip_length = after.clip_length;
+            }
             if before.transpose != after.transpose {
                 let d = i32::from(after.transpose) - i32::from(before.transpose);
                 q.transpose = (i32::from(q.transpose) + d).clamp(-96, 96) as i8;

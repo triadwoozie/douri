@@ -222,6 +222,16 @@ pub struct RegionParams {
     pub gate_time: u16,
     /// Truncate notes at region boundary (Logic: Clip Length).
     pub clip_length: bool,
+    /// Blends note velocities toward the quantized grid velocity (0% to 100%).
+    pub q_velocity: f32,
+    /// Blends note durations toward the quantized grid step length (0% to 100%).
+    pub q_length: f32,
+    /// Spreads simultaneous chord notes sequentially by pitch order (-50 ms to +50 ms).
+    pub q_flam: i16,
+    /// Restricts quantization only to notes within threshold distance of the grid (0 to 127 ticks / 0% to 100%).
+    pub q_range: u8,
+    /// Scales how far notes move toward quantized grid position (0% to 100%, default 100%).
+    pub q_strength: f32,
 }
 
 impl Default for RegionParams {
@@ -245,6 +255,11 @@ impl Default for RegionParams {
             dynamics: 100,
             gate_time: 100,
             clip_length: true,
+            q_velocity: 0.0,
+            q_length: 0.0,
+            q_flam: 0,
+            q_range: 0,
+            q_strength: 100.0,
         }
     }
 }

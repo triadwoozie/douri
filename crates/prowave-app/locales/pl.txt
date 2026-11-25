@@ -35,7 +35,6 @@ More = Więcej
 Dynamics: = Dynamika:
 Gate Time: = Czas bramki:
 Clip Length: = Długość klipu:
-Score: = Partytura:
 Q-Velocity: = Q-Dynamika:
 Q-Length: = Q-Długość:
 Q-Flam: = Q-Flam:

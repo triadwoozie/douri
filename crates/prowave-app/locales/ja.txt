@@ -35,7 +35,6 @@ More = 詳細
 Dynamics: = ダイナミクス：
 Gate Time: = ゲートタイム：
 Clip Length: = クリップ長：
-Score: = 楽譜：
 Q-Velocity: = Q ベロシティ：
 Q-Length: = Q レングス：
 Q-Flam: = Q フラム：

@@ -35,7 +35,6 @@ More = Lainnya
 Dynamics: = Dinamika:
 Gate Time: = Waktu Gate:
 Clip Length: = Panjang Klip:
-Score: = Notasi:
 Q-Velocity: = Q-Velositas:
 Q-Length: = Q-Panjang:
 Q-Flam: = Q-Flam:

@@ -696,6 +696,11 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                     loop_beats: r.params.loop_beats,
                     q_swing: r.params.q_swing,
                     color: r.params.color.map(|c| [c.r(), c.g(), c.b()]),
+                    q_velocity: r.params.q_velocity,
+                    q_length: r.params.q_length,
+                    q_flam: r.params.q_flam,
+                    q_range: r.params.q_range,
+                    q_strength: r.params.q_strength,
                     pattern: match r.generated.as_ref().map(|g| &g.source) {
                         Some(Generator::Pattern(p)) => Some(pattern_to_doc(p)),
                         _ => None,
@@ -952,6 +957,11 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                     q_swing: r.q_swing.clamp(0.0, 100.0),
                     color: r.color.map(|[r, g, b]| egui::Color32::from_rgb(r, g, b)),
                     locked: false,
+                    q_velocity: r.q_velocity.clamp(0.0, 100.0),
+                    q_length: r.q_length.clamp(0.0, 100.0),
+                    q_flam: r.q_flam.clamp(-50, 50),
+                    q_range: r.q_range.min(127),
+                    q_strength: r.q_strength.clamp(0.0, 100.0),
                     ..RegionParams::default()
                 },
             };
@@ -2299,7 +2309,7 @@ pub(crate) mod tests {
         let ctx = egui::Context::default();
         let mut p = Project::demo();
         let mut eq = Insert::new(FxKind::ChannelEq);
-        eq.params[1] = 7.5;
+        eq.params[1] = 75.0;
         let mut delay = Insert::new(FxKind::Delay);
         delay.bypass = true;
         delay.params[0] = 250.0;

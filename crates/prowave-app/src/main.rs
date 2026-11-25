@@ -3119,6 +3119,29 @@ fn main() -> eframe::Result {
                 app.ui.score_tab = false;
                 app.project.position_beats = 16.0;
             }
+            if scene == "inspector" {
+                app.ui.show_inspector = true;
+                app.ui.show_library = false;
+                app.ui.inspector.region_open = true;
+                app.ui.inspector.track_open = true;
+            }
+            if scene == "eq" {
+                app.ui.show_inspector = true;
+                app.ui.show_library = false;
+                app.project.tracks[0].inserts =
+                    vec![model::Insert::new(prowave_engine::FxKind::ChannelEq)];
+                app.ui.mixer.fx_window = Some((0, 0));
+            }
+            if scene == "compressor" {
+                app.ui.show_inspector = true;
+                app.ui.show_library = false;
+                app.project.tracks[0].inserts =
+                    vec![model::Insert::new(prowave_engine::FxKind::Compressor)];
+                app.ui.mixer.fx_window = Some((0, 0));
+            }
+            if scene == "sound-library" {
+                app.ui.show_sound_library_manager = true;
+            }
             if !no_chooser_flag && !has_project_arg {
                 app.ui.chooser = Some(start_screen::Chooser::default());
             }

@@ -14,6 +14,7 @@ use crate::widgets::{stroke, BTN_BG, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{
     pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui,
+    UiBuilder,
 };
 use prowave_engine::FadeCurve;
 
@@ -24,7 +25,7 @@ const HEADER_H: f32 = 24.0;
 /// The inspector's width: Logic's, which is two channel strips of the Mixer's width side by
 /// side (the selected track's and its output's).
 pub const WIDTH: f32 = 276.0;
-const STRIPS_MIN_H: f32 = 430.0;
+const STRIPS_MIN_H: f32 = 380.0;
 
 /// Fade lengths move in 1/16 notes.
 const FADE_STEPS_PER_BEAT: i32 = 4;
@@ -426,47 +427,38 @@ fn label(g: &Painter, label_right: f32, y: f32, text: &str, enabled: bool) {
     } else {
         Color32::from_rgb(0x60, 0x60, 0x65)
     };
+    let clean = text.trim_end_matches(':');
     g.text(
         pos2(label_right, y + ROW_H / 2.0),
         Align2::RIGHT_CENTER,
-        text,
+        clean,
         FontId::proportional(11.5),
         col,
     );
 }
 
-/// Small checkbox. Returns true when toggled.
+/// Small pill toggle switch: 32px x 18px for booleans. Returns true when toggled.
 fn checkbox(ui: &Ui, g: &Painter, at: Pos2, key: &str, value: bool, enabled: bool) -> bool {
-    let r = Rect::from_min_size(at + vec2(0.0, (ROW_H - 12.0) / 2.0), vec2(12.0, 12.0));
+    let r = Rect::from_min_size(at + vec2(0.0, (ROW_H - 18.0) / 2.0), vec2(32.0, 18.0));
     let clicked = enabled
         && ui
-            .interact(r.expand(3.0), id(("check", key)), Sense::click())
+            .interact(r.expand(2.0), id(("check", key)), Sense::click())
             .clicked();
-    let border = if enabled {
-        Color32::from_rgb(0x38, 0x38, 0x3c)
+    let bg = if !enabled {
+        Color32::from_rgb(0x28, 0x28, 0x2b)
+    } else if value {
+        Color32::from_rgb(0x12, 0x69, 0xcc)
     } else {
-        Color32::from_rgb(0x2b, 0x2b, 0x2e)
+        Color32::from_rgb(0x32, 0x32, 0x36)
     };
-    g.rect_filled(
-        r,
-        3.0,
-        if value {
-            Color32::from_rgb(0x12, 0x69, 0xcc)
-        } else {
-            Color32::from_rgb(0x18, 0x18, 0x1a)
-        },
-    );
-    g.rect_stroke(r, 3.0, Stroke::new(1.0, border), StrokeKind::Inside);
-    if value {
-        g.add(Shape::line(
-            vec![
-                r.left_center() + vec2(2.5, 0.0),
-                r.center_bottom() + vec2(-1.0, -3.0),
-                r.right_top() + vec2(-2.5, 3.0),
-            ],
-            Stroke::new(1.6, Color32::WHITE),
-        ));
-    }
+    g.rect_filled(r, 9.0, bg);
+    let thumb_x = if value {
+        r.right() - 9.0
+    } else {
+        r.left() + 9.0
+    };
+    let thumb_c = pos2(thumb_x, r.center().y);
+    g.circle_filled(thumb_c, 6.5, Color32::WHITE);
     clicked
 }
 
@@ -493,17 +485,19 @@ fn popup(
         )
     } else if enabled {
         (
-            Color32::from_rgb(0x2b, 0x2b, 0x2e),
-            Color32::from_rgb(0x38, 0x38, 0x3c),
+            Color32::from_rgb(0x28, 0x28, 0x2b),
+            Color32::from_rgb(0x28, 0x28, 0x2b),
         )
     } else {
         (
             Color32::from_rgb(0x1c, 0x1c, 0x1e),
-            Color32::from_rgb(0x2b, 0x2b, 0x2e),
+            Color32::from_rgb(0x1c, 0x1c, 0x1e),
         )
     };
     g.rect_filled(r, 4.0, bg);
-    g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
+    if hovered {
+        g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
+    }
     g.text(
         pos2(r.left() + 6.0, r.center().y),
         Align2::LEFT_CENTER,
@@ -545,13 +539,42 @@ fn drag_value(
     } else {
         Color32::from_rgb(0xe5, 0xe5, 0xea)
     };
-    g.rect_filled(r, 4.0, Color32::from_rgb(0x2b, 0x2b, 0x2e));
-    g.rect_stroke(
-        r,
-        4.0,
-        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-        StrokeKind::Inside,
-    );
+    let resp = if enabled {
+        let resp = ui.interact(r, id(("drag", key)), Sense::click_and_drag());
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        Some(resp)
+    } else {
+        None
+    };
+
+    let (bg, border) = if let Some(ref resp) = resp {
+        if resp.dragged() {
+            (
+                Color32::from_rgb(0x32, 0x32, 0x36),
+                Color32::from_rgb(0x12, 0x69, 0xcc),
+            )
+        } else if resp.hovered() {
+            (
+                Color32::from_rgb(0x32, 0x32, 0x36),
+                Color32::from_rgb(0x58, 0x58, 0x5e),
+            )
+        } else {
+            (
+                Color32::from_rgb(0x2b, 0x2b, 0x2e),
+                Color32::from_rgb(0x38, 0x38, 0x3c),
+            )
+        }
+    } else {
+        (
+            Color32::from_rgb(0x20, 0x20, 0x22),
+            Color32::from_rgb(0x28, 0x28, 0x2b),
+        )
+    };
+
+    g.rect_filled(r, 4.0, bg);
+    g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
     g.text(
         pos2(r.left() + 6.0, r.center().y),
         Align2::LEFT_CENTER,
@@ -559,10 +582,10 @@ fn drag_value(
         FontId::proportional(11.5),
         col,
     );
-    if !enabled {
+
+    let Some(resp) = resp else {
         return None;
-    }
-    let resp = ui.interact(r, id(("drag", key)), Sense::click_and_drag());
+    };
     if resp.double_clicked() {
         return Some(reset);
     }
@@ -635,1397 +658,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
         p.tracks[t].regions[r].audio.is_some() || p.tracks[t].kind == TrackKind::Audio
     });
 
-    let mut upper_needed_h = HEADER_H + 4.0;
-    if s.inspector.region_open {
-        if sel.is_none() {
-            upper_needed_h += 5.0 * ROW_H;
-            if s.inspector.more_open {
-                upper_needed_h += 9.0 * ROW_H;
-            }
-        } else if is_audio {
-            upper_needed_h += 8.0 * ROW_H;
-            if s.inspector.more_open {
-                upper_needed_h += 3.0 * ROW_H;
-            }
-        } else {
-            upper_needed_h += 6.0 * ROW_H;
-            if s.inspector.more_open {
-                upper_needed_h += 9.0 * ROW_H;
-            }
-        }
-        upper_needed_h += 4.0;
-    }
-    upper_needed_h += HEADER_H + 4.0;
-    if s.inspector.track_open && ti < p.tracks.len() {
-        upper_needed_h += 30.0 + ROW_H;
-        let track_audio = p.tracks[ti].kind == TrackKind::Audio;
-        if track_audio {
-            upper_needed_h += 3.0 * ROW_H;
-        } else {
-            let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
-            if external {
-                upper_needed_h += 4.0 * ROW_H;
-            } else {
-                upper_needed_h += ROW_H;
-                if p.tracks[ti].epiano.is_some() {
-                    upper_needed_h += 6.0 * ROW_H;
-                }
-                if let Some(sm) = &p.tracks[ti].sampler {
-                    upper_needed_h += 3.0 * ROW_H;
-                    if matches!(sm.source, crate::sampler_load::SamplerSource::Audio { .. }) {
-                        upper_needed_h += 2.0 * ROW_H;
-                    }
-                }
-            }
-            upper_needed_h += 3.0 * ROW_H;
-            upper_needed_h += 8.0 * ROW_H;
-        }
-        upper_needed_h += 4.0;
-    }
-
-    let anchor_strips = panel.height() >= STRIPS_MIN_H + HEADER_H * 2.0 + 16.0;
-    let max_upper_h = (panel.height() - STRIPS_MIN_H - 12.0).max(HEADER_H * 2.0 + 8.0);
-    let (upper_rect, strips_rect) = if anchor_strips {
-        let upper_h = upper_needed_h.min(max_upper_h);
-        let strips_top = panel.top() + upper_h + 4.0;
-        (
-            Rect::from_min_max(panel.min, pos2(panel.max.x, strips_top - 2.0)),
-            Rect::from_min_max(pos2(panel.left(), strips_top), panel.max),
-        )
-    } else {
-        (panel, panel)
-    };
-
-    if anchor_strips {
-        if upper_needed_h > max_upper_h {
-            if ui
-                .input(|i| i.pointer.hover_pos())
-                .is_some_and(|pt| upper_rect.contains(pt))
-            {
-                s.inspector.scroll_y -= ui.input(|i| i.smooth_scroll_delta.y);
-            }
-            let max_scroll = (upper_needed_h - max_upper_h).max(0.0);
-            s.inspector.scroll_y = s.inspector.scroll_y.clamp(0.0, max_scroll);
-        } else {
-            s.inspector.scroll_y = 0.0;
-        }
-    }
-    let g_upper = if anchor_strips {
-        g.with_clip_rect(upper_rect.intersect(g.clip_rect()))
-    } else {
-        g.clone()
-    };
-    let mut y = upper_rect.top() - s.inspector.scroll_y;
-    let mut changed_song = false;
-
-    // ---------------- Region
-    let region_name = sel.map_or_else(
-        || tr("MIDI Defaults").to_string(),
-        |(t, r)| p.tracks[t].regions[r].name.clone(),
-    );
-    let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
-    let head = section_header(
-        ui,
-        &g_upper,
-        hdr,
-        "region",
-        s.inspector.region_open,
-        tr("Region:"),
-        &region_name,
-    );
-    if head.clicked() {
-        s.inspector.region_open = !s.inspector.region_open;
-    }
-    if sel.is_some() && head.double_clicked() {
-        crate::menus::apply("Rename Regions", p, s);
-    }
-    y += HEADER_H + 4.0;
-    if s.inspector.region_open {
-        if sel.is_none() {
-            // Context: MIDI Defaults (no region selected)
-            label(&g_upper, label_right, y, tr("Loop:"), true);
-            let looped = p.midi_defaults.loop_beats > 0.0;
-            if checkbox(ui, &g_upper, pos2(vx, y), "defaults_loop", looped, true) {
-                p.midi_defaults.loop_beats = if !looped { 16.0 } else { 0.0 };
-                changed_song = true;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Quantize:"), true);
-            let q_text = QUANTIZE
-                .iter()
-                .find(|(_, q)| *q == p.midi_defaults.quantize)
-                .map_or(tr("Off"), |(t, _)| tr(t));
-            if let Some(resp) = popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "defaults_quantize",
-                q_text,
-                true,
-            ) {
-                egui::Popup::menu(&resp).show(|ui| {
-                    for (t, q) in QUANTIZE {
-                        if ui
-                            .selectable_label(p.midi_defaults.quantize == q, tr(t))
-                            .clicked()
-                        {
-                            p.midi_defaults.quantize = q;
-                            changed_song = true;
-                            ui.close();
-                        }
-                    }
-                });
-            }
-            y += ROW_H;
-            let swing_active = p.midi_defaults.quantize.is_some();
-            label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "defaults_q_swing",
-                p.midi_defaults.q_swing.round() as i32,
-                (0, 100),
-                0,
-                if p.midi_defaults.q_swing == 0.0 {
-                    tr("Off").to_string()
-                } else {
-                    format!("{}%", p.midi_defaults.q_swing.round() as i32)
-                },
-                swing_active,
-            ) {
-                p.midi_defaults.q_swing = v as f32;
-                changed_song = true;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Transpose:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "defaults_transpose",
-                p.midi_defaults.transpose as i32,
-                (-96, 96),
-                0,
-                transpose_text(p.midi_defaults.transpose as i32),
-                true,
-            ) {
-                p.midi_defaults.transpose = v as i8;
-                changed_song = true;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Velocity:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "defaults_velocity",
-                p.midi_defaults.velocity as i32,
-                (-99, 99),
-                0,
-                velocity_text(p.midi_defaults.velocity as i32),
-                true,
-            ) {
-                p.midi_defaults.velocity = v as i8;
-                changed_song = true;
-            }
-            y += ROW_H;
-
-            // More disclosure
-            let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
-            if ui.interact(more, id("more"), Sense::click()).clicked() {
-                s.inspector.more_open = !s.inspector.more_open;
-            }
-            let c = pos2(left + 12.0, more.center().y);
-            let tri = if s.inspector.more_open {
-                vec![
-                    c + vec2(-3.5, -2.0),
-                    c + vec2(3.5, -2.0),
-                    c + vec2(0.0, 2.5),
-                ]
-            } else {
-                vec![
-                    c + vec2(-2.0, -3.5),
-                    c + vec2(2.5, 0.0),
-                    c + vec2(-2.0, 3.5),
-                ]
-            };
-            g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
-            g_upper.text(
-                pos2(left + 22.0, more.center().y),
-                Align2::LEFT_CENTER,
-                tr("More"),
-                FontId::proportional(11.5),
-                TEXT_DIM,
-            );
-            y += ROW_H;
-            if s.inspector.more_open {
-                label(&g_upper, label_right, y, tr("Dynamics:"), true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "defaults_dynamics",
-                    p.midi_defaults.dynamics as i32,
-                    (0, 200),
-                    100,
-                    format!("{}%", p.midi_defaults.dynamics),
-                    true,
-                ) {
-                    p.midi_defaults.dynamics = v as u16;
-                    changed_song = true;
-                }
-                y += ROW_H;
-
-                label(&g_upper, label_right, y, tr("Gate Time:"), true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "defaults_gate_time",
-                    p.midi_defaults.gate_time as i32,
-                    (0, 200),
-                    100,
-                    format!("{}%", p.midi_defaults.gate_time),
-                    true,
-                ) {
-                    p.midi_defaults.gate_time = v as u16;
-                    changed_song = true;
-                }
-                y += ROW_H;
-
-                label(&g_upper, label_right, y, tr("Clip Length:"), true);
-                if checkbox(
-                    ui,
-                    &g_upper,
-                    pos2(vx, y),
-                    "defaults_clip_length",
-                    p.midi_defaults.clip_length,
-                    true,
-                ) {
-                    p.midi_defaults.clip_length = !p.midi_defaults.clip_length;
-                    changed_song = true;
-                }
-                y += ROW_H;
-
-                for t in [
-                    tr("Score:"),
-                    tr("Q-Velocity:"),
-                    tr("Q-Length:"),
-                    tr("Q-Flam:"),
-                    tr("Q-Range:"),
-                    tr("Q-Strength:"),
-                ] {
-                    label(&g_upper, label_right, y, t, false);
-                    y += ROW_H;
-                }
-            }
-            y += 4.0;
-        } else if !is_audio {
-            // Context: Selected MIDI Region
-            let primary = sel.unwrap();
-            let before = p.tracks[primary.0].regions[primary.1].params;
-            let mut params = before;
-
-            label(&g_upper, label_right, y, tr("Mute:"), true);
-            if checkbox(ui, &g_upper, pos2(vx, y), "region_mute", params.mute, true) {
-                params.mute = !params.mute;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Loop:"), true);
-            let looped = params.loop_beats > 0.0;
-            let loop_click = checkbox(ui, &g_upper, pos2(vx, y), "region_loop", looped, true);
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Quantize:"), true);
-            let q_text = QUANTIZE
-                .iter()
-                .find(|(_, q)| *q == params.quantize)
-                .map_or(tr("Off"), |(t, _)| tr(t));
-            if let Some(resp) = popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "quantize",
-                q_text,
-                true,
-            ) {
-                egui::Popup::menu(&resp).show(|ui| {
-                    for (t, q) in QUANTIZE {
-                        if ui.selectable_label(params.quantize == q, tr(t)).clicked() {
-                            params.quantize = q;
-                            ui.close();
-                        }
-                    }
-                });
-            }
-            y += ROW_H;
-            let swing_active = params.quantize.is_some();
-            label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "region_q_swing",
-                params.q_swing.round() as i32,
-                (0, 100),
-                0,
-                if params.q_swing == 0.0 {
-                    tr("Off").to_string()
-                } else {
-                    format!("{}%", params.q_swing.round() as i32)
-                },
-                swing_active,
-            ) {
-                params.q_swing = v as f32;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Transpose:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "region_transpose",
-                params.transpose as i32,
-                (-96, 96),
-                0,
-                transpose_text(params.transpose as i32),
-                true,
-            ) {
-                params.transpose = v as i8;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Velocity:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "region_velocity",
-                params.velocity as i32,
-                (-99, 99),
-                0,
-                velocity_text(params.velocity as i32),
-                true,
-            ) {
-                params.velocity = v as i8;
-            }
-            y += ROW_H;
-
-            // "More" disclosure
-            let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
-            if ui.interact(more, id("more"), Sense::click()).clicked() {
-                s.inspector.more_open = !s.inspector.more_open;
-            }
-            let c = pos2(left + 12.0, more.center().y);
-            let tri = if s.inspector.more_open {
-                vec![
-                    c + vec2(-3.5, -2.0),
-                    c + vec2(3.5, -2.0),
-                    c + vec2(0.0, 2.5),
-                ]
-            } else {
-                vec![
-                    c + vec2(-2.0, -3.5),
-                    c + vec2(2.5, 0.0),
-                    c + vec2(-2.0, 3.5),
-                ]
-            };
-            g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
-            g_upper.text(
-                pos2(left + 22.0, more.center().y),
-                Align2::LEFT_CENTER,
-                tr("More"),
-                FontId::proportional(11.5),
-                TEXT_DIM,
-            );
-            y += ROW_H;
-            if s.inspector.more_open {
-                label(&g_upper, label_right, y, tr("Dynamics:"), true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "region_dynamics",
-                    params.dynamics as i32,
-                    (0, 200),
-                    100,
-                    format!("{}%", params.dynamics),
-                    true,
-                ) {
-                    params.dynamics = v as u16;
-                }
-                y += ROW_H;
-
-                label(&g_upper, label_right, y, tr("Gate Time:"), true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "region_gate_time",
-                    params.gate_time as i32,
-                    (0, 200),
-                    100,
-                    format!("{}%", params.gate_time),
-                    true,
-                ) {
-                    params.gate_time = v as u16;
-                }
-                y += ROW_H;
-
-                label(&g_upper, label_right, y, tr("Clip Length:"), true);
-                if checkbox(
-                    ui,
-                    &g_upper,
-                    pos2(vx, y),
-                    "region_clip_length",
-                    params.clip_length,
-                    true,
-                ) {
-                    params.clip_length = !params.clip_length;
-                }
-                y += ROW_H;
-
-                for t in [
-                    tr("Score:"),
-                    tr("Q-Velocity:"),
-                    tr("Q-Length:"),
-                    tr("Q-Flam:"),
-                    tr("Q-Range:"),
-                    tr("Q-Strength:"),
-                ] {
-                    label(&g_upper, label_right, y, t, false);
-                    y += ROW_H;
-                }
-            }
-            if let Some(primary) = sel {
-                changed_song |=
-                    crate::region_commands::spread_params(p, &s.tracks, primary, before, params);
-                if loop_click {
-                    changed_song |= crate::region_commands::set_loop(p, &s.tracks, !looped);
-                }
-            }
-            y += 4.0;
-        } else {
-            // Context: Selected Audio Region
-            let primary = sel.unwrap();
-            let before = p.tracks[primary.0].regions[primary.1].params;
-            let mut params = before;
-
-            label(&g_upper, label_right, y, tr("Mute:"), true);
-            if checkbox(ui, &g_upper, pos2(vx, y), "region_mute", params.mute, true) {
-                params.mute = !params.mute;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Loop:"), true);
-            let looped = params.loop_beats > 0.0;
-            let loop_click = checkbox(ui, &g_upper, pos2(vx, y), "region_loop", looped, true);
-            y += ROW_H;
-
-            let (start_beat, len_beats) = {
-                let reg = &p.tracks[primary.0].regions[primary.1];
-                (p.region_start_beats(reg), p.region_len_beats(reg))
-            };
-            let bpm = p.tempo_at(start_beat);
-
-            label(&g_upper, label_right, y, tr("Gain:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "region_gain",
-                (params.gain_db * 2.0).round() as i32,
-                (
-                    (MIN_REGION_GAIN * 2.0) as i32,
-                    (MAX_REGION_GAIN * 2.0) as i32,
-                ),
-                0,
-                gain_text(params.gain_db),
-                true,
-            ) {
-                params.gain_db = v as f32 / 2.0;
-            }
-            y += ROW_H;
-
-            let max_fade = (len_beats * FADE_STEPS_PER_BEAT as f64) as i32;
-            for (name, key, which) in [
-                (tr("Fade In:"), "region_fade_in", 0),
-                (tr("Fade Out:"), "region_fade_out", 1),
-            ] {
-                let beats = if which == 0 {
-                    params.fade_in
-                } else {
-                    params.fade_out
-                };
-                label(&g_upper, label_right, y, name, true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    key,
-                    (beats * FADE_STEPS_PER_BEAT as f32).round() as i32,
-                    (0, max_fade.max(0)),
-                    0,
-                    fade_text(beats, bpm),
-                    true,
-                ) {
-                    let beats = v as f32 / FADE_STEPS_PER_BEAT as f32;
-                    if which == 0 {
-                        params.fade_in = beats;
-                    } else {
-                        params.fade_out = beats;
-                    }
-                }
-                y += ROW_H;
-            }
-
-            label(&g_upper, label_right, y, tr("Curve:"), true);
-            let curve_name = FADE_CURVES
-                .iter()
-                .find(|(_, c)| *c == params.fade_curve)
-                .map_or(tr("Equal Power"), |(t, _)| tr(t));
-            if let Some(resp) = popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "fade_curve",
-                curve_name,
-                true,
-            ) {
-                egui::Popup::menu(&resp).show(|ui| {
-                    for (t, c) in FADE_CURVES {
-                        if ui.selectable_label(params.fade_curve == c, tr(t)).clicked() {
-                            params.fade_curve = c;
-                            ui.close();
-                        }
-                    }
-                });
-            }
-            y += ROW_H;
-
-            label(&g_upper, label_right, y, tr("Reverse:"), true);
-            if checkbox(
-                ui,
-                &g_upper,
-                pos2(vx, y),
-                "region_reverse",
-                params.reverse,
-                true,
-            ) {
-                params.reverse = !params.reverse;
-            }
-            y += ROW_H;
-
-            label(
-                &g_upper,
-                label_right,
-                y,
-                &format!("{}:", tr("X-Fade")),
-                true,
-            );
-            if checkbox(
-                ui,
-                &g_upper,
-                pos2(vx, y),
-                "region_xfade",
-                params.crossfade,
-                true,
-            ) {
-                params.crossfade = !params.crossfade;
-            }
-            y += ROW_H;
-
-            // "More" disclosure
-            let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
-            if ui.interact(more, id("more"), Sense::click()).clicked() {
-                s.inspector.more_open = !s.inspector.more_open;
-            }
-            let c = pos2(left + 12.0, more.center().y);
-            let tri = if s.inspector.more_open {
-                vec![
-                    c + vec2(-3.5, -2.0),
-                    c + vec2(3.5, -2.0),
-                    c + vec2(0.0, 2.5),
-                ]
-            } else {
-                vec![
-                    c + vec2(-2.0, -3.5),
-                    c + vec2(2.5, 0.0),
-                    c + vec2(-2.0, 3.5),
-                ]
-            };
-            g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
-            g_upper.text(
-                pos2(left + 22.0, more.center().y),
-                Align2::LEFT_CENTER,
-                tr("More"),
-                FontId::proportional(11.5),
-                TEXT_DIM,
-            );
-            y += ROW_H;
-            if s.inspector.more_open {
-                label(&g_upper, label_right, y, "Flex & Follow:", false);
-                popup(
-                    ui,
-                    &g_upper,
-                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                    "flex_follow",
-                    tr("Off"),
-                    false,
-                );
-                y += ROW_H;
-                label(&g_upper, label_right, y, tr("Transpose:"), false);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "audio_transpose",
-                    0,
-                    (-96, 96),
-                    0,
-                    "0 st".into(),
-                    false,
-                );
-                y += ROW_H;
-                label(&g_upper, label_right, y, "Speed:", false);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "audio_speed",
-                    100,
-                    (25, 400),
-                    100,
-                    "100 %".into(),
-                    false,
-                );
-                y += ROW_H;
-            }
-            if let Some(primary) = sel {
-                changed_song |=
-                    crate::region_commands::spread_params(p, &s.tracks, primary, before, params);
-                if loop_click {
-                    changed_song |= crate::region_commands::set_loop(p, &s.tracks, !looped);
-                }
-            }
-            y += 4.0;
-        }
-    }
-
-    // ---------------- Track
-    let ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
-    let track_name = p.tracks.get(ti).map_or(String::new(), |t| t.name.clone());
-    let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
-    if section_header(
-        ui,
-        &g_upper,
-        hdr,
-        "track",
-        s.inspector.track_open,
-        tr("Track:"),
-        &track_name,
-    )
-    .clicked()
-    {
-        s.inspector.track_open = !s.inspector.track_open;
-    }
-    y += HEADER_H + 4.0;
-    if s.inspector.track_open && ti < p.tracks.len() {
-        let audio = p.tracks[ti].kind == TrackKind::Audio;
-        let mut tp = p.tracks[ti].params;
-
-        label(&g_upper, label_right, y, tr("Icon:"), true);
-        let icon_r = Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0));
-        draw_icon(&g_upper, icon_r, track_icon(&p.tracks[ti]));
-        if ui
-            .interact(icon_r, id("track_icon_click"), Sense::click())
-            .clicked()
-        {
-            s.track_dialog = Some(crate::track_dialogs::TrackDialog::Icon { track: ti });
-        }
-        y += 30.0;
-        let channel = p.channel_name(ti);
-        label(&g_upper, label_right, y, tr("Channel:"), true);
-        if let Some(resp) = popup(
-            ui,
-            &g_upper,
-            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-            "channel",
-            &channel,
-            true,
-        ) {
-            resp.on_hover_text("Channel strip identifier");
-        }
-        y += ROW_H;
-        if audio {
-            label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
-            popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "freeze",
-                tr("Pre Fader"),
-                true,
-            );
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Q-Reference:"), false);
-            checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Flex Mode:"), false);
-            popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "flex",
-                tr("Off"),
-                false,
-            );
-            y += ROW_H;
-        } else {
-            let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
-            if external {
-                // Where this track's notes go: a MIDI output port and a channel.
-                label(&g_upper, label_right, y, tr("MIDI Out Port:"), true);
-                let port = p.tracks[ti]
-                    .midi_port
-                    .clone()
-                    .unwrap_or_else(|| tr("No Port").to_string());
-                if let Some(resp) = popup(
-                    ui,
-                    &g_upper,
-                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                    "midi_out_port",
-                    &port,
-                    true,
-                ) {
-                    egui::Popup::menu(&resp).show(|ui| {
-                        let current = p.tracks[ti].midi_port.clone();
-                        if ui
-                            .selectable_label(current.is_none(), tr("No Port"))
-                            .clicked()
-                        {
-                            p.tracks[ti].midi_port = None;
-                            ui.close();
-                        }
-                        for name in crate::midi_out::ports() {
-                            if ui
-                                .selectable_label(current.as_deref() == Some(&name), &name)
-                                .clicked()
-                            {
-                                p.tracks[ti].midi_port = Some(name);
-                                ui.close();
-                            }
-                        }
-                    });
-                }
-                y += ROW_H;
-                label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
-                let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                let channel = p.tracks[ti].midi_channel.clamp(1, 16);
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    r,
-                    "midi_out_channel",
-                    channel as i32,
-                    (1, 16),
-                    1,
-                    channel.to_string(),
-                    true,
-                ) {
-                    p.tracks[ti].midi_channel = v as u8;
-                }
-                y += ROW_H;
-                // The sound sent when the track is routed: a program, and a bank (both optional;
-                // the top of each range is Off).
-                label(&g_upper, label_right, y, tr("MIDI Program:"), true);
-                let program = p.tracks[ti].midi_program.map_or(128, i32::from);
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                    "midi_out_program",
-                    program,
-                    (0, 128),
-                    128,
-                    if program == 128 {
-                        tr("Off").to_string()
-                    } else {
-                        program.to_string()
-                    },
-                    true,
-                ) {
-                    p.tracks[ti].midi_program = (v < 128).then_some(v as u8);
-                }
-                y += ROW_H;
-                label(&g_upper, label_right, y, tr("MIDI Bank:"), true);
-                let bank = p.tracks[ti].midi_bank.map_or(16384, i32::from);
-                if let Some(v) = drag_value(
-                    ui,
-                    &g_upper,
-                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                    "midi_out_bank",
-                    bank,
-                    (0, 16384),
-                    16384,
-                    if bank == 16384 {
-                        tr("Off").to_string()
-                    } else {
-                        bank.to_string()
-                    },
-                    true,
-                ) {
-                    p.tracks[ti].midi_bank = (v < 16384).then_some(v as u16);
-                }
-                y += ROW_H;
-            }
-            if !external {
-                // The instrument this track plays instead of its synth patch.
-                label(&g_upper, label_right, y, tr("SoundFont:"), true);
-                let current = p.tracks[ti].soundfont.clone();
-                let piano = p.tracks[ti].epiano;
-                let sampler = p.tracks[ti].sampler.clone();
-                let has_drums = p.tracks[ti].drums.is_some();
-                let has_bass808 = p.tracks[ti].bass808.is_some();
-                let hosted_inst = p.tracks[ti].hosted_instrument;
-                let shown = match (&current, piano) {
-                    _ if hosted_inst != 0 => crate::hosted_plugins::name(hosted_inst).to_string(),
-                    _ if has_drums => tr("Drum Machine").to_string(),
-                    _ if has_bass808 => "808 Bass".to_string(),
-                    _ if sampler.is_some() => {
-                        let name = sampler
-                            .as_ref()
-                            .map(|s| s.source.name())
-                            .unwrap_or_default();
-                        format!("{} · {}", tr("Sampler"), name)
-                    }
-                    (_, Some(_)) => tr("Electric Piano").to_string(),
-                    (None, None) => tr("None").to_string(),
-                    (Some(sf), None) => soundfont_label(sf),
-                };
-                let rect = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                if let Some(resp) = popup(ui, &g_upper, rect, "soundfont", &shown, true) {
-                    if resp.double_clicked() {
-                        if hosted_inst != 0 {
-                            s.mixer.inst_window = Some(ti);
-                            s.mixer.fx_window = None;
-                            s.mixer.plugin_controls = false;
-                        } else if has_drums {
-                            s.show_drum_machine = Some(ti);
-                        } else if has_bass808 {
-                            s.show_bass808 = Some(ti);
-                        }
-                    }
-                    egui::Popup::menu(&resp).show(|ui| {
-                        if ui.button(tr("Choose SoundFont…")).clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("SoundFont", &["sf2", "SF2"])
-                                .pick_file()
-                            {
-                                use_soundfont_file(p, ti, path.to_string_lossy().into_owned());
-                            }
-                            ui.close();
-                        }
-                        if ui.button(tr("Choose Hydrogen Drum Kit…")).clicked() {
-                            // A kit is a downloaded `.h2drumkit` archive, or the `drumkit.xml`
-                            // of one that is already unpacked.
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Hydrogen drum kit", &["h2drumkit", "xml"])
-                                .pick_file()
-                            {
-                                match hydrogen_kit_file(&path) {
-                                    Ok(file) => use_soundfont_file(p, ti, file),
-                                    Err(e) => {
-                                        tracing::warn!("{e}");
-                                        s.status = Some(e);
-                                    }
-                                }
-                            }
-                            ui.close();
-                        }
-                        if ui.button(tr("Electric Piano")).clicked() {
-                            p.tracks[ti].epiano = Some(crate::model::EPianoUse::default());
-                            p.tracks[ti].soundfont = None;
-                            p.tracks[ti].sampler = None;
-                            p.tracks[ti].drums = None;
-                            p.tracks[ti].bass808 = None;
-                            p.tracks[ti].hosted_instrument = 0;
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button("808 Bass").clicked() {
-                            p.tracks[ti].bass808 = Some(prowave_engine::Bass808Spec::default());
-                            p.tracks[ti].soundfont = None;
-                            p.tracks[ti].sampler = None;
-                            p.tracks[ti].epiano = None;
-                            p.tracks[ti].drums = None;
-                            p.tracks[ti].hosted_instrument = 0;
-                            s.show_bass808 = Some(ti);
-                            ui.close();
-                        }
-                        if has_bass808 {
-                            if ui.button("Edit 808 Bass…").clicked() {
-                                s.show_bass808 = Some(ti);
-                                ui.close();
-                            }
-                            if ui.button("Remove 808 Bass").clicked() {
-                                p.tracks[ti].bass808 = None;
-                                ui.close();
-                            }
-                        }
-                        ui.separator();
-                        if ui.button(tr("Drum Machine")).clicked() {
-                            p.tracks[ti].drums = Some(crate::drum_kit::DrumsUse::new());
-                            p.tracks[ti].sampler = None;
-                            p.tracks[ti].epiano = None;
-                            p.tracks[ti].soundfont = None;
-                            p.tracks[ti].bass808 = None;
-                            p.tracks[ti].hosted_instrument = 0;
-                            s.show_drum_machine = Some(ti);
-                            ui.close();
-                        }
-                        if has_drums {
-                            if ui.button(tr("Edit Drum Machine…")).clicked() {
-                                s.show_drum_machine = Some(ti);
-                                ui.close();
-                            }
-                            if ui.button(tr("Remove Drum Machine")).clicked() {
-                                p.tracks[ti].drums = None;
-                                ui.close();
-                            }
-                        }
-                        let clap_insts: Vec<_> = crate::hosted_plugins::catalog_instruments()
-                            .into_iter()
-                            .filter(|i| i.format == crate::hosted_plugins::Format::Clap)
-                            .collect();
-                        if !clap_insts.is_empty() {
-                            ui.separator();
-                            ui.menu_button("CLAP Instruments", |ui| {
-                                for inst in &clap_insts {
-                                    let picked = hosted_inst != 0
-                                        && crate::hosted_plugins::info(hosted_inst)
-                                            .as_ref()
-                                            .map(|i| &i.id)
-                                            == Some(&inst.id);
-                                    if ui.selectable_label(picked, &inst.name).clicked() {
-                                        let slot = crate::hosted_plugins::add(inst, None);
-                                        p.tracks[ti].hosted_instrument = slot;
-                                        p.tracks[ti].soundfont = None;
-                                        p.tracks[ti].sampler = None;
-                                        p.tracks[ti].epiano = None;
-                                        p.tracks[ti].drums = None;
-                                        p.tracks[ti].bass808 = None;
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        }
-                        let vst3_insts: Vec<_> = crate::hosted_plugins::catalog_instruments()
-                            .into_iter()
-                            .filter(|i| i.format == crate::hosted_plugins::Format::Vst3)
-                            .collect();
-                        if !vst3_insts.is_empty() {
-                            ui.menu_button("VST3 Instruments", |ui| {
-                                for inst in &vst3_insts {
-                                    let picked = hosted_inst != 0
-                                        && crate::hosted_plugins::info(hosted_inst)
-                                            .as_ref()
-                                            .map(|i| &i.id)
-                                            == Some(&inst.id);
-                                    if ui.selectable_label(picked, &inst.name).clicked() {
-                                        let slot = crate::hosted_plugins::add(inst, None);
-                                        p.tracks[ti].hosted_instrument = slot;
-                                        p.tracks[ti].soundfont = None;
-                                        p.tracks[ti].sampler = None;
-                                        p.tracks[ti].epiano = None;
-                                        p.tracks[ti].drums = None;
-                                        p.tracks[ti].bass808 = None;
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        }
-                        if hosted_inst != 0 {
-                            ui.separator();
-                            if ui
-                                .button(format!(
-                                    "Remove {}",
-                                    crate::hosted_plugins::name(hosted_inst),
-                                ))
-                                .clicked()
-                            {
-                                p.tracks[ti].hosted_instrument = 0;
-                                ui.close();
-                            }
-                        }
-                        ui.separator();
-                        ui.menu_button(tr("Sampler"), |ui| {
-                            use crate::sampler_load::SamplerSource;
-                            if ui.button(tr("Load SFZ Instrument…")).clicked() {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter("SFZ", &["sfz", "SFZ"])
-                                    .pick_file()
-                                {
-                                    use_sampler(p, ti, SamplerSource::Sfz(path));
-                                }
-                                ui.close();
-                            }
-                            if ui.button(tr("Load EXS Instrument…")).clicked() {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter("EXS", &["exs", "EXS"])
-                                    .pick_file()
-                                {
-                                    use_sampler(p, ti, SamplerSource::Exs(path));
-                                }
-                                ui.close();
-                            }
-                            if ui.button(tr("Load Audio File (Quick Sampler)…")).clicked() {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .add_filter(
-                                        "Audio",
-                                        &["wav", "aif", "aiff", "flac", "ogg", "mp3", "caf", "m4a"],
-                                    )
-                                    .pick_file()
-                                {
-                                    use_sampler(
-                                        p,
-                                        ti,
-                                        SamplerSource::Audio {
-                                            path,
-                                            root: 60,
-                                            looped: false,
-                                        },
-                                    );
-                                }
-                                ui.close();
-                            }
-                            if let Some(s) = &sampler {
-                                if let Some(e) = crate::sampler_load::error(s.source.path()) {
-                                    ui.colored_label(
-                                        egui::Color32::from_rgb(0xe0, 0x70, 0x60),
-                                        crate::i18n::trf("Cannot load: {}", &[&e]),
-                                    );
-                                }
-                                ui.separator();
-                                if ui.button(tr("Remove Sampler")).clicked() {
-                                    p.tracks[ti].sampler = None;
-                                    ui.close();
-                                }
-                            }
-                        });
-                        if piano.is_some() {
-                            ui.separator();
-                            if ui.button(tr("Remove Electric Piano")).clicked() {
-                                p.tracks[ti].epiano = None;
-                                ui.close();
-                            }
-                        }
-                        if let (Some(sf), None, None) = (current.as_ref(), piano, sampler.as_ref())
-                        {
-                            if let Some(bank) = crate::soundfonts::loaded(&sf.path) {
-                                ui.separator();
-                                egui::ScrollArea::vertical()
-                                    .max_height(320.0)
-                                    .show(ui, |ui| {
-                                        for preset in bank.presets() {
-                                            let picked = preset.bank == sf.bank
-                                                && preset.program == sf.program;
-                                            if ui.selectable_label(picked, &preset.name).clicked() {
-                                                p.tracks[ti].soundfont = Some(SoundFontUse {
-                                                    path: sf.path.clone(),
-                                                    bank: preset.bank,
-                                                    program: preset.program,
-                                                });
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                            }
-                            ui.separator();
-                            if ui.button(tr("Remove SoundFont")).clicked() {
-                                p.tracks[ti].soundfont = None;
-                                ui.close();
-                            }
-                        }
-                    });
-                }
-                y += ROW_H;
-                if let Some(ep) = p.tracks[ti].epiano {
-                    if let Some(dials) =
-                        piano_rows(ui, &g_upper, (label_right, vx, vw), &mut y, ep.params)
-                    {
-                        p.tracks[ti].epiano = Some(crate::model::EPianoUse { params: dials });
-                    }
-                }
-                if let Some(current) = p.tracks[ti].sampler.clone() {
-                    if let Some(next) =
-                        sampler_rows(ui, &g_upper, (label_right, vx, vw), &mut y, &current)
-                    {
-                        p.tracks[ti].sampler = Some(next);
-                    }
-                }
-            }
-            // MIDI In Port
-            label(&g_upper, label_right, y, tr("MIDI In Port:"), true);
-            let in_port = p.tracks[ti]
-                .midi_in_port
-                .clone()
-                .unwrap_or_else(|| tr("All").to_string());
-            if let Some(resp) = popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "midi_in_port",
-                &in_port,
-                true,
-            ) {
-                egui::Popup::menu(&resp).show(|ui| {
-                    if ui
-                        .selectable_label(p.tracks[ti].midi_in_port.is_none(), tr("All"))
-                        .clicked()
-                    {
-                        p.tracks[ti].midi_in_port = None;
-                        ui.close();
-                    }
-                    for name in crate::mtc_in::ports() {
-                        let on = p.tracks[ti].midi_in_port.as_deref() == Some(&name);
-                        if ui.selectable_label(on, &name).clicked() {
-                            p.tracks[ti].midi_in_port = Some(name);
-                            ui.close();
-                        }
-                    }
-                });
-            }
-            y += ROW_H;
-
-            // MIDI In Channel
-            label(&g_upper, label_right, y, tr("MIDI In Channel:"), true);
-            let in_ch_text = p.tracks[ti]
-                .midi_in_channel
-                .map_or_else(|| tr("All").to_string(), |c| c.to_string());
-            if let Some(resp) = popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "midi_in_channel",
-                &in_ch_text,
-                true,
-            ) {
-                egui::Popup::menu(&resp).show(|ui| {
-                    if ui
-                        .selectable_label(p.tracks[ti].midi_in_channel.is_none(), tr("All"))
-                        .clicked()
-                    {
-                        p.tracks[ti].midi_in_channel = None;
-                        ui.close();
-                    }
-                    for ch in 1..=16u8 {
-                        let on = p.tracks[ti].midi_in_channel == Some(ch);
-                        if ui.selectable_label(on, ch.to_string()).clicked() {
-                            p.tracks[ti].midi_in_channel = Some(ch);
-                            ui.close();
-                        }
-                    }
-                });
-            }
-            y += ROW_H;
-
-            // Freeze Mode
-            label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
-            popup(
-                ui,
-                &g_upper,
-                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                "freeze_mode",
-                tr("Pre Fader"),
-                true,
-            );
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Transpose:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "track_transpose",
-                tp.transpose as i32,
-                (-96, 96),
-                0,
-                transpose_text(tp.transpose as i32),
-                true,
-            ) {
-                tp.transpose = v as i8;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Velocity:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "track_velocity",
-                tp.velocity as i32,
-                (-99, 99),
-                0,
-                velocity_text(tp.velocity as i32),
-                true,
-            ) {
-                tp.velocity = v as i8;
-            }
-            y += ROW_H;
-            let half = (vw - 4.0) / 2.0;
-            label(&g_upper, label_right, y, tr("Key Limit:"), true);
-            let (lo, hi) = tp.key_limit;
-            let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
-            let r2 = Rect::from_min_size(pos2(vx + half + 4.0, y + 2.0), vec2(half, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r1,
-                "key_lo",
-                lo as i32,
-                (0, hi as i32),
-                0,
-                note_name(lo),
-                true,
-            ) {
-                tp.key_limit.0 = v as u8;
-            }
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r2,
-                "key_hi",
-                hi as i32,
-                (lo as i32, 127),
-                127,
-                note_name(hi),
-                true,
-            ) {
-                tp.key_limit.1 = v as u8;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Vel Limit:"), true);
-            let (lo, hi) = tp.vel_limit;
-            let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
-            let r2 = Rect::from_min_size(pos2(vx + half + 4.0, y + 2.0), vec2(half, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r1,
-                "vel_lo",
-                lo as i32,
-                (1, hi as i32),
-                1,
-                lo.to_string(),
-                true,
-            ) {
-                tp.vel_limit.0 = v as u8;
-            }
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r2,
-                "vel_hi",
-                hi as i32,
-                (lo as i32, 127),
-                127,
-                hi.to_string(),
-                true,
-            ) {
-                tp.vel_limit.1 = v as u8;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Delay:"), true);
-            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            if let Some(v) = drag_value(
-                ui,
-                &g_upper,
-                r,
-                "track_delay",
-                tp.delay_ms as i32,
-                (-99, 99),
-                0,
-                delay_text(tp.delay_ms as i32),
-                true,
-            ) {
-                tp.delay_ms = v as i16;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("No Transpose:"), true);
-            if checkbox(
-                ui,
-                &g_upper,
-                pos2(vx, y),
-                "no_transpose",
-                tp.no_transpose,
-                true,
-            ) {
-                tp.no_transpose = !tp.no_transpose;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("No Reset:"), true);
-            if checkbox(ui, &g_upper, pos2(vx, y), "no_reset", tp.no_reset, true) {
-                tp.no_reset = !tp.no_reset;
-            }
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Staff Style:"), false);
-            let staff_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            popup(ui, &g_upper, staff_r, "staff", tr("Auto"), false);
-            ui.interact(staff_r, id("staff_tip"), Sense::hover())
-                .on_hover_text("Staff Style notation assignment (Logic Pro score editor)");
-            y += ROW_H;
-            label(&g_upper, label_right, y, tr("Articulation Set:"), false);
-            let artic_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-            popup(ui, &g_upper, artic_r, "artic", "", false);
-            ui.interact(artic_r, id("artic_tip"), Sense::hover())
-                .on_hover_text("Articulation set mappings for sample libraries (Logic Pro)");
-            y += ROW_H;
-        }
-        if p.tracks[ti].params != tp {
-            p.tracks[ti].params = tp;
-            changed_song = true;
-        }
-        y += 4.0;
-    }
-
-    if anchor_strips {
-        let upper_content_h = (y + s.inspector.scroll_y) - upper_rect.top();
-        s.inspector.scroll_y = s
-            .inspector
-            .scroll_y
-            .clamp(0.0, (upper_content_h - upper_rect.height()).max(0.0));
-    }
-
-    // ---------------- Channel strips: selected track + Destination (Aux or Stereo Out)
-    let strips_y = if anchor_strips {
-        g.line_segment(
-            [
-                pos2(panel.left(), strips_rect.top() - 2.0),
-                pos2(panel.right(), strips_rect.top() - 2.0),
-            ],
-            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-        );
-        strips_rect.top() + 2.0
-    } else {
-        y + 4.0
-    };
-    let strips_h = (panel.bottom() - strips_y - 4.0).max(STRIPS_MIN_H);
-
-    if !p.tracks.is_empty() {
-        let dest_key = if p.tracks[ti].output > 0 {
+    let dest_key = if !p.tracks.is_empty() {
+        if p.tracks[ti].output > 0 {
             let bus = p.tracks[ti].output;
             (0..p.tracks.len())
                 .find(|&i| p.aux_bus_of(i) == bus)
@@ -2038,14 +672,1603 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 .unwrap_or(StripKey::StereoOut)
         } else {
             StripKey::StereoOut
-        };
-        let keys = [StripKey::Track(ti), dest_key];
-        let r = rows(strips_y, fx_rows_for(p, &keys), send_rows_for(p, &keys));
-        let sw = (w - 12.0) / 2.0;
+        }
+    } else {
+        StripKey::StereoOut
+    };
+    let keys = [StripKey::Track(ti), dest_key];
+    let fx_rows = fx_rows_for(p, &keys);
+    let send_rows = send_rows_for(p, &keys);
+    let r_rel = rows(0.0, fx_rows, send_rows);
+
+    let compact_strips_h = r_rel.fader_top + 108.0 + 48.0 + 4.0;
+    let min_top_h = HEADER_H * 2.0 + 8.0;
+    let strips_h = compact_strips_h.min((panel.height() - min_top_h - 1.0).max(STRIPS_MIN_H));
+    let divider_y = panel.bottom() - strips_h - 1.0;
+    let top_rect = Rect::from_min_max(panel.min, pos2(panel.max.x, divider_y));
+    let strips_rect = Rect::from_min_max(pos2(panel.left(), divider_y + 1.0), panel.max);
+
+    g.line_segment(
+        [
+            pos2(panel.left(), divider_y),
+            pos2(panel.right(), divider_y),
+        ],
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+    );
+
+    let mut changed_song = false;
+
+    ui.scope_builder(UiBuilder::new().max_rect(top_rect), |ui| {
+        ui.set_clip_rect(top_rect);
+        egui::ScrollArea::vertical()
+            .id_salt("inspector_accordions_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let left = ui.cursor().left();
+                let w = ui.available_width();
+                let label_col_w = (w * 0.44).clamp(112.0, 150.0);
+                let label_right = left + label_col_w - 6.0;
+                let vx = left + label_col_w;
+                let vw = (w - label_col_w - 12.0).max(40.0);
+
+                let g_upper = ui.painter().clone();
+                let mut y = ui.cursor().top();
+                let start_y = y;
+
+                // ---------------- Region
+                let region_name = sel.map_or_else(
+                    || tr("MIDI Defaults").to_string(),
+                    |(t, r)| p.tracks[t].regions[r].name.clone(),
+                );
+                let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
+                let head = section_header(
+                    ui,
+                    &g_upper,
+                    hdr,
+                    "region",
+                    s.inspector.region_open,
+                    tr("Region:"),
+                    &region_name,
+                );
+                if head.clicked() {
+                    s.inspector.region_open = !s.inspector.region_open;
+                }
+                if sel.is_some() && head.double_clicked() {
+                    crate::menus::apply("Rename Regions", p, s);
+                }
+                y += HEADER_H + 4.0;
+                if s.inspector.region_open {
+                    if sel.is_none() {
+                        // Context: MIDI Defaults (no region selected)
+                        label(&g_upper, label_right, y, tr("Loop:"), true);
+                        let looped = p.midi_defaults.loop_beats > 0.0;
+                        if checkbox(ui, &g_upper, pos2(vx, y), "defaults_loop", looped, true) {
+                            p.midi_defaults.loop_beats = if !looped { 16.0 } else { 0.0 };
+                            changed_song = true;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Quantize:"), true);
+                        let q_text = QUANTIZE
+                            .iter()
+                            .find(|(_, q)| *q == p.midi_defaults.quantize)
+                            .map_or(tr("Off"), |(t, _)| tr(t));
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "defaults_quantize",
+                            q_text,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                for (t, q) in QUANTIZE {
+                                    if ui
+                                        .selectable_label(p.midi_defaults.quantize == q, tr(t))
+                                        .clicked()
+                                    {
+                                        p.midi_defaults.quantize = q;
+                                        changed_song = true;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+                        let swing_active = p.midi_defaults.quantize.is_some();
+                        label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "defaults_q_swing",
+                            p.midi_defaults.q_swing.round() as i32,
+                            (0, 100),
+                            0,
+                            if p.midi_defaults.q_swing == 0.0 {
+                                tr("Off").to_string()
+                            } else {
+                                format!("{}%", p.midi_defaults.q_swing.round() as i32)
+                            },
+                            swing_active,
+                        ) {
+                            p.midi_defaults.q_swing = v as f32;
+                            changed_song = true;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Transpose:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "defaults_transpose",
+                            p.midi_defaults.transpose as i32,
+                            (-96, 96),
+                            0,
+                            transpose_text(p.midi_defaults.transpose as i32),
+                            true,
+                        ) {
+                            p.midi_defaults.transpose = v as i8;
+                            changed_song = true;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Velocity:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "defaults_velocity",
+                            p.midi_defaults.velocity as i32,
+                            (-99, 99),
+                            0,
+                            velocity_text(p.midi_defaults.velocity as i32),
+                            true,
+                        ) {
+                            p.midi_defaults.velocity = v as i8;
+                            changed_song = true;
+                        }
+                        y += ROW_H;
+
+                        // More disclosure
+                        let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if ui.interact(more, id("more"), Sense::click()).clicked() {
+                            s.inspector.more_open = !s.inspector.more_open;
+                        }
+                        let c = pos2(left + 12.0, more.center().y);
+                        let tri = if s.inspector.more_open {
+                            vec![
+                                c + vec2(-3.5, -2.0),
+                                c + vec2(3.5, -2.0),
+                                c + vec2(0.0, 2.5),
+                            ]
+                        } else {
+                            vec![
+                                c + vec2(-2.0, -3.5),
+                                c + vec2(2.5, 0.0),
+                                c + vec2(-2.0, 3.5),
+                            ]
+                        };
+                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.text(
+                            pos2(left + 22.0, more.center().y),
+                            Align2::LEFT_CENTER,
+                            tr("More"),
+                            FontId::proportional(11.5),
+                            TEXT_DIM,
+                        );
+                        y += ROW_H;
+                        if s.inspector.more_open {
+                            label(&g_upper, label_right, y, tr("Dynamics:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_dynamics",
+                                p.midi_defaults.dynamics as i32,
+                                (0, 200),
+                                100,
+                                format!("{}%", p.midi_defaults.dynamics),
+                                true,
+                            ) {
+                                p.midi_defaults.dynamics = v as u16;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Gate Time:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_gate_time",
+                                p.midi_defaults.gate_time as i32,
+                                (0, 200),
+                                100,
+                                format!("{}%", p.midi_defaults.gate_time),
+                                true,
+                            ) {
+                                p.midi_defaults.gate_time = v as u16;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Clip Length:"), true);
+                            if checkbox(
+                                ui,
+                                &g_upper,
+                                pos2(vx, y),
+                                "defaults_clip_length",
+                                p.midi_defaults.clip_length,
+                                true,
+                            ) {
+                                p.midi_defaults.clip_length = !p.midi_defaults.clip_length;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            let q_active = p.midi_defaults.quantize.is_some();
+
+                            label(&g_upper, label_right, y, tr("Q-Velocity:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_velocity",
+                                p.midi_defaults.q_velocity.round() as i32,
+                                (0, 100),
+                                0,
+                                format!("{}%", p.midi_defaults.q_velocity.round() as i32),
+                                q_active,
+                            ) {
+                                p.midi_defaults.q_velocity = v as f32;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Length:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_length",
+                                p.midi_defaults.q_length.round() as i32,
+                                (0, 100),
+                                0,
+                                format!("{}%", p.midi_defaults.q_length.round() as i32),
+                                q_active,
+                            ) {
+                                p.midi_defaults.q_length = v as f32;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Flam:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            let flam_v = p.midi_defaults.q_flam as i32;
+                            let flam_text = if flam_v == 0 {
+                                "0 ms".to_string()
+                            } else if flam_v > 0 {
+                                format!("+{flam_v} ms")
+                            } else {
+                                format!("{flam_v} ms")
+                            };
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_flam",
+                                flam_v,
+                                (-50, 50),
+                                0,
+                                flam_text,
+                                q_active,
+                            ) {
+                                p.midi_defaults.q_flam = v as i16;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Range:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            let range_v = p.midi_defaults.q_range as i32;
+                            let range_text = if range_v == 0 {
+                                "0%".to_string()
+                            } else {
+                                format!("{range_v}%")
+                            };
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_range",
+                                range_v,
+                                (0, 100),
+                                0,
+                                range_text,
+                                q_active,
+                            ) {
+                                p.midi_defaults.q_range = v as u8;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Strength:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_strength",
+                                p.midi_defaults.q_strength.round() as i32,
+                                (0, 100),
+                                100,
+                                format!("{}%", p.midi_defaults.q_strength.round() as i32),
+                                q_active,
+                            ) {
+                                p.midi_defaults.q_strength = v as f32;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+                        }
+                        y += 4.0;
+                    } else if !is_audio {
+                        // Context: Selected MIDI Region
+                        let primary = sel.unwrap();
+                        let before = p.tracks[primary.0].regions[primary.1].params;
+                        let mut params = before;
+
+                        label(&g_upper, label_right, y, tr("Mute:"), true);
+                        if checkbox(ui, &g_upper, pos2(vx, y), "region_mute", params.mute, true) {
+                            params.mute = !params.mute;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Loop:"), true);
+                        let looped = params.loop_beats > 0.0;
+                        let loop_click =
+                            checkbox(ui, &g_upper, pos2(vx, y), "region_loop", looped, true);
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Quantize:"), true);
+                        let q_text = QUANTIZE
+                            .iter()
+                            .find(|(_, q)| *q == params.quantize)
+                            .map_or(tr("Off"), |(t, _)| tr(t));
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "quantize",
+                            q_text,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                for (t, q) in QUANTIZE {
+                                    if ui.selectable_label(params.quantize == q, tr(t)).clicked() {
+                                        params.quantize = q;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+                        let swing_active = params.quantize.is_some();
+                        label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "region_q_swing",
+                            params.q_swing.round() as i32,
+                            (0, 100),
+                            0,
+                            if params.q_swing == 0.0 {
+                                tr("Off").to_string()
+                            } else {
+                                format!("{}%", params.q_swing.round() as i32)
+                            },
+                            swing_active,
+                        ) {
+                            params.q_swing = v as f32;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Transpose:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "region_transpose",
+                            params.transpose as i32,
+                            (-96, 96),
+                            0,
+                            transpose_text(params.transpose as i32),
+                            true,
+                        ) {
+                            params.transpose = v as i8;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Velocity:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "region_velocity",
+                            params.velocity as i32,
+                            (-99, 99),
+                            0,
+                            velocity_text(params.velocity as i32),
+                            true,
+                        ) {
+                            params.velocity = v as i8;
+                        }
+                        y += ROW_H;
+
+                        // "More" disclosure
+                        let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if ui.interact(more, id("more"), Sense::click()).clicked() {
+                            s.inspector.more_open = !s.inspector.more_open;
+                        }
+                        let c = pos2(left + 12.0, more.center().y);
+                        let tri = if s.inspector.more_open {
+                            vec![
+                                c + vec2(-3.5, -2.0),
+                                c + vec2(3.5, -2.0),
+                                c + vec2(0.0, 2.5),
+                            ]
+                        } else {
+                            vec![
+                                c + vec2(-2.0, -3.5),
+                                c + vec2(2.5, 0.0),
+                                c + vec2(-2.0, 3.5),
+                            ]
+                        };
+                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.text(
+                            pos2(left + 22.0, more.center().y),
+                            Align2::LEFT_CENTER,
+                            tr("More"),
+                            FontId::proportional(11.5),
+                            TEXT_DIM,
+                        );
+                        y += ROW_H;
+                        if s.inspector.more_open {
+                            label(&g_upper, label_right, y, tr("Dynamics:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_dynamics",
+                                params.dynamics as i32,
+                                (0, 200),
+                                100,
+                                format!("{}%", params.dynamics),
+                                true,
+                            ) {
+                                params.dynamics = v as u16;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Gate Time:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_gate_time",
+                                params.gate_time as i32,
+                                (0, 200),
+                                100,
+                                format!("{}%", params.gate_time),
+                                true,
+                            ) {
+                                params.gate_time = v as u16;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Clip Length:"), true);
+                            if checkbox(
+                                ui,
+                                &g_upper,
+                                pos2(vx, y),
+                                "region_clip_length",
+                                params.clip_length,
+                                true,
+                            ) {
+                                params.clip_length = !params.clip_length;
+                            }
+                            y += ROW_H;
+
+                            let q_active = params.quantize.is_some();
+
+                            label(&g_upper, label_right, y, tr("Q-Velocity:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_q_velocity",
+                                params.q_velocity.round() as i32,
+                                (0, 100),
+                                0,
+                                format!("{}%", params.q_velocity.round() as i32),
+                                q_active,
+                            ) {
+                                params.q_velocity = v as f32;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Length:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_q_length",
+                                params.q_length.round() as i32,
+                                (0, 100),
+                                0,
+                                format!("{}%", params.q_length.round() as i32),
+                                q_active,
+                            ) {
+                                params.q_length = v as f32;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Flam:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            let flam_v = params.q_flam as i32;
+                            let flam_text = if flam_v == 0 {
+                                "0 ms".to_string()
+                            } else if flam_v > 0 {
+                                format!("+{flam_v} ms")
+                            } else {
+                                format!("{flam_v} ms")
+                            };
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_q_flam",
+                                flam_v,
+                                (-50, 50),
+                                0,
+                                flam_text,
+                                q_active,
+                            ) {
+                                params.q_flam = v as i16;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Range:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            let range_v = params.q_range as i32;
+                            let range_text = if range_v == 0 {
+                                "0%".to_string()
+                            } else {
+                                format!("{range_v}%")
+                            };
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_q_range",
+                                range_v,
+                                (0, 100),
+                                0,
+                                range_text,
+                                q_active,
+                            ) {
+                                params.q_range = v as u8;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Q-Strength:"), q_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "region_q_strength",
+                                params.q_strength.round() as i32,
+                                (0, 100),
+                                100,
+                                format!("{}%", params.q_strength.round() as i32),
+                                q_active,
+                            ) {
+                                params.q_strength = v as f32;
+                            }
+                            y += ROW_H;
+                        }
+                        if let Some(primary) = sel {
+                            changed_song |= crate::region_commands::spread_params(
+                                p, &s.tracks, primary, before, params,
+                            );
+                            if loop_click {
+                                changed_song |=
+                                    crate::region_commands::set_loop(p, &s.tracks, !looped);
+                            }
+                        }
+                        y += 4.0;
+                    } else {
+                        // Context: Selected Audio Region
+                        let primary = sel.unwrap();
+                        let before = p.tracks[primary.0].regions[primary.1].params;
+                        let mut params = before;
+
+                        label(&g_upper, label_right, y, tr("Mute:"), true);
+                        if checkbox(ui, &g_upper, pos2(vx, y), "region_mute", params.mute, true) {
+                            params.mute = !params.mute;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Loop:"), true);
+                        let looped = params.loop_beats > 0.0;
+                        let loop_click =
+                            checkbox(ui, &g_upper, pos2(vx, y), "region_loop", looped, true);
+                        y += ROW_H;
+
+                        let (start_beat, len_beats) = {
+                            let reg = &p.tracks[primary.0].regions[primary.1];
+                            (p.region_start_beats(reg), p.region_len_beats(reg))
+                        };
+                        let bpm = p.tempo_at(start_beat);
+
+                        label(&g_upper, label_right, y, tr("Gain:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "region_gain",
+                            (params.gain_db * 2.0).round() as i32,
+                            (
+                                (MIN_REGION_GAIN * 2.0) as i32,
+                                (MAX_REGION_GAIN * 2.0) as i32,
+                            ),
+                            0,
+                            gain_text(params.gain_db),
+                            true,
+                        ) {
+                            params.gain_db = v as f32 / 2.0;
+                        }
+                        y += ROW_H;
+
+                        let max_fade = (len_beats * FADE_STEPS_PER_BEAT as f64) as i32;
+                        for (name, key, which) in [
+                            (tr("Fade In:"), "region_fade_in", 0),
+                            (tr("Fade Out:"), "region_fade_out", 1),
+                        ] {
+                            let beats = if which == 0 {
+                                params.fade_in
+                            } else {
+                                params.fade_out
+                            };
+                            label(&g_upper, label_right, y, name, true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                key,
+                                (beats * FADE_STEPS_PER_BEAT as f32).round() as i32,
+                                (0, max_fade.max(0)),
+                                0,
+                                fade_text(beats, bpm),
+                                true,
+                            ) {
+                                let beats = v as f32 / FADE_STEPS_PER_BEAT as f32;
+                                if which == 0 {
+                                    params.fade_in = beats;
+                                } else {
+                                    params.fade_out = beats;
+                                }
+                            }
+                            y += ROW_H;
+                        }
+
+                        label(&g_upper, label_right, y, tr("Curve:"), true);
+                        let curve_name = FADE_CURVES
+                            .iter()
+                            .find(|(_, c)| *c == params.fade_curve)
+                            .map_or(tr("Equal Power"), |(t, _)| tr(t));
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "fade_curve",
+                            curve_name,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                for (t, c) in FADE_CURVES {
+                                    if ui.selectable_label(params.fade_curve == c, tr(t)).clicked()
+                                    {
+                                        params.fade_curve = c;
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+
+                        label(&g_upper, label_right, y, tr("Reverse:"), true);
+                        if checkbox(
+                            ui,
+                            &g_upper,
+                            pos2(vx, y),
+                            "region_reverse",
+                            params.reverse,
+                            true,
+                        ) {
+                            params.reverse = !params.reverse;
+                        }
+                        y += ROW_H;
+
+                        label(
+                            &g_upper,
+                            label_right,
+                            y,
+                            &format!("{}:", tr("X-Fade")),
+                            true,
+                        );
+                        if checkbox(
+                            ui,
+                            &g_upper,
+                            pos2(vx, y),
+                            "region_xfade",
+                            params.crossfade,
+                            true,
+                        ) {
+                            params.crossfade = !params.crossfade;
+                        }
+                        y += ROW_H;
+
+                        // "More" disclosure
+                        let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if ui.interact(more, id("more"), Sense::click()).clicked() {
+                            s.inspector.more_open = !s.inspector.more_open;
+                        }
+                        let c = pos2(left + 12.0, more.center().y);
+                        let tri = if s.inspector.more_open {
+                            vec![
+                                c + vec2(-3.5, -2.0),
+                                c + vec2(3.5, -2.0),
+                                c + vec2(0.0, 2.5),
+                            ]
+                        } else {
+                            vec![
+                                c + vec2(-2.0, -3.5),
+                                c + vec2(2.5, 0.0),
+                                c + vec2(-2.0, 3.5),
+                            ]
+                        };
+                        g_upper.add(Shape::convex_polygon(tri, TEXT_DIM, Stroke::NONE));
+                        g_upper.text(
+                            pos2(left + 22.0, more.center().y),
+                            Align2::LEFT_CENTER,
+                            tr("More"),
+                            FontId::proportional(11.5),
+                            TEXT_DIM,
+                        );
+                        y += ROW_H;
+                        if s.inspector.more_open {
+                            label(&g_upper, label_right, y, "Flex & Follow:", false);
+                            popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "flex_follow",
+                                tr("Off"),
+                                false,
+                            );
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Transpose:"), false);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "audio_transpose",
+                                0,
+                                (-96, 96),
+                                0,
+                                "0 st".into(),
+                                false,
+                            );
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, "Speed:", false);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "audio_speed",
+                                100,
+                                (25, 400),
+                                100,
+                                "100 %".into(),
+                                false,
+                            );
+                            y += ROW_H;
+                        }
+                        if let Some(primary) = sel {
+                            changed_song |= crate::region_commands::spread_params(
+                                p, &s.tracks, primary, before, params,
+                            );
+                            if loop_click {
+                                changed_song |=
+                                    crate::region_commands::set_loop(p, &s.tracks, !looped);
+                            }
+                        }
+                        y += 4.0;
+                    }
+                }
+
+                // ---------------- Track
+                let ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
+                let track_name = p.tracks.get(ti).map_or(String::new(), |t| t.name.clone());
+                let hdr = Rect::from_min_size(pos2(left, y), vec2(w, HEADER_H));
+                if section_header(
+                    ui,
+                    &g_upper,
+                    hdr,
+                    "track",
+                    s.inspector.track_open,
+                    tr("Track:"),
+                    &track_name,
+                )
+                .clicked()
+                {
+                    s.inspector.track_open = !s.inspector.track_open;
+                }
+                y += HEADER_H + 4.0;
+                if s.inspector.track_open && ti < p.tracks.len() {
+                    let audio = p.tracks[ti].kind == TrackKind::Audio;
+                    let mut tp = p.tracks[ti].params;
+
+                    label(&g_upper, label_right, y, tr("Icon:"), true);
+                    let icon_r = Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0));
+                    draw_icon(&g_upper, icon_r, track_icon(&p.tracks[ti]));
+                    if ui
+                        .interact(icon_r, id("track_icon_click"), Sense::click())
+                        .clicked()
+                    {
+                        s.track_dialog =
+                            Some(crate::track_dialogs::TrackDialog::Icon { track: ti });
+                    }
+                    y += 30.0;
+                    let channel = p.channel_name(ti);
+                    label(&g_upper, label_right, y, tr("Channel:"), true);
+                    if let Some(resp) = popup(
+                        ui,
+                        &g_upper,
+                        Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                        "channel",
+                        &channel,
+                        true,
+                    ) {
+                        resp.on_hover_text("Channel strip identifier");
+                    }
+                    y += ROW_H;
+                    if audio {
+                        label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
+                        popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "freeze",
+                            tr("Pre Fader"),
+                            true,
+                        );
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Q-Reference:"), false);
+                        checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Flex Mode:"), false);
+                        popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "flex",
+                            tr("Off"),
+                            false,
+                        );
+                        y += ROW_H;
+                    } else {
+                        let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
+                        if external {
+                            // Where this track's notes go: a MIDI output port and a channel.
+                            label(&g_upper, label_right, y, tr("MIDI Out Port:"), true);
+                            let port = p.tracks[ti]
+                                .midi_port
+                                .clone()
+                                .unwrap_or_else(|| tr("No Port").to_string());
+                            if let Some(resp) = popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "midi_out_port",
+                                &port,
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    let current = p.tracks[ti].midi_port.clone();
+                                    if ui
+                                        .selectable_label(current.is_none(), tr("No Port"))
+                                        .clicked()
+                                    {
+                                        p.tracks[ti].midi_port = None;
+                                        ui.close();
+                                    }
+                                    for name in crate::midi_out::ports() {
+                                        if ui
+                                            .selectable_label(
+                                                current.as_deref() == Some(&name),
+                                                &name,
+                                            )
+                                            .clicked()
+                                        {
+                                            p.tracks[ti].midi_port = Some(name);
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            let channel = p.tracks[ti].midi_channel.clamp(1, 16);
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "midi_out_channel",
+                                channel as i32,
+                                (1, 16),
+                                1,
+                                channel.to_string(),
+                                true,
+                            ) {
+                                p.tracks[ti].midi_channel = v as u8;
+                            }
+                            y += ROW_H;
+                            // The sound sent when the track is routed: a program, and a bank (both optional;
+                            // the top of each range is Off).
+                            label(&g_upper, label_right, y, tr("MIDI Program:"), true);
+                            let program = p.tracks[ti].midi_program.map_or(128, i32::from);
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "midi_out_program",
+                                program,
+                                (0, 128),
+                                128,
+                                if program == 128 {
+                                    tr("Off").to_string()
+                                } else {
+                                    program.to_string()
+                                },
+                                true,
+                            ) {
+                                p.tracks[ti].midi_program = (v < 128).then_some(v as u8);
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("MIDI Bank:"), true);
+                            let bank = p.tracks[ti].midi_bank.map_or(16384, i32::from);
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "midi_out_bank",
+                                bank,
+                                (0, 16384),
+                                16384,
+                                if bank == 16384 {
+                                    tr("Off").to_string()
+                                } else {
+                                    bank.to_string()
+                                },
+                                true,
+                            ) {
+                                p.tracks[ti].midi_bank = (v < 16384).then_some(v as u16);
+                            }
+                            y += ROW_H;
+                        }
+                        if !external {
+                            // The instrument this track plays instead of its synth patch.
+                            label(&g_upper, label_right, y, tr("SoundFont:"), true);
+                            let current = p.tracks[ti].soundfont.clone();
+                            let piano = p.tracks[ti].epiano;
+                            let sampler = p.tracks[ti].sampler.clone();
+                            let has_drums = p.tracks[ti].drums.is_some();
+                            let has_bass808 = p.tracks[ti].bass808.is_some();
+                            let hosted_inst = p.tracks[ti].hosted_instrument;
+                            let shown = match (&current, piano) {
+                                _ if hosted_inst != 0 => {
+                                    crate::hosted_plugins::name(hosted_inst).to_string()
+                                }
+                                _ if has_drums => tr("Drum Machine").to_string(),
+                                _ if has_bass808 => "808 Bass".to_string(),
+                                _ if sampler.is_some() => {
+                                    let name = sampler
+                                        .as_ref()
+                                        .map(|s| s.source.name())
+                                        .unwrap_or_default();
+                                    format!("{} · {}", tr("Sampler"), name)
+                                }
+                                (_, Some(_)) => tr("Electric Piano").to_string(),
+                                (None, None) => tr("None").to_string(),
+                                (Some(sf), None) => soundfont_label(sf),
+                            };
+                            let rect =
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(resp) = popup(ui, &g_upper, rect, "soundfont", &shown, true)
+                            {
+                                if resp.double_clicked() {
+                                    if hosted_inst != 0 {
+                                        s.mixer.inst_window = Some(ti);
+                                        s.mixer.fx_window = None;
+                                        s.mixer.plugin_controls = false;
+                                    } else if has_drums {
+                                        s.show_drum_machine = Some(ti);
+                                    } else if has_bass808 {
+                                        s.show_bass808 = Some(ti);
+                                    }
+                                }
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    if ui.button(tr("Choose SoundFont…")).clicked() {
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("SoundFont", &["sf2", "SF2"])
+                                            .pick_file()
+                                        {
+                                            use_soundfont_file(
+                                                p,
+                                                ti,
+                                                path.to_string_lossy().into_owned(),
+                                            );
+                                        }
+                                        ui.close();
+                                    }
+                                    if ui.button(tr("Choose Hydrogen Drum Kit…")).clicked() {
+                                        // A kit is a downloaded `.h2drumkit` archive, or the `drumkit.xml`
+                                        // of one that is already unpacked.
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("Hydrogen drum kit", &["h2drumkit", "xml"])
+                                            .pick_file()
+                                        {
+                                            match hydrogen_kit_file(&path) {
+                                                Ok(file) => use_soundfont_file(p, ti, file),
+                                                Err(e) => {
+                                                    tracing::warn!("{e}");
+                                                    s.status = Some(e);
+                                                }
+                                            }
+                                        }
+                                        ui.close();
+                                    }
+                                    if ui.button(tr("Electric Piano")).clicked() {
+                                        p.tracks[ti].epiano =
+                                            Some(crate::model::EPianoUse::default());
+                                        p.tracks[ti].soundfont = None;
+                                        p.tracks[ti].sampler = None;
+                                        p.tracks[ti].drums = None;
+                                        p.tracks[ti].bass808 = None;
+                                        p.tracks[ti].hosted_instrument = 0;
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button("808 Bass").clicked() {
+                                        p.tracks[ti].bass808 =
+                                            Some(prowave_engine::Bass808Spec::default());
+                                        p.tracks[ti].soundfont = None;
+                                        p.tracks[ti].sampler = None;
+                                        p.tracks[ti].epiano = None;
+                                        p.tracks[ti].drums = None;
+                                        p.tracks[ti].hosted_instrument = 0;
+                                        s.show_bass808 = Some(ti);
+                                        ui.close();
+                                    }
+                                    if has_bass808 {
+                                        if ui.button("Edit 808 Bass…").clicked() {
+                                            s.show_bass808 = Some(ti);
+                                            ui.close();
+                                        }
+                                        if ui.button("Remove 808 Bass").clicked() {
+                                            p.tracks[ti].bass808 = None;
+                                            ui.close();
+                                        }
+                                    }
+                                    ui.separator();
+                                    if ui.button(tr("Drum Machine")).clicked() {
+                                        p.tracks[ti].drums = Some(crate::drum_kit::DrumsUse::new());
+                                        p.tracks[ti].sampler = None;
+                                        p.tracks[ti].epiano = None;
+                                        p.tracks[ti].soundfont = None;
+                                        p.tracks[ti].bass808 = None;
+                                        p.tracks[ti].hosted_instrument = 0;
+                                        s.show_drum_machine = Some(ti);
+                                        ui.close();
+                                    }
+                                    if has_drums {
+                                        if ui.button(tr("Edit Drum Machine…")).clicked() {
+                                            s.show_drum_machine = Some(ti);
+                                            ui.close();
+                                        }
+                                        if ui.button(tr("Remove Drum Machine")).clicked() {
+                                            p.tracks[ti].drums = None;
+                                            ui.close();
+                                        }
+                                    }
+                                    let clap_insts: Vec<_> =
+                                        crate::hosted_plugins::catalog_instruments()
+                                            .into_iter()
+                                            .filter(|i| {
+                                                i.format == crate::hosted_plugins::Format::Clap
+                                            })
+                                            .collect();
+                                    if !clap_insts.is_empty() {
+                                        ui.separator();
+                                        ui.menu_button("CLAP Instruments", |ui| {
+                                            for inst in &clap_insts {
+                                                let picked = hosted_inst != 0
+                                                    && crate::hosted_plugins::info(hosted_inst)
+                                                        .as_ref()
+                                                        .map(|i| &i.id)
+                                                        == Some(&inst.id);
+                                                if ui.selectable_label(picked, &inst.name).clicked()
+                                                {
+                                                    let slot =
+                                                        crate::hosted_plugins::add(inst, None);
+                                                    p.tracks[ti].hosted_instrument = slot;
+                                                    p.tracks[ti].soundfont = None;
+                                                    p.tracks[ti].sampler = None;
+                                                    p.tracks[ti].epiano = None;
+                                                    p.tracks[ti].drums = None;
+                                                    p.tracks[ti].bass808 = None;
+                                                    ui.close();
+                                                }
+                                            }
+                                        });
+                                    }
+                                    let vst3_insts: Vec<_> =
+                                        crate::hosted_plugins::catalog_instruments()
+                                            .into_iter()
+                                            .filter(|i| {
+                                                i.format == crate::hosted_plugins::Format::Vst3
+                                            })
+                                            .collect();
+                                    if !vst3_insts.is_empty() {
+                                        ui.menu_button("VST3 Instruments", |ui| {
+                                            for inst in &vst3_insts {
+                                                let picked = hosted_inst != 0
+                                                    && crate::hosted_plugins::info(hosted_inst)
+                                                        .as_ref()
+                                                        .map(|i| &i.id)
+                                                        == Some(&inst.id);
+                                                if ui.selectable_label(picked, &inst.name).clicked()
+                                                {
+                                                    let slot =
+                                                        crate::hosted_plugins::add(inst, None);
+                                                    p.tracks[ti].hosted_instrument = slot;
+                                                    p.tracks[ti].soundfont = None;
+                                                    p.tracks[ti].sampler = None;
+                                                    p.tracks[ti].epiano = None;
+                                                    p.tracks[ti].drums = None;
+                                                    p.tracks[ti].bass808 = None;
+                                                    ui.close();
+                                                }
+                                            }
+                                        });
+                                    }
+                                    if hosted_inst != 0 {
+                                        ui.separator();
+                                        if ui
+                                            .button(format!(
+                                                "Remove {}",
+                                                crate::hosted_plugins::name(hosted_inst),
+                                            ))
+                                            .clicked()
+                                        {
+                                            p.tracks[ti].hosted_instrument = 0;
+                                            ui.close();
+                                        }
+                                    }
+                                    ui.separator();
+                                    ui.menu_button(tr("Sampler"), |ui| {
+                                        use crate::sampler_load::SamplerSource;
+                                        if ui.button(tr("Load SFZ Instrument…")).clicked() {
+                                            if let Some(path) = rfd::FileDialog::new()
+                                                .add_filter("SFZ", &["sfz", "SFZ"])
+                                                .pick_file()
+                                            {
+                                                use_sampler(p, ti, SamplerSource::Sfz(path));
+                                            }
+                                            ui.close();
+                                        }
+                                        if ui.button(tr("Load EXS Instrument…")).clicked() {
+                                            if let Some(path) = rfd::FileDialog::new()
+                                                .add_filter("EXS", &["exs", "EXS"])
+                                                .pick_file()
+                                            {
+                                                use_sampler(p, ti, SamplerSource::Exs(path));
+                                            }
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .button(tr("Load Audio File (Quick Sampler)…"))
+                                            .clicked()
+                                        {
+                                            if let Some(path) = rfd::FileDialog::new()
+                                                .add_filter(
+                                                    "Audio",
+                                                    &[
+                                                        "wav", "aif", "aiff", "flac", "ogg", "mp3",
+                                                        "caf", "m4a",
+                                                    ],
+                                                )
+                                                .pick_file()
+                                            {
+                                                use_sampler(
+                                                    p,
+                                                    ti,
+                                                    SamplerSource::Audio {
+                                                        path,
+                                                        root: 60,
+                                                        looped: false,
+                                                    },
+                                                );
+                                            }
+                                            ui.close();
+                                        }
+                                        if let Some(s) = &sampler {
+                                            if let Some(e) =
+                                                crate::sampler_load::error(s.source.path())
+                                            {
+                                                ui.colored_label(
+                                                    egui::Color32::from_rgb(0xe0, 0x70, 0x60),
+                                                    crate::i18n::trf("Cannot load: {}", &[&e]),
+                                                );
+                                            }
+                                            ui.separator();
+                                            if ui.button(tr("Remove Sampler")).clicked() {
+                                                p.tracks[ti].sampler = None;
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                    if piano.is_some() {
+                                        ui.separator();
+                                        if ui.button(tr("Remove Electric Piano")).clicked() {
+                                            p.tracks[ti].epiano = None;
+                                            ui.close();
+                                        }
+                                    }
+                                    if let (Some(sf), None, None) =
+                                        (current.as_ref(), piano, sampler.as_ref())
+                                    {
+                                        if let Some(bank) = crate::soundfonts::loaded(&sf.path) {
+                                            ui.separator();
+                                            egui::ScrollArea::vertical().max_height(320.0).show(
+                                                ui,
+                                                |ui| {
+                                                    for preset in bank.presets() {
+                                                        let picked = preset.bank == sf.bank
+                                                            && preset.program == sf.program;
+                                                        if ui
+                                                            .selectable_label(picked, &preset.name)
+                                                            .clicked()
+                                                        {
+                                                            p.tracks[ti].soundfont =
+                                                                Some(SoundFontUse {
+                                                                    path: sf.path.clone(),
+                                                                    bank: preset.bank,
+                                                                    program: preset.program,
+                                                                });
+                                                            ui.close();
+                                                        }
+                                                    }
+                                                },
+                                            );
+                                        }
+                                        ui.separator();
+                                        if ui.button(tr("Remove SoundFont")).clicked() {
+                                            p.tracks[ti].soundfont = None;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                            y += ROW_H;
+                            if let Some(ep) = p.tracks[ti].epiano {
+                                if let Some(dials) = piano_rows(
+                                    ui,
+                                    &g_upper,
+                                    (label_right, vx, vw),
+                                    &mut y,
+                                    ep.params,
+                                ) {
+                                    p.tracks[ti].epiano =
+                                        Some(crate::model::EPianoUse { params: dials });
+                                }
+                            }
+                            if let Some(current) = p.tracks[ti].sampler.clone() {
+                                if let Some(next) = sampler_rows(
+                                    ui,
+                                    &g_upper,
+                                    (label_right, vx, vw),
+                                    &mut y,
+                                    &current,
+                                ) {
+                                    p.tracks[ti].sampler = Some(next);
+                                }
+                            }
+                        }
+                        // MIDI In Port
+                        label(&g_upper, label_right, y, tr("MIDI In Port:"), true);
+                        let in_port = p.tracks[ti]
+                            .midi_in_port
+                            .clone()
+                            .unwrap_or_else(|| tr("All").to_string());
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "midi_in_port",
+                            &in_port,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                if ui
+                                    .selectable_label(
+                                        p.tracks[ti].midi_in_port.is_none(),
+                                        tr("All"),
+                                    )
+                                    .clicked()
+                                {
+                                    p.tracks[ti].midi_in_port = None;
+                                    ui.close();
+                                }
+                                for name in crate::mtc_in::ports() {
+                                    let on = p.tracks[ti].midi_in_port.as_deref() == Some(&name);
+                                    if ui.selectable_label(on, &name).clicked() {
+                                        p.tracks[ti].midi_in_port = Some(name);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+
+                        // MIDI In Channel
+                        label(&g_upper, label_right, y, tr("MIDI In Channel:"), true);
+                        let in_ch_text = p.tracks[ti]
+                            .midi_in_channel
+                            .map_or_else(|| tr("All").to_string(), |c| c.to_string());
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "midi_in_channel",
+                            &in_ch_text,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                if ui
+                                    .selectable_label(
+                                        p.tracks[ti].midi_in_channel.is_none(),
+                                        tr("All"),
+                                    )
+                                    .clicked()
+                                {
+                                    p.tracks[ti].midi_in_channel = None;
+                                    ui.close();
+                                }
+                                for ch in 1..=16u8 {
+                                    let on = p.tracks[ti].midi_in_channel == Some(ch);
+                                    if ui.selectable_label(on, ch.to_string()).clicked() {
+                                        p.tracks[ti].midi_in_channel = Some(ch);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+
+                        // Freeze Mode
+                        label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
+                        popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "freeze_mode",
+                            tr("Pre Fader"),
+                            true,
+                        );
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Transpose:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "track_transpose",
+                            tp.transpose as i32,
+                            (-96, 96),
+                            0,
+                            transpose_text(tp.transpose as i32),
+                            true,
+                        ) {
+                            tp.transpose = v as i8;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Velocity:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "track_velocity",
+                            tp.velocity as i32,
+                            (-99, 99),
+                            0,
+                            velocity_text(tp.velocity as i32),
+                            true,
+                        ) {
+                            tp.velocity = v as i8;
+                        }
+                        y += ROW_H;
+                        let half = (vw - 4.0) / 2.0;
+                        label(&g_upper, label_right, y, tr("Key Limit:"), true);
+                        let (lo, hi) = tp.key_limit;
+                        let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
+                        let r2 = Rect::from_min_size(
+                            pos2(vx + half + 4.0, y + 2.0),
+                            vec2(half, ROW_H - 4.0),
+                        );
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r1,
+                            "key_lo",
+                            lo as i32,
+                            (0, hi as i32),
+                            0,
+                            note_name(lo),
+                            true,
+                        ) {
+                            tp.key_limit.0 = v as u8;
+                        }
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r2,
+                            "key_hi",
+                            hi as i32,
+                            (lo as i32, 127),
+                            127,
+                            note_name(hi),
+                            true,
+                        ) {
+                            tp.key_limit.1 = v as u8;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Vel Limit:"), true);
+                        let (lo, hi) = tp.vel_limit;
+                        let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
+                        let r2 = Rect::from_min_size(
+                            pos2(vx + half + 4.0, y + 2.0),
+                            vec2(half, ROW_H - 4.0),
+                        );
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r1,
+                            "vel_lo",
+                            lo as i32,
+                            (1, hi as i32),
+                            1,
+                            lo.to_string(),
+                            true,
+                        ) {
+                            tp.vel_limit.0 = v as u8;
+                        }
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r2,
+                            "vel_hi",
+                            hi as i32,
+                            (lo as i32, 127),
+                            127,
+                            hi.to_string(),
+                            true,
+                        ) {
+                            tp.vel_limit.1 = v as u8;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Delay:"), true);
+                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        if let Some(v) = drag_value(
+                            ui,
+                            &g_upper,
+                            r,
+                            "track_delay",
+                            tp.delay_ms as i32,
+                            (-99, 99),
+                            0,
+                            delay_text(tp.delay_ms as i32),
+                            true,
+                        ) {
+                            tp.delay_ms = v as i16;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("No Transpose:"), true);
+                        if checkbox(
+                            ui,
+                            &g_upper,
+                            pos2(vx, y),
+                            "no_transpose",
+                            tp.no_transpose,
+                            true,
+                        ) {
+                            tp.no_transpose = !tp.no_transpose;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("No Reset:"), true);
+                        if checkbox(ui, &g_upper, pos2(vx, y), "no_reset", tp.no_reset, true) {
+                            tp.no_reset = !tp.no_reset;
+                        }
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Staff Style:"), false);
+                        let staff_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        popup(ui, &g_upper, staff_r, "staff", tr("Auto"), false);
+                        ui.interact(staff_r, id("staff_tip"), Sense::hover())
+                            .on_hover_text(
+                                "Staff Style notation assignment (Logic Pro score editor)",
+                            );
+                        y += ROW_H;
+                        label(&g_upper, label_right, y, tr("Articulation Set:"), false);
+                        let artic_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                        popup(ui, &g_upper, artic_r, "artic", "", false);
+                        ui.interact(artic_r, id("artic_tip"), Sense::hover())
+                            .on_hover_text(
+                                "Articulation set mappings for sample libraries (Logic Pro)",
+                            );
+                        y += ROW_H;
+                    }
+                    if p.tracks[ti].params != tp {
+                        p.tracks[ti].params = tp;
+                        changed_song = true;
+                    }
+                    y += 4.0;
+                }
+
+                let total_h = (y - start_y).max(0.0);
+                ui.allocate_rect(
+                    Rect::from_min_size(pos2(left, start_y), vec2(w, total_h)),
+                    Sense::hover(),
+                );
+            });
+    });
+
+    // ---------------- Channel strips: selected track + Destination (Aux or Stereo Out)
+    if !p.tracks.is_empty() {
+        let strips_y = strips_rect.top() + 1.0;
+        let actual_strips_h = (strips_rect.height() - 2.0).max(STRIPS_MIN_H);
+        let r = rows(strips_y, fx_rows, send_rows);
+        let sw = (w / 2.0).floor();
         for (n, key) in keys.iter().enumerate() {
             let strip = Rect::from_min_size(
-                pos2(left + 4.0 + n as f32 * (sw + 4.0), strips_y),
-                vec2(sw, strips_h),
+                pos2(left + n as f32 * sw, strips_y),
+                vec2(sw, actual_strips_h),
             );
             channel_strip(
                 ui,
@@ -2060,14 +2283,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 NameStyle::Plain,
             );
         }
-    }
-
-    if !anchor_strips {
-        let content_h = strips_y + strips_h + s.inspector.scroll_y - panel.top();
-        s.inspector.scroll_y = s
-            .inspector
-            .scroll_y
-            .clamp(0.0, (content_h - panel.height()).max(0.0));
+        // Single 1px vertical divider between the two strips
+        let divider_x = left + sw;
+        g.line_segment(
+            [
+                pos2(divider_x, strips_y),
+                pos2(divider_x, strips_y + actual_strips_h),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(0x2c, 0x2c, 0x2e)),
+        );
     }
 
     // 1px right edge divider highlighting on hover
@@ -2276,6 +2500,11 @@ mod tests {
         p.midi_defaults.gate_time = 80;
         p.midi_defaults.clip_length = false;
         p.midi_defaults.loop_beats = 16.0;
+        p.midi_defaults.q_velocity = 45.0;
+        p.midi_defaults.q_length = 60.0;
+        p.midi_defaults.q_flam = 15;
+        p.midi_defaults.q_range = 25;
+        p.midi_defaults.q_strength = 80.0;
 
         let r_idx = p.add_empty_region(0, 1.0).unwrap();
         let reg = &p.tracks[0].regions[r_idx];
@@ -2285,6 +2514,11 @@ mod tests {
         assert_eq!(reg.params.gate_time, 80);
         assert!(!reg.params.clip_length);
         assert_eq!(reg.params.loop_beats, 16.0);
+        assert_eq!(reg.params.q_velocity, 45.0);
+        assert_eq!(reg.params.q_length, 60.0);
+        assert_eq!(reg.params.q_flam, 15);
+        assert_eq!(reg.params.q_range, 25);
+        assert_eq!(reg.params.q_strength, 80.0);
     }
 
     #[test]

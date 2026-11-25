@@ -404,25 +404,104 @@ pub(crate) fn region_notes(
 ) -> Vec<NoteEvent> {
     let (rp, tp) = (r.params, t.params);
     let delay_beats = (tp.delay_ms as f64 / 1000.0) * 2.0; // 120 BPM reference (2 beats per sec)
+
+    // Precompute chord flam offsets if Q-Flam is set
+    let flam_offsets: Vec<f64> = if rp.q_flam != 0 {
+        let mut offsets = vec![0.0; r.notes.len()];
+        let mut indices: Vec<usize> = (0..r.notes.len()).collect();
+        indices.sort_by(|&a, &b| {
+            r.notes[a]
+                .start
+                .partial_cmp(&r.notes[b].start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let dt_beats = (rp.q_flam.abs() as f64 / 1000.0) * 2.0;
+        let mut i = 0;
+        while i < indices.len() {
+            let mut j = i + 1;
+            while j < indices.len()
+                && (r.notes[indices[j]].start - r.notes[indices[i]].start).abs() < 1e-4
+            {
+                j += 1;
+            }
+            if j - i > 1 {
+                let mut chord: Vec<usize> = indices[i..j].to_vec();
+                if rp.q_flam > 0 {
+                    chord.sort_by_key(|&idx| r.notes[idx].pitch);
+                } else {
+                    chord.sort_by_key(|&idx| std::cmp::Reverse(r.notes[idx].pitch));
+                }
+                for (step, &idx) in chord.iter().enumerate() {
+                    offsets[idx] = step as f64 * dt_beats;
+                }
+            }
+            i = j;
+        }
+        offsets
+    } else {
+        Vec::new()
+    };
+
     r.notes
         .iter()
-        .filter_map(|n| {
+        .enumerate()
+        .filter_map(|(note_idx, n)| {
             if n.mute || n.start < 0.0 || (n.start as f64) >= len_beats {
                 return None;
             }
-            let start = match rp.quantize {
+            let (start, len, base_vel) = match rp.quantize {
                 Some(q) if q > 0.0 => {
                     let base = (n.start / q).round() * q;
                     let step = (n.start / q).round() as i64;
-                    if step % 2 == 1 && rp.q_swing != 0.0 {
+                    let target_pos = if step % 2 == 1 && rp.q_swing != 0.0 {
                         let swing_offset = (rp.q_swing / 100.0) * (q * 0.5);
                         (base + swing_offset).max(0.0)
                     } else {
                         base
-                    }
+                    };
+
+                    // Q-Range: restricts quantization only to notes within threshold distance of grid
+                    let dist = (target_pos - n.start).abs();
+                    let in_range = if rp.q_range > 0 {
+                        let threshold = (rp.q_range as f32 / 100.0) * (q * 0.5);
+                        dist <= threshold
+                    } else {
+                        true
+                    };
+
+                    // Q-Strength: scales how far notes move toward quantized grid position
+                    let s = if in_range {
+                        let strength = (rp.q_strength / 100.0).clamp(0.0, 1.0);
+                        (n.start + (target_pos - n.start) * strength).max(0.0)
+                    } else {
+                        n.start
+                    };
+
+                    // Q-Length: blends note durations toward quantized grid step length
+                    let l = if rp.q_length > 0.0 {
+                        let target_len = (n.len / q).round().max(1.0) * q;
+                        let blend = (rp.q_length / 100.0).clamp(0.0, 1.0);
+                        (n.len + (target_len - n.len) * blend).max(0.01)
+                    } else {
+                        n.len
+                    };
+
+                    // Q-Velocity: blends note velocities toward quantized grid velocity (80)
+                    let v = if rp.q_velocity > 0.0 {
+                        let target_vel = 80.0f32;
+                        let blend = (rp.q_velocity / 100.0).clamp(0.0, 1.0);
+                        ((n.vel as f32) + (target_vel - n.vel as f32) * blend)
+                            .round()
+                            .clamp(1.0, 127.0) as u8
+                    } else {
+                        n.vel
+                    };
+
+                    (s, l, v)
                 }
-                _ => n.start,
+                _ => (n.start, n.len, n.vel),
             };
+
             if start < 0.0 || (start as f64) >= len_beats {
                 return None;
             }
@@ -431,7 +510,7 @@ pub(crate) fn region_notes(
             } else {
                 n.pitch as i32 + rp.transpose as i32 + tp.transpose as i32
             };
-            let vel = (n.vel as i32 + rp.velocity as i32 + tp.velocity as i32).clamp(1, 127);
+            let vel = (base_vel as i32 + rp.velocity as i32 + tp.velocity as i32).clamp(1, 127);
             let dynamic_vel = if rp.dynamics != 0 && rp.dynamics != 100 {
                 ((vel as f32) * (rp.dynamics as f32 / 100.0)).round() as i32
             } else {
@@ -441,15 +520,21 @@ pub(crate) fn region_notes(
             let in_keys = (tp.key_limit.0 as i32..=tp.key_limit.1 as i32).contains(&pitch);
             let in_vels = (tp.vel_limit.0 as i32..=tp.vel_limit.1 as i32).contains(&vel);
             let len = if rp.gate_time != 0 && rp.gate_time != 100 {
-                (n.len * (rp.gate_time as f32 / 100.0)).max(0.01)
+                (len * (rp.gate_time as f32 / 100.0)).max(0.01)
             } else {
-                n.len
+                len
             };
-            let start_beat = (origin + delay_beats + start as f64).max(0.0);
-            let end_beat = if rp.clip_length {
-                (origin + delay_beats + (start + len) as f64).min(origin + len_beats + delay_beats)
+            let flam_offset = if !flam_offsets.is_empty() {
+                flam_offsets[note_idx]
             } else {
-                origin + delay_beats + (start + len) as f64
+                0.0
+            };
+            let start_beat = (origin + delay_beats + start as f64 + flam_offset).max(0.0);
+            let end_beat = if rp.clip_length {
+                (origin + delay_beats + (start + len) as f64 + flam_offset)
+                    .min(origin + len_beats + delay_beats)
+            } else {
+                origin + delay_beats + (start + len) as f64 + flam_offset
             };
             if end_beat <= start_beat {
                 return None;
@@ -1904,6 +1989,78 @@ mod tests {
             out[0].start_beat
         );
         assert_eq!((out[0].pitch, out[0].vel, out[0].track), (70, 90, 3));
+    }
+
+    #[test]
+    fn advanced_quantize_parameters_are_applied() {
+        // Test Q-Strength: 50% moves note halfway from 0.9 toward 1.0 (target is 1.0, diff 0.1 -> 0.95)
+        let mut t = track(vec![note(0.9, 60, 100)]);
+        t.regions[0].params = RegionParams {
+            quantize: Some(0.25),
+            q_strength: 50.0,
+            ..RegionParams::default()
+        };
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].start_beat - 0.95).abs() < 1e-4);
+
+        // Test Q-Range: threshold is 10% of (q * 0.5) = 10% of 0.125 = 0.0125.
+        // Note at 0.9 has dist to 1.0 of 0.1 > 0.0125 -> stays at 0.9 (not quantized)
+        t.regions[0].params = RegionParams {
+            quantize: Some(0.25),
+            q_range: 10,
+            q_strength: 100.0,
+            ..RegionParams::default()
+        };
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].start_beat - 0.9).abs() < 1e-4);
+
+        // Test Q-Length: blends note duration (len = 0.3) toward grid step 0.25 by 100% -> len becomes 0.25
+        t.regions[0].notes[0].start = 0.0;
+        t.regions[0].notes[0].len = 0.3;
+        t.regions[0].params = RegionParams {
+            quantize: Some(0.25),
+            q_length: 100.0,
+            ..RegionParams::default()
+        };
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].end_beat - out[0].start_beat - 0.25).abs() < 1e-4);
+
+        // Test Q-Velocity: blends velocity (100) toward 80 by 50% -> 90
+        t.regions[0].params = RegionParams {
+            quantize: Some(0.25),
+            q_velocity: 50.0,
+            ..RegionParams::default()
+        };
+        let out = region_notes(&t, &t.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].vel, 90);
+
+        // Test Q-Flam: chord notes at same start time spread by pitch order
+        let mut chord_track = track(vec![
+            note(1.0, 64, 100), // E3
+            note(1.0, 60, 100), // C3
+            note(1.0, 67, 100), // G3
+        ]);
+        chord_track.regions[0].params = RegionParams {
+            q_flam: 20, // +20 ms -> 0.04 beats per step at 120 BPM
+            ..RegionParams::default()
+        };
+        let out = region_notes(&chord_track, &chord_track.regions[0], 0.0, 4.0, 0);
+        assert_eq!(out.len(), 3);
+        // C3 (pitch 60) is lowest -> 1.00
+        // E3 (pitch 64) is middle -> 1.04
+        // G3 (pitch 67) is highest -> 1.08
+        let mut sorted = out.clone();
+        sorted.sort_by_key(|n| n.pitch);
+        assert_eq!(sorted[0].pitch, 60);
+        assert!((sorted[0].start_beat - 1.00).abs() < 1e-4);
+        assert_eq!(sorted[1].pitch, 64);
+        assert!((sorted[1].start_beat - 1.04).abs() < 1e-4);
+        assert_eq!(sorted[2].pitch, 67);
+        assert!((sorted[2].start_beat - 1.08).abs() < 1e-4);
     }
 
     #[test]

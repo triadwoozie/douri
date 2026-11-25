@@ -130,7 +130,7 @@ impl McpEngine {
                     },
                     "serverInfo": {
                         "name": "douri-mcp-server",
-                        "version": "0.1.0-alpha.6"
+                        "version": "0.1.0-alpha.7"
                     }
                 }),
             ),
@@ -920,7 +920,7 @@ impl McpEngine {
                     insert.params = insert.kind.clamp_params(insert.params);
                 }
                 Ok(
-                    json!({ "status": "configured", "track_index": ti, "slot_index": si, "params": insert.params }),
+                    json!({ "status": "configured", "track_index": ti, "slot_index": si, "params": insert.params.as_slice() }),
                 )
             }
             "create_midi_clip" => {

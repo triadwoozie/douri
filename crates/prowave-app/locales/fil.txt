@@ -35,7 +35,6 @@ More = Higit pa
 Dynamics: = Dynamics:
 Gate Time: = Tagal ng Gate:
 Clip Length: = Haba ng Clip:
-Score: = Notasyon:
 Q-Velocity: = Q-Velocity:
 Q-Length: = Q-Haba:
 Q-Flam: = Q-Flam:

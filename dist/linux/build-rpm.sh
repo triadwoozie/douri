@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-version=${1:-0.1.0-alpha.6}
+version=${1:-0.1.0-alpha.7}
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$root"
 

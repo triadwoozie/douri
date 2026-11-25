@@ -10,10 +10,13 @@ use crate::mixer::Meters;
 use crate::model::{AutoTarget, Insert, Project, Track};
 use crate::UiState;
 use egui::{
-    pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Pos2, Rect, RichText, Sense,
-    Shape, Stroke, StrokeKind, Ui,
+    pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Painter, Pos2, Rect,
+    RichText, Sense, Shape, Stroke, StrokeKind, Ui,
 };
-use prowave_engine::{FxKind, ParamInfo, AMP_CABS, AMP_MODELS};
+use prowave_engine::{
+    eq_band_response_db, eq_idx, eq_response_db, response_db, FxKind, ParamInfo, AMP_CABS,
+    AMP_MODELS, EQ_BANDS,
+};
 
 /// Sample rate the curve of the EQs is drawn for.
 const CURVE_RATE: f32 = 48_000.0;
@@ -81,7 +84,8 @@ fn family(kind: FxKind) -> (Family, &'static str, Color32) {
 
 fn window_width(kind: FxKind) -> f32 {
     match kind {
-        FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => 632.0,
+        FxKind::ChannelEq => 780.0,
+        FxKind::MultiEq | FxKind::PultEq => 632.0,
         FxKind::Amp => AMP_W + 28.0,
         FxKind::MultiComp => 604.0,
         _ => 560.0,
@@ -179,21 +183,33 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, meters: &Mete
                 .inner_margin(egui::Margin::symmetric(12, 10))
                 .show(ui, |ui| {
                     ui.set_width(window_width(edited.kind));
-                    visual(ui, &edited, reduction, beat, accent);
-                    ui.add_space(10.0);
-                    if edited.kind == FxKind::Amp {
-                        amp_faceplate(ui, &mut edited, track, slot, beat, &mut edits);
-                    } else if edited.kind == FxKind::Plugin {
-                        plugin_rack(ui, &edited, track, slot, beat, accent, &mut edits);
+                    if edited.kind == FxKind::ChannelEq {
+                        channel_eq_window(
+                            ui,
+                            &mut edited,
+                            track,
+                            slot,
+                            beat,
+                            input_level,
+                            &mut edits,
+                        );
                     } else {
-                        knob_rack(ui, &mut edited, track, slot, beat, accent, &mut edits);
+                        visual(ui, &edited, reduction, beat, accent);
+                        ui.add_space(10.0);
+                        if edited.kind == FxKind::Amp {
+                            amp_faceplate(ui, &mut edited, track, slot, beat, &mut edits);
+                        } else if edited.kind == FxKind::Plugin {
+                            plugin_rack(ui, &edited, track, slot, beat, accent, &mut edits);
+                        } else {
+                            knob_rack(ui, &mut edited, track, slot, beat, accent, &mut edits);
+                        }
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new("Drag a knob to adjust · double-click to reset")
+                                .size(9.5)
+                                .color(FAINT),
+                        );
                     }
-                    ui.add_space(6.0);
-                    ui.label(
-                        RichText::new("Drag a knob to adjust · double-click to reset")
-                            .size(9.5)
-                            .color(FAINT),
-                    );
                 });
         });
     finish(p, s, ti, slot, insert, edited, edits, open);
@@ -593,16 +609,24 @@ fn header(
                     let response = ui.add(
                         egui::Button::new(
                             RichText::new(tr("Bypass")).size(10.5).color(if bypass {
-                                Color32::BLACK
+                                Color32::WHITE
                             } else {
                                 DIM
                             }),
                         )
                         .fill(if bypass {
-                            accent
+                            Color32::from_rgb(0xd9, 0x77, 0x06)
                         } else {
-                            Color32::from_gray(0x2f)
+                            Color32::from_rgb(0x2b, 0x2b, 0x2e)
                         })
+                        .stroke(Stroke::new(
+                            1.0,
+                            if bypass {
+                                Color32::from_rgb(0xf5, 0x9e, 0x0b)
+                            } else {
+                                Color32::from_rgb(0x38, 0x38, 0x3c)
+                            },
+                        ))
                         .min_size(vec2(52.0, 20.0)),
                     );
                     if response.clicked() {
@@ -1278,12 +1302,16 @@ fn eq_curve(
         }
         g.add(Shape::line(pts, Stroke::new(1.8, accent)));
         let (low, mid, high) = if kind == FxKind::ChannelEq {
-            (params[0], params[1], params[4])
+            (
+                params[eq_idx::LOW_SHELF_GAIN],
+                params[eq_idx::MID_GAIN],
+                params[eq_idx::HIGH_SHELF_GAIN],
+            )
         } else {
             (params[0], params[6], params[12])
         };
         let mid_f = if kind == FxKind::ChannelEq {
-            params[2]
+            params[eq_idx::MID_FREQ]
         } else {
             1_000.0
         };
@@ -1313,6 +1341,1046 @@ fn eq_curve(
             FontId::monospace(9.0),
             FAINT,
         );
+    });
+}
+
+struct EqBandMeta {
+    name: &'static str,
+    short: &'static str,
+    color: Color32,
+    on_idx: usize,
+    freq_idx: usize,
+    gain_idx: usize, // slope for HPF/LPF
+    q_idx: usize,
+    is_cut: bool,
+}
+
+const EQ_BANDS_META: [EqBandMeta; 8] = [
+    EqBandMeta {
+        name: "High Pass Filter",
+        short: "HP",
+        color: Color32::from_rgb(0xe0, 0x53, 0x38), // Orange
+        on_idx: eq_idx::HPF_ON,
+        freq_idx: eq_idx::HPF_FREQ,
+        gain_idx: eq_idx::HPF_SLOPE,
+        q_idx: eq_idx::HPF_Q,
+        is_cut: true,
+    },
+    EqBandMeta {
+        name: "Low Shelf",
+        short: "Low Shelf",
+        color: Color32::from_rgb(0xd9, 0x77, 0x06), // Amber
+        on_idx: eq_idx::LOW_SHELF_ON,
+        freq_idx: eq_idx::LOW_SHELF_FREQ,
+        gain_idx: eq_idx::LOW_SHELF_GAIN,
+        q_idx: eq_idx::LOW_SHELF_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "Low-Mid Bell",
+        short: "L-Mid",
+        color: Color32::from_rgb(0x84, 0xcc, 0x16), // Lime
+        on_idx: eq_idx::LOW_MID_ON,
+        freq_idx: eq_idx::LOW_MID_FREQ,
+        gain_idx: eq_idx::LOW_MID_GAIN,
+        q_idx: eq_idx::LOW_MID_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "Mid Bell",
+        short: "Mid",
+        color: Color32::from_rgb(0x22, 0xc5, 0x5e), // Green
+        on_idx: eq_idx::MID_ON,
+        freq_idx: eq_idx::MID_FREQ,
+        gain_idx: eq_idx::MID_GAIN,
+        q_idx: eq_idx::MID_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "High-Mid Bell",
+        short: "H-Mid",
+        color: Color32::from_rgb(0x06, 0xb6, 0xd4), // Cyan
+        on_idx: eq_idx::HIGH_MID_ON,
+        freq_idx: eq_idx::HIGH_MID_FREQ,
+        gain_idx: eq_idx::HIGH_MID_GAIN,
+        q_idx: eq_idx::HIGH_MID_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "Upper-Mid Bell",
+        short: "U-Mid",
+        color: Color32::from_rgb(0x3b, 0x82, 0xf6), // Blue
+        on_idx: eq_idx::UPPER_MID_ON,
+        freq_idx: eq_idx::UPPER_MID_FREQ,
+        gain_idx: eq_idx::UPPER_MID_GAIN,
+        q_idx: eq_idx::UPPER_MID_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "High Shelf",
+        short: "Hi Shelf",
+        color: Color32::from_rgb(0x8b, 0x5c, 0xf6), // Violet
+        on_idx: eq_idx::HIGH_SHELF_ON,
+        freq_idx: eq_idx::HIGH_SHELF_FREQ,
+        gain_idx: eq_idx::HIGH_SHELF_GAIN,
+        q_idx: eq_idx::HIGH_SHELF_Q,
+        is_cut: false,
+    },
+    EqBandMeta {
+        name: "Low Pass Filter",
+        short: "LP",
+        color: Color32::from_rgb(0xec, 0x48, 0x99), // Magenta
+        on_idx: eq_idx::LPF_ON,
+        freq_idx: eq_idx::LPF_FREQ,
+        gain_idx: eq_idx::LPF_SLOPE,
+        q_idx: eq_idx::LPF_Q,
+        is_cut: true,
+    },
+];
+
+const EQ_SLOPES: [&str; 6] = [
+    "6 dB/Oct",
+    "12 dB/Oct",
+    "18 dB/Oct",
+    "24 dB/Oct",
+    "36 dB/Oct",
+    "48 dB/Oct",
+];
+
+const PROCESSING_MODES: [&str; 5] = ["Stereo", "Left Only", "Right Only", "Mid Only", "Side Only"];
+const ANALYZER_MODES: [&str; 3] = ["Analyzer: Off", "Analyzer: Pre", "Analyzer: Post"];
+
+fn format_hz(hz: f32) -> String {
+    if hz >= 1000.0 {
+        format!("{:.2} kHz", hz / 1000.0)
+    } else {
+        format!("{:.0} Hz", hz)
+    }
+}
+
+fn format_gain(db: f32) -> String {
+    if db.abs() < 0.05 {
+        "0.0 dB".to_string()
+    } else {
+        format!("{:+.1} dB", db)
+    }
+}
+
+fn format_q(q: f32) -> String {
+    format!("{:.2}", q)
+}
+
+fn draw_filter_icon(g: &Painter, r: Rect, band_idx: usize, stroke: Stroke) {
+    let c = r.center();
+    let left = r.left() + 7.0;
+    let right = r.right() - 7.0;
+    let top = r.top() + 6.0;
+    let bottom = r.bottom() - 6.0;
+    let mid_y = c.y;
+
+    match band_idx {
+        0 => {
+            g.add(Shape::line(
+                vec![
+                    pos2(left, bottom),
+                    pos2(left + (right - left) * 0.35, bottom),
+                    pos2(left + (right - left) * 0.65, top + 2.0),
+                    pos2(right, top + 2.0),
+                ],
+                stroke,
+            ));
+        }
+        1 => {
+            g.add(Shape::line(
+                vec![
+                    pos2(left, bottom - 2.0),
+                    pos2(c.x - 4.0, bottom - 2.0),
+                    pos2(c.x + 4.0, mid_y),
+                    pos2(right, mid_y),
+                ],
+                stroke,
+            ));
+        }
+        2 | 3 | 4 | 5 => {
+            g.add(Shape::line(
+                vec![
+                    pos2(left, mid_y + 4.0),
+                    pos2(c.x - 5.0, mid_y + 4.0),
+                    pos2(c.x, top + 1.0),
+                    pos2(c.x + 5.0, mid_y + 4.0),
+                    pos2(right, mid_y + 4.0),
+                ],
+                stroke,
+            ));
+        }
+        6 => {
+            g.add(Shape::line(
+                vec![
+                    pos2(left, mid_y),
+                    pos2(c.x - 4.0, mid_y),
+                    pos2(c.x + 4.0, bottom - 2.0),
+                    pos2(right, bottom - 2.0),
+                ],
+                stroke,
+            ));
+        }
+        _ => {
+            g.add(Shape::line(
+                vec![
+                    pos2(left, top + 2.0),
+                    pos2(left + (right - left) * 0.35, top + 2.0),
+                    pos2(left + (right - left) * 0.65, bottom),
+                    pos2(right, bottom),
+                ],
+                stroke,
+            ));
+        }
+    }
+}
+
+/// Matrix parameter scrubber with vertical cursor and hover border highlight.
+fn eq_matrix_scrubber(
+    ui: &mut Ui,
+    r: Rect,
+    id: egui::Id,
+    val_text: &str,
+    is_active: bool,
+) -> egui::Response {
+    let resp = ui.interact(r, id, Sense::click_and_drag());
+    if resp.hovered() || resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+    }
+    let (bg, stroke_col) = if resp.dragged() {
+        (
+            Color32::from_rgb(0x22, 0x24, 0x2a),
+            Color32::from_rgb(0x12, 0x69, 0xcc),
+        )
+    } else if resp.hovered() {
+        (
+            Color32::from_rgb(0x26, 0x28, 0x2f),
+            Color32::from_rgb(0x58, 0x58, 0x5e),
+        )
+    } else {
+        (
+            Color32::from_rgb(0x1a, 0x1b, 0x1e),
+            Color32::from_rgb(0x30, 0x33, 0x3a),
+        )
+    };
+    let g = ui.painter();
+    g.rect_filled(r, CornerRadius::same(3), bg);
+    g.rect_stroke(
+        r,
+        CornerRadius::same(3),
+        Stroke::new(1.0, stroke_col),
+        StrokeKind::Inside,
+    );
+    let text_col = if is_active {
+        Color32::from_rgb(0xe0, 0xe2, 0xe8)
+    } else {
+        Color32::from_rgb(0x71, 0x71, 0x7a)
+    };
+    g.text(
+        r.center(),
+        Align2::CENTER_CENTER,
+        val_text,
+        FontId::monospace(10.0),
+        text_col,
+    );
+    resp
+}
+
+fn eq_set_param(
+    track: &Track,
+    slot: usize,
+    insert: &mut Insert,
+    edits: &mut Vec<Edit>,
+    param: usize,
+    val: f32,
+    ended: bool,
+) {
+    let target = AutoTarget::Fx {
+        slot: slot as u8,
+        param: param as u8,
+    };
+    if automation::editable(track, target) {
+        insert.params[param] = val;
+        edits.push(Edit {
+            param,
+            value: val,
+            ended,
+        });
+    }
+}
+
+/// Authentic Logic Pro 8-Band Channel EQ window.
+fn channel_eq_window(
+    ui: &mut Ui,
+    insert: &mut Insert,
+    track: &Track,
+    slot: usize,
+    _beat: f64,
+    input_level: f32,
+    edits: &mut Vec<Edit>,
+) {
+    let sel_id = ui.scope_id().with("selected_eq_band");
+    let mut selected_band: usize = ui
+        .data_mut(|d| *d.get_temp_mut_or_insert_with(sel_id, || 3))
+        .min(7);
+
+    // -------------------------------------------------------------
+    // Top Filter Icon Strip & Global Toolbar
+    // -------------------------------------------------------------
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
+
+        // 8 Band Filter Buttons
+        for (i, meta) in EQ_BANDS_META.iter().enumerate() {
+            let is_on = insert.params[meta.on_idx] > 0.5;
+            let is_selected = i == selected_band;
+            let (rect, resp) = ui.allocate_exact_size(vec2(38.0, 26.0), Sense::click());
+            let g = ui.painter();
+
+            let fill = if is_selected {
+                Color32::from_rgb(0x2a, 0x2c, 0x32)
+            } else if resp.hovered() {
+                Color32::from_rgb(0x24, 0x26, 0x2b)
+            } else {
+                Color32::from_rgb(0x1c, 0x1d, 0x21)
+            };
+            g.rect_filled(rect, CornerRadius::same(4), fill);
+
+            let stroke_border = if is_selected {
+                Stroke::new(1.2, Color32::WHITE)
+            } else if resp.hovered() {
+                Stroke::new(1.0, Color32::from_rgb(0x50, 0x50, 0x55))
+            } else {
+                Stroke::new(1.0, Color32::from_rgb(0x30, 0x33, 0x3a))
+            };
+            g.rect_stroke(
+                rect,
+                CornerRadius::same(4),
+                stroke_border,
+                StrokeKind::Inside,
+            );
+
+            let icon_stroke = Stroke::new(
+                if is_on { 1.6 } else { 1.0 },
+                if is_on {
+                    meta.color
+                } else {
+                    Color32::from_rgb(0x55, 0x55, 0x5a)
+                },
+            );
+            draw_filter_icon(g, rect, i, icon_stroke);
+
+            if resp.double_clicked() {
+                eq_set_param(
+                    track,
+                    slot,
+                    insert,
+                    edits,
+                    meta.on_idx,
+                    if is_on { 0.0 } else { 1.0 },
+                    true,
+                );
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            } else if resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+            resp.on_hover_text(format!("{} (double-click to toggle)", tr(meta.name)));
+        }
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            // Processing mode selector
+            let proc_mode = insert.params[eq_idx::PROCESSING].clamp(0.0, 4.0).round() as usize;
+            let proc_label = PROCESSING_MODES[proc_mode.min(4)];
+            let proc_resp = ui.add(
+                egui::Button::new(RichText::new(proc_label).size(10.0))
+                    .fill(Color32::from_rgb(0x25, 0x26, 0x2b))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
+                    .min_size(vec2(76.0, 24.0)),
+            );
+            egui::Popup::menu(&proc_resp).show(|ui| {
+                for (idx, name) in PROCESSING_MODES.iter().enumerate() {
+                    if ui.selectable_label(idx == proc_mode, *name).clicked() {
+                        eq_set_param(
+                            track,
+                            slot,
+                            insert,
+                            edits,
+                            eq_idx::PROCESSING,
+                            idx as f32,
+                            true,
+                        );
+                        ui.close();
+                    }
+                }
+            });
+
+            // Analyzer mode selector
+            let ana_mode = insert.params[eq_idx::ANALYZER].clamp(0.0, 2.0).round() as usize;
+            let ana_label = ANALYZER_MODES[ana_mode.min(2)];
+            let ana_resp = ui.add(
+                egui::Button::new(RichText::new(ana_label).size(10.0))
+                    .fill(Color32::from_rgb(0x25, 0x26, 0x2b))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
+                    .min_size(vec2(90.0, 24.0)),
+            );
+            egui::Popup::menu(&ana_resp).show(|ui| {
+                for (idx, name) in ANALYZER_MODES.iter().enumerate() {
+                    if ui.selectable_label(idx == ana_mode, *name).clicked() {
+                        eq_set_param(
+                            track,
+                            slot,
+                            insert,
+                            edits,
+                            eq_idx::ANALYZER,
+                            idx as f32,
+                            true,
+                        );
+                        ui.close();
+                    }
+                }
+            });
+
+            // HQ Toggle
+            let hq_on = insert.params[eq_idx::HQ] > 0.5;
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("HQ").size(10.0).color(if hq_on {
+                        Color32::WHITE
+                    } else {
+                        DIM
+                    }))
+                    .fill(if hq_on {
+                        Color32::from_rgb(0x12, 0x69, 0xcc)
+                    } else {
+                        Color32::from_rgb(0x25, 0x26, 0x2b)
+                    })
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
+                    .min_size(vec2(34.0, 24.0)),
+                )
+                .clicked()
+            {
+                eq_set_param(
+                    track,
+                    slot,
+                    insert,
+                    edits,
+                    eq_idx::HQ,
+                    if hq_on { 0.0 } else { 1.0 },
+                    true,
+                );
+            }
+
+            // Q-Couple Toggle
+            let q_couple_on = insert.params[eq_idx::Q_COUPLE] > 0.5;
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("Q-Couple").size(10.0).color(if q_couple_on {
+                        Color32::WHITE
+                    } else {
+                        DIM
+                    }))
+                    .fill(if q_couple_on {
+                        Color32::from_rgb(0x12, 0x69, 0xcc)
+                    } else {
+                        Color32::from_rgb(0x25, 0x26, 0x2b)
+                    })
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
+                    .min_size(vec2(64.0, 24.0)),
+                )
+                .clicked()
+            {
+                eq_set_param(
+                    track,
+                    slot,
+                    insert,
+                    edits,
+                    eq_idx::Q_COUPLE,
+                    if q_couple_on { 0.0 } else { 1.0 },
+                    true,
+                );
+            }
+        });
+    });
+
+    ui.add_space(8.0);
+
+    // -------------------------------------------------------------
+    // Center Frequency Graph + Master Gain Fader
+    // -------------------------------------------------------------
+    let full_w = ui.available_width();
+    let fader_w = 42.0;
+    let graph_w = (full_w - fader_w - 8.0).max(100.0);
+    let graph_h = 210.0;
+
+    ui.horizontal(|ui| {
+        // Log Frequency Plot Rect
+        let (plot_rect, _) = ui.allocate_exact_size(vec2(graph_w, graph_h), Sense::hover());
+        let g = ui.painter().with_clip_rect(plot_rect);
+
+        g.rect_filled(plot_rect, CornerRadius::same(6), INSET);
+        g.rect_stroke(
+            plot_rect,
+            CornerRadius::same(6),
+            Stroke::new(1.0, LINE),
+            StrokeKind::Inside,
+        );
+
+        let x_of = |hz: f32| {
+            plot_rect.left() + (hz.clamp(20.0, 20000.0) / 20.0).log10() / 3.0 * plot_rect.width()
+        };
+        let hz_of = |x: f32| {
+            20.0 * 10.0f32.powf(((x - plot_rect.left()) / plot_rect.width()).clamp(0.0, 1.0) * 3.0)
+        };
+        let y_of = |db: f32| {
+            plot_rect.center().y - (db.clamp(-24.0, 24.0) / 24.0) * (plot_rect.height() * 0.5)
+        };
+        let db_of = |y: f32| -((y - plot_rect.center().y) / (plot_rect.height() * 0.5)) * 24.0;
+
+        // Vertical Frequency Grid Lines
+        let grid_freqs = [
+            50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
+        for f in grid_freqs {
+            let x = x_of(f);
+            g.line_segment(
+                [pos2(x, plot_rect.top()), pos2(x, plot_rect.bottom())],
+                Stroke::new(1.0, Color32::from_gray(0x22)),
+            );
+            let lbl = if f >= 1000.0 {
+                format!("{:.0}k", f / 1000.0)
+            } else {
+                format!("{:.0}", f)
+            };
+            g.text(
+                pos2(x, plot_rect.bottom() - 6.0),
+                Align2::CENTER_BOTTOM,
+                lbl,
+                FontId::monospace(8.5),
+                FAINT,
+            );
+        }
+
+        // Horizontal dB Grid Lines
+        for db in [-18.0, -12.0, -6.0, 0.0, 6.0, 12.0, 18.0] {
+            let y = y_of(db);
+            let stroke_grid = if db == 0.0 {
+                Stroke::new(1.0, Color32::from_gray(0x44))
+            } else {
+                Stroke::new(1.0, Color32::from_gray(0x22))
+            };
+            g.line_segment(
+                [pos2(plot_rect.left(), y), pos2(plot_rect.right(), y)],
+                stroke_grid,
+            );
+            if db != 0.0 {
+                g.text(
+                    pos2(plot_rect.left() + 4.0, y),
+                    Align2::LEFT_CENTER,
+                    format!("{:+.0}", db),
+                    FontId::monospace(8.0),
+                    Color32::from_gray(0x55),
+                );
+            }
+        }
+        g.text(
+            pos2(plot_rect.left() + 4.0, y_of(0.0)),
+            Align2::LEFT_CENTER,
+            "0 dB",
+            FontId::monospace(8.0),
+            Color32::from_gray(0x77),
+        );
+
+        // Q-Bandwidth Highlight for Selected Band
+        if selected_band < EQ_BANDS_META.len() {
+            let meta = &EQ_BANDS_META[selected_band];
+            if insert.params[meta.on_idx] > 0.5 {
+                let f0 = insert.params[meta.freq_idx];
+                let q = insert.params[meta.q_idx].max(0.1);
+                let gain = if meta.is_cut {
+                    0.0
+                } else {
+                    insert.params[meta.gain_idx]
+                };
+                if gain.abs() > 0.1 || meta.is_cut {
+                    let bw_ratio = 1.0 + 0.35 / q;
+                    let x_lo = x_of(f0 / bw_ratio);
+                    let x_hi = x_of(f0 * bw_ratio);
+                    let bw_rect = Rect::from_min_max(
+                        pos2(x_lo, plot_rect.top()),
+                        pos2(x_hi, plot_rect.bottom()),
+                    );
+                    g.rect_filled(bw_rect, 0.0, meta.color.gamma_multiply(0.07));
+                }
+            }
+        }
+
+        // Live Analyzer Spectrum Display
+        if insert.params[eq_idx::ANALYZER] > 0.5 && input_level > 0.001 {
+            let bars = 48;
+            for b in 0..bars {
+                let frac = b as f32 / bars as f32;
+                let hz = 20.0 * 1000.0f32.powf(frac);
+                let x = x_of(hz);
+                // Spectral tilt simulation based on input level
+                let tilt = 1.0 - frac * 0.5;
+                let mag =
+                    (input_level * tilt * (1.0 + 0.3 * (b as f32 * 1.7).sin())).clamp(0.0, 1.0);
+                let h = mag * (plot_rect.height() * 0.7);
+                let bar_rect = Rect::from_min_max(
+                    pos2(x - 2.0, plot_rect.bottom() - h),
+                    pos2(x + 2.0, plot_rect.bottom()),
+                );
+                g.rect_filled(
+                    bar_rect,
+                    1.0,
+                    Color32::from_rgba_unmultiplied(111, 178, 255, 30),
+                );
+            }
+        }
+
+        // Composite 8-Band Frequency Response Curve
+        let n_pts = 200;
+        let freqs: Vec<f32> = (0..=n_pts)
+            .map(|i| 20.0 * 1000f32.powf(i as f32 / n_pts as f32))
+            .collect();
+        let curve_dbs = response_db(FxKind::ChannelEq, insert.params, &freqs, CURVE_RATE);
+        let pts: Vec<Pos2> = freqs
+            .iter()
+            .zip(&curve_dbs)
+            .map(|(f, db)| pos2(x_of(*f), y_of(*db)))
+            .collect();
+
+        // Curve polygon fill
+        if let (Some(first), Some(last)) = (pts.first(), pts.last()) {
+            let mut shape = pts.clone();
+            shape.push(pos2(last.x, y_of(0.0)));
+            shape.push(pos2(first.x, y_of(0.0)));
+            let fill_col = if insert.bypass {
+                Color32::from_rgba_unmultiplied(90, 90, 95, 15)
+            } else {
+                Color32::from_rgba_unmultiplied(111, 178, 255, 35)
+            };
+            g.add(Shape::convex_polygon(shape, fill_col, Stroke::NONE));
+        }
+
+        // Curve stroke
+        let curve_stroke_col = if insert.bypass {
+            Color32::from_rgb(0x55, 0x55, 0x58)
+        } else {
+            Color32::from_rgb(0x6f, 0xb2, 0xff)
+        };
+        g.add(Shape::line(pts, Stroke::new(2.0, curve_stroke_col)));
+
+        // Interactive Draggable Node Handles (8 Bands)
+        for (i, meta) in EQ_BANDS_META.iter().enumerate() {
+            let is_on = insert.params[meta.on_idx] > 0.5;
+            let f = insert.params[meta.freq_idx];
+            let gain = if meta.is_cut {
+                0.0
+            } else {
+                insert.params[meta.gain_idx]
+            };
+            let q = insert.params[meta.q_idx];
+            let node_center = pos2(x_of(f), y_of(gain));
+            let handle_r = Rect::from_center_size(node_center, vec2(18.0, 18.0));
+
+            let handle_resp = ui.interact(
+                handle_r,
+                ui.scope_id().with(("eq_node", i)),
+                Sense::click_and_drag(),
+            );
+
+            if handle_resp.hovered() || handle_resp.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+            if handle_resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+            if handle_resp.double_clicked() {
+                if !meta.is_cut {
+                    eq_set_param(track, slot, insert, edits, meta.gain_idx, 0.0, true);
+                } else {
+                    eq_set_param(track, slot, insert, edits, meta.gain_idx, 1.0, true);
+                    // 12 dB/Oct default
+                }
+            }
+            if handle_resp.dragged() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+                let delta = handle_resp.drag_delta();
+                let new_hz = hz_of(node_center.x + delta.x).clamp(20.0, 20000.0);
+                eq_set_param(track, slot, insert, edits, meta.freq_idx, new_hz, false);
+
+                if !meta.is_cut {
+                    let new_gain =
+                        (gain - delta.y / (plot_rect.height() * 0.5) * 24.0).clamp(-24.0, 24.0);
+                    eq_set_param(track, slot, insert, edits, meta.gain_idx, new_gain, false);
+                } else {
+                    let slope_step = (delta.y / 24.0).round() as i32;
+                    if slope_step != 0 {
+                        let cur_slope = insert.params[meta.gain_idx];
+                        let new_slope = (cur_slope - slope_step as f32).clamp(0.0, 5.0);
+                        eq_set_param(track, slot, insert, edits, meta.gain_idx, new_slope, false);
+                    }
+                }
+            }
+            if handle_resp.drag_stopped() {
+                let cur_gain = insert.params[meta.gain_idx];
+                eq_set_param(track, slot, insert, edits, meta.freq_idx, f, true);
+                eq_set_param(track, slot, insert, edits, meta.gain_idx, cur_gain, true);
+            }
+
+            // Scroll wheel adjusts Q
+            if handle_resp.hovered() {
+                let scroll = ui.input(|inp| inp.smooth_scroll_delta.y);
+                if scroll.abs() > 0.1 {
+                    let new_q = (q * (1.0 + scroll * 0.005)).clamp(0.1, 10.0);
+                    eq_set_param(track, slot, insert, edits, meta.q_idx, new_q, true);
+                }
+            }
+
+            // Draw Node Handle
+            let is_sel = i == selected_band;
+            let radius = if handle_resp.hovered() || handle_resp.dragged() || is_sel {
+                6.5
+            } else {
+                5.0
+            };
+            let fill_color = if is_on {
+                meta.color
+            } else {
+                Color32::from_rgb(0x44, 0x44, 0x48)
+            };
+            g.circle_filled(node_center, radius, fill_color);
+            let ring_stroke = if is_sel || handle_resp.dragged() {
+                Stroke::new(1.8, Color32::WHITE)
+            } else if handle_resp.hovered() {
+                Stroke::new(1.2, Color32::from_rgb(0xe0, 0xe0, 0xe5))
+            } else {
+                Stroke::new(1.0, Color32::from_black_alpha(180))
+            };
+            g.circle_stroke(node_center, radius, ring_stroke);
+
+            // Floating Tooltip Badge
+            if handle_resp.hovered() || handle_resp.dragged() {
+                let gain_str = if meta.is_cut {
+                    let s_idx = insert.params[meta.gain_idx].clamp(0.0, 5.0).round() as usize;
+                    EQ_SLOPES[s_idx.min(5)].to_string()
+                } else {
+                    format_gain(gain)
+                };
+                handle_resp.on_hover_ui(|ui| {
+                    ui.label(
+                        RichText::new(format!("{}: {}", tr(meta.name), format_hz(f)))
+                            .size(11.0)
+                            .strong(),
+                    );
+                    ui.label(RichText::new(format!("Gain: {} · Q: {:.2}", gain_str, q)).size(10.5));
+                });
+            }
+        }
+
+        // Master Output Gain Fader (Right Side)
+        let (fader_rect, _) = ui.allocate_exact_size(vec2(fader_w, graph_h), Sense::hover());
+        let gf = ui.painter().with_clip_rect(fader_rect);
+        gf.rect_filled(fader_rect, CornerRadius::same(6), INSET);
+        gf.rect_stroke(
+            fader_rect,
+            CornerRadius::same(6),
+            Stroke::new(1.0, LINE),
+            StrokeKind::Inside,
+        );
+
+        let master_gain = insert.params[eq_idx::MASTER_GAIN];
+        let f_top = fader_rect.top() + 18.0;
+        let f_bottom = fader_rect.bottom() - 22.0;
+        let f_h = (f_bottom - f_top).max(20.0);
+        let f_center_x = fader_rect.center().x;
+
+        // Fader track
+        gf.rect_filled(
+            Rect::from_center_size(pos2(f_center_x, (f_top + f_bottom) * 0.5), vec2(4.0, f_h)),
+            2.0,
+            Color32::from_rgb(0x28, 0x29, 0x2e),
+        );
+
+        // 0 dB tick
+        let mid_y = (f_top + f_bottom) * 0.5;
+        gf.line_segment(
+            [pos2(f_center_x - 7.0, mid_y), pos2(f_center_x + 7.0, mid_y)],
+            Stroke::new(1.0, Color32::from_gray(0x60)),
+        );
+
+        let fader_y = mid_y - (master_gain / 24.0) * (f_h * 0.5);
+        let cap_rect = Rect::from_center_size(pos2(f_center_x, fader_y), vec2(24.0, 14.0));
+        let cap_resp = ui.interact(
+            cap_rect.expand(4.0),
+            ui.scope_id().with("master_gain_cap"),
+            Sense::click_and_drag(),
+        );
+        if cap_resp.hovered() || cap_resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        if cap_resp.double_clicked() {
+            eq_set_param(track, slot, insert, edits, eq_idx::MASTER_GAIN, 0.0, true);
+        }
+        if cap_resp.dragged() {
+            let delta = cap_resp.drag_delta().y;
+            let new_gain = (master_gain - delta / (f_h * 0.5) * 24.0).clamp(-24.0, 24.0);
+            eq_set_param(
+                track,
+                slot,
+                insert,
+                edits,
+                eq_idx::MASTER_GAIN,
+                new_gain,
+                false,
+            );
+        }
+        if cap_resp.drag_stopped() {
+            eq_set_param(
+                track,
+                slot,
+                insert,
+                edits,
+                eq_idx::MASTER_GAIN,
+                master_gain,
+                true,
+            );
+        }
+
+        // Draw fader cap
+        gf.rect_filled(
+            cap_rect,
+            CornerRadius::same(3),
+            if cap_resp.dragged() {
+                Color32::from_rgb(0x12, 0x69, 0xcc)
+            } else if cap_resp.hovered() {
+                Color32::from_rgb(0x48, 0x4a, 0x52)
+            } else {
+                Color32::from_rgb(0x38, 0x3a, 0x40)
+            },
+        );
+        gf.rect_stroke(
+            cap_rect,
+            CornerRadius::same(3),
+            Stroke::new(1.0, Color32::from_rgb(0x5a, 0x5c, 0x64)),
+            StrokeKind::Inside,
+        );
+        gf.line_segment(
+            [
+                pos2(cap_rect.left() + 4.0, cap_rect.center().y),
+                pos2(cap_rect.right() - 4.0, cap_rect.center().y),
+            ],
+            Stroke::new(1.2, Color32::WHITE),
+        );
+
+        gf.text(
+            pos2(f_center_x, fader_rect.top() + 8.0),
+            Align2::CENTER_CENTER,
+            "Gain",
+            FontId::proportional(8.5),
+            DIM,
+        );
+        gf.text(
+            pos2(f_center_x, fader_rect.bottom() - 8.0),
+            Align2::CENTER_CENTER,
+            format_gain(master_gain),
+            FontId::monospace(8.0),
+            TXT,
+        );
+    });
+
+    ui.add_space(8.0);
+
+    // -------------------------------------------------------------
+    // Bottom 8-Column Parameter Matrix
+    // -------------------------------------------------------------
+    let matrix_w = ui.available_width();
+    let col_w = (matrix_w / 8.0).floor();
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+
+        for (i, meta) in EQ_BANDS_META.iter().enumerate() {
+            let (col_rect, col_resp) = ui.allocate_exact_size(vec2(col_w, 98.0), Sense::click());
+
+            let is_on = insert.params[meta.on_idx] > 0.5;
+            let is_sel = i == selected_band;
+
+            let col_bg = if is_sel {
+                Color32::from_rgb(0x23, 0x25, 0x2a)
+            } else if col_resp.hovered() {
+                Color32::from_rgb(0x1f, 0x20, 0x24)
+            } else {
+                Color32::from_rgb(0x18, 0x19, 0x1d)
+            };
+            ui.painter()
+                .rect_filled(col_rect, CornerRadius::same(4), col_bg);
+            if is_sel {
+                ui.painter().rect_filled(
+                    Rect::from_min_size(col_rect.min, vec2(col_rect.width(), 2.0)),
+                    0.0,
+                    meta.color,
+                );
+            }
+            ui.painter().rect_stroke(
+                col_rect,
+                CornerRadius::same(4),
+                Stroke::new(1.0, Color32::from_rgb(0x2c, 0x2d, 0x33)),
+                StrokeKind::Inside,
+            );
+
+            if col_resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+
+            let pad = 4.0;
+            let row_w = col_rect.width() - pad * 2.0;
+            let x0 = col_rect.left() + pad;
+            let mut y = col_rect.top() + 6.0;
+
+            // Column Header: Power Toggle + Short Name
+            let p_center = pos2(x0 + 6.0, y + 6.0);
+            let p_resp = ui.interact(
+                Rect::from_center_size(p_center, vec2(12.0, 12.0)),
+                ui.scope_id().with(("pwr", i)),
+                Sense::click(),
+            );
+            if p_resp.clicked() {
+                eq_set_param(
+                    track,
+                    slot,
+                    insert,
+                    edits,
+                    meta.on_idx,
+                    if is_on { 0.0 } else { 1.0 },
+                    true,
+                );
+            }
+            ui.painter().circle_filled(
+                p_center,
+                4.0,
+                if is_on {
+                    meta.color
+                } else {
+                    Color32::from_rgb(0x40, 0x40, 0x45)
+                },
+            );
+
+            ui.painter().text(
+                pos2(x0 + 15.0, y + 6.0),
+                Align2::LEFT_CENTER,
+                meta.short,
+                FontId::proportional(10.0),
+                if is_on { TXT } else { FAINT },
+            );
+            y += 18.0;
+
+            // Row 1: Frequency Scrubber
+            let freq_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let f = insert.params[meta.freq_idx];
+            let f_resp = eq_matrix_scrubber(
+                ui,
+                freq_r,
+                ui.scope_id().with(("scrub_f", i)),
+                &format_hz(f),
+                is_on,
+            );
+            if f_resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+            if f_resp.double_clicked() {
+                let def = insert.kind.defaults()[meta.freq_idx];
+                eq_set_param(track, slot, insert, edits, meta.freq_idx, def, true);
+            }
+            if f_resp.dragged() {
+                let delta = f_resp.drag_delta().y;
+                let new_f = (f * (1.0 - delta * 0.015)).clamp(20.0, 20000.0);
+                eq_set_param(track, slot, insert, edits, meta.freq_idx, new_f, false);
+            }
+            if f_resp.drag_stopped() {
+                eq_set_param(track, slot, insert, edits, meta.freq_idx, f, true);
+            }
+            y += 22.0;
+
+            // Row 2: Gain / Slope Scrubber
+            let gain_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let gain_val = insert.params[meta.gain_idx];
+            let gain_text = if meta.is_cut {
+                let s_idx = gain_val.clamp(0.0, 5.0).round() as usize;
+                EQ_SLOPES[s_idx.min(5)].to_string()
+            } else {
+                format_gain(gain_val)
+            };
+            let g_resp = eq_matrix_scrubber(
+                ui,
+                gain_r,
+                ui.scope_id().with(("scrub_g", i)),
+                &gain_text,
+                is_on,
+            );
+            if g_resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+            if g_resp.double_clicked() {
+                let def = insert.kind.defaults()[meta.gain_idx];
+                eq_set_param(track, slot, insert, edits, meta.gain_idx, def, true);
+            }
+            if g_resp.dragged() {
+                let delta = g_resp.drag_delta().y;
+                if !meta.is_cut {
+                    let new_g = (gain_val - delta * 0.3).clamp(-24.0, 24.0);
+                    eq_set_param(track, slot, insert, edits, meta.gain_idx, new_g, false);
+                } else {
+                    let s_delta = (delta / 12.0).round() as i32;
+                    if s_delta != 0 {
+                        let new_s = (gain_val - s_delta as f32).clamp(0.0, 5.0);
+                        eq_set_param(track, slot, insert, edits, meta.gain_idx, new_s, false);
+                    }
+                }
+            }
+            if g_resp.drag_stopped() {
+                eq_set_param(track, slot, insert, edits, meta.gain_idx, gain_val, true);
+            }
+            y += 22.0;
+
+            // Row 3: Q Scrubber
+            let q_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let q_val = insert.params[meta.q_idx];
+            let q_resp = eq_matrix_scrubber(
+                ui,
+                q_r,
+                ui.scope_id().with(("scrub_q", i)),
+                &format_q(q_val),
+                is_on,
+            );
+            if q_resp.clicked() {
+                selected_band = i;
+                ui.data_mut(|d| d.insert_temp(sel_id, i));
+            }
+            if q_resp.double_clicked() {
+                let def = insert.kind.defaults()[meta.q_idx];
+                eq_set_param(track, slot, insert, edits, meta.q_idx, def, true);
+            }
+            if q_resp.dragged() {
+                let delta = q_resp.drag_delta().y;
+                let new_q = (q_val * (1.0 - delta * 0.015)).clamp(0.1, 10.0);
+                eq_set_param(track, slot, insert, edits, meta.q_idx, new_q, false);
+            }
+            if q_resp.drag_stopped() {
+                eq_set_param(track, slot, insert, edits, meta.q_idx, q_val, true);
+            }
+        }
     });
 }
 

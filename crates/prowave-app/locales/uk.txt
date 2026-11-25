@@ -35,7 +35,6 @@ More = Більше
 Dynamics: = Динаміка:
 Gate Time: = Час гейту:
 Clip Length: = Довжина кліпу:
-Score: = Партитура:
 Q-Velocity: = Q-натиск:
 Q-Length: = Q-довжина:
 Q-Flam: = Q-флем:

@@ -35,7 +35,6 @@ More = Mer
 Dynamics: = Dynamik:
 Gate Time: = Gate-tid:
 Clip Length: = Klipplängd:
-Score: = Noter:
 Q-Velocity: = Q-anslag:
 Q-Length: = Q-längd:
 Q-Flam: = Q-flam:

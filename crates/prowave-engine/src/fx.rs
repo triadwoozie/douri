@@ -13,7 +13,7 @@ use crate::pult_eq::PultState;
 use std::f32::consts::{PI, TAU};
 
 /// Most parameters one effect has.
-pub const MAX_FX_PARAMS: usize = 32;
+pub const MAX_FX_PARAMS: usize = 48;
 /// Most effects in one channel strip.
 pub const MAX_INSERTS: usize = 15;
 
@@ -122,12 +122,103 @@ const fn pl(name: &'static str, min: f32, max: f32, default: f32, unit: &'static
     }
 }
 
-const EQ_PARAMS: [ParamInfo; 5] = [
-    p("Low", -18.0, 18.0, 0.0, "dB"),
-    p("Mid", -18.0, 18.0, 0.0, "dB"),
-    pl("Mid Freq", 100.0, 8000.0, 1000.0, "Hz"),
-    pl("Mid Q", 0.3, 8.0, 1.0, ""),
-    p("High", -18.0, 18.0, 0.0, "dB"),
+pub const EQ_BANDS: usize = 8;
+
+pub mod eq_idx {
+    pub const HPF_ON: usize = 0;
+    pub const HPF_FREQ: usize = 1;
+    pub const HPF_SLOPE: usize = 2;
+    pub const HPF_Q: usize = 3;
+
+    pub const LOW_SHELF_ON: usize = 4;
+    pub const LOW_SHELF_FREQ: usize = 5;
+    pub const LOW_SHELF_GAIN: usize = 6;
+    pub const LOW_SHELF_Q: usize = 7;
+
+    pub const LOW_MID_ON: usize = 8;
+    pub const LOW_MID_FREQ: usize = 9;
+    pub const LOW_MID_GAIN: usize = 10;
+    pub const LOW_MID_Q: usize = 11;
+
+    pub const MID_ON: usize = 12;
+    pub const MID_FREQ: usize = 13;
+    pub const MID_GAIN: usize = 14;
+    pub const MID_Q: usize = 15;
+
+    pub const HIGH_MID_ON: usize = 16;
+    pub const HIGH_MID_FREQ: usize = 17;
+    pub const HIGH_MID_GAIN: usize = 18;
+    pub const HIGH_MID_Q: usize = 19;
+
+    pub const UPPER_MID_ON: usize = 20;
+    pub const UPPER_MID_FREQ: usize = 21;
+    pub const UPPER_MID_GAIN: usize = 22;
+    pub const UPPER_MID_Q: usize = 23;
+
+    pub const HIGH_SHELF_ON: usize = 24;
+    pub const HIGH_SHELF_FREQ: usize = 25;
+    pub const HIGH_SHELF_GAIN: usize = 26;
+    pub const HIGH_SHELF_Q: usize = 27;
+
+    pub const LPF_ON: usize = 28;
+    pub const LPF_FREQ: usize = 29;
+    pub const LPF_SLOPE: usize = 30;
+    pub const LPF_Q: usize = 31;
+
+    pub const MASTER_GAIN: usize = 32;
+    pub const Q_COUPLE: usize = 33;
+    pub const HQ: usize = 34;
+    pub const ANALYZER: usize = 35;
+    pub const PROCESSING: usize = 36;
+}
+
+const EQ_PARAMS: [ParamInfo; 37] = [
+    // 1. HPF (High Pass Filter)
+    p("HPF On", 0.0, 1.0, 0.0, ""),
+    pl("HPF Freq", 20.0, 20000.0, 50.0, "Hz"),
+    p("HPF Slope", 0.0, 5.0, 1.0, "dB/Oct"),
+    pl("HPF Q", 0.1, 10.0, 0.71, ""),
+    // 2. Low Shelf
+    p("Low Shelf On", 0.0, 1.0, 1.0, ""),
+    pl("Low Shelf Freq", 20.0, 20000.0, 160.0, "Hz"),
+    p("Low Shelf Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("Low Shelf Q", 0.1, 10.0, 0.71, ""),
+    // 3. Low-Mid Bell
+    p("Low-Mid On", 0.0, 1.0, 1.0, ""),
+    pl("Low-Mid Freq", 20.0, 20000.0, 330.0, "Hz"),
+    p("Low-Mid Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("Low-Mid Q", 0.1, 10.0, 0.71, ""),
+    // 4. Mid Bell
+    p("Mid On", 0.0, 1.0, 1.0, ""),
+    pl("Mid Freq", 20.0, 20000.0, 1000.0, "Hz"),
+    p("Mid Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("Mid Q", 0.1, 10.0, 0.71, ""),
+    // 5. High-Mid Bell
+    p("High-Mid On", 0.0, 1.0, 1.0, ""),
+    pl("High-Mid Freq", 20.0, 20000.0, 2060.0, "Hz"),
+    p("High-Mid Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("High-Mid Q", 0.1, 10.0, 0.71, ""),
+    // 6. Upper-Mid Bell
+    p("Upper-Mid On", 0.0, 1.0, 1.0, ""),
+    pl("Upper-Mid Freq", 20.0, 20000.0, 7100.0, "Hz"),
+    p("Upper-Mid Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("Upper-Mid Q", 0.1, 10.0, 0.71, ""),
+    // 7. High Shelf
+    p("High Shelf On", 0.0, 1.0, 1.0, ""),
+    pl("High Shelf Freq", 20.0, 20000.0, 10000.0, "Hz"),
+    p("High Shelf Gain", -24.0, 24.0, 0.0, "dB"),
+    pl("High Shelf Q", 0.1, 10.0, 0.71, ""),
+    // 8. LPF (Low Pass Filter)
+    p("LPF On", 0.0, 1.0, 0.0, ""),
+    pl("LPF Freq", 20.0, 20000.0, 20000.0, "Hz"),
+    p("LPF Slope", 0.0, 5.0, 1.0, "dB/Oct"),
+    pl("LPF Q", 0.1, 10.0, 0.71, ""),
+    // Global
+    p("Gain", -24.0, 24.0, 0.0, "dB"),
+    p("Q-Couple", 0.0, 1.0, 0.0, ""),
+    p("HQ", 0.0, 1.0, 1.0, ""),
+    p("Analyzer", 0.0, 2.0, 0.0, ""),
+    p("Processing", 0.0, 4.0, 0.0, ""),
 ];
 const COMP_PARAMS: [ParamInfo; 5] = [
     p("Threshold", -60.0, 0.0, -18.0, "dB"),
@@ -228,7 +319,7 @@ const LIMIT_PARAMS: [ParamInfo; 3] = [
     p("Ceiling", -12.0, 0.0, -0.3, "dB"),
     pl("Release", 10.0, 1000.0, 100.0, "ms"),
 ];
-/// A hosted plug-in's parameters: 32 positions from 0 to 1. The app names them and shows
+/// A hosted plug-in's parameters: 48 positions from 0 to 1. The app names them and shows
 /// their real ranges from the plug-in's own description.
 const PLUGIN_PARAMS: [ParamInfo; MAX_FX_PARAMS] = [
     p("Parameter 1", 0.0, 1.0, 0.5, ""),
@@ -263,6 +354,22 @@ const PLUGIN_PARAMS: [ParamInfo; MAX_FX_PARAMS] = [
     p("Parameter 30", 0.0, 1.0, 0.5, ""),
     p("Parameter 31", 0.0, 1.0, 0.5, ""),
     p("Parameter 32", 0.0, 1.0, 0.5, ""),
+    p("Parameter 33", 0.0, 1.0, 0.5, ""),
+    p("Parameter 34", 0.0, 1.0, 0.5, ""),
+    p("Parameter 35", 0.0, 1.0, 0.5, ""),
+    p("Parameter 36", 0.0, 1.0, 0.5, ""),
+    p("Parameter 37", 0.0, 1.0, 0.5, ""),
+    p("Parameter 38", 0.0, 1.0, 0.5, ""),
+    p("Parameter 39", 0.0, 1.0, 0.5, ""),
+    p("Parameter 40", 0.0, 1.0, 0.5, ""),
+    p("Parameter 41", 0.0, 1.0, 0.5, ""),
+    p("Parameter 42", 0.0, 1.0, 0.5, ""),
+    p("Parameter 43", 0.0, 1.0, 0.5, ""),
+    p("Parameter 44", 0.0, 1.0, 0.5, ""),
+    p("Parameter 45", 0.0, 1.0, 0.5, ""),
+    p("Parameter 46", 0.0, 1.0, 0.5, ""),
+    p("Parameter 47", 0.0, 1.0, 0.5, ""),
+    p("Parameter 48", 0.0, 1.0, 0.5, ""),
 ];
 /// Pult EQ's dials (see `pult_eq.rs`): the selectors are whole numbers, the boosts and cuts run
 /// 0 to 10 like the hardware's dials.
@@ -840,13 +947,119 @@ impl Biquad {
     }
 }
 
-/// The Channel EQ's three filters for `params`.
-fn eq_filters(params: &[f32; MAX_FX_PARAMS], sr: f32) -> [Biquad; 3] {
-    [
-        Biquad::make(Shape::LowShelf, 120.0, 0.7, params[0], sr),
-        Biquad::make(Shape::Peak, params[2], params[3], params[1], sr),
-        Biquad::make(Shape::HighShelf, 8000.0, 0.7, params[4], sr),
-    ]
+/// The Channel EQ's 14 cascaded biquad filters for `params`:
+/// - 0..3: HPF (up to 4 biquads for 6/12/18/24/36/48 dB/Oct slope)
+/// - 4: Low Shelf
+/// - 5: Low-Mid Bell
+/// - 6: Mid Bell
+/// - 7: High-Mid Bell
+/// - 8: Upper-Mid Bell
+/// - 9: High Shelf
+/// - 10..13: LPF (up to 4 biquads for 6/12/18/24/36/48 dB/Oct slope)
+pub(crate) fn eq_filters(params: &[f32; MAX_FX_PARAMS], sr: f32) -> [Biquad; 14] {
+    let mut out = [Biquad::unity(); 14];
+    let q_couple = params[eq_idx::Q_COUPLE] > 0.5;
+
+    // Helper to compute coupled Q for bell and shelf filters
+    let couple_q = |q: f32, gain_db: f32| -> f32 {
+        if q_couple {
+            (q * (1.0 + (gain_db.abs() / 24.0) * 0.75)).clamp(0.1, 10.0)
+        } else {
+            q
+        }
+    };
+
+    // Helper for slope stage count (0: 6dB, 1: 12dB, 2: 18dB, 3: 24dB, 4: 36dB, 5: 48dB)
+    let slope_count = |s: f32| -> usize {
+        match s.round() as i32 {
+            0 => 1,
+            1 => 1,
+            2 => 2,
+            3 => 2,
+            4 => 3,
+            _ => 4,
+        }
+    };
+
+    // 1. HPF (slots 0..3)
+    if params[eq_idx::HPF_ON] > 0.5 {
+        let f = params[eq_idx::HPF_FREQ].clamp(20.0, sr * 0.49);
+        let q = params[eq_idx::HPF_Q].clamp(0.1, 10.0);
+        let stages = slope_count(params[eq_idx::HPF_SLOPE]);
+        let b = Biquad::make(Shape::High, f, q, 0.0, sr);
+        out[..stages].fill(b);
+    }
+
+    // 2. Low Shelf (slot 4)
+    if params[eq_idx::LOW_SHELF_ON] > 0.5 {
+        let f = params[eq_idx::LOW_SHELF_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::LOW_SHELF_GAIN];
+        let q = couple_q(params[eq_idx::LOW_SHELF_Q], gain);
+        if gain.abs() > 0.01 {
+            out[4] = Biquad::make(Shape::LowShelf, f, q, gain, sr);
+        }
+    }
+
+    // 3. Low-Mid Bell (slot 5)
+    if params[eq_idx::LOW_MID_ON] > 0.5 {
+        let f = params[eq_idx::LOW_MID_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::LOW_MID_GAIN];
+        let q = couple_q(params[eq_idx::LOW_MID_Q], gain);
+        if gain.abs() > 0.01 {
+            out[5] = Biquad::make(Shape::Peak, f, q, gain, sr);
+        }
+    }
+
+    // 4. Mid Bell (slot 6)
+    if params[eq_idx::MID_ON] > 0.5 {
+        let f = params[eq_idx::MID_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::MID_GAIN];
+        let q = couple_q(params[eq_idx::MID_Q], gain);
+        if gain.abs() > 0.01 {
+            out[6] = Biquad::make(Shape::Peak, f, q, gain, sr);
+        }
+    }
+
+    // 5. High-Mid Bell (slot 7)
+    if params[eq_idx::HIGH_MID_ON] > 0.5 {
+        let f = params[eq_idx::HIGH_MID_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::HIGH_MID_GAIN];
+        let q = couple_q(params[eq_idx::HIGH_MID_Q], gain);
+        if gain.abs() > 0.01 {
+            out[7] = Biquad::make(Shape::Peak, f, q, gain, sr);
+        }
+    }
+
+    // 6. Upper-Mid Bell (slot 8)
+    if params[eq_idx::UPPER_MID_ON] > 0.5 {
+        let f = params[eq_idx::UPPER_MID_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::UPPER_MID_GAIN];
+        let q = couple_q(params[eq_idx::UPPER_MID_Q], gain);
+        if gain.abs() > 0.01 {
+            out[8] = Biquad::make(Shape::Peak, f, q, gain, sr);
+        }
+    }
+
+    // 7. High Shelf (slot 9)
+    if params[eq_idx::HIGH_SHELF_ON] > 0.5 {
+        let f = params[eq_idx::HIGH_SHELF_FREQ].clamp(20.0, sr * 0.49);
+        let gain = params[eq_idx::HIGH_SHELF_GAIN];
+        let q = couple_q(params[eq_idx::HIGH_SHELF_Q], gain);
+        if gain.abs() > 0.01 {
+            out[9] = Biquad::make(Shape::HighShelf, f, q, gain, sr);
+        }
+    }
+
+    // 8. LPF (slots 10..13)
+    if params[eq_idx::LPF_ON] > 0.5 {
+        let f = params[eq_idx::LPF_FREQ].clamp(20.0, sr * 0.49);
+        let q = params[eq_idx::LPF_Q].clamp(0.1, 10.0);
+        let stages = slope_count(params[eq_idx::LPF_SLOPE]);
+        let b = Biquad::make(Shape::Low, f, q, 0.0, sr);
+        out[10..10 + stages].fill(b);
+    }
+
+    out
 }
 
 /// The Multi-Band EQ's six filters: a low shelf, four bells and a high shelf.
@@ -873,9 +1086,39 @@ pub fn response_db(kind: FxKind, params: [f32; MAX_FX_PARAMS], freqs: &[f32], sr
         }
         _ => Vec::new(),
     };
+    let master_gain = if kind == FxKind::ChannelEq {
+        params[eq_idx::MASTER_GAIN]
+    } else {
+        0.0
+    };
     freqs
         .iter()
-        .map(|f| filters.iter().map(|b| b.response_db(*f, sr)).sum())
+        .map(|f| filters.iter().map(|b| b.response_db(*f, sr)).sum::<f32>() + master_gain)
+        .collect()
+}
+
+/// The frequency response in dB of a specific Channel EQ band (0..7).
+pub fn eq_band_response_db(
+    band: usize,
+    params: [f32; MAX_FX_PARAMS],
+    freqs: &[f32],
+    sr: f32,
+) -> Vec<f32> {
+    let all = eq_filters(&params, sr);
+    let slice: &[Biquad] = match band {
+        0 => &all[0..4],
+        1 => &all[4..5],
+        2 => &all[5..6],
+        3 => &all[6..7],
+        4 => &all[7..8],
+        5 => &all[8..9],
+        6 => &all[9..10],
+        7 => &all[10..14],
+        _ => &[],
+    };
+    freqs
+        .iter()
+        .map(|f| slice.iter().map(|b| b.response_db(*f, sr)).sum())
         .collect()
 }
 
@@ -1485,11 +1728,28 @@ impl LemonReverbState {
 }
 
 #[derive(Clone, Debug)]
+pub struct EqState {
+    pub(crate) filters: [[Biquad; 14]; 2],
+    pub(crate) gain: f32,
+    pub(crate) mode: usize,
+}
+
+impl EqState {
+    pub(crate) fn new() -> Self {
+        Self {
+            filters: [[Biquad::unity(); 14]; 2],
+            gain: 1.0,
+            mode: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 enum State {
-    MultiEq([[Biquad; 6]; 2]),
+    MultiEq(Box<[[Biquad; 6]; 2]>),
     Gate(GateState),
     Limiter(Box<LimiterState>),
-    Eq([[Biquad; 3]; 2]),
+    Eq(Box<EqState>),
     Comp(CompState),
     MultiComp(Box<MultiCompState>),
     Reverb(Box<SpaceState>),
@@ -1532,7 +1792,7 @@ impl Fx {
             48_000.0
         };
         let state = match kind {
-            FxKind::ChannelEq => State::Eq([[Biquad::unity(); 3]; 2]),
+            FxKind::ChannelEq => State::Eq(Box::new(EqState::new())),
             FxKind::Compressor => State::Comp(CompState {
                 reduction: 0.0,
                 att_k: 0.0,
@@ -1583,7 +1843,7 @@ impl Fx {
                 rel_k: 0.0,
             }),
             FxKind::Limiter => State::Limiter(Box::new(LimiterState::new(sr))),
-            FxKind::MultiEq => State::MultiEq([[Biquad::unity(); 6]; 2]),
+            FxKind::MultiEq => State::MultiEq(Box::new([[Biquad::unity(); 6]; 2])),
             FxKind::Amp => State::Amp(Box::new(AmpState::new())),
             FxKind::Plugin => State::Plugin(Box::new(PluginSlot::empty())),
             FxKind::PultEq => State::PultEq(Box::new(PultState::new())),
@@ -1707,9 +1967,9 @@ impl Fx {
         let pr = self.params;
         let sr = self.sr;
         match &mut self.state {
-            State::Eq(f) => {
+            State::Eq(s) => {
                 let new = eq_filters(&pr, sr);
-                for ch in f.iter_mut() {
+                for ch in s.filters.iter_mut() {
                     for (old, n) in ch.iter_mut().zip(new) {
                         // Keep the memory so changing a knob does not click.
                         *old = Biquad {
@@ -1719,6 +1979,8 @@ impl Fx {
                         };
                     }
                 }
+                s.gain = 10.0f32.powf(pr[eq_idx::MASTER_GAIN] / 20.0);
+                s.mode = pr[eq_idx::PROCESSING].clamp(0.0, 4.0).round() as usize;
             }
             State::Reverb(s) => {
                 let new = space_eq(&pr, sr);
@@ -1914,11 +2176,47 @@ impl Fx {
         let pr = self.params;
         let sr = self.sr;
         let (ol, or) = match &mut self.state {
-            State::Eq(f) => {
-                let [left, right] = f;
-                let a = left.iter_mut().fold(l, |x, filter| filter.tick(x));
-                let b = right.iter_mut().fold(r, |x, filter| filter.tick(x));
-                (a, b)
+            State::Eq(s) => {
+                let g = s.gain;
+                match s.mode {
+                    // 0: Stereo
+                    0 => {
+                        let a = s.filters[0].iter_mut().fold(l, |x, filter| filter.tick(x)) * g;
+                        let b = s.filters[1].iter_mut().fold(r, |x, filter| filter.tick(x)) * g;
+                        (a, b)
+                    }
+                    // 1: Left only
+                    1 => {
+                        let a = s.filters[0].iter_mut().fold(l, |x, filter| filter.tick(x)) * g;
+                        (a, r)
+                    }
+                    // 2: Right only
+                    2 => {
+                        let b = s.filters[1].iter_mut().fold(r, |x, filter| filter.tick(x)) * g;
+                        (l, b)
+                    }
+                    // 3: Mid only
+                    3 => {
+                        let mid = (l + r) * 0.5;
+                        let side = (l - r) * 0.5;
+                        let mid_filtered = s.filters[0]
+                            .iter_mut()
+                            .fold(mid, |x, filter| filter.tick(x))
+                            * g;
+                        (mid_filtered + side, mid_filtered - side)
+                    }
+                    // 4: Side only
+                    4 => {
+                        let mid = (l + r) * 0.5;
+                        let side = (l - r) * 0.5;
+                        let side_filtered = s.filters[1]
+                            .iter_mut()
+                            .fold(side, |x, filter| filter.tick(x))
+                            * g;
+                        (mid + side_filtered, mid - side_filtered)
+                    }
+                    _ => (l, r),
+                }
             }
             State::Comp(c) => {
                 let level = l.abs().max(r.abs()).max(1e-6);
@@ -2117,7 +2415,7 @@ impl Fx {
                 (out[0], out[1])
             }
             State::MultiEq(f) => {
-                let [left, right] = f;
+                let [left, right] = f.as_mut();
                 let a = left.iter_mut().fold(l, |x, filter| filter.tick(x));
                 let b = right.iter_mut().fold(r, |x, filter| filter.tick(x));
                 (a, b)
@@ -2198,7 +2496,11 @@ impl Fx {
     pub fn reset(&mut self) {
         let sr = self.sr;
         match &mut self.state {
-            State::Eq(f) => f.iter_mut().flatten().for_each(|b| *b = b.cleared()),
+            State::Eq(s) => s
+                .filters
+                .iter_mut()
+                .flatten()
+                .for_each(|b| *b = b.cleared()),
             State::Filter(f) => f.iter_mut().for_each(|b| *b = b.cleared()),
             State::MultiEq(f) => f.iter_mut().flatten().for_each(|b| *b = b.cleared()),
             State::Gate(g) => {
@@ -2500,17 +2802,31 @@ mod tests {
 
     #[test]
     fn the_eq_boosts_and_cuts_where_asked() {
-        let mut up = with(FxKind::ChannelEq, &[(1, 12.0), (2, 1000.0)]);
+        let mut up = with(
+            FxKind::ChannelEq,
+            &[(eq_idx::MID_GAIN, 12.0), (eq_idx::MID_FREQ, 1000.0)],
+        );
         let tone = sine(1000.0, 0.5, 0.1);
         let boosted = rms(&run(&mut up, &tone)[12_000..]) / rms(&tone[12_000..]);
         assert!((boosted - 4.0).abs() < 0.3, "{boosted}");
-        let mut far = with(FxKind::ChannelEq, &[(1, 12.0), (2, 1000.0), (3, 4.0)]);
+        let mut far = with(
+            FxKind::ChannelEq,
+            &[
+                (eq_idx::MID_GAIN, 12.0),
+                (eq_idx::MID_FREQ, 1000.0),
+                (eq_idx::MID_Q, 4.0),
+            ],
+        );
         let low = sine(100.0, 0.5, 0.1);
         let ratio = rms(&run(&mut far, &low)[12_000..]) / rms(&low[12_000..]);
         assert!((ratio - 1.0).abs() < 0.1, "{ratio}");
         // The drawn curve agrees with the sound.
         let curve = eq_response_db(
-            with(FxKind::ChannelEq, &[(1, 12.0), (2, 1000.0)]).params,
+            with(
+                FxKind::ChannelEq,
+                &[(eq_idx::MID_GAIN, 12.0), (eq_idx::MID_FREQ, 1000.0)],
+            )
+            .params,
             &[1000.0, 50.0],
             SR,
         );
@@ -2693,14 +3009,14 @@ mod tests {
 
     #[test]
     fn changing_a_knob_does_not_click_and_a_chain_runs_in_order() {
-        let mut fx = with(FxKind::ChannelEq, &[(1, 6.0)]);
+        let mut fx = with(FxKind::ChannelEq, &[(eq_idx::MID_GAIN, 6.0)]);
         let tone = sine(300.0, 0.4, 0.5);
         let mut last = 0.0f32;
         let mut worst = 0.0f32;
         for (i, x) in tone.iter().enumerate() {
             if i == 9000 {
                 let mut p = fx.params;
-                p[1] = -12.0;
+                p[eq_idx::MID_GAIN] = -12.0;
                 fx.set(p, false);
             }
             let y = fx.process(*x, *x).0;
@@ -2828,30 +3144,30 @@ mod tests {
 
     #[test]
     fn automation_moves_a_parameter_and_restore_puts_the_users_value_back() {
-        let mut fx = with(FxKind::ChannelEq, &[(1, 6.0)]);
+        let mut fx = with(FxKind::ChannelEq, &[(eq_idx::MID_GAIN, 6.0)]);
         let tone = sine(1000.0, 0.4, 0.1);
         let base = rms(&run(&mut fx, &tone)[10_000..]);
-        fx.set_param(1, -12.0);
-        assert_eq!(fx.current()[1], -12.0);
+        fx.set_param(eq_idx::MID_GAIN, -12.0);
+        assert_eq!(fx.current()[eq_idx::MID_GAIN], -12.0);
         let moved = rms(&run(&mut fx, &tone)[10_000..]);
         assert!(moved < base * 0.4, "{moved} {base}");
-        fx.set_param(1, 500.0);
-        assert_eq!(fx.current()[1], 18.0, "put into range");
+        fx.set_param(eq_idx::MID_GAIN, 500.0);
+        assert_eq!(fx.current()[eq_idx::MID_GAIN], 24.0, "put into range");
         fx.set_param(99, 1.0);
         fx.set_param(0, f32::NAN);
         fx.restore();
-        assert_eq!(fx.current()[1], 6.0);
+        assert_eq!(fx.current()[eq_idx::MID_GAIN], 6.0);
         // Setting new base values forgets an automated one.
-        fx.set_param(1, 0.0);
+        fx.set_param(eq_idx::MID_GAIN, 0.0);
         let mut p = fx.current();
-        p[1] = 3.0;
+        p[eq_idx::MID_GAIN] = 3.0;
         fx.set(p, false);
-        assert_eq!(fx.current()[1], 3.0);
+        assert_eq!(fx.current()[eq_idx::MID_GAIN], 3.0);
         let mut chain = Chain::new(vec![fx]);
-        chain.set_param(0, 1, -3.0);
-        chain.set_param(7, 1, -3.0);
+        chain.set_param(0, eq_idx::MID_GAIN, -3.0);
+        chain.set_param(7, eq_idx::MID_GAIN, -3.0);
         chain.restore();
-        assert_eq!(chain.fx[0].current()[1], 3.0);
+        assert_eq!(chain.fx[0].current()[eq_idx::MID_GAIN], 3.0);
     }
 
     /// Amplitude of the sine at `hz` in `x` (a one-bin DFT).

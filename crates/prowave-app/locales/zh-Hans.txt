@@ -35,7 +35,6 @@ More = 更多
 Dynamics: = 动态：
 Gate Time: = 门限时间：
 Clip Length: = 剪辑长度：
-Score: = 乐谱：
 Q-Velocity: = 量化力度：
 Q-Length: = 量化长度：
 Q-Flam: = 量化装饰音：

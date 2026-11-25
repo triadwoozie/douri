@@ -24,6 +24,19 @@ What changed in each Dōri release.
 - **Peak Follower**: Real-time audio envelope follower for sidechain ducking and parameter modulation.
 - **LFO Controller**: Multi-waveform low-frequency oscillator (Sine, Triangle, Saw, Square, Sample & Hold) for rhythmic parameter sweeps.
 
+## 0.1.0-alpha.7
+
+### 8-Band Channel EQ
+- **Authentic 8-Band Parametric EQ DSP**: Added full 8-band parametric EQ processing supporting High-Pass (6–48 dB/oct), Low Shelf, four Peak/Bell bands, High Shelf, and Low-Pass (6–48 dB/oct) with real-time stereo, left-only, right-only, mid-only, and side-only processing without heap allocation on the audio thread.
+- **Interactive EQ Graph & Control Matrix**: Interactive log frequency response plot (20 Hz–20 kHz, ±24 dB) with direct node dragging, Q-bandwidth highlights, scroll-wheel Q adjustment, live analyzer spectrum, master output gain fader, and bottom 8-column vertical parameter scrubber matrix.
+
+### Inspector & Channel Strips Redesign
+- **Logic Pro Inspector Layout**: Redesigned Region and Track Inspector with borderless left-aligned parameter rows, vertical scrub cursor and hover highlights on all numeric controls, authentic pill toggles, and collapsible General and More accordions.
+- **De-boxified Dual Channel Strips**: Borderless channel strip styling with inline mini rotary Send level knobs, compact Pan arc, single centered dB scale between fader and meter, and unclipped Mute, Solo, and Bounce buttons.
+
+### Sound Library Window
+- **Native OS Viewport Window**: Spawns Dōri Sound Library as a dedicated native OS window with client-side header dragging, 6px perimeter resize handles, interactive pack filter dropdown, clean 3-pane clipping, and integrated audition deck.
+
 ## 0.1.0-alpha.6
 
 ### Hydrogen Drum Kit Support

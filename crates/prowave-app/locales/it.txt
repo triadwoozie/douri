@@ -35,7 +35,6 @@ More = Altro
 Dynamics: = Dinamica:
 Gate Time: = Durata gate:
 Clip Length: = Durata clip:
-Score: = Partitura:
 Q-Velocity: = Q-Velocity:
 Q-Length: = Q-Durata:
 Q-Flam: = Q-Flam:

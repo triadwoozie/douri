@@ -17,7 +17,7 @@ use crate::widgets::{
 };
 use crate::UiState;
 use egui::{
-    pos2, vec2, Align2, Color32, CornerRadius, FontId, Painter, Rect, Sense, Shape, Stroke,
+    pos2, vec2, Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Sense, Shape, Stroke,
     StrokeKind, Ui,
 };
 use std::collections::HashMap;
@@ -236,13 +236,20 @@ pub fn elide(g: &Painter, text: &str, font: &FontId, max_w: f32) -> String {
 }
 
 fn slot(g: &Painter, r: Rect, text: &str, fill: Color32, color: Color32) {
+    let fill = if fill == SLOT_EMPTY {
+        Color32::from_rgb(0x28, 0x28, 0x2b)
+    } else {
+        fill
+    };
     g.rect_filled(r, 4.0, fill);
-    g.rect_stroke(
-        r,
-        4.0,
-        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-        StrokeKind::Inside,
-    );
+    if fill != Color32::from_rgb(0x28, 0x28, 0x2b) && fill != SLOT_EMPTY {
+        g.rect_stroke(
+            r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+            StrokeKind::Inside,
+        );
+    }
     if !text.is_empty() {
         let font = FontId::proportional(10.5);
         let shown = elide(g, text, &font, r.width() - 6.0);
@@ -275,28 +282,16 @@ fn small_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(tr(text));
     }
-    let pill_r = (r.height() * 0.35).min(5.0);
+    let pill_r = (r.height() * 0.35).min(4.0);
     if on {
         g.rect_filled(r, pill_r, on_col);
-        g.rect_stroke(
-            r,
-            pill_r,
-            Stroke::new(1.0, on_col.lerp_to_gamma(Color32::WHITE, 0.3)),
-            StrokeKind::Inside,
-        );
     } else {
         let bg = if resp.hovered() {
             Color32::from_rgb(0x38, 0x38, 0x3c)
         } else {
-            SLOT_GRAY
+            Color32::from_rgb(0x28, 0x28, 0x2b)
         };
         g.rect_filled(r, pill_r, bg);
-        g.rect_stroke(
-            r,
-            pill_r,
-            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-            StrokeKind::Inside,
-        );
     }
     let txt = if on && on_col == SOLO_ON {
         Color32::BLACK
@@ -322,15 +317,30 @@ fn eq_thumb(
     g: &Painter,
     r: Rect,
     eq: Option<(prowave_engine::FxKind, [f32; prowave_engine::MAX_FX_PARAMS])>,
+    hovered: bool,
 ) {
-    g.rect_filled(r, 4.0, Color32::from_rgb(0x2b, 0x2b, 0x2e));
-    g.rect_stroke(
-        r,
-        4.0,
-        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-        StrokeKind::Inside,
-    );
+    let (bg, border) = if hovered {
+        (
+            Color32::from_rgb(0x32, 0x32, 0x36),
+            Color32::from_rgb(0x50, 0x50, 0x55),
+        )
+    } else {
+        (
+            Color32::from_rgb(0x2b, 0x2b, 0x2e),
+            Color32::from_rgb(0x38, 0x38, 0x3c),
+        )
+    };
+    g.rect_filled(r, 4.0, bg);
+    g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
     if let Some((kind, params)) = eq {
+        // Faint zero-dB centerline
+        g.line_segment(
+            [
+                pos2(r.left() + 3.0, r.center().y),
+                pos2(r.right() - 3.0, r.center().y),
+            ],
+            Stroke::new(0.8, Color32::from_rgb(0x38, 0x38, 0x3c)),
+        );
         let n = 24;
         let freqs: Vec<f32> = (0..=n)
             .map(|i| 20.0 * 1000f32.powf(i as f32 / n as f32))
@@ -348,7 +358,7 @@ fn eq_thumb(
             .collect();
         g.add(Shape::line(
             pts,
-            Stroke::new(1.2, Color32::from_rgb(0x8a, 0xb8, 0xf0)),
+            Stroke::new(1.4, Color32::from_rgb(0x8a, 0xb8, 0xf0)),
         ));
     } else {
         g.text(
@@ -435,30 +445,27 @@ fn fader_and_meter(
     let tiny = FontId::proportional(6.5);
 
     // Columns, proportional to the strip width (Logic: fader left of centre, meter right).
-    let fader_x = area.left() + (w * 0.30).max(22.0);
-    let num_x = area.left() + w * 0.56;
+    let fader_x = area.left() + (w * 0.28).max(20.0);
     let bar_w = 5.0;
-    let meter_left = (area.left() + w * 0.66).min(area.right() - 2.0 * bar_w - 6.0);
+    let meter_left = (area.right() - 2.0 * bar_w - 6.0).max(fader_x + 28.0);
+    let num_x = (fader_x + meter_left) * 0.5;
 
-    // Fader scale: tick marks with small numbers, left of the slot.
+    // Single unified centered dB scale between fader and stereo meter
     for mark in SCALE {
         let y = y_of(db_to_frac(mark));
-        let tick_len = if mark == 0.0 { 6.0 } else { 4.0 };
-        let tx = fader_x - 13.0;
+        let tick_len = if mark == 0.0 { 4.0 } else { 2.5 };
+        // Ticks flanking the numbers
         g.line_segment(
-            [pos2(tx - tick_len, y), pos2(tx, y)],
+            [pos2(fader_x + 8.0, y), pos2(fader_x + 8.0 + tick_len, y)],
             Stroke::new(1.0, scale_col),
         );
-        if w >= 70.0 {
-            g.text(
-                pos2(tx - tick_len - 2.0, y),
-                Align2::RIGHT_CENTER,
-                format!("{}", mark.abs() as i32),
-                tiny.clone(),
-                scale_col,
-            );
-        }
-        // Meter scale numbers between the fader and the meter.
+        g.line_segment(
+            [
+                pos2(meter_left - 4.0 - tick_len, y),
+                pos2(meter_left - 4.0, y),
+            ],
+            Stroke::new(1.0, scale_col),
+        );
         g.text(
             pos2(num_x, y),
             Align2::CENTER_CENTER,
@@ -864,8 +871,8 @@ fn send_slot(
     };
     let mut keep = true;
     let mut chosen_bus = None;
-    let knob_c = pos2(r.right() - 8.0, r.center().y);
-    let slot_r = Rect::from_min_max(r.min, pos2(r.right() - 19.0, r.bottom()));
+    let knob_c = pos2(r.right() - 10.0, r.center().y);
+    let slot_r = Rect::from_min_max(r.min, pos2(r.right() - 22.0, r.bottom()));
     let resp = ui.interact(slot_r, uid, Sense::click());
     slot(
         g,
@@ -902,9 +909,9 @@ fn send_slot(
             ui.close();
         }
     });
-    // Level knob: drag vertically; the indicator sweeps like a pan knob.
+    // Inline mini rotary knob (18px circular send-level knob)
     let kresp = ui.interact(
-        Rect::from_center_size(knob_c, vec2(16.0, 16.0)),
+        Rect::from_center_size(knob_c, vec2(18.0, 18.0)),
         uid.with("level"),
         Sense::click_and_drag(),
     );
@@ -914,13 +921,47 @@ fn send_slot(
     if kresp.double_clicked() {
         send.level = 0.0;
     }
-    g.circle_filled(knob_c, 6.5, Color32::from_gray(0x5e));
-    g.circle_stroke(knob_c, 6.5, Stroke::new(1.0, Color32::from_gray(0x26)));
-    let a = -std::f32::consts::FRAC_PI_2 - 2.3 + send.level * 4.6;
+
+    g.circle_filled(knob_c, 8.0, Color32::from_rgb(0x28, 0x29, 0x2e));
+    g.circle_stroke(
+        knob_c,
+        8.0,
+        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
+    );
+
+    let start_a = -std::f32::consts::FRAC_PI_2 - 2.35;
+    let end_a = -std::f32::consts::FRAC_PI_2 + 2.35;
+    let cur_a = start_a + send.level * (end_a - start_a);
+    let n_steps = 14;
+    let track_pts: Vec<Pos2> = (0..=n_steps)
+        .map(|step| {
+            let a = start_a + (end_a - start_a) * (step as f32 / n_steps as f32);
+            knob_c + vec2(a.cos(), a.sin()) * 6.5
+        })
+        .collect();
+    g.add(Shape::line(
+        track_pts,
+        Stroke::new(1.2, Color32::from_rgb(0x40, 0x42, 0x48)),
+    ));
+
+    if send.level > 0.01 {
+        let active_steps = (n_steps as f32 * send.level).ceil() as usize;
+        let active_pts: Vec<Pos2> = (0..=active_steps)
+            .map(|step| {
+                let a = (start_a + (end_a - start_a) * (step as f32 / n_steps as f32)).min(cur_a);
+                knob_c + vec2(a.cos(), a.sin()) * 6.5
+            })
+            .collect();
+        g.add(Shape::line(
+            active_pts,
+            Stroke::new(1.4, Color32::from_rgb(0x36, 0x6f, 0xd2)),
+        ));
+    }
+
     g.line_segment(
         [
-            knob_c + vec2(a.cos(), a.sin()) * 2.0,
-            knob_c + vec2(a.cos(), a.sin()) * 5.5,
+            knob_c + vec2(cur_a.cos(), cur_a.sin()) * 2.0,
+            knob_c + vec2(cur_a.cos(), cur_a.sin()) * 6.5,
         ],
         Stroke::new(1.4, Color32::WHITE),
     );
@@ -1003,13 +1044,7 @@ fn insert_slot(
         g.rect_filled(
             r,
             CornerRadius::same(4),
-            Color32::from_rgb(0x2b, 0x2b, 0x2e),
-        );
-        g.rect_stroke(
-            r,
-            CornerRadius::same(4),
-            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-            StrokeKind::Inside,
+            Color32::from_rgb(0x28, 0x28, 0x2b),
         );
         g.text(
             r.center(),
@@ -1046,10 +1081,13 @@ fn insert_slot(
     g.rect_filled(r, CornerRadius::same(4), bg);
     g.rect_stroke(r, CornerRadius::same(4), stroke, StrokeKind::Inside);
 
-    // Three-zone Logic Pro style slot layout:
-    // 1. Left power/bypass button
-    let power_w = 16.0;
-    let chev_w = 12.0;
+    // Three-zone Logic Pro style slot layout (hover-only power/chevron, always show power if bypassed):
+    let slot_hovered = ui.rect_contains_pointer(r);
+    let show_power = slot_hovered || off;
+    let show_chev = slot_hovered;
+
+    let power_w = if show_power { 16.0 } else { 0.0 };
+    let chev_w = if show_chev { 14.0 } else { 0.0 };
     let power_r = Rect::from_min_size(r.min, vec2(power_w, r.height()));
     let chev_r = Rect::from_min_size(pos2(r.right() - chev_w, r.top()), vec2(chev_w, r.height()));
     let center_r = Rect::from_min_max(
@@ -1057,40 +1095,41 @@ fn insert_slot(
         pos2(chev_r.left(), r.bottom()),
     );
 
-    let power_resp = ui.interact(power_r, uid.with("power"), Sense::click());
-    if power_resp.clicked() {
-        apply_insert(p, v, i, k, InsertAct::Bypass);
+    if show_power {
+        let power_resp = ui.interact(power_r, uid.with("power"), Sense::click());
+        if power_resp.clicked() {
+            apply_insert(p, v, i, k, InsertAct::Bypass);
+        }
+        let p_col = if off {
+            Color32::from_rgb(0x8e, 0x8e, 0x93)
+        } else if power_resp.hovered() {
+            Color32::from_rgb(0xcc, 0xe0, 0xff)
+        } else {
+            Color32::WHITE
+        };
+        g.text(
+            power_r.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::POWER,
+            FontId::proportional(10.0),
+            p_col,
+        );
     }
 
-    // 1. Crisp left-edge power toggle button (always visible)
-    let p_col = if off {
-        Color32::from_rgb(0x8e, 0x8e, 0x93)
-    } else if power_resp.hovered() {
-        Color32::from_rgb(0xcc, 0xe0, 0xff)
-    } else {
-        Color32::WHITE
-    };
-    g.text(
-        power_r.center(),
-        Align2::CENTER_CENTER,
-        phosphor_egui::regular::POWER,
-        FontId::proportional(10.0),
-        p_col,
-    );
-
-    // 2. Right selector chevron
-    let chev_col = if off {
-        Color32::from_rgb(0x8e, 0x8e, 0x93)
-    } else {
-        Color32::WHITE
-    };
-    g.text(
-        chev_r.center(),
-        Align2::CENTER_CENTER,
-        phosphor_egui::regular::CARET_UP_DOWN,
-        FontId::proportional(9.0),
-        chev_col,
-    );
+    if show_chev {
+        let chev_col = if off {
+            Color32::from_rgb(0x8e, 0x8e, 0x93)
+        } else {
+            Color32::WHITE
+        };
+        g.text(
+            chev_r.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::CARET_UP_DOWN,
+            FontId::proportional(9.0),
+            chev_col,
+        );
+    }
 
     // 3. Center plugin name label
     let text_ink = if off {
@@ -1348,18 +1387,22 @@ pub fn channel_strip(
             p.selected_track = i;
         }
     }
-    let bg = if selected && name_style == NameStyle::Coloured {
-        STRIP_SEL
+    let (bg, corner_r) = if name_style == NameStyle::Plain {
+        (Color32::from_rgb(0x1c, 0x1c, 0x1e), 0.0)
+    } else if selected {
+        (STRIP_SEL, 2.0)
     } else {
-        STRIP_BG
+        (STRIP_BG, 2.0)
     };
-    g.rect_filled(strip, 2.0, bg);
-    g.rect_stroke(
-        strip,
-        2.0,
-        Stroke::new(1.0, Color32::from_rgb(0x14, 0x15, 0x18)),
-        StrokeKind::Inside,
-    );
+    g.rect_filled(strip, corner_r, bg);
+    if name_style == NameStyle::Coloured {
+        g.rect_stroke(
+            strip,
+            2.0,
+            Stroke::new(1.0, Color32::from_rgb(0x14, 0x15, 0x18)),
+            StrokeKind::Inside,
+        );
+    }
     let inner_w = strip.width() - 8.0;
     let sx = strip.left() + 4.0;
     let row = |y: f32, h: f32| Rect::from_min_size(pos2(sx, y), vec2(inner_w, h));
@@ -1421,6 +1464,7 @@ pub fn channel_strip(
     };
     let reduction = match key {
         StripKey::Track(i) => meters.reduction.get(i).copied().unwrap_or(0.0),
+        StripKey::StereoOut => meters.master_reduction,
         _ => 0.0,
     };
 
@@ -1461,8 +1505,11 @@ pub fn channel_strip(
             );
         }
         let eq_r = row(r.eq, 24.0);
-        eq_thumb(g, eq_r, eq_params);
         let eq_resp = ui.interact(eq_r, id(ns, (key, "eq_thumb")), Sense::click());
+        if eq_resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        eq_thumb(g, eq_r, eq_params, eq_resp.hovered());
         if eq_resp.clicked() {
             let ti = match key {
                 StripKey::Track(i) => i,

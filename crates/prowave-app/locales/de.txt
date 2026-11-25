@@ -35,7 +35,6 @@ More = Mehr
 Dynamics: = Dynamik:
 Gate Time: = Gate-Zeit:
 Clip Length: = Clip-Länge:
-Score: = Notation:
 Q-Velocity: = Q-Anschlag:
 Q-Length: = Q-Länge:
 Q-Flam: = Q-Flam:

@@ -35,7 +35,6 @@ More = और
 Dynamics: = डायनैमिक्स:
 Gate Time: = गेट समय:
 Clip Length: = क्लिप लंबाई:
-Score: = स्कोर:
 Q-Velocity: = Q-वेलोसिटी:
 Q-Length: = Q-लंबाई:
 Q-Flam: = Q-फ़्लैम:

@@ -99,8 +99,8 @@ pub use crate::flex::{
 };
 pub use crate::freq_shifter::FreqShifterNode;
 pub use crate::fx::{
-    eq_response_db, response_db, Chain, Fx, FxKind, ParamInfo, Pdc, AMP_CABS, AMP_MODELS,
-    MAX_FX_PARAMS, MAX_INSERTS,
+    eq_band_response_db, eq_idx, eq_response_db, response_db, Chain, Fx, FxKind, ParamInfo, Pdc,
+    AMP_CABS, AMP_MODELS, EQ_BANDS, MAX_FX_PARAMS, MAX_INSERTS,
 };
 pub use crate::melody::{Algorithm, Blob, NoteAnalysis};
 pub use crate::meter::{
