@@ -3383,7 +3383,8 @@ mod tests {
         assert!(p.playing);
         assert!((p.position_beats - 8.0).abs() < 1e-9);
 
-        // With play_from_last_locate enabled, position_beats stays at current state.
+        // With play_from_last_locate enabled (the default), position_beats stays at current state.
+        assert!(super::project_settings::AppSettings::default().play_from_last_locate);
         p.playing = false;
         p.position_beats = 14.0;
         super::toggle_playback_with_options(&mut p, Some(4.0), true, None, true);

@@ -1543,7 +1543,7 @@ pub fn control_bar(
                         s.app_settings.play_from_marquee = true;
                         s.app_settings.play_from_cycle = true;
                         s.app_settings.play_from_selected_region = false;
-                        s.app_settings.play_from_last_locate = false;
+                        s.app_settings.play_from_last_locate = true;
                         changed = true;
                         ui.close();
                     }

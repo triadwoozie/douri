@@ -457,7 +457,7 @@ pub struct AppSettings {
     pub play_from_cycle: bool,
     #[serde(default)]
     pub play_from_selected_region: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub play_from_last_locate: bool,
 
     // Audio
@@ -522,7 +522,7 @@ impl Default for AppSettings {
             play_from_marquee: true,
             play_from_cycle: true,
             play_from_selected_region: false,
-            play_from_last_locate: false,
+            play_from_last_locate: true,
 
             audio_driver_enabled: true,
             processing_threads: ProcessingThreads::Automatic,
