@@ -32,7 +32,7 @@ fn native() -> wgpu::Backends {
 /// since it is supported on every Linux, Windows and FreeBSD machine Pro Wave runs on.
 /// With a driver that cannot draw OpenGL, the native Vulkan or Direct3D 12 API is started instead.
 pub fn backends(gl_works: bool) -> wgpu::Backends {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
         native()
     } else if gl_works {
         wgpu::Backends::GL
@@ -76,11 +76,20 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 /// OpenGL before the system's API (which on Windows is DX12; Intel/Nvidia often have
 /// better OpenGL than DX12 on older chips).
 fn rank(backend: wgpu::Backend, device: wgpu::DeviceType) -> (bool, u8) {
-    let api_order = match backend {
-        wgpu::Backend::Gl => 0,
-        wgpu::Backend::Dx12 => 1,
-        wgpu::Backend::Vulkan | wgpu::Backend::Metal => 2,
-        _ => 3,
+    let api_order = if cfg!(target_os = "windows") {
+        match backend {
+            wgpu::Backend::Vulkan => 0,
+            wgpu::Backend::Dx12 => 1,
+            wgpu::Backend::Gl => 2,
+            _ => 3,
+        }
+    } else {
+        match backend {
+            wgpu::Backend::Gl => 0,
+            wgpu::Backend::Dx12 => 1,
+            wgpu::Backend::Vulkan | wgpu::Backend::Metal => 2,
+            _ => 3,
+        }
     };
     (device == wgpu::DeviceType::Cpu, api_order)
 }
@@ -103,8 +112,21 @@ fn pick(
 /// eframe's wgpu settings for Pro Wave (see the module docs).
 pub fn config() -> WgpuConfiguration {
     let mut setup = WgpuSetupCreateNew::without_display_handle();
+    if cfg!(target_os = "windows") && std::env::var_os("WGPU_DX12_COMPILER").is_none() {
+        setup
+            .instance_descriptor
+            .backend_options
+            .dx12
+            .shader_compiler = wgpu::Dx12Compiler::Fxc;
+    }
     if wgpu::Backends::from_env().is_none() {
-        let works = gl_works();
+        // On Windows, never probe GL by default: AMD's atio6axx.dll can crash inside
+        // OpenGL initialization before adapter selection runs. Default to Vulkan + DX12.
+        let works = if cfg!(target_os = "windows") {
+            false
+        } else {
+            gl_works()
+        };
         setup.instance_descriptor.backends = backends(works);
         setup.native_adapter_selector = Some(Arc::new(pick));
     }
@@ -233,6 +255,10 @@ mod tests {
         if cfg!(target_os = "macos") {
             assert_eq!(backends(true), wgpu::Backends::METAL);
             assert_eq!(backends(false), wgpu::Backends::METAL);
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(backends(true), native());
+            assert_eq!(backends(false), native());
+            assert!(!native().contains(wgpu::Backends::GL));
         } else {
             assert_eq!(backends(true), wgpu::Backends::GL);
             assert_eq!(backends(false), native() | wgpu::Backends::GL);

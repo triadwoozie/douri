@@ -63,10 +63,10 @@ pub const REGISTRY: &[HelpEntry] = &[
     HelpEntry {
         id: "panes0",
         category: "Control Bar",
-        title: "Smart Controls",
+        title: "Macro Controls",
         shortcut: Some("B"),
-        summary: "Opens or closes the Smart Controls macro surface and mini EQ curve for the selected track.",
-        tip: "Hold Shift while dragging any macro knob for fine adjustment; double-click to reset.",
+        summary: "Opens or closes the Macro Controls Moog-style faceplate and inline EQ for the selected track or Master.",
+        tip: "Hold Shift while dragging any Moog knob for fine adjustment; double-click to reset.",
     },
     HelpEntry {
         id: "panes1",
@@ -592,10 +592,10 @@ pub const REGISTRY: &[HelpEntry] = &[
         summary: "Dynamic range compressor with Threshold, Ratio, Attack, Release, and Make-up.",
         tip: "Watch the transfer curve and Gain Reduction meter to dial in punch.",
     },
-    // Smart Controls knobs
+    // Macro Controls knobs
     HelpEntry {
         id: "sc_tone",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Tone",
         shortcut: None,
         summary: "Adjusts the High Shelf brightness (-12 dB to +12 dB) on the track's Channel EQ.",
@@ -603,7 +603,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_cutoff",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Filter Cutoff",
         shortcut: None,
         summary: "Sweeps the low-pass filter cutoff frequency (120 Hz to 20 kHz).",
@@ -611,7 +611,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_res",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Resonance",
         shortcut: None,
         summary: "Adjusts the Q resonance peak at the filter cutoff frequency.",
@@ -619,7 +619,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_attack",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Attack",
         shortcut: None,
         summary: "Sets the Compressor attack time (0.1 ms to 100 ms).",
@@ -627,7 +627,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_release",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Release",
         shortcut: None,
         summary: "Sets the Compressor release time (10 ms to 1000 ms).",
@@ -635,7 +635,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_drive",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Drive",
         shortcut: None,
         summary: "Adds warm harmonic saturation via the track's Overdrive effect.",
@@ -643,7 +643,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_send1",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Send 1",
         shortcut: None,
         summary: "Controls the send level to Bus 1 (e.g., Reverb or Delay Aux).",
@@ -651,7 +651,7 @@ pub const REGISTRY: &[HelpEntry] = &[
     },
     HelpEntry {
         id: "sc_output",
-        category: "Smart Controls",
+        category: "Macro Controls",
         title: "Output",
         shortcut: None,
         summary: "Adjusts the selected track's Channel Strip output fader level in dB.",

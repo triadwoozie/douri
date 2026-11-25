@@ -434,7 +434,7 @@ const VIEW: &[&str] = &[
     "Show Track Automation",
     "-",
     "Show Advanced Tools",
-    "Show Smart Controls",
+    "Show Macro Controls",
     "-",
     "Show Editor",
     "Show Piano Roll",
@@ -488,6 +488,7 @@ const WINDOW: &[&str] = &[
     "Piano Roll",
     "Pitch Editor",
     "Mixer",
+    "Open Macro Controls",
     "Show Musical Typing",
     "Plugin Manager",
     "MultiMeter",
@@ -731,7 +732,7 @@ pub(crate) fn shortcut_with_profile(
                 "Show Library" => Key::Y,
                 "Show Inspector" => Key::I,
                 "Show List Editors" => Key::D,
-                "Show Smart Controls" => Key::B,
+                "Show Macro Controls" => Key::B,
                 "Show Mixer" => Key::X,
                 "Show Piano Roll" => Key::P,
                 "Show Quick Help" | "Quick Help" => {
@@ -1002,7 +1003,8 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Quick Help"
         | "Quick Help Window"
         | "Show Quick Help"
-        | "Show Smart Controls"
+        | "Show Macro Controls"
+        | "Open Macro Controls"
         | "Show Toolbar"
         | "Show Project Notes"
         | "Show Media Browser"
@@ -1293,7 +1295,8 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,
-        "Show Smart Controls" => s.bottom == Bottom::SmartControls,
+        "Show Macro Controls" => s.bottom == Bottom::MacroControls,
+        "Open Macro Controls" => s.show_macro_window,
         "Show Library" => s.show_library,
         "Show Inspector" => s.show_inspector,
         "Show List Editors" => s.show_lists,
@@ -1378,14 +1381,15 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
                 s.show_mixer = true;
             }
         }
-        "Show Smart Controls" => {
-            if s.bottom == Bottom::SmartControls {
+        "Show Macro Controls" => {
+            if s.bottom == Bottom::MacroControls {
                 s.bottom = Bottom::Mixer;
                 s.show_mixer = false;
             } else {
-                s.bottom = Bottom::SmartControls;
+                s.bottom = Bottom::MacroControls;
             }
         }
+        "Open Macro Controls" => s.show_macro_window = !s.show_macro_window,
         "Show Library" => s.show_library = !s.show_library,
         "Show Inspector" => s.show_inspector = !s.show_inspector,
         "Show List Editors" => s.show_lists = !s.show_lists,
@@ -2282,6 +2286,7 @@ mod tests {
                     s.show_quick_help,
                     s.show_quick_help_window,
                     s.show_toolbar,
+                    s.show_macro_window,
                     s.show_notes,
                     s.browser.open
                 ),

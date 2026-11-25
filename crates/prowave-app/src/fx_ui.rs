@@ -369,6 +369,40 @@ fn plugin_window(
                                     to_editor = true;
                                 }
                             }
+                            if let Some(inst) = &instance {
+                                let ext = match info.as_ref().map(|i| i.format) {
+                                    Some(prowave_plugin_host::Format::Clap) => "clappreset",
+                                    _ => "vstpreset",
+                                };
+                                if ui
+                                    .add(egui::Button::new(RichText::new(tr("Save…")).size(10.5)))
+                                    .clicked()
+                                {
+                                    if let Some(blob) = crate::hosted_plugins::state(insert.hosted)
+                                    {
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("Preset", &[ext])
+                                            .set_file_name(format!("{}.{ext}", insert.name()))
+                                            .save_file()
+                                        {
+                                            let _ = std::fs::write(path, blob);
+                                        }
+                                    }
+                                }
+                                if ui
+                                    .add(egui::Button::new(RichText::new(tr("Open…")).size(10.5)))
+                                    .clicked()
+                                {
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("Preset", &[ext, "vstpreset", "clappreset"])
+                                        .pick_file()
+                                    {
+                                        if let Ok(blob) = std::fs::read(path) {
+                                            inst.load_state(&blob);
+                                        }
+                                    }
+                                }
+                            }
                             ui.label(RichText::new(tr("Controls")).size(10.5).color(DIM));
                         });
                     });

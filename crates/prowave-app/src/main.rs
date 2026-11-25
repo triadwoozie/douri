@@ -22,6 +22,8 @@ mod bounce;
 mod clock_follow;
 mod clock_in;
 mod collaborate_panel;
+mod control;
+mod count_in;
 mod crash_log;
 pub mod cycle_area;
 pub mod diagnostics;
@@ -53,10 +55,12 @@ mod ir_files;
 pub mod key_commands;
 mod library;
 pub mod liquid_glass;
+mod logging;
 mod logicx;
 mod logicx_import;
 pub mod lyrics;
 pub mod lyrics_ui;
+mod macro_controls;
 pub mod marker_edit;
 pub mod marker_number;
 mod marker_track;
@@ -70,6 +74,7 @@ mod midi_in;
 mod midi_out;
 mod mixer;
 mod model;
+mod moog_knob;
 mod mtc_in;
 mod multimeter;
 mod musical_typing;
@@ -107,7 +112,6 @@ mod select_similar;
 mod shuffle_edit;
 mod side_panes;
 mod signature_track;
-mod smart_controls;
 mod smart_tempo;
 mod snap_grid;
 pub mod sound_library;
@@ -163,8 +167,8 @@ pub enum Bottom {
     PianoRoll,
     /// The Pitch Editor (Melodyne/Logic Flex Pitch note editor for audio regions).
     PitchEditor,
-    /// Smart Controls 8-knob macro surface and mini EQ curve.
-    SmartControls,
+    /// Macro Controls 8-knob Moog-style control surface and inline EQ.
+    MacroControls,
 }
 
 pub struct UiState {
@@ -210,6 +214,8 @@ pub struct UiState {
     pub show_quick_help_window: bool,
     pub quick_help_query: String,
     pub show_toolbar: bool,
+    pub show_macro_window: bool,
+    pub macro_controls: macro_controls::MacroControlsView,
     /// The Note Pad.
     pub show_notes: bool,
     /// The Loop Browser and All Files.
@@ -430,6 +436,8 @@ impl UiState {
             show_quick_help_window: false,
             quick_help_query: String::new(),
             show_toolbar: false,
+            show_macro_window: false,
+            macro_controls: macro_controls::MacroControlsView::default(),
             show_notes: false,
             browser: file_browser::BrowserView::default(),
             open_paths: Vec::new(),
@@ -597,6 +605,7 @@ struct App {
     updater: updater::Updater,
     /// MCP Server command bridge and receiver.
     mcp_bridge: Option<mcp_server::McpBridge>,
+    control_server: Option<control::ControlServer>,
     touchpad_guard: touchpad_guard::TouchpadGuard,
     mcp_receiver: Option<std::sync::mpsc::Receiver<mcp_server::McpCommand>>,
     pub plugins: plugins::PluginHost,
@@ -1812,6 +1821,10 @@ impl eframe::App for App {
         if self.ui.show_sound_library_manager && crate::sound_library::active_download().is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
+        logging::report_audio_thread();
+        if let Some(ctrl) = &self.control_server {
+            ctrl.poll_with_screenshots(&ctx, &mut self.project, &mut self.ui);
+        }
         if let Some(rx) = &self.mcp_receiver {
             while let Ok(cmd) = rx.try_recv() {
                 match cmd {
@@ -1890,7 +1903,7 @@ impl eframe::App for App {
         if s.show_mixer
             || matches!(
                 s.bottom,
-                Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SmartControls
+                Bottom::PianoRoll | Bottom::PitchEditor | Bottom::MacroControls
             )
         {
             // About half of the space under the control bar (500 points at most), so the Tracks
@@ -1902,8 +1915,8 @@ impl eframe::App for App {
             let usual = (room * 0.48).clamp(160.0, 500.0);
             let min_h = if s.bottom == Bottom::Mixer {
                 mixer::min_panel_height(p, &s.mixer).clamp(180.0, room * 0.9)
-            } else if s.bottom == Bottom::SmartControls {
-                180.0
+            } else if s.bottom == Bottom::MacroControls {
+                200.0
             } else {
                 140.0
             };
@@ -1911,8 +1924,8 @@ impl eframe::App for App {
                 .resizable(true)
                 .min_size(min_h)
                 .max_size(520.0)
-                .default_size(if s.bottom == Bottom::SmartControls {
-                    230.0
+                .default_size(if s.bottom == Bottom::MacroControls {
+                    260.0
                 } else {
                     240.0
                 })
@@ -1921,7 +1934,7 @@ impl eframe::App for App {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
-                Bottom::SmartControls => smart_controls::show(ui, p, s),
+                Bottom::MacroControls => macro_controls::show(ui, p, s, false),
             });
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);
@@ -1941,6 +1954,7 @@ impl eframe::App for App {
         hosted_plugins::idle();
         automation::show(&ctx, p, s);
         undo_history::show(&ctx, p, s, &mut self.history);
+        macro_controls::show_window(&ctx, p, s);
 
         quick_help::show_overlay(&ctx, &mut self.ui);
         quick_help::show_reference_window(&ctx, &mut self.ui);
@@ -2148,6 +2162,7 @@ fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 ui.add_space(8.0);
                 ui.label("Icons & Artwork:");
                 ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
+                ui.label("• AudioKnobs by Megaemce (github.com/Megaemce/AudioKnobs) - Moog knob geometry");
                 ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
                 ui.add_space(8.0);
                 ui.label(
@@ -2294,9 +2309,13 @@ fn start_midi_out(sync: &mut engine_sync::EngineSync) -> Option<midi_out::MidiOu
 /// Log to stderr; `RUST_LOG` overrides the default (warnings, plus info from ProWave; the
 /// Vulkan loader's harmless layer-manifest warnings from `wgpu_hal` are hidden).
 fn init_logging() {
+    logging::attach_default_dir();
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,wgpu_hal=error,prowave=info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(logging::TeeMakeWriter)
+        .init();
 }
 
 /// The Dōri logo, 256×256 with transparency (generated from dist/icons/douri-2048.png).
@@ -2848,6 +2867,17 @@ fn main() -> eframe::Result {
                     mcp_bridge.clone(),
                 );
             }
+            let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+            let control_server =
+                control::requested_port(&args).and_then(
+                    |port| match control::ControlServer::start(port, cc.egui_ctx.clone()) {
+                        Ok(srv) => Some(srv),
+                        Err(e) => {
+                            tracing::warn!("control server failed: {e}");
+                            None
+                        }
+                    },
+                );
             let mut app = App {
                 saved: file_commands::content(&project),
                 history: undo::History::new(&project),
@@ -2876,6 +2906,7 @@ fn main() -> eframe::Result {
                 updater: updater::Updater::new(),
                 mcp_bridge: Some(mcp_bridge),
                 mcp_receiver: Some(mcp_rx),
+                control_server,
                 touchpad_guard: touchpad_guard::TouchpadGuard::new(),
                 plugins: plugins::PluginHost::default(),
                 autosave: autosave::Autosave::default(),

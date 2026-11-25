@@ -1318,12 +1318,12 @@ pub fn control_bar(
         Some(3) => s.show_toolbar = !s.show_toolbar,
         _ => {}
     }
-    // Smart Controls / Mixer / Editors (Pill 2)
-    let smart_on = s.bottom == Bottom::SmartControls;
+    // Macro Controls / Mixer / Editors (Pill 2)
+    let macro_on = s.bottom == Bottom::MacroControls;
     let mixer_on = s.show_mixer && s.bottom == Bottom::Mixer;
     let editors_on = matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor);
     let mid = [
-        (icon_smart_controls as IconFn, smart_on),
+        (icon_smart_controls as IconFn, macro_on),
         (icon_mixer, mixer_on),
         (icon_editors, editors_on),
     ];
@@ -1337,11 +1337,11 @@ pub fn control_bar(
         s.glass_quality,
     ) {
         Some(0) => {
-            if smart_on {
+            if macro_on {
                 s.bottom = Bottom::Mixer;
                 s.show_mixer = false;
             } else {
-                s.bottom = Bottom::SmartControls;
+                s.bottom = Bottom::MacroControls;
             }
         }
         Some(1) => {

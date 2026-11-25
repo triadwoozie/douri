@@ -444,7 +444,7 @@ impl Screenshot {
 }
 
 /// Writes `image` to `file` as PNG, or says why it could not.
-fn save_png(file: &std::path::Path, image: &egui::ColorImage) -> ShotOutcome {
+pub(crate) fn save_png(file: &std::path::Path, image: &egui::ColorImage) -> ShotOutcome {
     let [w, h] = image.size;
     let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
     let result = std::fs::create_dir_all(file.parent().unwrap_or(std::path::Path::new(".")))
