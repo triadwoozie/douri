@@ -437,6 +437,10 @@ impl Default for LcdCustomOptions {
 }
 
 /// Unified application and project settings matching Logic Pro's full settings model.
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AppSettings {
     // General
@@ -447,6 +451,14 @@ pub struct AppSettings {
     pub quick_swipe_comping: bool,
     pub pointer_fade_tool: bool,
     pub musical_grid: bool,
+    #[serde(default = "default_true")]
+    pub play_from_marquee: bool,
+    #[serde(default = "default_true")]
+    pub play_from_cycle: bool,
+    #[serde(default)]
+    pub play_from_selected_region: bool,
+    #[serde(default)]
+    pub play_from_last_locate: bool,
 
     // Audio
     pub audio_driver_enabled: bool,
@@ -507,6 +519,10 @@ impl Default for AppSettings {
             quick_swipe_comping: true,
             pointer_fade_tool: true,
             musical_grid: true,
+            play_from_marquee: true,
+            play_from_cycle: true,
+            play_from_selected_region: false,
+            play_from_last_locate: false,
 
             audio_driver_enabled: true,
             processing_threads: ProcessingThreads::Automatic,
@@ -820,6 +836,18 @@ fn general(ui: &mut egui::Ui, p: &mut Project, s: &mut UiState) {
                         .checkbox(
                             &mut s.app_settings.musical_grid,
                             "Align arrangement to Musical Grid (Bars and Beats)",
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    ui.end_row();
+
+                    row_label(ui, "Spacebar Playback");
+                    if ui
+                        .checkbox(
+                            &mut s.app_settings.play_from_last_locate,
+                            "Play From Last Locate Position (right-click Play button for all modes)",
                         )
                         .changed()
                     {

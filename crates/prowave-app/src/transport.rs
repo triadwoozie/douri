@@ -1501,8 +1501,60 @@ pub fn control_bar(
                     icon_play(&g, r, if resp.hovered() { Color32::WHITE } else { ICON });
                 }
                 if resp.clicked() {
-                    p.playing = !p.playing;
+                    crate::start_or_toggle_playback(p, s);
                 }
+                crate::widgets::context_menu(&resp, |ui| {
+                    let mut changed = false;
+                    if ui
+                        .checkbox(
+                            &mut s.app_settings.play_from_marquee,
+                            "Play From Marquee Selection",
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .checkbox(&mut s.app_settings.play_from_cycle, "Play From Cycle")
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .checkbox(
+                            &mut s.app_settings.play_from_selected_region,
+                            "Play From Selected Region",
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .checkbox(
+                            &mut s.app_settings.play_from_last_locate,
+                            "Play From Last Locate Position",
+                        )
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    ui.separator();
+                    if ui.button("Apply Defaults").clicked() {
+                        s.app_settings.play_from_marquee = true;
+                        s.app_settings.play_from_cycle = true;
+                        s.app_settings.play_from_selected_region = false;
+                        s.app_settings.play_from_last_locate = false;
+                        changed = true;
+                        ui.close();
+                    }
+                    if ui.button("Save As Defaults").clicked() {
+                        s.app_settings.save();
+                        ui.close();
+                    }
+                    if changed {
+                        s.app_settings.save();
+                    }
+                });
             }
             // 5: ● (Record, #FF453A when active)
             5 => {
