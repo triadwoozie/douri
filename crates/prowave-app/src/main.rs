@@ -134,6 +134,7 @@ mod tooltips;
 pub mod touchpad_guard;
 mod track_commands;
 mod track_dialogs;
+mod track_drop_slice;
 mod track_icons;
 mod track_selection;
 mod tracks_area;
@@ -147,6 +148,7 @@ mod ui_test;
 mod undo;
 mod undo_history;
 mod updater;
+mod user_loops;
 mod vamp;
 mod widgets;
 mod window_chrome;
@@ -384,6 +386,14 @@ pub struct UiState {
     pub show_sound_library_manager: bool,
     /// Window > Get Free Plug-ins installer window.
     pub free_plugins: free_plugins::FreePlugins,
+    /// Modal opened when dropping audio onto the Track Header gutter.
+    pub track_drop_slice: track_drop_slice::TrackDropSliceModal,
+    /// Modal opened when dragging a region to the Sound Library / Loops panel.
+    pub add_loop_modal: user_loops::AddLoopModal,
+    /// Saved tagged User Loops catalog.
+    pub user_loops: user_loops::UserLoopsCatalog,
+    /// Last rendered Track Header gutter rect for drop detection.
+    pub tracks_headers_rect: Option<egui::Rect>,
     /// Measured round-trip loopback latency calibration figure.
     pub measured_roundtrip: Option<prowave_engine::calibration::Measured>,
     /// URL to open in external browser.
@@ -460,6 +470,10 @@ impl UiState {
             inspector: inspector::InspectorView::default(),
             library: library::LibraryView::default(),
             free_plugins: free_plugins::FreePlugins::default(),
+            track_drop_slice: track_drop_slice::TrackDropSliceModal::default(),
+            add_loop_modal: user_loops::AddLoopModal::default(),
+            user_loops: user_loops::UserLoopsCatalog::default(),
+            tracks_headers_rect: None,
             piano: piano_roll::PianoView::default(),
             steps: step_editor::StepView::default(),
             show_midi_fx: false,
@@ -1729,10 +1743,33 @@ impl eframe::App for App {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
+        let drop_pos = ctx.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+        let over_headers = drop_pos
+            .is_some_and(|pos| self.ui.tracks_headers_rect.is_some_and(|r| r.contains(pos)));
         for path in dropped {
             let is_proj = is_project_path(path.as_os_str());
             if is_proj {
                 self.open(&path, &ctx);
+                continue;
+            }
+            let is_audio = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| {
+                    matches!(
+                        ext.to_ascii_lowercase().as_str(),
+                        "wav" | "aif" | "aiff" | "flac" | "mp3" | "ogg" | "m4a" | "caf" | "opus"
+                    )
+                });
+            if over_headers && is_audio {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Audio")
+                    .to_string();
+                self.ui
+                    .track_drop_slice
+                    .open(track_drop_slice::DropAudioSource::File { path, name });
                 continue;
             }
             self.import(&path, &ctx);
@@ -1956,6 +1993,8 @@ impl eframe::App for App {
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
         free_plugins::show(&ctx, s);
+        track_drop_slice::show(&ctx, p, &mut s.track_drop_slice);
+        user_loops::show_add_modal(&ctx, &mut s.add_loop_modal, &mut s.user_loops);
         hosted_plugins::idle();
         automation::show(&ctx, p, s);
         undo_history::show(&ctx, p, s, &mut self.history);

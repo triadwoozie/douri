@@ -784,6 +784,33 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         [panel.right_top(), panel.right_bottom()],
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
+    s.user_loops.ensure_loaded();
+    let ptr_pos = ui.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+    let dragging_reg = s.tracks.group_drag.first().copied();
+    let mut dropped_loop_region: Option<(usize, usize)> = None;
+    if let (Some(pos), Some((gt, gr, _))) = (ptr_pos, dragging_reg) {
+        if panel.contains(pos) {
+            g.rect_filled(
+                panel,
+                4.0,
+                Color32::from_rgba_unmultiplied(0x51, 0xee, 0xfc, 22),
+            );
+            g.rect_stroke(
+                panel,
+                4.0,
+                Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
+                egui::StrokeKind::Inside,
+            );
+            if ui.input(|i| i.pointer.any_released()) {
+                dropped_loop_region = Some((gt, gr));
+            }
+        }
+    }
+    if let Some((gt, gr)) = dropped_loop_region {
+        s.tracks.group_drag.clear();
+        s.add_loop_modal.open_from_region(p, gt, gr);
+    }
+
     let v = &mut s.library;
 
     if let Some((off_at, pitch)) = v.audition_off_at {
@@ -1258,11 +1285,25 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let sel_cat = v.category.unwrap_or(1);
         if sel_cat < CATEGORIES.len() {
             let patches = CATEGORIES[sel_cat].patches;
-            let patch_items: Vec<String> = patches.iter().map(|n| n.to_string()).collect();
-            let patch_badges: Vec<SoundBadge> = patches
+            let base_count = patches.len();
+            let mut patch_items: Vec<String> = patches.iter().map(|n| n.to_string()).collect();
+            let mut patch_badges: Vec<SoundBadge> = patches
                 .iter()
                 .map(|pname| badge_for_patch(pname, CATEGORIES[sel_cat].name))
                 .collect();
+            let show_user_loops = CATEGORIES[sel_cat].name == "User Patches"
+                || (v.pack_filter == SoundPackFilter::AllSounds
+                    && !s.user_loops.entries.is_empty());
+            let user_loops_snapshot: Vec<crate::user_loops::UserLoopEntry> =
+                if show_user_loops && CATEGORIES[sel_cat].name == "User Patches" {
+                    s.user_loops.entries.clone()
+                } else {
+                    Vec::new()
+                };
+            for ul in &user_loops_snapshot {
+                patch_items.push(ul.name.clone());
+                patch_badges.push(SoundBadge::Drums);
+            }
             let sel_patch = v.loaded.filter(|(c, _)| *c == sel_cat).map(|(_, pi)| pi);
 
             if patch_items.is_empty() {
@@ -1288,7 +1329,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     s.audition
                         .push(crate::piano_roll::Audition::Off { pitch: old_pitch });
                 }
-                load_patch(p, v, sel_cat, pi);
+                if pi >= base_count {
+                    if let Some(ul) = user_loops_snapshot.get(pi - base_count) {
+                        let _ = crate::user_loops::instantiate_user_loop(p, ul);
+                    }
+                } else {
+                    load_patch(p, v, sel_cat, pi);
+                }
                 if v.audition_auto && !p.playing {
                     let cat_name = CATEGORIES.get(sel_cat).map(|c| c.name).unwrap_or("");
                     let pitch = if cat_name.contains("Drum") || cat_name.contains("Percussion") {

@@ -342,7 +342,7 @@ pub struct TracksView {
     pub lanes_w: f32,
     lane_menu: Option<(usize, f32)>,
     grab_beats: f64,
-    group_drag: Vec<(usize, usize, f64)>,
+    pub(crate) group_drag: Vec<(usize, usize, f64)>,
     cycle_anchor: Option<f64>,
     swipe: Option<(Vec<crate::model::CompSegment>, f32)>,
     pub normalize_jobs: Vec<NormalizeJob>,
@@ -3270,6 +3270,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         pos2(area.left(), tracks_y),
         pos2(area.left() + header_w, area.bottom()),
     );
+    s.tracks_headers_rect = Some(headers);
     let full_lanes = Rect::from_min_max(pos2(area.left() + header_w, tracks_y), area.max);
     let (loops_area, splitter_r, lanes) = if s.tracks.show_live_loops {
         let max_w = (full_lanes.width() - 250.0).max(180.0);
@@ -4091,6 +4092,47 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             }
         }
     }
+    // Drag audio region or OS file onto Track Header gutter -> Create New Track using:
+    let ptr_pos = ui.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+    let os_hover = ui.input(|i| !i.raw.hovered_files.is_empty());
+    let dragging_audio = v.group_drag.first().and_then(|&(gt, gr, _)| {
+        p.tracks
+            .get(gt)
+            .and_then(|t| t.regions.get(gr))
+            .and_then(|r| r.audio.as_ref().map(|a| (gt, gr, r.name.clone(), a)))
+    });
+    let mut dropped_audio: Option<crate::track_drop_slice::DropAudioSource> = None;
+    if let Some(pos) = ptr_pos {
+        if headers.contains(pos) && (os_hover || dragging_audio.is_some()) {
+            let hl = ui.painter_at(headers);
+            hl.rect_filled(
+                headers,
+                4.0,
+                Color32::from_rgba_unmultiplied(0x12, 0x69, 0xcc, 28),
+            );
+            hl.rect_stroke(
+                headers,
+                4.0,
+                Stroke::new(2.0, Color32::from_rgb(0x12, 0x69, 0xcc)),
+                egui::StrokeKind::Inside,
+            );
+            if let Some((_gt, _gr, rname, audio)) = dragging_audio {
+                if ui.input(|i| i.pointer.any_released()) {
+                    dropped_audio = Some(crate::track_drop_slice::DropAudioSource::Region {
+                        name: rname,
+                        path: audio.file.path.clone(),
+                        start_frame: audio.start_frame,
+                        len_frames: audio.len_frames,
+                    });
+                }
+            }
+        }
+    }
+    if let Some(src) = dropped_audio {
+        v.group_drag.clear();
+        s.track_drop_slice.open(src);
+    }
+
     match tool_act {
         Some(ToolAct::Drop(group, delta, down, copy)) => {
             let landed =
