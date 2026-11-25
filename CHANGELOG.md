@@ -24,6 +24,18 @@ What changed in each Dōri release.
 - **Peak Follower**: Real-time audio envelope follower for sidechain ducking and parameter modulation.
 - **LFO Controller**: Multi-waveform low-frequency oscillator (Sine, Triangle, Saw, Square, Sample & Hold) for rhythmic parameter sweeps.
 
+## 0.1.0-alpha.8
+
+### Built-in Instruments, Effects & Standalone Plug-in Target
+- **Expanded Native Instruments & Effects (`chip-dsp`, `circuit-dsp`, `mi-dsp`, `mi-plaits-dsp`)**: Added `FM6` with `.syx` bank support, `Digital Oscillator`, `Macro Oscillator`, `Resonator` / `Resonator FX`, `Spectral`, `Texture`, `Circuit Overdrive`, five chip instruments (`OPL`, `OPLL`, `OPN`, `PSG`, `SID`), `Drum Synth`, `Monstro`, `Engine`, `Kick`, `Bass Line`, `Triple Oscillator`, `Pluck`, and `Wave Draw` with `#![forbid(alloc)]` real-time guarantees and `Tune` MIDI input support.
+- **Standalone Plug-in Target (`crates/prowave-plug`)**: Added standalone VST3, CLAP, and AU plug-in builds for built-in instruments and effects with factory presets, `FM6` `.syx` banks, and `clap-validator` fixes under Dōri branding.
+- **Free Plug-in Installer (`Window > Get Free Plug-ins`)**: Added a 273-item catalog installer in Dōri dark chrome with live external link lookups disabled by default.
+
+### Inspector, Macro Controls & UI Polish
+- **Macro Controls `EQ` Tab & Centered Toolbar**: Shared the 8-band `Channel EQ` widget inside the Macro Controls `EQ` tab and true-centered the `Controls | EQ` segmented toggle.
+- **Inspector & Borderless Channel Strips**: Eliminated the collapsed accordion gap, added `General`/`Quantize`/`Details`/`More` disclosures, interactive `Color` pills, `Delay (tk)`, `Pitch Source`, `Default Region Type`, `Internal MIDI In`, and `Freeze Mode`, plus borderless Channel Strips with metallic Pan knobs and clean numeric dB scales.
+- **Menu & Sort Selector Spacing**: Tightened top menu bar horizontal spacing, increased dropdown pill breathing room, and widened the Library sort selector so `"Relevance"` displays without truncation.
+
 ## 0.1.0-alpha.7
 
 ### 8-Band Channel EQ
