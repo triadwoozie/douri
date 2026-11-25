@@ -669,7 +669,11 @@ pub fn daw_xyz_sliders(
         let hit = track.expand2(vec2(10.0, 4.0));
         let resp = ui.interact(hit, id.with(i), Sense::click_and_drag());
         if resp.hovered() || resp.dragged() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            ui.ctx().set_cursor_icon(if resp.dragged() {
+                egui::CursorIcon::Grabbing
+            } else {
+                egui::CursorIcon::Grab
+            });
         }
         let v = &mut values[i];
         *v = v.clamp(0.0, 1.0);

@@ -136,7 +136,11 @@ pub fn draw(
     crate::quick_help::hover(ui.ctx(), &resp, cfg.help_id);
 
     if resp.hovered() || resp.dragged() {
-        ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
+        ui.ctx().set_cursor_icon(if resp.dragged() {
+            CursorIcon::Grabbing
+        } else {
+            CursorIcon::Grab
+        });
     }
 
     let mut val = current_val.clamp(cfg.min, cfg.max);
