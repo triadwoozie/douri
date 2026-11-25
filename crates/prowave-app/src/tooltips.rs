@@ -13,7 +13,7 @@ pub fn bar_tip(key: &str) -> Option<&'static str> {
         "view1" => "Show or hide the Inspector",
         "view2" => "Show or hide Quick Help",
         "view3" => "Show or hide the Toolbar",
-        "panes0" => "Switch the menus between dark and light",
+        "panes0" => "Show or hide Smart Controls",
         "panes1" => "Show or hide the Mixer",
         "panes2" => "Editors: show or hide the Piano Roll and the other editors",
         "rew" => "Go to the previous bar",

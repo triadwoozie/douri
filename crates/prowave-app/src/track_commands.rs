@@ -358,6 +358,7 @@ pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
     use crate::Bottom;
     if matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor) {
         s.bottom = Bottom::Mixer;
+        s.show_mixer = false;
         return;
     }
     let first = s

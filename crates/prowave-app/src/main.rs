@@ -87,6 +87,7 @@ mod plugin_picker;
 mod plugins;
 mod project_io;
 mod project_settings;
+mod quick_help;
 mod recent_files;
 mod recorder;
 mod recovery;
@@ -106,6 +107,7 @@ mod select_similar;
 mod shuffle_edit;
 mod side_panes;
 mod signature_track;
+mod smart_controls;
 mod smart_tempo;
 mod snap_grid;
 pub mod sound_library;
@@ -161,6 +163,8 @@ pub enum Bottom {
     PianoRoll,
     /// The Pitch Editor (Melodyne/Logic Flex Pitch note editor for audio regions).
     PitchEditor,
+    /// Smart Controls 8-knob macro surface and mini EQ curve.
+    SmartControls,
 }
 
 pub struct UiState {
@@ -203,6 +207,8 @@ pub struct UiState {
     /// Capture Recording was asked for.
     pub capture_cmd: bool,
     pub show_quick_help: bool,
+    pub show_quick_help_window: bool,
+    pub quick_help_query: String,
     pub show_toolbar: bool,
     /// The Note Pad.
     pub show_notes: bool,
@@ -421,6 +427,8 @@ impl UiState {
             audio_rec: audio_rec::AudioRecorder::default(),
             capture_cmd: false,
             show_quick_help: false,
+            show_quick_help_window: false,
+            quick_help_query: String::new(),
             show_toolbar: false,
             show_notes: false,
             browser: file_browser::BrowserView::default(),
@@ -1820,6 +1828,7 @@ impl eframe::App for App {
             }
         }
         collaborate_panel::show(&ctx, &mut self.project, &mut self.ui, self.path.as_deref());
+        quick_help::begin_frame(&ctx);
         let p = &mut self.project;
         let s = &mut self.ui;
 
@@ -1878,7 +1887,12 @@ impl eframe::App for App {
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
-        if s.show_mixer || s.bottom == Bottom::PianoRoll || s.bottom == Bottom::PitchEditor {
+        if s.show_mixer
+            || matches!(
+                s.bottom,
+                Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SmartControls
+            )
+        {
             // About half of the space under the control bar (500 points at most), so the Tracks
             // area keeps room on short screens, but never less than a whole channel strip tall:
             // a shorter panel cut every strip's fader off at the bottom (issue #36). The Piano
@@ -1888,6 +1902,8 @@ impl eframe::App for App {
             let usual = (room * 0.48).clamp(160.0, 500.0);
             let min_h = if s.bottom == Bottom::Mixer {
                 mixer::min_panel_height(p, &s.mixer).clamp(180.0, room * 0.9)
+            } else if s.bottom == Bottom::SmartControls {
+                180.0
             } else {
                 140.0
             };
@@ -1895,12 +1911,17 @@ impl eframe::App for App {
                 .resizable(true)
                 .min_size(min_h)
                 .max_size(520.0)
-                .default_size(240.0)
+                .default_size(if s.bottom == Bottom::SmartControls {
+                    230.0
+                } else {
+                    240.0
+                })
                 .frame(egui::Frame::new());
             panel.show(ui, |ui| match s.bottom {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
+                Bottom::SmartControls => smart_controls::show(ui, p, s),
             });
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);
@@ -1921,7 +1942,8 @@ impl eframe::App for App {
         automation::show(&ctx, p, s);
         undo_history::show(&ctx, p, s, &mut self.history);
 
-        side_panes::quick_help(&ctx, &mut self.ui);
+        quick_help::show_overlay(&ctx, &mut self.ui);
+        quick_help::show_reference_window(&ctx, &mut self.ui);
         for path in std::mem::take(&mut self.ui.open_paths) {
             self.import(&path, &ctx);
         }

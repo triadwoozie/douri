@@ -113,9 +113,40 @@ fn clicked(ui: &Ui, rect: Rect, key: &str) -> bool {
 
 /// Shows what the button with `key` does when the pointer rests on it (issue #118).
 fn tip(resp: &egui::Response, key: &str) {
+    if let Some(id) = quick_help_id(key) {
+        crate::quick_help::hover(&resp.ctx, resp, id);
+    }
     if let Some(text) = crate::tooltips::bar_tip(key) {
         resp.clone().on_hover_text(tr(text));
     }
+}
+
+fn quick_help_id(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "view0" => "view0",
+        "view1" => "view1",
+        "view2" => "view2",
+        "view3" => "view3",
+        "panes0" => "panes0",
+        "panes1" => "panes1",
+        "panes2" => "panes2",
+        "right0" => "right0",
+        "right1" => "right1",
+        "right2" => "right2",
+        "right3" => "right3",
+        "rew" => "rew",
+        "ffw" => "ffw",
+        "start" => "start",
+        "play" => "play",
+        "rec" => "rec",
+        "capture" => "capture",
+        "cycle" => "cycle",
+        "lowlat" => "lowlat",
+        "tuner" => "tuner",
+        "countin" => "countin",
+        "metronome" => "metronome",
+        _ => return None,
+    })
 }
 
 // ---------------------------------------------------------------- icons
@@ -244,15 +275,11 @@ fn segmented(
         );
         tip(&resp, &format!("{key}{i}"));
         if *on {
-            g.rect_filled(
-                r.shrink(1.0),
-                cr,
-                Color32::from_rgba_unmultiplied(255, 255, 255, 36),
-            );
+            g.rect_filled(r.shrink(1.0), cr, Color32::from_rgb(0x3a, 0x3a, 0x3e));
             g.rect_stroke(
                 r.shrink(1.0),
                 cr,
-                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20)),
+                Stroke::new(1.0, Color32::from_rgb(0x52, 0x52, 0x58)),
                 StrokeKind::Inside,
             );
         } else if resp.hovered() {
@@ -424,6 +451,7 @@ fn lcd(
             if time_resp.clicked() {
                 s.lcd_smpte = !s.lcd_smpte;
             }
+            crate::quick_help::hover(ui.ctx(), &time_resp, "lcd_pos");
 
             if s.lcd_smpte {
                 let mut job = LayoutJob::default();
@@ -483,6 +511,7 @@ fn lcd(
                 egui::Id::unique(("control_bar", "tempo")),
                 Sense::drag(),
             );
+            crate::quick_help::hover(ui.ctx(), &resp, "lcd_tempo");
             let tempo_now = p.tempo_at(p.position_beats);
             if resp.dragged() {
                 p.set_tempo_at(p.position_beats, tempo_now - resp.drag_delta().y * 0.5);
@@ -527,6 +556,7 @@ fn lcd(
                     )
                     .on_hover_cursor(egui::CursorIcon::ResizeVertical)
                     .on_hover_text(tr("Drag to change the time signature"));
+                crate::quick_help::hover(ui.ctx(), &resp, "lcd_sig");
                 let mut leftover = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
                 if resp.drag_started() {
                     leftover = 0.0;
@@ -1181,6 +1211,7 @@ pub(crate) fn master_volume(
     let track_left = rect.left() + 14.0 + 8.0;
     let track = Rect::from_min_size(pos2(track_left, cy - 4.5), vec2(104.0, 9.0));
     let resp = ui.interact(track.expand2(vec2(6.0, 8.0)), id, Sense::click_and_drag());
+    crate::quick_help::hover(ui.ctx(), &resp, "master_vol");
     let travel = (track.left() + 5.5, track.right() - 5.5);
     if let Some(pt) = resp.interact_pointer_pos() {
         p.master_vol = ((pt.x - travel.0) / (travel.1 - travel.0)).clamp(0.0, 1.0);
@@ -1288,10 +1319,12 @@ pub fn control_bar(
         _ => {}
     }
     // Smart Controls / Mixer / Editors (Pill 2)
-    let editors_on = matches!(s.bottom, Bottom::PianoRoll);
+    let smart_on = s.bottom == Bottom::SmartControls;
+    let mixer_on = s.show_mixer && s.bottom == Bottom::Mixer;
+    let editors_on = matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor);
     let mid = [
-        (icon_smart_controls as IconFn, s.light_menus),
-        (icon_mixer, s.show_mixer && s.bottom == Bottom::Mixer),
+        (icon_smart_controls as IconFn, smart_on),
+        (icon_mixer, mixer_on),
         (icon_editors, editors_on),
     ];
     match segmented(
@@ -1303,19 +1336,23 @@ pub fn control_bar(
         &mid,
         s.glass_quality,
     ) {
-        // Switches the menu bar and its menus between dark and light (white).
-        Some(0) => s.light_menus = !s.light_menus,
-        Some(1) => {
-            s.show_mixer = !(s.show_mixer && s.bottom == Bottom::Mixer);
-            s.bottom = Bottom::Mixer;
-        }
-        Some(2) => {
-            s.bottom = if editors_on {
-                Bottom::Mixer
+        Some(0) => {
+            if smart_on {
+                s.bottom = Bottom::Mixer;
+                s.show_mixer = false;
             } else {
-                Bottom::PianoRoll
-            };
+                s.bottom = Bottom::SmartControls;
+            }
         }
+        Some(1) => {
+            if mixer_on {
+                s.show_mixer = false;
+            } else {
+                s.bottom = Bottom::Mixer;
+                s.show_mixer = true;
+            }
+        }
+        Some(2) => crate::track_commands::toggle_editor(p, s),
         _ => {}
     }
 

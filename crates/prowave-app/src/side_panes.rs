@@ -10,33 +10,31 @@ pub const TOOLBAR_HEIGHT: f32 = 30.0;
 /// The longest note a project keeps, in characters.
 pub const MAX_NOTES: usize = 100_000;
 
-/// What the Toolbar offers: menu entries, so each is greyed out when the menu's is.
-const TOOLBAR: &[&str] = &[
-    "Undo",
-    "Redo",
-    "-",
-    "New",
-    "Create Marker",
-    "Capture Recording",
-    "-",
-    "Zoom In",
-    "Zoom Out",
-    "Zoom to Fit",
+/// What the Toolbar offers: Logic Pro quick-action buttons wired to real menu commands.
+const TOOLBAR: &[(&str, &str)] = &[
+    ("Split at Playhead", "Split at Playhead"),
+    ("Join Regions", "Join"),
+    ("Mute Region", "Mute On/Off"),
+    ("Loop Region", "Loop On/Off"),
+    ("Color", "Show Colors"),
+    ("Bounce", "Project or Section…"),
+    ("Set Locators by Selection", "Set Locators by Regions"),
+    ("Zoom to Fit", "Zoom to Fit"),
 ];
 
 /// The Toolbar under the control bar (Logic: View > Show Toolbar).
 pub fn toolbar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
-    ui.spacing_mut().button_padding = egui::vec2(4.0, 3.0);
+    ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
     ui.horizontal_centered(|ui| {
         ui.add_space(8.0);
-        for label in TOOLBAR {
-            if *label == "-" {
+        for (i, &(label, cmd)) in TOOLBAR.iter().enumerate() {
+            if i == 4 || i == 6 {
                 ui.separator();
-                continue;
             }
-            let on = crate::menus::enabled(label, p, s);
-            if ui.add_enabled(on, egui::Button::new(tr(label))).clicked() {
-                crate::menus::apply(label, p, s);
+            let on = crate::menus::enabled(cmd, p, s);
+            let resp = ui.add_enabled(on, egui::Button::new(tr(label)));
+            if resp.clicked() {
+                crate::menus::apply(cmd, p, s);
             }
         }
     });
@@ -56,25 +54,4 @@ pub fn note_pad(ui: &mut egui::Ui, p: &mut Project) {
             egui::TextEdit::multiline(&mut p.notes).char_limit(MAX_NOTES),
         );
     });
-}
-
-/// How to do the main things, in a window of its own.
-pub fn quick_help(ctx: &egui::Context, s: &mut crate::UiState) {
-    egui::Window::new(tr("Quick Help"))
-        .open(&mut s.show_quick_help)
-        .resizable(false)
-        .default_width(320.0)
-        .show(ctx, |ui| {
-            for line in [
-                tr("Space plays and stops. Drag a file onto the window to add it."),
-                tr("To record audio, pick the input in the track's Input slot, press R, then Record and Play."),
-                tr("To record MIDI, press R on an instrument track, then Record and Play."),
-                tr("The I button lets you hear an audio track's input. Use headphones to avoid feedback."),
-                tr("With Count-in on, recording starts after one bar of clicks."),
-                tr("Capture Recording turns what you just played on a MIDI keyboard into a region."),
-            ] {
-                ui.label(line);
-                ui.add_space(4.0);
-            }
-        });
 }

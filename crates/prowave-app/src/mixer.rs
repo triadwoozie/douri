@@ -282,6 +282,15 @@ fn small_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(tr(text));
     }
+    if let Some(hid) = match label {
+        "M" => Some("M"),
+        "S" => Some("S"),
+        "R" => Some("R"),
+        "I" => Some("I"),
+        _ => None,
+    } {
+        crate::quick_help::hover(ui.ctx(), &resp, hid);
+    }
     let pill_r = (r.height() * 0.35).min(4.0);
     if on {
         g.rect_filled(r, pill_r, on_col);
@@ -1506,6 +1515,7 @@ pub fn channel_strip(
         }
         let eq_r = row(r.eq, 24.0);
         let eq_resp = ui.interact(eq_r, id(ns, (key, "eq_thumb")), Sense::click());
+        crate::quick_help::hover(ui.ctx(), &eq_resp, "eq_thumb");
         if eq_resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }

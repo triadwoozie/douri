@@ -497,6 +497,7 @@ const WINDOW: &[&str] = &[
 ];
 const HELP: &[&str] = &[
     "Quick Help",
+    "Quick Help Window",
     "Logic-style Key Commands…",
     "-",
     "Language",
@@ -730,8 +731,18 @@ pub(crate) fn shortcut_with_profile(
                 "Show Library" => Key::Y,
                 "Show Inspector" => Key::I,
                 "Show List Editors" => Key::D,
+                "Show Smart Controls" => Key::B,
                 "Show Mixer" => Key::X,
                 "Show Piano Roll" => Key::P,
+                "Show Quick Help" | "Quick Help" => {
+                    return Some(KeyboardShortcut::new(Modifiers::SHIFT, Key::Slash));
+                }
+                "Quick Help Window" => {
+                    return Some(KeyboardShortcut::new(
+                        Modifiers::ALT | Modifiers::SHIFT,
+                        Key::Slash,
+                    ));
+                }
                 // Logic's key command for Musical Typing.
                 "Show Musical Typing" => {
                     return Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::K));
@@ -989,7 +1000,9 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Record"
         | "Capture Recording"
         | "Quick Help"
+        | "Quick Help Window"
         | "Show Quick Help"
+        | "Show Smart Controls"
         | "Show Toolbar"
         | "Show Project Notes"
         | "Show Media Browser"
@@ -1280,10 +1293,12 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,
+        "Show Smart Controls" => s.bottom == Bottom::SmartControls,
         "Show Library" => s.show_library,
         "Show Inspector" => s.show_inspector,
         "Show List Editors" => s.show_lists,
         "Show Quick Help" => s.show_quick_help,
+        "Quick Help Window" => s.show_quick_help_window,
         "Show Toolbar" => s.show_toolbar,
         "Show Project Notes" => s.show_notes,
         "Enable Collaborate" => s.collaborate_enabled,
@@ -1356,13 +1371,26 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Select All" => s.tracks.select_all(p),
         "Join" => crate::region_edit::join_selected(p, &mut s.tracks),
         "Show Mixer" | "Mixer" => {
-            s.show_mixer = !(s.show_mixer && s.bottom == Bottom::Mixer);
-            s.bottom = Bottom::Mixer;
+            if s.show_mixer && s.bottom == Bottom::Mixer {
+                s.show_mixer = false;
+            } else {
+                s.bottom = Bottom::Mixer;
+                s.show_mixer = true;
+            }
+        }
+        "Show Smart Controls" => {
+            if s.bottom == Bottom::SmartControls {
+                s.bottom = Bottom::Mixer;
+                s.show_mixer = false;
+            } else {
+                s.bottom = Bottom::SmartControls;
+            }
         }
         "Show Library" => s.show_library = !s.show_library,
         "Show Inspector" => s.show_inspector = !s.show_inspector,
         "Show List Editors" => s.show_lists = !s.show_lists,
         "Show Quick Help" | "Quick Help" => s.show_quick_help = !s.show_quick_help,
+        "Quick Help Window" => s.show_quick_help_window = !s.show_quick_help_window,
         "Show Toolbar" => s.show_toolbar = !s.show_toolbar,
         "Show Project Notes" => s.show_notes = !s.show_notes,
         "Enable Collaborate" => s.collaborate_enabled = !s.collaborate_enabled,
@@ -2252,6 +2280,7 @@ mod tests {
                 (
                     s.capture_cmd,
                     s.show_quick_help,
+                    s.show_quick_help_window,
                     s.show_toolbar,
                     s.show_notes,
                     s.browser.open

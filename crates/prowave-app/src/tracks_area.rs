@@ -884,6 +884,15 @@ fn header_button(
     if let Some(text) = crate::tooltips::button_tip(label) {
         resp.clone().on_hover_text(crate::i18n::tr(text));
     }
+    if let Some(hid) = match label {
+        "M" => Some("M"),
+        "S" => Some("S"),
+        "R" => Some("R"),
+        "I" => Some("I"),
+        _ => None,
+    } {
+        crate::quick_help::hover(ui.ctx(), &resp, hid);
+    }
     let pill_r = 3.0;
     if on {
         g.rect_filled(rect, pill_r, on_col);
