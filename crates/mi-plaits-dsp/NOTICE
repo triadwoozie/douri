@@ -1,0 +1,17 @@
+mi-plaits-dsp (vendored)
+
+Source:  https://github.com/sourcebox/mi-plaits-dsp-rs,
+         commit d615458aab7239eee544811de8d76ae7ac6b07db (d615458, 2026-11-19)
+Author:  Oliver Rockstedt. A Rust port of the DSP code of the Plaits module by Emilie Gillet
+         (Mutable Instruments), firmware 1.2, https://github.com/pichenettes/eurorack (MIT).
+Licence: MIT. LICENSE is the upstream repository's LICENSE.txt at that commit, unchanged. Each
+         source file names the MIT-licensed original it is based on.
+
+What is here, unchanged from upstream: src/ (all 104 files) and README.md (the crate's
+documentation includes it).
+
+What is not: upstream's tests, examples and _typos.toml.
+
+Written for Pro Wave, under the same MIT licence: Cargo.toml (upstream's without its
+dev-dependencies, and with publish = false), rustfmt.toml, and this file. Pro Wave's
+instrument around it is crates/prowave-engine/src/native_inst/macro_osc.rs.

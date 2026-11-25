@@ -186,6 +186,60 @@ impl Generated {
 const MAX_GENERATED_BARS: usize = 1024;
 
 /// Logic Pro Region Inspector values.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum PitchSource {
+    #[default]
+    Off,
+    Scale,
+    Root,
+}
+
+impl PitchSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Scale => "Scale",
+            Self::Root => "Root",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum DefaultRegionType {
+    #[default]
+    Select,
+    Midi,
+    Pattern,
+    Audio,
+}
+
+impl DefaultRegionType {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Select => "Select",
+            Self::Midi => "MIDI",
+            Self::Pattern => "Pattern",
+            Self::Audio => "Audio",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum FreezeMode {
+    #[default]
+    PreFader,
+    SourceOnly,
+}
+
+impl FreezeMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PreFader => "Pre Fader",
+            Self::SourceOnly => "Source Only",
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub struct RegionParams {
     pub mute: bool,
@@ -232,6 +286,10 @@ pub struct RegionParams {
     pub q_range: u8,
     /// Scales how far notes move toward quantized grid position (0% to 100%, default 100%).
     pub q_strength: f32,
+    /// Region timing offset in ticks (-480 to +480 tk at 480 PPQ).
+    pub delay_ticks: i16,
+    /// Pitch transposition reference source (`Off`, `Scale`, `Root`).
+    pub pitch_source: PitchSource,
 }
 
 impl Default for RegionParams {
@@ -260,6 +318,8 @@ impl Default for RegionParams {
             q_flam: 0,
             q_range: 0,
             q_strength: 100.0,
+            delay_ticks: 0,
+            pitch_source: PitchSource::Off,
         }
     }
 }
@@ -734,6 +794,12 @@ pub struct TrackParams {
     pub groove: bool,
     /// Plays with the Groove Track's timing.
     pub follow_groove: bool,
+    /// Default region type created on this track.
+    pub default_region_type: DefaultRegionType,
+    /// Internal MIDI input routing from another track index (`None` = Off).
+    pub internal_midi_in: Option<usize>,
+    /// Track freeze mode (`Pre Fader` or `Source Only`).
+    pub freeze_mode: FreezeMode,
 }
 
 impl Default for TrackParams {
@@ -748,6 +814,9 @@ impl Default for TrackParams {
             no_reset: false,
             groove: false,
             follow_groove: false,
+            default_region_type: DefaultRegionType::Select,
+            internal_midi_in: None,
+            freeze_mode: FreezeMode::PreFader,
         }
     }
 }

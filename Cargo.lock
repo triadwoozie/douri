@@ -814,6 +814,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chip-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "circuit-dsp"
+version = "0.1.0"
+
+[[package]]
 name = "clang-sys"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1243,6 +1254,12 @@ name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "ecolor"
@@ -2562,6 +2579,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "mi-plaits-dsp"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "num-traits",
+ "spin",
+]
+
+[[package]]
 name = "midir"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3608,8 +3641,12 @@ name = "prowave-engine"
 version = "0.1.0-alpha.7"
 dependencies = [
  "assert_no_alloc",
+ "chip-dsp",
+ "circuit-dsp",
  "cpal",
  "memmap2",
+ "mi-dsp",
+ "mi-plaits-dsp",
  "rtrb",
  "rustysynth",
  "symphonia",
@@ -4446,6 +4483,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spin"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
+dependencies = [
+ "lock_api",
 ]
 
 [[package]]

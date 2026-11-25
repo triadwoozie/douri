@@ -990,11 +990,12 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
                 velocity: t.velocity,
                 key_limit: ordered(t.key_limit, 0),
                 vel_limit: ordered(t.vel_limit, 1),
-                delay_ms: t.delay_ms.clamp(-99, 99),
+                delay_ms: t.delay_ms.clamp(-250, 250),
                 no_transpose: t.no_transpose,
                 no_reset: t.no_reset,
                 groove: t.groove,
                 follow_groove: t.follow_groove && !t.groove,
+                ..TrackParams::default()
             },
             sends: sends_from_doc(t),
             auto: automation_from_doc(t),

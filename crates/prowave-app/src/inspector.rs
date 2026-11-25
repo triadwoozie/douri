@@ -341,6 +341,11 @@ pub struct InspectorView {
     pub region_open: bool,
     pub track_open: bool,
     pub more_open: bool,
+    pub region_general_open: bool,
+    pub quantize_open: bool,
+    pub details_open: bool,
+    pub track_general_open: bool,
+    pub track_more_open: bool,
     scroll_y: f32,
     /// Edits waiting for the mouse to be released before the engine song is rebuilt.
     pending_song_change: bool,
@@ -352,6 +357,11 @@ impl Default for InspectorView {
             region_open: true,
             track_open: false,
             more_open: false,
+            region_general_open: true,
+            quantize_open: false,
+            details_open: false,
+            track_general_open: true,
+            track_more_open: false,
             scroll_y: 0.0,
             pending_song_change: false,
         }
@@ -435,6 +445,90 @@ fn label(g: &Painter, label_x: f32, y: f32, text: &str, enabled: bool) {
         FontId::proportional(11.5),
         col,
     );
+}
+
+fn sub_disclosure(ui: &Ui, g: &Painter, r: Rect, key: &str, open: bool, title: &str) -> bool {
+    let resp = ui.interact(r, id(("sub", key)), Sense::click());
+    g.line_segment(
+        [
+            pos2(r.left() + 10.0, r.bottom()),
+            pos2(r.right() - 10.0, r.bottom()),
+        ],
+        Stroke::new(1.0, Color32::from_rgb(0x2c, 0x2c, 0x31)),
+    );
+    g.text(
+        pos2(r.left() + 12.0, r.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        FontId::proportional(11.5),
+        TEXT_DIM,
+    );
+    let c = pos2(r.right() - 14.0, r.center().y);
+    let chev = if open {
+        vec![
+            c + vec2(-3.5, -1.5),
+            c + vec2(0.0, 2.0),
+            c + vec2(3.5, -1.5),
+        ]
+    } else {
+        vec![
+            c + vec2(-1.5, -3.5),
+            c + vec2(2.0, 0.0),
+            c + vec2(-1.5, 3.5),
+        ]
+    };
+    g.add(Shape::line(chev, Stroke::new(1.2, TEXT_DIM)));
+    resp.clicked()
+}
+
+fn color_pill(ui: &Ui, g: &Painter, r: Rect, key: &str, current: Color32) -> Option<Color32> {
+    let resp = ui.interact(r, id(("color", key)), Sense::click());
+    g.rect_filled(r, r.height() / 2.0, current);
+    if resp.hovered() {
+        g.rect_stroke(
+            r,
+            r.height() / 2.0,
+            Stroke::new(1.0, Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let mut picked = None;
+    egui::Popup::menu(&resp).show(|ui| {
+        const PALETTE: [Color32; 12] = [
+            Color32::from_rgb(0xd6, 0x18, 0x9e),
+            Color32::from_rgb(0xe0, 0x4b, 0x4b),
+            Color32::from_rgb(0xe6, 0x8a, 0x2e),
+            Color32::from_rgb(0xd9, 0xb8, 0x38),
+            Color32::from_rgb(0x4e, 0xb0, 0x4a),
+            Color32::from_rgb(0x2b, 0xa8, 0x8f),
+            Color32::from_rgb(0x3a, 0x7b, 0xd5),
+            Color32::from_rgb(0x63, 0x5b, 0xd4),
+            Color32::from_rgb(0x9b, 0x4d, 0xca),
+            Color32::from_rgb(0x7c, 0x7c, 0x85),
+            Color32::from_rgb(0x4f, 0x86, 0xb8),
+            Color32::from_rgb(0xc8, 0x5c, 0x7e),
+        ];
+        ui.horizontal_wrapped(|ui| {
+            ui.set_max_width(148.0);
+            for c in PALETTE {
+                let (rect, sw) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+                ui.painter().rect_filled(rect, 4.0, c);
+                if c == current {
+                    ui.painter().rect_stroke(
+                        rect,
+                        4.0,
+                        Stroke::new(1.5, Color32::WHITE),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                if sw.clicked() {
+                    picked = Some(c);
+                    ui.close();
+                }
+            }
+        });
+    });
+    picked
 }
 
 /// Small pill toggle switch: 32px x 18px for booleans. Returns true when toggled.
@@ -747,96 +841,210 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                 if s.inspector.region_open {
                     if sel.is_none() {
                         // Context: MIDI Defaults (no region selected)
-                        label(&g_upper, label_right, y, tr("Loop:"), true);
-                        let looped = p.midi_defaults.loop_beats > 0.0;
-                        if checkbox(ui, &g_upper, pos2(vx, y), "defaults_loop", looped, true) {
-                            p.midi_defaults.loop_beats = if !looped { 16.0 } else { 0.0 };
-                            changed_song = true;
-                        }
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Quantize:"), true);
-                        let q_text = QUANTIZE
-                            .iter()
-                            .find(|(_, q)| *q == p.midi_defaults.quantize)
-                            .map_or(tr("Off"), |(t, _)| tr(t));
-                        if let Some(resp) = popup(
+                        let gen_r = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if sub_disclosure(
                             ui,
                             &g_upper,
-                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "defaults_quantize",
-                            q_text,
-                            true,
+                            gen_r,
+                            "defaults_general",
+                            s.inspector.region_general_open,
+                            tr("General"),
                         ) {
-                            egui::Popup::menu(&resp).show(|ui| {
-                                for (t, q) in QUANTIZE {
-                                    if ui
-                                        .selectable_label(p.midi_defaults.quantize == q, tr(t))
-                                        .clicked()
-                                    {
-                                        p.midi_defaults.quantize = q;
-                                        changed_song = true;
-                                        ui.close();
+                            s.inspector.region_general_open = !s.inspector.region_general_open;
+                        }
+                        y += ROW_H + 2.0;
+                        if s.inspector.region_general_open {
+                            label(&g_upper, label_right, y, tr("Color:"), true);
+                            let default_col = p
+                                .tracks
+                                .get(ti)
+                                .map_or(Color32::from_rgb(0xd6, 0x18, 0x9e), |t| t.color);
+                            let cur_col = p.midi_defaults.color.unwrap_or(default_col);
+                            if let Some(c) = color_pill(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 3.0), vec2(vw, ROW_H - 6.0)),
+                                "defaults_color",
+                                cur_col,
+                            ) {
+                                p.midi_defaults.color = Some(c);
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Velocity Offset:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_velocity",
+                                p.midi_defaults.velocity as i32,
+                                (-99, 99),
+                                0,
+                                velocity_text(p.midi_defaults.velocity as i32),
+                                true,
+                            ) {
+                                p.midi_defaults.velocity = v as i8;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Delay:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_delay_tk",
+                                p.midi_defaults.delay_ticks as i32,
+                                (-480, 480),
+                                0,
+                                format!("{} tk", p.midi_defaults.delay_ticks),
+                                true,
+                            ) {
+                                p.midi_defaults.delay_ticks = v as i16;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Transpose:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_transpose",
+                                p.midi_defaults.transpose as i32,
+                                (-96, 96),
+                                0,
+                                transpose_text(p.midi_defaults.transpose as i32),
+                                true,
+                            ) {
+                                p.midi_defaults.transpose = v as i8;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+
+                            label(&g_upper, label_right, y, tr("Pitch Source:"), true);
+                            if let Some(resp) = popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "defaults_pitch_source",
+                                tr(p.midi_defaults.pitch_source.label()),
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    for src in [
+                                        crate::model::PitchSource::Off,
+                                        crate::model::PitchSource::Scale,
+                                        crate::model::PitchSource::Root,
+                                    ] {
+                                        if ui
+                                            .selectable_label(
+                                                p.midi_defaults.pitch_source == src,
+                                                tr(src.label()),
+                                            )
+                                            .clicked()
+                                        {
+                                            p.midi_defaults.pitch_source = src;
+                                            changed_song = true;
+                                            ui.close();
+                                        }
                                     }
-                                }
-                            });
+                                });
+                            }
+                            y += ROW_H;
                         }
-                        y += ROW_H;
-                        let swing_active = p.midi_defaults.quantize.is_some();
-                        label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        if let Some(v) = drag_value(
+
+                        // Quantize sub-accordion
+                        let q_sub = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if sub_disclosure(
                             ui,
                             &g_upper,
-                            r,
-                            "defaults_q_swing",
-                            p.midi_defaults.q_swing.round() as i32,
-                            (0, 100),
-                            0,
-                            if p.midi_defaults.q_swing == 0.0 {
-                                tr("Off").to_string()
-                            } else {
-                                format!("{}%", p.midi_defaults.q_swing.round() as i32)
-                            },
-                            swing_active,
+                            q_sub,
+                            "defaults_quantize_sub",
+                            s.inspector.quantize_open,
+                            tr("Quantize"),
                         ) {
-                            p.midi_defaults.q_swing = v as f32;
-                            changed_song = true;
+                            s.inspector.quantize_open = !s.inspector.quantize_open;
                         }
                         y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Transpose:"), true);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        if let Some(v) = drag_value(
+                        if s.inspector.quantize_open {
+                            label(&g_upper, label_right, y, tr("Quantize:"), true);
+                            let q_text = QUANTIZE
+                                .iter()
+                                .find(|(_, q)| *q == p.midi_defaults.quantize)
+                                .map_or(tr("Off"), |(t, _)| tr(t));
+                            if let Some(resp) = popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "defaults_quantize",
+                                q_text,
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    for (t, q) in QUANTIZE {
+                                        if ui
+                                            .selectable_label(p.midi_defaults.quantize == q, tr(t))
+                                            .clicked()
+                                        {
+                                            p.midi_defaults.quantize = q;
+                                            changed_song = true;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                            y += ROW_H;
+                            let swing_active = p.midi_defaults.quantize.is_some();
+                            label(&g_upper, label_right, y, tr("Q-Swing:"), swing_active);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "defaults_q_swing",
+                                p.midi_defaults.q_swing.round() as i32,
+                                (0, 100),
+                                0,
+                                if p.midi_defaults.q_swing == 0.0 {
+                                    tr("Off").to_string()
+                                } else {
+                                    format!("{}%", p.midi_defaults.q_swing.round() as i32)
+                                },
+                                swing_active,
+                            ) {
+                                p.midi_defaults.q_swing = v as f32;
+                                changed_song = true;
+                            }
+                            y += ROW_H;
+                        }
+
+                        // Details sub-accordion
+                        let det_sub = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                        if sub_disclosure(
                             ui,
                             &g_upper,
-                            r,
-                            "defaults_transpose",
-                            p.midi_defaults.transpose as i32,
-                            (-96, 96),
-                            0,
-                            transpose_text(p.midi_defaults.transpose as i32),
-                            true,
+                            det_sub,
+                            "defaults_details_sub",
+                            s.inspector.details_open,
+                            tr("Details"),
                         ) {
-                            p.midi_defaults.transpose = v as i8;
-                            changed_song = true;
+                            s.inspector.details_open = !s.inspector.details_open;
                         }
                         y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Velocity:"), true);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r,
-                            "defaults_velocity",
-                            p.midi_defaults.velocity as i32,
-                            (-99, 99),
-                            0,
-                            velocity_text(p.midi_defaults.velocity as i32),
-                            true,
-                        ) {
-                            p.midi_defaults.velocity = v as i8;
-                            changed_song = true;
+                        if s.inspector.details_open {
+                            label(&g_upper, label_right, y, tr("Loop:"), true);
+                            let looped = p.midi_defaults.loop_beats > 0.0;
+                            if checkbox(ui, &g_upper, pos2(vx, y), "defaults_loop", looped, true) {
+                                p.midi_defaults.loop_beats = if !looped { 16.0 } else { 0.0 };
+                                changed_song = true;
+                            }
+                            y += ROW_H;
                         }
-                        y += ROW_H;
 
                         // More disclosure
                         let more = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
@@ -1540,486 +1748,76 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                     let audio = p.tracks[ti].kind == TrackKind::Audio;
                     let mut tp = p.tracks[ti].params;
 
-                    label(&g_upper, label_right, y, tr("Icon:"), true);
-                    let icon_r = Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0));
-                    draw_icon(&g_upper, icon_r, track_icon(&p.tracks[ti]));
-                    if ui
-                        .interact(icon_r, id("track_icon_click"), Sense::click())
-                        .clicked()
-                    {
-                        s.track_dialog =
-                            Some(crate::track_dialogs::TrackDialog::Icon { track: ti });
-                    }
-                    y += 30.0;
-                    let channel = p.channel_name(ti);
-                    label(&g_upper, label_right, y, tr("Channel:"), true);
-                    if let Some(resp) = popup(
+                    let tgen_r = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                    if sub_disclosure(
                         ui,
                         &g_upper,
-                        Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                        "channel",
-                        &channel,
-                        true,
+                        tgen_r,
+                        "track_general",
+                        s.inspector.track_general_open,
+                        tr("General"),
                     ) {
-                        resp.on_hover_text("Channel strip identifier");
+                        s.inspector.track_general_open = !s.inspector.track_general_open;
                     }
-                    y += ROW_H;
-                    if audio {
-                        label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
-                        popup(
+                    y += ROW_H + 2.0;
+
+                    if s.inspector.track_general_open {
+                        label(&g_upper, label_right, y, tr("Color:"), true);
+                        if let Some(c) = color_pill(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 3.0), vec2(vw, ROW_H - 6.0)),
+                            "track_color",
+                            p.tracks[ti].color,
+                        ) {
+                            p.tracks[ti].color = c;
+                        }
+                        y += ROW_H;
+
+                        label(&g_upper, label_right, y, tr("Icon:"), true);
+                        let icon_r = Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0));
+                        draw_icon(&g_upper, icon_r, track_icon(&p.tracks[ti]));
+                        if ui
+                            .interact(icon_r, id("track_icon_click"), Sense::click())
+                            .clicked()
+                        {
+                            s.track_dialog =
+                                Some(crate::track_dialogs::TrackDialog::Icon { track: ti });
+                        }
+                        y += 30.0;
+
+                        label(&g_upper, label_right, y, tr("Default Region Type:"), true);
+                        if let Some(resp) = popup(
                             ui,
                             &g_upper,
                             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "freeze",
-                            tr("Pre Fader"),
+                            "default_region_type",
+                            tr(tp.default_region_type.label()),
                             true,
-                        );
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Q-Reference:"), false);
-                        checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Flex Mode:"), false);
-                        popup(
-                            ui,
-                            &g_upper,
-                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "flex",
-                            tr("Off"),
-                            false,
-                        );
-                        y += ROW_H;
-                    } else {
-                        let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
-                        if external {
-                            // Where this track's notes go: a MIDI output port and a channel.
-                            label(&g_upper, label_right, y, tr("MIDI Out Port:"), true);
-                            let port = p.tracks[ti]
-                                .midi_port
-                                .clone()
-                                .unwrap_or_else(|| tr("No Port").to_string());
-                            if let Some(resp) = popup(
-                                ui,
-                                &g_upper,
-                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                                "midi_out_port",
-                                &port,
-                                true,
-                            ) {
-                                egui::Popup::menu(&resp).show(|ui| {
-                                    let current = p.tracks[ti].midi_port.clone();
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                for kind in [
+                                    crate::model::DefaultRegionType::Select,
+                                    crate::model::DefaultRegionType::Midi,
+                                    crate::model::DefaultRegionType::Pattern,
+                                    crate::model::DefaultRegionType::Audio,
+                                ] {
                                     if ui
-                                        .selectable_label(current.is_none(), tr("No Port"))
+                                        .selectable_label(
+                                            tp.default_region_type == kind,
+                                            tr(kind.label()),
+                                        )
                                         .clicked()
                                     {
-                                        p.tracks[ti].midi_port = None;
+                                        tp.default_region_type = kind;
                                         ui.close();
                                     }
-                                    for name in crate::midi_out::ports() {
-                                        if ui
-                                            .selectable_label(
-                                                current.as_deref() == Some(&name),
-                                                &name,
-                                            )
-                                            .clicked()
-                                        {
-                                            p.tracks[ti].midi_port = Some(name);
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                            }
-                            y += ROW_H;
-                            label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
-                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                            let channel = p.tracks[ti].midi_channel.clamp(1, 16);
-                            if let Some(v) = drag_value(
-                                ui,
-                                &g_upper,
-                                r,
-                                "midi_out_channel",
-                                channel as i32,
-                                (1, 16),
-                                1,
-                                channel.to_string(),
-                                true,
-                            ) {
-                                p.tracks[ti].midi_channel = v as u8;
-                            }
-                            y += ROW_H;
-                            // The sound sent when the track is routed: a program, and a bank (both optional;
-                            // the top of each range is Off).
-                            label(&g_upper, label_right, y, tr("MIDI Program:"), true);
-                            let program = p.tracks[ti].midi_program.map_or(128, i32::from);
-                            if let Some(v) = drag_value(
-                                ui,
-                                &g_upper,
-                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                                "midi_out_program",
-                                program,
-                                (0, 128),
-                                128,
-                                if program == 128 {
-                                    tr("Off").to_string()
-                                } else {
-                                    program.to_string()
-                                },
-                                true,
-                            ) {
-                                p.tracks[ti].midi_program = (v < 128).then_some(v as u8);
-                            }
-                            y += ROW_H;
-                            label(&g_upper, label_right, y, tr("MIDI Bank:"), true);
-                            let bank = p.tracks[ti].midi_bank.map_or(16384, i32::from);
-                            if let Some(v) = drag_value(
-                                ui,
-                                &g_upper,
-                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                                "midi_out_bank",
-                                bank,
-                                (0, 16384),
-                                16384,
-                                if bank == 16384 {
-                                    tr("Off").to_string()
-                                } else {
-                                    bank.to_string()
-                                },
-                                true,
-                            ) {
-                                p.tracks[ti].midi_bank = (v < 16384).then_some(v as u16);
-                            }
-                            y += ROW_H;
+                                }
+                            });
                         }
-                        if !external {
-                            // The instrument this track plays instead of its synth patch.
-                            label(&g_upper, label_right, y, tr("SoundFont:"), true);
-                            let current = p.tracks[ti].soundfont.clone();
-                            let piano = p.tracks[ti].epiano;
-                            let sampler = p.tracks[ti].sampler.clone();
-                            let has_drums = p.tracks[ti].drums.is_some();
-                            let has_bass808 = p.tracks[ti].bass808.is_some();
-                            let hosted_inst = p.tracks[ti].hosted_instrument;
-                            let shown = match (&current, piano) {
-                                _ if hosted_inst != 0 => {
-                                    crate::hosted_plugins::name(hosted_inst).to_string()
-                                }
-                                _ if has_drums => tr("Drum Machine").to_string(),
-                                _ if has_bass808 => "808 Bass".to_string(),
-                                _ if sampler.is_some() => {
-                                    let name = sampler
-                                        .as_ref()
-                                        .map(|s| s.source.name())
-                                        .unwrap_or_default();
-                                    format!("{} · {}", tr("Sampler"), name)
-                                }
-                                (_, Some(_)) => tr("Electric Piano").to_string(),
-                                (None, None) => tr("None").to_string(),
-                                (Some(sf), None) => soundfont_label(sf),
-                            };
-                            let rect =
-                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                            if let Some(resp) = popup(ui, &g_upper, rect, "soundfont", &shown, true)
-                            {
-                                if resp.double_clicked() {
-                                    if hosted_inst != 0 {
-                                        s.mixer.inst_window = Some(ti);
-                                        s.mixer.fx_window = None;
-                                        s.mixer.plugin_controls = false;
-                                    } else if has_drums {
-                                        s.show_drum_machine = Some(ti);
-                                    } else if has_bass808 {
-                                        s.show_bass808 = Some(ti);
-                                    }
-                                }
-                                egui::Popup::menu(&resp).show(|ui| {
-                                    if ui.button(tr("Choose SoundFont…")).clicked() {
-                                        if let Some(path) = rfd::FileDialog::new()
-                                            .add_filter("SoundFont", &["sf2", "SF2"])
-                                            .pick_file()
-                                        {
-                                            use_soundfont_file(
-                                                p,
-                                                ti,
-                                                path.to_string_lossy().into_owned(),
-                                            );
-                                        }
-                                        ui.close();
-                                    }
-                                    if ui.button(tr("Choose Hydrogen Drum Kit…")).clicked() {
-                                        // A kit is a downloaded `.h2drumkit` archive, or the `drumkit.xml`
-                                        // of one that is already unpacked.
-                                        if let Some(path) = rfd::FileDialog::new()
-                                            .add_filter("Hydrogen drum kit", &["h2drumkit", "xml"])
-                                            .pick_file()
-                                        {
-                                            match hydrogen_kit_file(&path) {
-                                                Ok(file) => use_soundfont_file(p, ti, file),
-                                                Err(e) => {
-                                                    tracing::warn!("{e}");
-                                                    s.status = Some(e);
-                                                }
-                                            }
-                                        }
-                                        ui.close();
-                                    }
-                                    if ui.button(tr("Electric Piano")).clicked() {
-                                        p.tracks[ti].epiano =
-                                            Some(crate::model::EPianoUse::default());
-                                        p.tracks[ti].soundfont = None;
-                                        p.tracks[ti].sampler = None;
-                                        p.tracks[ti].drums = None;
-                                        p.tracks[ti].bass808 = None;
-                                        p.tracks[ti].hosted_instrument = 0;
-                                        ui.close();
-                                    }
-                                    ui.separator();
-                                    if ui.button("808 Bass").clicked() {
-                                        p.tracks[ti].bass808 =
-                                            Some(prowave_engine::Bass808Spec::default());
-                                        p.tracks[ti].soundfont = None;
-                                        p.tracks[ti].sampler = None;
-                                        p.tracks[ti].epiano = None;
-                                        p.tracks[ti].drums = None;
-                                        p.tracks[ti].hosted_instrument = 0;
-                                        s.show_bass808 = Some(ti);
-                                        ui.close();
-                                    }
-                                    if has_bass808 {
-                                        if ui.button("Edit 808 Bass…").clicked() {
-                                            s.show_bass808 = Some(ti);
-                                            ui.close();
-                                        }
-                                        if ui.button("Remove 808 Bass").clicked() {
-                                            p.tracks[ti].bass808 = None;
-                                            ui.close();
-                                        }
-                                    }
-                                    ui.separator();
-                                    if ui.button(tr("Drum Machine")).clicked() {
-                                        p.tracks[ti].drums = Some(crate::drum_kit::DrumsUse::new());
-                                        p.tracks[ti].sampler = None;
-                                        p.tracks[ti].epiano = None;
-                                        p.tracks[ti].soundfont = None;
-                                        p.tracks[ti].bass808 = None;
-                                        p.tracks[ti].hosted_instrument = 0;
-                                        s.show_drum_machine = Some(ti);
-                                        ui.close();
-                                    }
-                                    if has_drums {
-                                        if ui.button(tr("Edit Drum Machine…")).clicked() {
-                                            s.show_drum_machine = Some(ti);
-                                            ui.close();
-                                        }
-                                        if ui.button(tr("Remove Drum Machine")).clicked() {
-                                            p.tracks[ti].drums = None;
-                                            ui.close();
-                                        }
-                                    }
-                                    let clap_insts: Vec<_> =
-                                        crate::hosted_plugins::catalog_instruments()
-                                            .into_iter()
-                                            .filter(|i| {
-                                                i.format == crate::hosted_plugins::Format::Clap
-                                            })
-                                            .collect();
-                                    if !clap_insts.is_empty() {
-                                        ui.separator();
-                                        ui.menu_button("CLAP Instruments", |ui| {
-                                            for inst in &clap_insts {
-                                                let picked = hosted_inst != 0
-                                                    && crate::hosted_plugins::info(hosted_inst)
-                                                        .as_ref()
-                                                        .map(|i| &i.id)
-                                                        == Some(&inst.id);
-                                                if ui.selectable_label(picked, &inst.name).clicked()
-                                                {
-                                                    let slot =
-                                                        crate::hosted_plugins::add(inst, None);
-                                                    p.tracks[ti].hosted_instrument = slot;
-                                                    p.tracks[ti].soundfont = None;
-                                                    p.tracks[ti].sampler = None;
-                                                    p.tracks[ti].epiano = None;
-                                                    p.tracks[ti].drums = None;
-                                                    p.tracks[ti].bass808 = None;
-                                                    ui.close();
-                                                }
-                                            }
-                                        });
-                                    }
-                                    let vst3_insts: Vec<_> =
-                                        crate::hosted_plugins::catalog_instruments()
-                                            .into_iter()
-                                            .filter(|i| {
-                                                i.format == crate::hosted_plugins::Format::Vst3
-                                            })
-                                            .collect();
-                                    if !vst3_insts.is_empty() {
-                                        ui.menu_button("VST3 Instruments", |ui| {
-                                            for inst in &vst3_insts {
-                                                let picked = hosted_inst != 0
-                                                    && crate::hosted_plugins::info(hosted_inst)
-                                                        .as_ref()
-                                                        .map(|i| &i.id)
-                                                        == Some(&inst.id);
-                                                if ui.selectable_label(picked, &inst.name).clicked()
-                                                {
-                                                    let slot =
-                                                        crate::hosted_plugins::add(inst, None);
-                                                    p.tracks[ti].hosted_instrument = slot;
-                                                    p.tracks[ti].soundfont = None;
-                                                    p.tracks[ti].sampler = None;
-                                                    p.tracks[ti].epiano = None;
-                                                    p.tracks[ti].drums = None;
-                                                    p.tracks[ti].bass808 = None;
-                                                    ui.close();
-                                                }
-                                            }
-                                        });
-                                    }
-                                    if hosted_inst != 0 {
-                                        ui.separator();
-                                        if ui
-                                            .button(format!(
-                                                "Remove {}",
-                                                crate::hosted_plugins::name(hosted_inst),
-                                            ))
-                                            .clicked()
-                                        {
-                                            p.tracks[ti].hosted_instrument = 0;
-                                            ui.close();
-                                        }
-                                    }
-                                    ui.separator();
-                                    ui.menu_button(tr("Sampler"), |ui| {
-                                        use crate::sampler_load::SamplerSource;
-                                        if ui.button(tr("Load SFZ Instrument…")).clicked() {
-                                            if let Some(path) = rfd::FileDialog::new()
-                                                .add_filter("SFZ", &["sfz", "SFZ"])
-                                                .pick_file()
-                                            {
-                                                use_sampler(p, ti, SamplerSource::Sfz(path));
-                                            }
-                                            ui.close();
-                                        }
-                                        if ui.button(tr("Load EXS Instrument…")).clicked() {
-                                            if let Some(path) = rfd::FileDialog::new()
-                                                .add_filter("EXS", &["exs", "EXS"])
-                                                .pick_file()
-                                            {
-                                                use_sampler(p, ti, SamplerSource::Exs(path));
-                                            }
-                                            ui.close();
-                                        }
-                                        if ui
-                                            .button(tr("Load Audio File (Quick Sampler)…"))
-                                            .clicked()
-                                        {
-                                            if let Some(path) = rfd::FileDialog::new()
-                                                .add_filter(
-                                                    "Audio",
-                                                    &[
-                                                        "wav", "aif", "aiff", "flac", "ogg", "mp3",
-                                                        "caf", "m4a",
-                                                    ],
-                                                )
-                                                .pick_file()
-                                            {
-                                                use_sampler(
-                                                    p,
-                                                    ti,
-                                                    SamplerSource::Audio {
-                                                        path,
-                                                        root: 60,
-                                                        looped: false,
-                                                    },
-                                                );
-                                            }
-                                            ui.close();
-                                        }
-                                        if let Some(s) = &sampler {
-                                            if let Some(e) =
-                                                crate::sampler_load::error(s.source.path())
-                                            {
-                                                ui.colored_label(
-                                                    egui::Color32::from_rgb(0xe0, 0x70, 0x60),
-                                                    crate::i18n::trf("Cannot load: {}", &[&e]),
-                                                );
-                                            }
-                                            ui.separator();
-                                            if ui.button(tr("Remove Sampler")).clicked() {
-                                                p.tracks[ti].sampler = None;
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                    if piano.is_some() {
-                                        ui.separator();
-                                        if ui.button(tr("Remove Electric Piano")).clicked() {
-                                            p.tracks[ti].epiano = None;
-                                            ui.close();
-                                        }
-                                    }
-                                    if let (Some(sf), None, None) =
-                                        (current.as_ref(), piano, sampler.as_ref())
-                                    {
-                                        if let Some(bank) = crate::soundfonts::loaded(&sf.path) {
-                                            ui.separator();
-                                            egui::ScrollArea::vertical().max_height(320.0).show(
-                                                ui,
-                                                |ui| {
-                                                    for preset in bank.presets() {
-                                                        let picked = preset.bank == sf.bank
-                                                            && preset.program == sf.program;
-                                                        if ui
-                                                            .selectable_label(picked, &preset.name)
-                                                            .clicked()
-                                                        {
-                                                            p.tracks[ti].soundfont =
-                                                                Some(SoundFontUse {
-                                                                    path: sf.path.clone(),
-                                                                    bank: preset.bank,
-                                                                    program: preset.program,
-                                                                });
-                                                            ui.close();
-                                                        }
-                                                    }
-                                                },
-                                            );
-                                        }
-                                        ui.separator();
-                                        if ui.button(tr("Remove SoundFont")).clicked() {
-                                            p.tracks[ti].soundfont = None;
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                            }
-                            y += ROW_H;
-                            if let Some(ep) = p.tracks[ti].epiano {
-                                if let Some(dials) = piano_rows(
-                                    ui,
-                                    &g_upper,
-                                    (label_right, vx, vw),
-                                    &mut y,
-                                    ep.params,
-                                ) {
-                                    p.tracks[ti].epiano =
-                                        Some(crate::model::EPianoUse { params: dials });
-                                }
-                            }
-                            if let Some(current) = p.tracks[ti].sampler.clone() {
-                                if let Some(next) = sampler_rows(
-                                    ui,
-                                    &g_upper,
-                                    (label_right, vx, vw),
-                                    &mut y,
-                                    &current,
-                                ) {
-                                    p.tracks[ti].sampler = Some(next);
-                                }
-                            }
-                        }
-                        // MIDI In Port
-                        label(&g_upper, label_right, y, tr("MIDI In Port:"), true);
+                        y += ROW_H;
+
+                        label(&g_upper, label_right, y, tr("MIDI Input:"), true);
                         let in_port = p.tracks[ti]
                             .midi_in_port
                             .clone()
@@ -2028,7 +1826,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             ui,
                             &g_upper,
                             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "midi_in_port",
+                            "track_midi_input",
                             &in_port,
                             true,
                         ) {
@@ -2054,7 +1852,46 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         }
                         y += ROW_H;
 
-                        // MIDI In Channel
+                        label(&g_upper, label_right, y, tr("Internal MIDI In:"), true);
+                        let int_label = tp
+                            .internal_midi_in
+                            .and_then(|src| p.tracks.get(src))
+                            .map_or_else(|| tr("Off").to_string(), |t| t.name.clone());
+                        if let Some(resp) = popup(
+                            ui,
+                            &g_upper,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "track_internal_midi_in",
+                            &int_label,
+                            true,
+                        ) {
+                            egui::Popup::menu(&resp).show(|ui| {
+                                if ui
+                                    .selectable_label(tp.internal_midi_in.is_none(), tr("Off"))
+                                    .clicked()
+                                {
+                                    tp.internal_midi_in = None;
+                                    ui.close();
+                                }
+                                for (idx, trk) in p.tracks.iter().enumerate() {
+                                    if idx == ti {
+                                        continue;
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            tp.internal_midi_in == Some(idx),
+                                            &trk.name,
+                                        )
+                                        .clicked()
+                                    {
+                                        tp.internal_midi_in = Some(idx);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        y += ROW_H;
+
                         label(&g_upper, label_right, y, tr("MIDI In Channel:"), true);
                         let in_ch_text = p.tracks[ti]
                             .midi_in_channel
@@ -2063,7 +1900,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             ui,
                             &g_upper,
                             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "midi_in_channel",
+                            "track_midi_in_ch_gen",
                             &in_ch_text,
                             true,
                         ) {
@@ -2089,125 +1926,29 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         }
                         y += ROW_H;
 
-                        // Freeze Mode
-                        label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
-                        popup(
+                        label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
+                        let out_ch = p.tracks[ti].midi_channel.clamp(1, 16);
+                        if let Some(v) = drag_value(
                             ui,
                             &g_upper,
                             Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
-                            "freeze_mode",
-                            tr("Pre Fader"),
-                            true,
-                        );
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Transpose:"), true);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r,
-                            "track_transpose",
-                            tp.transpose as i32,
-                            (-96, 96),
-                            0,
-                            transpose_text(tp.transpose as i32),
-                            true,
-                        ) {
-                            tp.transpose = v as i8;
-                        }
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Velocity:"), true);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r,
-                            "track_velocity",
-                            tp.velocity as i32,
-                            (-99, 99),
-                            0,
-                            velocity_text(tp.velocity as i32),
-                            true,
-                        ) {
-                            tp.velocity = v as i8;
-                        }
-                        y += ROW_H;
-                        let half = (vw - 4.0) / 2.0;
-                        label(&g_upper, label_right, y, tr("Key Limit:"), true);
-                        let (lo, hi) = tp.key_limit;
-                        let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
-                        let r2 = Rect::from_min_size(
-                            pos2(vx + half + 4.0, y + 2.0),
-                            vec2(half, ROW_H - 4.0),
-                        );
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r1,
-                            "key_lo",
-                            lo as i32,
-                            (0, hi as i32),
-                            0,
-                            note_name(lo),
-                            true,
-                        ) {
-                            tp.key_limit.0 = v as u8;
-                        }
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r2,
-                            "key_hi",
-                            hi as i32,
-                            (lo as i32, 127),
-                            127,
-                            note_name(hi),
-                            true,
-                        ) {
-                            tp.key_limit.1 = v as u8;
-                        }
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Vel Limit:"), true);
-                        let (lo, hi) = tp.vel_limit;
-                        let r1 = Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
-                        let r2 = Rect::from_min_size(
-                            pos2(vx + half + 4.0, y + 2.0),
-                            vec2(half, ROW_H - 4.0),
-                        );
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r1,
-                            "vel_lo",
-                            lo as i32,
-                            (1, hi as i32),
+                            "track_midi_out_ch_gen",
+                            out_ch as i32,
+                            (1, 16),
                             1,
-                            lo.to_string(),
+                            out_ch.to_string(),
                             true,
                         ) {
-                            tp.vel_limit.0 = v as u8;
-                        }
-                        if let Some(v) = drag_value(
-                            ui,
-                            &g_upper,
-                            r2,
-                            "vel_hi",
-                            hi as i32,
-                            (lo as i32, 127),
-                            127,
-                            hi.to_string(),
-                            true,
-                        ) {
-                            tp.vel_limit.1 = v as u8;
+                            p.tracks[ti].midi_channel = v as u8;
                         }
                         y += ROW_H;
+
                         label(&g_upper, label_right, y, tr("Delay:"), true);
-                        let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
                         if let Some(v) = drag_value(
                             ui,
                             &g_upper,
-                            r,
-                            "track_delay",
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "track_delay_gen",
                             tp.delay_ms as i32,
                             (-250, 250),
                             0,
@@ -2217,23 +1958,722 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             tp.delay_ms = v as i16;
                         }
                         y += ROW_H;
-                        label(&g_upper, label_right, y, tr("No Transpose:"), true);
-                        if checkbox(
+                    }
+
+                    let tmore_r = Rect::from_min_size(pos2(left, y), vec2(w, ROW_H));
+                    if sub_disclosure(
+                        ui,
+                        &g_upper,
+                        tmore_r,
+                        "track_more",
+                        s.inspector.track_more_open,
+                        tr("More"),
+                    ) {
+                        s.inspector.track_more_open = !s.inspector.track_more_open;
+                    }
+                    y += ROW_H;
+
+                    if s.inspector.track_more_open {
+                        let channel = p.channel_name(ti);
+                        label(&g_upper, label_right, y, tr("Channel:"), true);
+                        if let Some(resp) = popup(
                             ui,
                             &g_upper,
-                            pos2(vx, y),
-                            "no_transpose",
-                            tp.no_transpose,
+                            Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                            "channel",
+                            &channel,
                             true,
                         ) {
-                            tp.no_transpose = !tp.no_transpose;
+                            resp.on_hover_text("Channel strip identifier");
                         }
                         y += ROW_H;
-                        label(&g_upper, label_right, y, tr("No Reset:"), true);
-                        if checkbox(ui, &g_upper, pos2(vx, y), "no_reset", tp.no_reset, true) {
-                            tp.no_reset = !tp.no_reset;
+                        if audio {
+                            label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
+                            popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "freeze",
+                                tr("Pre Fader"),
+                                true,
+                            );
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Q-Reference:"), false);
+                            checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Flex Mode:"), false);
+                            popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "flex",
+                                tr("Off"),
+                                false,
+                            );
+                            y += ROW_H;
+                        } else {
+                            let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
+                            if external {
+                                // Where this track's notes go: a MIDI output port and a channel.
+                                label(&g_upper, label_right, y, tr("MIDI Out Port:"), true);
+                                let port = p.tracks[ti]
+                                    .midi_port
+                                    .clone()
+                                    .unwrap_or_else(|| tr("No Port").to_string());
+                                if let Some(resp) = popup(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "midi_out_port",
+                                    &port,
+                                    true,
+                                ) {
+                                    egui::Popup::menu(&resp).show(|ui| {
+                                        let current = p.tracks[ti].midi_port.clone();
+                                        if ui
+                                            .selectable_label(current.is_none(), tr("No Port"))
+                                            .clicked()
+                                        {
+                                            p.tracks[ti].midi_port = None;
+                                            ui.close();
+                                        }
+                                        for name in crate::midi_out::ports() {
+                                            if ui
+                                                .selectable_label(
+                                                    current.as_deref() == Some(&name),
+                                                    &name,
+                                                )
+                                                .clicked()
+                                            {
+                                                p.tracks[ti].midi_port = Some(name);
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                }
+                                y += ROW_H;
+                                label(&g_upper, label_right, y, tr("MIDI Out Channel:"), true);
+                                let r =
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                                let channel = p.tracks[ti].midi_channel.clamp(1, 16);
+                                if let Some(v) = drag_value(
+                                    ui,
+                                    &g_upper,
+                                    r,
+                                    "midi_out_channel",
+                                    channel as i32,
+                                    (1, 16),
+                                    1,
+                                    channel.to_string(),
+                                    true,
+                                ) {
+                                    p.tracks[ti].midi_channel = v as u8;
+                                }
+                                y += ROW_H;
+                                // The sound sent when the track is routed: a program, and a bank (both optional;
+                                // the top of each range is Off).
+                                label(&g_upper, label_right, y, tr("MIDI Program:"), true);
+                                let program = p.tracks[ti].midi_program.map_or(128, i32::from);
+                                if let Some(v) = drag_value(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "midi_out_program",
+                                    program,
+                                    (0, 128),
+                                    128,
+                                    if program == 128 {
+                                        tr("Off").to_string()
+                                    } else {
+                                        program.to_string()
+                                    },
+                                    true,
+                                ) {
+                                    p.tracks[ti].midi_program = (v < 128).then_some(v as u8);
+                                }
+                                y += ROW_H;
+                                label(&g_upper, label_right, y, tr("MIDI Bank:"), true);
+                                let bank = p.tracks[ti].midi_bank.map_or(16384, i32::from);
+                                if let Some(v) = drag_value(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "midi_out_bank",
+                                    bank,
+                                    (0, 16384),
+                                    16384,
+                                    if bank == 16384 {
+                                        tr("Off").to_string()
+                                    } else {
+                                        bank.to_string()
+                                    },
+                                    true,
+                                ) {
+                                    p.tracks[ti].midi_bank = (v < 16384).then_some(v as u16);
+                                }
+                                y += ROW_H;
+                            }
+                            if !external {
+                                // The instrument this track plays instead of its synth patch.
+                                label(&g_upper, label_right, y, tr("SoundFont:"), true);
+                                let current = p.tracks[ti].soundfont.clone();
+                                let piano = p.tracks[ti].epiano;
+                                let sampler = p.tracks[ti].sampler.clone();
+                                let has_drums = p.tracks[ti].drums.is_some();
+                                let has_bass808 = p.tracks[ti].bass808.is_some();
+                                let hosted_inst = p.tracks[ti].hosted_instrument;
+                                let shown = match (&current, piano) {
+                                    _ if hosted_inst != 0 => {
+                                        crate::hosted_plugins::name(hosted_inst).to_string()
+                                    }
+                                    _ if has_drums => tr("Drum Machine").to_string(),
+                                    _ if has_bass808 => "808 Bass".to_string(),
+                                    _ if sampler.is_some() => {
+                                        let name = sampler
+                                            .as_ref()
+                                            .map(|s| s.source.name())
+                                            .unwrap_or_default();
+                                        format!("{} · {}", tr("Sampler"), name)
+                                    }
+                                    (_, Some(_)) => tr("Electric Piano").to_string(),
+                                    (None, None) => tr("None").to_string(),
+                                    (Some(sf), None) => soundfont_label(sf),
+                                };
+                                let rect =
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                                if let Some(resp) =
+                                    popup(ui, &g_upper, rect, "soundfont", &shown, true)
+                                {
+                                    if resp.double_clicked() {
+                                        if hosted_inst != 0 {
+                                            s.mixer.inst_window = Some(ti);
+                                            s.mixer.fx_window = None;
+                                            s.mixer.plugin_controls = false;
+                                        } else if has_drums {
+                                            s.show_drum_machine = Some(ti);
+                                        } else if has_bass808 {
+                                            s.show_bass808 = Some(ti);
+                                        }
+                                    }
+                                    egui::Popup::menu(&resp).show(|ui| {
+                                        if ui.button(tr("Choose SoundFont…")).clicked() {
+                                            if let Some(path) = rfd::FileDialog::new()
+                                                .add_filter("SoundFont", &["sf2", "SF2"])
+                                                .pick_file()
+                                            {
+                                                use_soundfont_file(
+                                                    p,
+                                                    ti,
+                                                    path.to_string_lossy().into_owned(),
+                                                );
+                                            }
+                                            ui.close();
+                                        }
+                                        if ui.button(tr("Choose Hydrogen Drum Kit…")).clicked() {
+                                            // A kit is a downloaded `.h2drumkit` archive, or the `drumkit.xml`
+                                            // of one that is already unpacked.
+                                            if let Some(path) = rfd::FileDialog::new()
+                                                .add_filter(
+                                                    "Hydrogen drum kit",
+                                                    &["h2drumkit", "xml"],
+                                                )
+                                                .pick_file()
+                                            {
+                                                match hydrogen_kit_file(&path) {
+                                                    Ok(file) => use_soundfont_file(p, ti, file),
+                                                    Err(e) => {
+                                                        tracing::warn!("{e}");
+                                                        s.status = Some(e);
+                                                    }
+                                                }
+                                            }
+                                            ui.close();
+                                        }
+                                        if ui.button(tr("Electric Piano")).clicked() {
+                                            p.tracks[ti].epiano =
+                                                Some(crate::model::EPianoUse::default());
+                                            p.tracks[ti].soundfont = None;
+                                            p.tracks[ti].sampler = None;
+                                            p.tracks[ti].drums = None;
+                                            p.tracks[ti].bass808 = None;
+                                            p.tracks[ti].hosted_instrument = 0;
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button("808 Bass").clicked() {
+                                            p.tracks[ti].bass808 =
+                                                Some(prowave_engine::Bass808Spec::default());
+                                            p.tracks[ti].soundfont = None;
+                                            p.tracks[ti].sampler = None;
+                                            p.tracks[ti].epiano = None;
+                                            p.tracks[ti].drums = None;
+                                            p.tracks[ti].hosted_instrument = 0;
+                                            s.show_bass808 = Some(ti);
+                                            ui.close();
+                                        }
+                                        if has_bass808 {
+                                            if ui.button("Edit 808 Bass…").clicked() {
+                                                s.show_bass808 = Some(ti);
+                                                ui.close();
+                                            }
+                                            if ui.button("Remove 808 Bass").clicked() {
+                                                p.tracks[ti].bass808 = None;
+                                                ui.close();
+                                            }
+                                        }
+                                        ui.separator();
+                                        if ui.button(tr("Drum Machine")).clicked() {
+                                            p.tracks[ti].drums =
+                                                Some(crate::drum_kit::DrumsUse::new());
+                                            p.tracks[ti].sampler = None;
+                                            p.tracks[ti].epiano = None;
+                                            p.tracks[ti].soundfont = None;
+                                            p.tracks[ti].bass808 = None;
+                                            p.tracks[ti].hosted_instrument = 0;
+                                            s.show_drum_machine = Some(ti);
+                                            ui.close();
+                                        }
+                                        if has_drums {
+                                            if ui.button(tr("Edit Drum Machine…")).clicked() {
+                                                s.show_drum_machine = Some(ti);
+                                                ui.close();
+                                            }
+                                            if ui.button(tr("Remove Drum Machine")).clicked() {
+                                                p.tracks[ti].drums = None;
+                                                ui.close();
+                                            }
+                                        }
+                                        let clap_insts: Vec<_> =
+                                            crate::hosted_plugins::catalog_instruments()
+                                                .into_iter()
+                                                .filter(|i| {
+                                                    i.format == crate::hosted_plugins::Format::Clap
+                                                })
+                                                .collect();
+                                        if !clap_insts.is_empty() {
+                                            ui.separator();
+                                            ui.menu_button("CLAP Instruments", |ui| {
+                                                for inst in &clap_insts {
+                                                    let picked = hosted_inst != 0
+                                                        && crate::hosted_plugins::info(hosted_inst)
+                                                            .as_ref()
+                                                            .map(|i| &i.id)
+                                                            == Some(&inst.id);
+                                                    if ui
+                                                        .selectable_label(picked, &inst.name)
+                                                        .clicked()
+                                                    {
+                                                        let slot =
+                                                            crate::hosted_plugins::add(inst, None);
+                                                        p.tracks[ti].hosted_instrument = slot;
+                                                        p.tracks[ti].soundfont = None;
+                                                        p.tracks[ti].sampler = None;
+                                                        p.tracks[ti].epiano = None;
+                                                        p.tracks[ti].drums = None;
+                                                        p.tracks[ti].bass808 = None;
+                                                        ui.close();
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        let vst3_insts: Vec<_> =
+                                            crate::hosted_plugins::catalog_instruments()
+                                                .into_iter()
+                                                .filter(|i| {
+                                                    i.format == crate::hosted_plugins::Format::Vst3
+                                                })
+                                                .collect();
+                                        if !vst3_insts.is_empty() {
+                                            ui.menu_button("VST3 Instruments", |ui| {
+                                                for inst in &vst3_insts {
+                                                    let picked = hosted_inst != 0
+                                                        && crate::hosted_plugins::info(hosted_inst)
+                                                            .as_ref()
+                                                            .map(|i| &i.id)
+                                                            == Some(&inst.id);
+                                                    if ui
+                                                        .selectable_label(picked, &inst.name)
+                                                        .clicked()
+                                                    {
+                                                        let slot =
+                                                            crate::hosted_plugins::add(inst, None);
+                                                        p.tracks[ti].hosted_instrument = slot;
+                                                        p.tracks[ti].soundfont = None;
+                                                        p.tracks[ti].sampler = None;
+                                                        p.tracks[ti].epiano = None;
+                                                        p.tracks[ti].drums = None;
+                                                        p.tracks[ti].bass808 = None;
+                                                        ui.close();
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        if hosted_inst != 0 {
+                                            ui.separator();
+                                            if ui
+                                                .button(format!(
+                                                    "Remove {}",
+                                                    crate::hosted_plugins::name(hosted_inst),
+                                                ))
+                                                .clicked()
+                                            {
+                                                p.tracks[ti].hosted_instrument = 0;
+                                                ui.close();
+                                            }
+                                        }
+                                        ui.separator();
+                                        ui.menu_button(tr("Sampler"), |ui| {
+                                            use crate::sampler_load::SamplerSource;
+                                            if ui.button(tr("Load SFZ Instrument…")).clicked() {
+                                                if let Some(path) = rfd::FileDialog::new()
+                                                    .add_filter("SFZ", &["sfz", "SFZ"])
+                                                    .pick_file()
+                                                {
+                                                    use_sampler(p, ti, SamplerSource::Sfz(path));
+                                                }
+                                                ui.close();
+                                            }
+                                            if ui.button(tr("Load EXS Instrument…")).clicked() {
+                                                if let Some(path) = rfd::FileDialog::new()
+                                                    .add_filter("EXS", &["exs", "EXS"])
+                                                    .pick_file()
+                                                {
+                                                    use_sampler(p, ti, SamplerSource::Exs(path));
+                                                }
+                                                ui.close();
+                                            }
+                                            if ui
+                                                .button(tr("Load Audio File (Quick Sampler)…"))
+                                                .clicked()
+                                            {
+                                                if let Some(path) = rfd::FileDialog::new()
+                                                    .add_filter(
+                                                        "Audio",
+                                                        &[
+                                                            "wav", "aif", "aiff", "flac", "ogg",
+                                                            "mp3", "caf", "m4a",
+                                                        ],
+                                                    )
+                                                    .pick_file()
+                                                {
+                                                    use_sampler(
+                                                        p,
+                                                        ti,
+                                                        SamplerSource::Audio {
+                                                            path,
+                                                            root: 60,
+                                                            looped: false,
+                                                        },
+                                                    );
+                                                }
+                                                ui.close();
+                                            }
+                                            if let Some(s) = &sampler {
+                                                if let Some(e) =
+                                                    crate::sampler_load::error(s.source.path())
+                                                {
+                                                    ui.colored_label(
+                                                        egui::Color32::from_rgb(0xe0, 0x70, 0x60),
+                                                        crate::i18n::trf("Cannot load: {}", &[&e]),
+                                                    );
+                                                }
+                                                ui.separator();
+                                                if ui.button(tr("Remove Sampler")).clicked() {
+                                                    p.tracks[ti].sampler = None;
+                                                    ui.close();
+                                                }
+                                            }
+                                        });
+                                        if piano.is_some() {
+                                            ui.separator();
+                                            if ui.button(tr("Remove Electric Piano")).clicked() {
+                                                p.tracks[ti].epiano = None;
+                                                ui.close();
+                                            }
+                                        }
+                                        if let (Some(sf), None, None) =
+                                            (current.as_ref(), piano, sampler.as_ref())
+                                        {
+                                            if let Some(bank) = crate::soundfonts::loaded(&sf.path)
+                                            {
+                                                ui.separator();
+                                                egui::ScrollArea::vertical()
+                                                    .max_height(320.0)
+                                                    .show(ui, |ui| {
+                                                        for preset in bank.presets() {
+                                                            let picked = preset.bank == sf.bank
+                                                                && preset.program == sf.program;
+                                                            if ui
+                                                                .selectable_label(
+                                                                    picked,
+                                                                    &preset.name,
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                p.tracks[ti].soundfont =
+                                                                    Some(SoundFontUse {
+                                                                        path: sf.path.clone(),
+                                                                        bank: preset.bank,
+                                                                        program: preset.program,
+                                                                    });
+                                                                ui.close();
+                                                            }
+                                                        }
+                                                    });
+                                            }
+                                            ui.separator();
+                                            if ui.button(tr("Remove SoundFont")).clicked() {
+                                                p.tracks[ti].soundfont = None;
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                }
+                                y += ROW_H;
+                                if let Some(ep) = p.tracks[ti].epiano {
+                                    if let Some(dials) = piano_rows(
+                                        ui,
+                                        &g_upper,
+                                        (label_right, vx, vw),
+                                        &mut y,
+                                        ep.params,
+                                    ) {
+                                        p.tracks[ti].epiano =
+                                            Some(crate::model::EPianoUse { params: dials });
+                                    }
+                                }
+                                if let Some(current) = p.tracks[ti].sampler.clone() {
+                                    if let Some(next) = sampler_rows(
+                                        ui,
+                                        &g_upper,
+                                        (label_right, vx, vw),
+                                        &mut y,
+                                        &current,
+                                    ) {
+                                        p.tracks[ti].sampler = Some(next);
+                                    }
+                                }
+                            }
+                            // MIDI In Port
+                            label(&g_upper, label_right, y, tr("MIDI In Port:"), true);
+                            let in_port = p.tracks[ti]
+                                .midi_in_port
+                                .clone()
+                                .unwrap_or_else(|| tr("All").to_string());
+                            if let Some(resp) = popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "midi_in_port",
+                                &in_port,
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    if ui
+                                        .selectable_label(
+                                            p.tracks[ti].midi_in_port.is_none(),
+                                            tr("All"),
+                                        )
+                                        .clicked()
+                                    {
+                                        p.tracks[ti].midi_in_port = None;
+                                        ui.close();
+                                    }
+                                    for name in crate::mtc_in::ports() {
+                                        let on =
+                                            p.tracks[ti].midi_in_port.as_deref() == Some(&name);
+                                        if ui.selectable_label(on, &name).clicked() {
+                                            p.tracks[ti].midi_in_port = Some(name);
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                            y += ROW_H;
+
+                            // MIDI In Channel
+                            label(&g_upper, label_right, y, tr("MIDI In Channel:"), true);
+                            let in_ch_text = p.tracks[ti]
+                                .midi_in_channel
+                                .map_or_else(|| tr("All").to_string(), |c| c.to_string());
+                            if let Some(resp) = popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "midi_in_channel",
+                                &in_ch_text,
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    if ui
+                                        .selectable_label(
+                                            p.tracks[ti].midi_in_channel.is_none(),
+                                            tr("All"),
+                                        )
+                                        .clicked()
+                                    {
+                                        p.tracks[ti].midi_in_channel = None;
+                                        ui.close();
+                                    }
+                                    for ch in 1..=16u8 {
+                                        let on = p.tracks[ti].midi_in_channel == Some(ch);
+                                        if ui.selectable_label(on, ch.to_string()).clicked() {
+                                            p.tracks[ti].midi_in_channel = Some(ch);
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
+                            y += ROW_H;
+
+                            // Freeze Mode
+                            label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
+                            popup(
+                                ui,
+                                &g_upper,
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                "freeze_mode",
+                                tr("Pre Fader"),
+                                true,
+                            );
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Transpose:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "track_transpose",
+                                tp.transpose as i32,
+                                (-96, 96),
+                                0,
+                                transpose_text(tp.transpose as i32),
+                                true,
+                            ) {
+                                tp.transpose = v as i8;
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Velocity:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "track_velocity",
+                                tp.velocity as i32,
+                                (-99, 99),
+                                0,
+                                velocity_text(tp.velocity as i32),
+                                true,
+                            ) {
+                                tp.velocity = v as i8;
+                            }
+                            y += ROW_H;
+                            let half = (vw - 4.0) / 2.0;
+                            label(&g_upper, label_right, y, tr("Key Limit:"), true);
+                            let (lo, hi) = tp.key_limit;
+                            let r1 =
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
+                            let r2 = Rect::from_min_size(
+                                pos2(vx + half + 4.0, y + 2.0),
+                                vec2(half, ROW_H - 4.0),
+                            );
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r1,
+                                "key_lo",
+                                lo as i32,
+                                (0, hi as i32),
+                                0,
+                                note_name(lo),
+                                true,
+                            ) {
+                                tp.key_limit.0 = v as u8;
+                            }
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r2,
+                                "key_hi",
+                                hi as i32,
+                                (lo as i32, 127),
+                                127,
+                                note_name(hi),
+                                true,
+                            ) {
+                                tp.key_limit.1 = v as u8;
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Vel Limit:"), true);
+                            let (lo, hi) = tp.vel_limit;
+                            let r1 =
+                                Rect::from_min_size(pos2(vx, y + 2.0), vec2(half, ROW_H - 4.0));
+                            let r2 = Rect::from_min_size(
+                                pos2(vx + half + 4.0, y + 2.0),
+                                vec2(half, ROW_H - 4.0),
+                            );
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r1,
+                                "vel_lo",
+                                lo as i32,
+                                (1, hi as i32),
+                                1,
+                                lo.to_string(),
+                                true,
+                            ) {
+                                tp.vel_limit.0 = v as u8;
+                            }
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r2,
+                                "vel_hi",
+                                hi as i32,
+                                (lo as i32, 127),
+                                127,
+                                hi.to_string(),
+                                true,
+                            ) {
+                                tp.vel_limit.1 = v as u8;
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("Delay:"), true);
+                            let r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
+                            if let Some(v) = drag_value(
+                                ui,
+                                &g_upper,
+                                r,
+                                "track_delay",
+                                tp.delay_ms as i32,
+                                (-250, 250),
+                                0,
+                                delay_text(tp.delay_ms as i32),
+                                true,
+                            ) {
+                                tp.delay_ms = v as i16;
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("No Transpose:"), true);
+                            if checkbox(
+                                ui,
+                                &g_upper,
+                                pos2(vx, y),
+                                "no_transpose",
+                                tp.no_transpose,
+                                true,
+                            ) {
+                                tp.no_transpose = !tp.no_transpose;
+                            }
+                            y += ROW_H;
+                            label(&g_upper, label_right, y, tr("No Reset:"), true);
+                            if checkbox(ui, &g_upper, pos2(vx, y), "no_reset", tp.no_reset, true) {
+                                tp.no_reset = !tp.no_reset;
+                            }
+                            y += ROW_H;
                         }
-                        y += ROW_H;
                     }
                     if p.tracks[ti].params != tp {
                         p.tracks[ti].params = tp;

@@ -71,6 +71,9 @@ pub const COUNT: usize = 18;
 pub const TARGET_SCALE: i32 = 0;
 pub const TARGET_MIDI: i32 = 1;
 
+/// Notes the MIDI input keeps track of at once; a note past these pushes out the oldest.
+const MAX_HELD: usize = 16;
+
 /// The C major scale, the Custom notes' default.
 pub const C_MAJOR: i32 = 0b1010_1011_0101;
 
@@ -351,6 +354,9 @@ pub struct ProWaveTune {
     recent: [f32; 3],
     /// The Pitch Override in force (a MIDI note with a fraction), and its last value.
     override_note: Option<f32>,
+    /// Notes held on the MIDI input, oldest first.
+    midi_held: [u8; MAX_HELD],
+    midi_held_len: usize,
     override_prev: i32,
     current: Option<i32>,
     held: f32,
@@ -404,6 +410,8 @@ impl ProWaveTune {
             period: 0.0,
             recent: [0.0; 3],
             override_note: None,
+            midi_held: [0; MAX_HELD],
+            midi_held_len: 0,
             override_prev: 0,
             current: None,
             held: 0.0,
@@ -475,7 +483,8 @@ impl ProWaveTune {
             return t;
         }
         if self.v[TARGET] == TARGET_MIDI {
-            if let Some(n) = beat.and_then(|b| self.targets.note_at(b)) {
+            let held = self.midi_held_len.checked_sub(1).map(|i| self.midi_held[i]);
+            if let Some(n) = held.or_else(|| beat.and_then(|b| self.targets.note_at(b))) {
                 self.current = Some(i32::from(n));
                 return f32::from(n);
             }
@@ -621,8 +630,43 @@ fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+impl ProWaveTune {
+    /// Lets go of `note` if it is held.
+    fn release(&mut self, note: u8) {
+        if let Some(i) = self.midi_held[..self.midi_held_len]
+            .iter()
+            .position(|n| *n == note)
+        {
+            self.midi_held.copy_within(i + 1..self.midi_held_len, i);
+            self.midi_held_len -= 1;
+        }
+    }
+
+    /// The notes held on the MIDI input, oldest first.
+    pub fn held_notes(&self) -> &[u8] {
+        &self.midi_held[..self.midi_held_len]
+    }
+}
+
 impl BlockProcessor for ProWaveTune {
-    fn midi(&mut self, _status: u8, _data1: u8, _data2: u8, _offset: u32) {}
+    /// Notes on the MIDI input are the targets of the MIDI mode while they are held.
+    fn midi(&mut self, status: u8, data1: u8, data2: u8, _offset: u32) {
+        let note = data1 & 0x7f;
+        match status & 0xf0 {
+            0x90 if data2 > 0 => {
+                self.release(note);
+                if self.midi_held_len == MAX_HELD {
+                    self.midi_held.copy_within(1.., 0);
+                    self.midi_held_len -= 1;
+                }
+                self.midi_held[self.midi_held_len] = note;
+                self.midi_held_len += 1;
+            }
+            0x80 | 0x90 => self.release(note),
+            0xb0 if data1 == 120 || data1 == 123 => self.midi_held_len = 0,
+            _ => {}
+        }
+    }
 
     fn process(&mut self, input: (&[f32], &[f32]), out: (&mut [f32], &mut [f32])) {
         let n = super::copy_in(input, (&mut *out.0, &mut *out.1));

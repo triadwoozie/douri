@@ -1,0 +1,18 @@
+# A macro oscillator with 24 synthesis models: mi-plaits-dsp, Oliver Rockstedt's Rust port of
+# the DSP code of a Eurorack module by Emilie Gillet (github.com/sourcebox/mi-plaits-dsp-rs,
+# commit d615458), MIT licence (see LICENSE and NOTICE). The source in src/ is unchanged; this
+# manifest is upstream's without its dev-dependencies (its tests and examples are not here).
+[package]
+name = "mi-plaits-dsp"
+version = "0.1.0"
+edition = "2024"
+authors = ["Oliver Rockstedt <info@sourcebox.de>"]
+description = "Port of DSP code from Mutable Instruments Plaits module"
+repository = "https://github.com/sourcebox/mi-plaits-dsp-rs"
+license = "MIT"
+publish = false
+
+[dependencies]
+dyn-clone = "1.0.17"
+num-traits = { version = "0.2", default-features = false, features = ["libm"] }
+spin = { version = "0.12.1", features = ["once"] }

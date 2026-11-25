@@ -1,0 +1,37 @@
+Resonator, spectral processor and digital oscillator DSP (vendored)
+
+Source:  https://github.com/pichenettes/eurorack, commit
+         f4cfa7697095a28d292bff758beb51deb49b5a86 (f4cfa76, 2026-10-12), and its submodule
+         https://github.com/pichenettes/stmlib at commit
+         e3bd7c9cc00e4364166f9905c0509b6ffd0535ec (e3bd7c9).
+Author:  Emilie Gillet (Mutable Instruments)
+Licence: MIT. Every file in eurorack/ carries the MIT notice in its header (Copyright
+         2012-2016 Emilie Gillet). LICENSE is stmlib's LICENSE file at that commit, unchanged;
+         it holds the notice the files carry (its paragraph on third_party/STM names code that
+         is not here). The eurorack repository has no LICENSE file of its own; its README says
+         the STM32F projects, which these three are, are MIT.
+
+What is here, unchanged from upstream (88 files, at their upstream paths under eurorack/):
+  rings/dsp (all of it, with dsp/fx) and rings/resources.{h,cc}: the Rings resonator;
+  clouds/dsp (all of it, with dsp/fx and dsp/pvoc) and clouds/resources.{h,cc}: the Clouds
+    texture synthesizer's processor (Pro Wave uses its spectral mode);
+  braids: macro_oscillator, analog_oscillator, digital_oscillator, resources (.h and .cc each),
+    parameter_interpolation.h, svf.h, settings.h, excitation.h: the Braids macro oscillator;
+  stmlib: stmlib.h, dsp/*.h, dsp/atan.cc, dsp/units.cc, utils/random.{h,cc}, utils/dsp.h,
+    utils/buffer_allocator.h, fft/shy_fft.h.
+
+What is not: the modules' hardware code (drivers, ui, cv_scaler, settings.cc, bootloaders,
+their main loops), their tests (three of which are GPL-3.0-or-later), hardware design files,
+and every other module.
+
+Written for Pro Wave, under the same MIT licence: shim/pw_mi.h and shim/pw_mi.cpp (a C
+interface over the three classes; it follows the order of calls of the modules' main loops),
+shim/clouds/drivers/debug_pin.h (an empty stand-in for a hardware header that
+granular_processor.cc includes and does not use), build.rs (builds the C++ with the cc crate,
+with the code's own TEST switch defined), src/lib.rs (the Rust declarations and owners of that
+interface), Cargo.toml, rustfmt.toml and this file. Pro Wave's instruments and effects around
+it are in crates/prowave-engine/src/native_inst/ (resonator.rs, digital_osc.rs) and
+crates/prowave-engine/src/native_fx/ (resonator_fx.rs, spectral.rs).
+
+"Mutable Instruments", "Rings", "Clouds" and "Braids" are names of their owner; Pro Wave's
+instruments and effects do not use them.

@@ -403,7 +403,7 @@ pub(crate) fn region_notes(
     track: u16,
 ) -> Vec<NoteEvent> {
     let (rp, tp) = (r.params, t.params);
-    let delay_beats = (tp.delay_ms as f64 / 1000.0) * 2.0; // 120 BPM reference (2 beats per sec)
+    let delay_beats = (tp.delay_ms as f64 / 1000.0) * 2.0 + (rp.delay_ticks as f64 / 480.0);
 
     // Precompute chord flam offsets if Q-Flam is set
     let flam_offsets: Vec<f64> = if rp.q_flam != 0 {

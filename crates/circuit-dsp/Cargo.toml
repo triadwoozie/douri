@@ -1,0 +1,12 @@
+# A circuit-level audio model (a SPICE-style netlist solved per sample, oversampled): the `dsp`
+# crate of github.com/somewheresystems/analog-to-vst (template/dsp, commit f5a9d8d) by Somewhere
+# Systems, MIT licence (see LICENSE and NOTICE). The source in src/ is unchanged.
+[package]
+name = "circuit-dsp"
+description = "Circuit-level audio model (nodal DK method, oversampled), for Pro Wave's Circuit Overdrive"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]

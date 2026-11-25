@@ -48,3 +48,5 @@ Cache/
 # Python cache
 __pycache__/
 *.pyc
+
+crates/prowave-plug/target/

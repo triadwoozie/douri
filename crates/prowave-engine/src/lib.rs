@@ -38,6 +38,7 @@ pub mod modulators;
 mod monitor;
 mod mtc;
 pub mod native_fx;
+pub mod native_inst;
 pub mod note_render;
 pub mod offline;
 mod output;
@@ -115,8 +116,11 @@ pub use crate::mtc::{
 };
 pub use crate::native_fx::{
     lemon_fast_distortion, lemon_limiter, lemon_soft_clipper, lemon_transient_processor,
-    native_effects, native_info, open_native, open_native_block, open_tune_block, press, tune,
-    BlockProcessor, BlockTransport, NativeFx, NativeFxInfo, NativeParam,
+    native_effects, native_info, open_native, open_native_block, open_tune_block, press, texture,
+    tune, BlockProcessor, BlockTransport, NativeFx, NativeFxInfo, NativeParam, NativePreset,
+};
+pub use crate::native_inst::{
+    native_instrument_info, native_instruments, open_native_instrument, NativeInstInfo,
 };
 pub use crate::note_render::{NoteChange, Resynth, SegmentCache};
 pub use crate::offline::{write_wav_with_options, BitDepth, DitherRng, OfflineBounceResult};

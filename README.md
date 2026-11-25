@@ -53,7 +53,7 @@ to update this section.
 
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
-| Menu entries | 226 | 0 | 333 | 67.87% |
+| Menu entries | 227 | 0 | 334 | 67.96% |
 | Roadmap items | 8 | 0 | 27 | 29.63% |
 <!-- status:end -->
 

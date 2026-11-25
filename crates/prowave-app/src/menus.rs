@@ -491,6 +491,7 @@ const WINDOW: &[&str] = &[
     "Open Macro Controls",
     "Show Musical Typing",
     "Plugin Manager",
+    "Get Free Plug-ins",
     "MultiMeter",
     "Video",
     "-",
@@ -899,6 +900,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Show Musical Typing"
         | "Plug-In Manager…"
         | "Plugin Manager"
+        | "Get Free Plug-ins"
         | "MultiMeter"
         | "Pitch Editor" => true,
         "Record / Record Repeat" | "Record Toggle" | "Record Project Settings" => true,
@@ -1370,6 +1372,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
             }
         }
         "Plug-In Manager…" | "Plugin Manager" => s.show_plugin_manager = true,
+        "Get Free Plug-ins" => s.free_plugins.toggle(),
         "MultiMeter" => s.show_multimeter = !s.show_multimeter,
         "Select All" => s.tracks.select_all(p),
         "Join" => crate::region_edit::join_selected(p, &mut s.tracks),
@@ -2076,7 +2079,33 @@ fn menu(ui: &mut egui::Ui, title: &str, items: &[&str], p: &mut Project, s: &mut
     }
 }
 
-/// Style of the bar buttons and of the drop-down menus for the current look.
+/// Style of the top menu bar buttons (tight horizontal spacing between top-level menus).
+fn bar_style(light: bool) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
+    move |style: &mut egui::Style| {
+        egui::containers::menu::menu_style(style);
+        let l = look(light);
+        let hover_fill = if light {
+            Color32::from_rgb(0xdc, 0xdc, 0xdc)
+        } else {
+            Color32::from_rgb(0x28, 0x29, 0x2d)
+        };
+        style.spacing.item_spacing = egui::vec2(2.0, 0.0);
+        style.spacing.button_padding = egui::vec2(5.0, 2.0);
+        let v = &mut style.visuals;
+        v.override_text_color = None;
+        v.widgets.inactive.fg_stroke.color = l.bar_text;
+        v.widgets.hovered.corner_radius = egui::CornerRadius::same(5);
+        v.widgets.hovered.weak_bg_fill = hover_fill;
+        v.widgets.hovered.fg_stroke.color = l.bar_text;
+        v.widgets.open.corner_radius = egui::CornerRadius::same(5);
+        v.widgets.open.weak_bg_fill = hover_fill;
+        v.widgets.open.fg_stroke.color = l.bar_text;
+        v.widgets.active.corner_radius = egui::CornerRadius::same(5);
+        v.widgets.active.fg_stroke.color = l.bar_text;
+    }
+}
+
+/// Style of the drop-down menus for the current look.
 fn menu_style(light: bool) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
     move |style: &mut egui::Style| {
         egui::containers::menu::menu_style(style);
@@ -2178,7 +2207,7 @@ pub fn handle_keys(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState)
 pub fn menu_bar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) -> f32 {
     let light = s.light_menus;
     let bar = egui::MenuBar::new()
-        .style(menu_style(light))
+        .style(bar_style(light))
         .config(egui::containers::menu::MenuConfig::new().style(menu_style(light)));
     bar.ui(ui, |ui| {
         for (title, items) in MENUS {
@@ -2284,6 +2313,7 @@ mod tests {
                     s.update_check,
                     s.update_auto,
                     s.show_midi_fx,
+                    s.free_plugins.open,
                     s.settings_tab,
                     s.audio_prefs.buffer,
                 ),

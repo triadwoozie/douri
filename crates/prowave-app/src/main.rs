@@ -37,6 +37,7 @@ mod fade_tool;
 mod file_browser;
 mod file_commands;
 mod flex_edit;
+mod free_plugins;
 mod fx_ui;
 mod garageband;
 mod graphics;
@@ -381,6 +382,8 @@ pub struct UiState {
     pub show_about: bool,
     /// Dōri Sound Library Manager window is open.
     pub show_sound_library_manager: bool,
+    /// Window > Get Free Plug-ins installer window.
+    pub free_plugins: free_plugins::FreePlugins,
     /// Measured round-trip loopback latency calibration figure.
     pub measured_roundtrip: Option<prowave_engine::calibration::Measured>,
     /// URL to open in external browser.
@@ -456,6 +459,7 @@ impl UiState {
             group_watch: groups::GroupWatch::default(),
             inspector: inspector::InspectorView::default(),
             library: library::LibraryView::default(),
+            free_plugins: free_plugins::FreePlugins::default(),
             piano: piano_roll::PianoView::default(),
             steps: step_editor::StepView::default(),
             show_midi_fx: false,
@@ -1951,6 +1955,7 @@ impl eframe::App for App {
             });
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
+        free_plugins::show(&ctx, s);
         hosted_plugins::idle();
         automation::show(&ctx, p, s);
         undo_history::show(&ctx, p, s, &mut self.history);
