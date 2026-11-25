@@ -10,7 +10,8 @@ This product includes software developed by:
 - Ardour contributors (https://github.com/Ardour/ardour, GPL-2.0-or-later)
 - Lemon Studio / ItsAlphaNeon (https://github.com/ItsAlphaNeon/Lemon-Studio, GPL-3.0-or-later)
 - Phosphor Icons / Helena Zhang & Tobias Fried (https://phosphoricons.com, MIT)
-- AudioKnobs by Megaemce (https://github.com/Megaemce/AudioKnobs) — Moog-inspired rotary knob geometry and visual design (with upstream design inspirations from aike/webaudiosynth, desandro/dial-knob, and knobshop.com)
+- DAW UI Design by Dicky Jiang (https://www.figma.com/community/file/1240550915764011777/daw-ui-design, CC BY 4.0) — Rotary knob and modern DAW control styling reference
+- webaudio-controls (https://github.com/g200kg/webaudio-controls, Apache-2.0) by g200kg, Eiji Kitamura, Ryoya Kawai, and Keisuke Ai — Hardware control interaction ergonomics
 
 All original copyright notices and licenses are retained.
 See THIRD_PARTY_LICENSES.md and LICENSE for details.

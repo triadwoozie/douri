@@ -129,6 +129,8 @@ pub struct MusicalTyping {
     /// The live notes made since the app last took them.
     pending: Vec<LiveNote>,
     pub keep_touchpad_active: bool,
+    /// Active track key limit `(low, high)` used to dim out-of-range keys.
+    pub key_limit: (u8, u8),
 }
 
 impl Default for MusicalTyping {
@@ -151,6 +153,7 @@ impl MusicalTyping {
             sustained: Vec::new(),
             pending: Vec::new(),
             keep_touchpad_active: cfg!(target_os = "linux"),
+            key_limit: (0, 127),
         }
     }
 
@@ -716,16 +719,23 @@ fn piano_key(ui: &mut Ui, typing: &mut MusicalTyping, rect: Rect, key: Key, semi
     );
     mouse(typing, &resp, action);
     let lit = typing.is_down(action);
+    let note = (i32::from(typing.octave) + 2) * 12 + i32::from(semi);
+    let in_range = note >= i32::from(typing.key_limit.0) && note <= i32::from(typing.key_limit.1);
     let g = ui.painter_at(rect.expand(1.0));
+    let base_fill = if lit {
+        LIT
+    } else if black {
+        BLACK
+    } else {
+        WHITE
+    };
     g.rect_filled(
         rect,
         3.0,
-        if lit {
-            LIT
-        } else if black {
-            BLACK
+        if in_range {
+            base_fill
         } else {
-            WHITE
+            base_fill.gamma_multiply(0.38)
         },
     );
     g.rect_stroke(
@@ -734,15 +744,20 @@ fn piano_key(ui: &mut Ui, typing: &mut MusicalTyping, rect: Rect, key: Key, semi
         Stroke::new(1.0, Color32::from_gray(0x55)),
         StrokeKind::Inside,
     );
+    let text_col = if black || lit {
+        Color32::WHITE
+    } else {
+        Color32::from_gray(0x33)
+    };
     g.text(
         rect.center_bottom() + egui::vec2(0.0, -14.0),
         Align2::CENTER_CENTER,
         key_label(key),
         FontId::proportional(14.0),
-        if black || lit {
-            Color32::WHITE
+        if in_range {
+            text_col
         } else {
-            Color32::from_gray(0x33)
+            text_col.gamma_multiply(0.42)
         },
     );
 }

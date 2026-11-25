@@ -877,25 +877,66 @@ fn param_knob(
             painter.circle_filled(pos2(rect.left() + 2.0, rect.top() + 3.0), 2.2, accent);
         }
         if !locked {
-            if response.dragged() {
-                let n = (norm - response.drag_delta().y * 0.006).clamp(0.0, 1.0);
+            let ctrl_cmd = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+            if response.double_clicked() || (response.clicked() && ctrl_cmd) {
+                change = Some((info.default, true));
+            } else if response.dragged() {
+                response.request_focus();
+                let fine = if ui.input(|i| i.modifiers.shift) {
+                    0.1
+                } else {
+                    1.0
+                };
+                let n = (norm - response.drag_delta().y * 0.006 * fine).clamp(0.0, 1.0);
                 change = Some((info.from_norm(n), false));
             } else if response.drag_stopped() {
                 change = Some((value, true));
-            } else if response.double_clicked() {
-                change = Some((info.default, true));
+            } else if response.has_focus() {
+                let (up, down) = ui.input(|i| {
+                    (
+                        i.key_pressed(egui::Key::ArrowUp),
+                        i.key_pressed(egui::Key::ArrowDown),
+                    )
+                });
+                if up || down {
+                    let dir = if up { 1.0 } else { -1.0 };
+                    let step = dir * if ctrl_cmd { 0.005 } else { 0.02 };
+                    let n = (norm + step).clamp(0.0, 1.0);
+                    change = Some((info.from_norm(n), true));
+                }
             }
         }
         let v = change.map_or(value, |(v, _)| v);
-        ui.label(
-            RichText::new(match text {
-                Some(f) => f(v),
-                None => param_text(kind, info, v),
-            })
-            .monospace()
-            .size(9.5)
-            .color(if locked { FAINT } else { TXT }),
-        );
+        let formatted = match text {
+            Some(f) => f(v),
+            None => param_text(kind, info, v),
+        };
+        let (r_rect, _) = ui.allocate_exact_size(vec2(88.0, 14.0), Sense::hover());
+        let r_painter = ui.painter_at(r_rect);
+        if !locked {
+            if let Some(edited) = crate::widgets::daw_param_readout(
+                ui,
+                &r_painter,
+                r_rect,
+                response.id.with("readout"),
+                &formatted,
+                info.unit,
+                info.min,
+                info.max,
+                true,
+                None,
+            ) {
+                change = Some((edited, true));
+            }
+        } else {
+            r_painter.text(
+                r_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                formatted,
+                egui::FontId::monospace(9.5),
+                FAINT,
+            );
+        }
     });
     change
 }

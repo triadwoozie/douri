@@ -26,6 +26,7 @@ mod control;
 mod count_in;
 mod crash_log;
 pub mod cycle_area;
+mod daw_knob;
 pub mod diagnostics;
 mod drag_modes;
 mod drum_kit;
@@ -75,7 +76,6 @@ mod midi_in;
 mod midi_out;
 mod mixer;
 mod model;
-mod moog_knob;
 mod mtc_in;
 mod multimeter;
 mod musical_typing;
@@ -2097,11 +2097,14 @@ impl eframe::App for App {
         transform_ui::show(&ctx, &mut self.project, &mut self.ui);
         smart_tempo::show(&ctx, &mut self.project, &mut self.ui);
         group_editor::show(&ctx, &mut self.project, &mut self.ui);
-        let typed = self
+        let (typed, typed_key_limit) = self
             .project
             .tracks
             .get(self.project.selected_track)
-            .map(|t| t.name.clone());
+            .map_or((None, (0, 127)), |t| {
+                (Some(t.name.clone()), t.params.key_limit)
+            });
+        self.ui.typing.key_limit = typed_key_limit;
         musical_typing::show(&ctx, &mut self.ui.typing, typed.as_deref());
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
         bass808_ui::show(&ctx, &mut self.project, &mut self.ui);
@@ -2167,7 +2170,8 @@ fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 ui.add_space(8.0);
                 ui.label("Icons & Artwork:");
                 ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
-                ui.label("• AudioKnobs by Megaemce (github.com/Megaemce/AudioKnobs) - Moog knob geometry");
+                ui.label("• DAW UI Design by Dicky Jiang (CC BY 4.0) - Rotary knob and DAW control styling");
+                ui.label("• webaudio-controls by g200kg et al. (Apache-2.0) - Hardware control ergonomics");
                 ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
                 ui.add_space(8.0);
                 ui.label(
