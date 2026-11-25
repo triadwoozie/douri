@@ -386,6 +386,67 @@ pub enum WindowControlAction {
     Close,
 }
 
+fn draw_glow_window_btn(
+    ui: &mut Ui,
+    rect: Rect,
+    id: egui::Id,
+    icon: &str,
+    accent: Color32,
+) -> bool {
+    let resp = ui.interact(rect, id, Sense::click());
+    let t = ui.ctx().animate_bool(id.with("glow"), resp.hovered());
+    let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
+    if t > 0.0 {
+        let p = ui.painter();
+        let [r, g, b, _] = accent.to_array();
+        // 1. Base translucent tint so #1c1c1e shows through.
+        p.rect_filled(
+            rect,
+            CornerRadius::same(6),
+            Color32::from_rgba_unmultiplied(r, g, b, (28.0 * t) as u8),
+        );
+        // 2. Layered inner edge glow stepping inward with softly decaying alpha.
+        for (inset, alpha_base) in [(0.5, 55.0), (2.0, 38.0), (3.5, 24.0), (5.0, 12.0)] {
+            let inner = rect.shrink(inset);
+            if inner.is_positive() {
+                p.rect_stroke(
+                    inner,
+                    CornerRadius::same(6),
+                    Stroke::new(
+                        1.5,
+                        Color32::from_rgba_unmultiplied(r, g, b, (alpha_base * t) as u8),
+                    ),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+        // Subtle 1.0px inner border stroke.
+        p.rect_stroke(
+            rect,
+            CornerRadius::same(6),
+            Stroke::new(
+                1.0,
+                Color32::from_rgba_unmultiplied(r, g, b, (110.0 * t) as u8),
+            ),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let lerp = |a: u8, b: u8| -> u8 { (a as f32 + (b as f32 - a as f32) * t).round() as u8 };
+    let glyph_col = Color32::from_rgb(
+        lerp(default_tint.r(), accent.r()),
+        lerp(default_tint.g(), accent.g()),
+        lerp(default_tint.b(), accent.b()),
+    );
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(13.0),
+        glyph_col,
+    );
+    resp.clicked()
+}
+
 /// Unified window control button strip (Minimize, Maximize/Restore, Close)
 /// matching Logic Pro dark chrome and Apple Human Interface Guidelines.
 /// Left-to-right order is strictly preserved: [ — ]  [ □/❐ ]  [ × ]
@@ -396,67 +457,39 @@ pub fn draw_window_controls(ui: &mut Ui, is_maximized: bool) -> WindowControlAct
     let controls_w = 3.0 * btn_size.x + 2.0 * gap;
     let (strip_rect, _) = ui.allocate_exact_size(vec2(controls_w, btn_size.y), Sense::hover());
 
-    let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
-    let hover_tint = Color32::WHITE;
-    let hover_bg = Color32::from_rgb(0x2b, 0x2b, 0x2e);
-    let close_hover_bg = Color32::from_rgb(0xc9, 0x3b, 0x3b);
-
-    // Left-to-right layout guaranteed in both LTR and RTL parent contexts:
-    // 1. Minimize (left)
+    // 1. Minimize (left) — Yellow #febc2e
     let min_r = Rect::from_min_size(strip_rect.min, btn_size);
-    let min_resp = ui.interact(min_r, ui.scope_id().with("win_min"), Sense::click());
-    if min_resp.hovered() {
-        ui.painter()
-            .rect_filled(min_r, CornerRadius::same(4), hover_bg);
-    }
-    let min_col = if min_resp.hovered() {
-        hover_tint
-    } else {
-        default_tint
-    };
-    ui.painter().text(
-        min_r.center(),
-        Align2::CENTER_CENTER,
+    if draw_glow_window_btn(
+        ui,
+        min_r,
+        ui.scope_id().with("win_min"),
         crate::icons::regular::MINUS,
-        FontId::proportional(13.0),
-        min_col,
-    );
-    if min_resp.clicked() {
+        Color32::from_rgb(254, 188, 46),
+    ) {
         action = WindowControlAction::Minimize;
     }
 
-    // 2. Maximize / Restore (middle)
+    // 2. Maximize / Restore (middle) — Green #28c840
     let max_r = Rect::from_min_size(
         pos2(strip_rect.min.x + btn_size.x + gap, strip_rect.min.y),
         btn_size,
     );
-    let max_resp = ui.interact(max_r, ui.scope_id().with("win_max"), Sense::click());
-    if max_resp.hovered() {
-        ui.painter()
-            .rect_filled(max_r, CornerRadius::same(4), hover_bg);
-    }
-    let max_col = if max_resp.hovered() {
-        hover_tint
-    } else {
-        default_tint
-    };
     let max_icon = if is_maximized {
         crate::icons::regular::COPY
     } else {
         crate::icons::regular::SQUARE
     };
-    ui.painter().text(
-        max_r.center(),
-        Align2::CENTER_CENTER,
+    if draw_glow_window_btn(
+        ui,
+        max_r,
+        ui.scope_id().with("win_max"),
         max_icon,
-        FontId::proportional(13.0),
-        max_col,
-    );
-    if max_resp.clicked() {
+        Color32::from_rgb(40, 200, 64),
+    ) {
         action = WindowControlAction::Maximize;
     }
 
-    // 3. Close (far right)
+    // 3. Close (far right) — Red #ff5f57
     let close_r = Rect::from_min_size(
         pos2(
             strip_rect.min.x + 2.0 * (btn_size.x + gap),
@@ -464,24 +497,13 @@ pub fn draw_window_controls(ui: &mut Ui, is_maximized: bool) -> WindowControlAct
         ),
         btn_size,
     );
-    let close_resp = ui.interact(close_r, ui.scope_id().with("win_close"), Sense::click());
-    if close_resp.hovered() {
-        ui.painter()
-            .rect_filled(close_r, CornerRadius::same(4), close_hover_bg);
-    }
-    let close_col = if close_resp.hovered() {
-        hover_tint
-    } else {
-        default_tint
-    };
-    ui.painter().text(
-        close_r.center(),
-        Align2::CENTER_CENTER,
+    if draw_glow_window_btn(
+        ui,
+        close_r,
+        ui.scope_id().with("win_close"),
         crate::icons::regular::X,
-        FontId::proportional(13.0),
-        close_col,
-    );
-    if close_resp.clicked() {
+        Color32::from_rgb(255, 95, 87),
+    ) {
         action = WindowControlAction::Close;
     }
 
