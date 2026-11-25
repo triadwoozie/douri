@@ -239,7 +239,7 @@ fn no_socket_file_exits_3_and_says_the_app_is_not_running() {
         assert_eq!(stdout(&out), "");
         let text = stderr(&out);
         assert!(text.contains("socket file does not exist"), "{text}");
-        assert!(text.contains("Pro Wave is not running"), "{text}");
+        assert!(text.contains("Dōri is not running"), "{text}");
         assert!(text.contains(socket), "{text}");
     }
 }
@@ -272,7 +272,7 @@ fn methods_and_describe_fall_back_to_the_built_in_list() {
     );
     assert!(!text.contains("fake.only"));
     let note = stderr(&out);
-    assert!(note.contains("Pro Wave is not running"), "{note}");
+    assert!(note.contains("Dōri is not running"), "{note}");
     assert!(note.contains("built into prowavectl"), "{note}");
 
     // Describe the first method the built-in list names, whatever it is.

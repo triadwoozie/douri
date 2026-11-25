@@ -125,7 +125,7 @@ fn a_missing_socket_means_not_running() {
         Err(error @ ConnectError::NotRunning(_)) => {
             let text = error.to_string();
             assert!(text.contains("socket file does not exist"), "{text}");
-            assert!(text.contains("Pro Wave is not running"), "{text}");
+            assert!(text.contains("Dōri is not running"), "{text}");
             assert!(text.contains("PROWAVE_NO_CONTROL=1"), "{text}");
             assert_eq!(RpcFailure::from(error).exit_code(), 3);
         }

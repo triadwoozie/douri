@@ -317,7 +317,7 @@ pub fn tool_definition(method: &Method) -> Value {
         description.push_str(&format!("Result: {}", method.result));
     }
     if description.is_empty() {
-        description = format!("Calls the Pro Wave control method {}.", method.name);
+        description = format!("Calls the Dōri control method {}.", method.name);
     }
     json!({
         "name": tool_name(&method.name),

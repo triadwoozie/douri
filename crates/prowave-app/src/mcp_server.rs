@@ -388,7 +388,7 @@ impl McpEngine {
                 "Lemon Studio Delay",
                 "Bode Frequency Shifter",
                 "Stereo Auto-Pan",
-                "Pro Wave Tune (Pitch Tracker)"
+                "Dōri Tune (Pitch Tracker)"
             ],
             "plugin_formats_supported": ["CLAP", "VST3", "LADSPA", "DSSI"],
         })

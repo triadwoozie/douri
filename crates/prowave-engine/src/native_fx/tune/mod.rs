@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 pub const ID: &str = "prowave:tune";
-pub const NAME: &str = "Pro Wave Tune";
+pub const NAME: &str = "Dōri Tune";
 
 /// The delay the effect adds, in seconds: the shifter's look-ahead.
 pub const LATENCY_SECONDS: f64 = 0.008;

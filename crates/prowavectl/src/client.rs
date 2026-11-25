@@ -1,4 +1,4 @@
-//! The connection to Pro Wave's control socket.
+//! The connection to Dōri's control socket.
 //!
 //! The app speaks JSON-RPC 2.0, one JSON object per line. A request goes out as one line and the
 //! answer comes back as one line carrying the same id. After `events.subscribe` the app also
@@ -92,13 +92,13 @@ impl fmt::Display for ConnectError {
         match self {
             ConnectError::NotRunning(path) => write!(
                 f,
-                "socket file does not exist: Pro Wave is not running (or was started with \
+                "socket file does not exist: Dōri is not running (or was started with \
                  PROWAVE_NO_CONTROL=1). Socket: {}",
                 path.display()
             ),
             ConnectError::Stale(path) => write!(
                 f,
-                "socket file exists but nothing answers: it is stale, Pro Wave is not running. \
+                "socket file exists but nothing answers: it is stale, Dōri is not running. \
                  Socket: {}",
                 path.display()
             ),
@@ -162,7 +162,7 @@ impl fmt::Display for RpcFailure {
             RpcFailure::App(error) => write!(f, "error {}: {}", error.code, error.message),
             RpcFailure::Timeout { method, after } => write!(
                 f,
-                "timeout: no answer to {method} after {} s (Pro Wave may be busy or stuck)",
+                "timeout: no answer to {method} after {} s (Dōri may be busy or stuck)",
                 after.as_secs_f64()
             ),
             RpcFailure::ConnectionLost(detail) => write!(f, "connection lost: {detail}"),
@@ -344,7 +344,7 @@ impl Client {
                 // The stream ended before the line did.
                 Ok(_) => {
                     return Err(ReadStop::Lost(
-                        "Pro Wave closed the connection (it may have quit)".to_string(),
+                        "Dōri closed the connection (it may have quit)".to_string(),
                     ))
                 }
                 // The read timeout ran out; what was read so far stays in `partial`.
@@ -362,7 +362,7 @@ fn parse_line(line: &[u8]) -> Result<Option<Value>, RpcFailure> {
         return Ok(None);
     }
     serde_json::from_slice(line).map(Some).map_err(|error| {
-        RpcFailure::ConnectionLost(format!("Pro Wave sent a line that is not JSON: {error}"))
+        RpcFailure::ConnectionLost(format!("Dōri sent a line that is not JSON: {error}"))
     })
 }
 

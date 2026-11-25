@@ -23,7 +23,7 @@ use crate::native_fx::NativeParam;
 use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 
 pub const ID: &str = "prowave:macro-osc";
-pub const NAME: &str = "Pro Wave Macro Oscillator";
+pub const NAME: &str = "Dōri Macro Oscillator";
 
 pub const MODEL: usize = 0;
 pub const HARMONICS: usize = 1;

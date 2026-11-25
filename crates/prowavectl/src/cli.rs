@@ -1,5 +1,5 @@
 //! The commands of the `prowavectl` program. `run` returns the process exit code:
-//! 0 ok, 1 the app answered with an error, 2 usage, 3 Pro Wave is not running,
+//! 0 ok, 1 the app answered with an error, 2 usage, 3 Dōri is not running,
 //! 4 timeout or connection lost.
 
 use std::io::{self, Read, Write};
@@ -133,7 +133,7 @@ fn load_methods(
         Err(RpcFailure::Connect(error)) => {
             eprintln!("prowavectl: {error}");
             eprintln!(
-                "prowavectl: Pro Wave is not running, so this is the method list built into \
+                "prowavectl: Dōri is not running, so this is the method list built into \
                  prowavectl; the app's own list may differ."
             );
             let mut list = methods::embedded_methods().map_err(broken_list)?;

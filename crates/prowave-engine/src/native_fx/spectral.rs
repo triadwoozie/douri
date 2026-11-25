@@ -24,7 +24,7 @@ use crate::plugin_track::BlockProcessor;
 use mi_dsp::{Spectral as Dsp, SpectralBlock, SPECTRAL_BLOCK, SPECTRAL_RATE};
 
 pub const ID: &str = "prowave:spectral";
-pub const NAME: &str = "Pro Wave Spectral";
+pub const NAME: &str = "Dōri Spectral";
 
 pub const POSITION: usize = 0;
 pub const SIZE: usize = 1;

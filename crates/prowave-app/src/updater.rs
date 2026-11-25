@@ -1354,8 +1354,7 @@ impl Updater {
                 ui.set_width(460.0);
                 match &self.state {
                     State::Available(release) => {
-                        let title_text = trf("Pro Wave {} is available", &[&release.version])
-                            .replace("Pro Wave", "Dōri");
+                        let title_text = trf("Dōri {} is available", &[&release.version]);
                         ui.heading(title_text);
                         ui.label(trf("You have {}.", &[&current]));
                         ui.add_space(6.0);
@@ -1402,8 +1401,8 @@ impl Updater {
                     }
                     State::Ready(release, plan) => {
                         let unsaved = unsaved();
-                        ui.heading(trf("Pro Wave {} is ready to install", &[&release.version]));
-                        ui.label(tr("Pro Wave will close, update and open again."));
+                        ui.heading(trf("Dōri {} is ready to install", &[&release.version]));
+                        ui.label(tr("Dōri will close, update and open again."));
                         if unsaved {
                             ui.label(tr("Save your project before updating"));
                         }
@@ -1425,7 +1424,7 @@ impl Updater {
                     }
                     State::Saved(release, path, command) => {
                         ui.label(trf(
-                            "Pro Wave {} was downloaded and checked: {}",
+                            "Dōri {} was downloaded and checked: {}",
                             &[&release.version, &path.display()],
                         ));
                         ui.label(tr("To install it, run this in a terminal:"));
@@ -1445,10 +1444,7 @@ impl Updater {
                         });
                     }
                     State::UpToDate => {
-                        ui.label(
-                            trf("Pro Wave is up to date ({}).", &[&current])
-                                .replace("Pro Wave", "Dōri"),
-                        );
+                        ui.label(trf("Dōri is up to date ({}).", &[&current]));
                         if ui.button(tr("Close")).clicked() {
                             next = Some(State::Idle);
                         }

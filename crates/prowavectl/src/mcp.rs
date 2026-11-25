@@ -61,14 +61,14 @@ const CALL_TOOL: &str = "prowave_call";
 const STATUS_TOOL: &str = "prowave_status";
 
 const INSTRUCTIONS: &str = "\
-This server controls Pro Wave, a music production app (DAW) running on this Mac, through the \
+This server controls Dōri, a music production app (DAW) running on this Mac, through the \
 app's control API. Each prowave_* tool calls one control method of the running app; the tool \
 prowave_transport_play calls the method transport.play, and so on. Call prowave_rpc_describe \
 (the method rpc.describe) for the full, current method list with every param; pass \
 {\"method\": \"name\"} to see one method. prowave_call calls any method by name, including ones \
 missing from the tool list. prowave_state_get reads the app's state. prowave_status reports \
-whether the app can be reached. Pro Wave must already be running: this server never starts it, \
-so if a tool says the app is not running, ask the user to start Pro Wave and try again.";
+whether the app can be reached. Dōri must already be running: this server never starts it, \
+so if a tool says the app is not running, ask the user to start Dōri and try again.";
 
 /// Which form of the protocol a request is served in.
 #[derive(Clone, Copy, PartialEq)]
@@ -135,7 +135,7 @@ fn error_reply(id: Value, code: i64, message: impl Into<String>, data: Option<Va
 fn server_info() -> Value {
     json!({
         "name": "prowavectl",
-        "title": "Pro Wave control",
+        "title": "Dōri control",
         "version": env!("CARGO_PKG_VERSION"),
     })
 }
@@ -390,7 +390,7 @@ impl Server {
         }
         tools.push(json!({
             "name": CALL_TOOL,
-            "description": "Call any Pro Wave control method by its name, for example \
+            "description": "Call any Dōri control method by its name, for example \
                 transport.play. Use this for a method that has no tool of its own. The method \
                 rpc.describe lists every method and its params.",
             "inputSchema": {
@@ -408,7 +408,7 @@ impl Server {
         }));
         tools.push(json!({
             "name": STATUS_TOOL,
-            "description": "Report whether the Pro Wave app can be reached, the control socket \
+            "description": "Report whether the Dōri app can be reached, the control socket \
                 path, and the app's version when it is running. This never starts the app.",
             "inputSchema": {"type": "object", "additionalProperties": false},
         }));
@@ -502,7 +502,7 @@ impl Server {
             }
             Err(RpcFailure::Connect(error)) => {
                 return tool_error(format!(
-                    "Pro Wave cannot be reached: {error}\nStart Pro Wave, then try again. \
+                    "Dōri cannot be reached: {error}\nStart Dōri, then try again. \
                      (This tool never starts the app itself.)"
                 ))
             }
@@ -540,7 +540,7 @@ impl Server {
             Err(failure) => {
                 let mut reason = failure.to_string();
                 if matches!(failure, RpcFailure::Connect(_)) {
-                    reason.push_str(" Start Pro Wave to use the other tools.");
+                    reason.push_str(" Start Dōri to use the other tools.");
                 }
                 json!({"reachable": false, "socket": socket, "reason": reason})
             }
@@ -825,7 +825,7 @@ mod tests {
         );
         assert_eq!(reply["result"]["isError"], true);
         let text = reply["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("Start Pro Wave"), "{text}");
+        assert!(text.contains("Start Dōri"), "{text}");
         assert!(text.contains("not running"), "{text}");
 
         let reply = call(

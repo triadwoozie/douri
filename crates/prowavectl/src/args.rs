@@ -16,7 +16,7 @@ pub const SOCKET_ENV: &str = "PROWAVE_CONTROL_SOCKET";
 const SOCKET_SUFFIX: &str = "Library/Application Support/prowave-mac/control.sock";
 
 pub const HELP: &str = "\
-prowavectl: command-line client and MCP server for Pro Wave's control API.
+prowavectl: command-line client and MCP server for Dōri's control API.
 
 Usage:
   prowavectl [--socket PATH] [--timeout SECONDS] <command>
@@ -37,10 +37,10 @@ Options:
   --timeout SECONDS            wait this long for an answer (default 120, 0 = no limit)
 
 Exit codes:
-  0 ok, 1 the app answered with an error, 2 usage, 3 Pro Wave is not running,
+  0 ok, 1 the app answered with an error, 2 usage, 3 Dōri is not running,
   4 timeout or connection lost
 
-This tool never starts Pro Wave.
+This tool never starts Dōri.
 ";
 
 #[derive(Debug, PartialEq)]

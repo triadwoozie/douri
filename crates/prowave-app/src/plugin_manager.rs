@@ -512,7 +512,7 @@ mod tests {
             identifier: "vamp-example:rms".into(),
             name: "Test RMS".into(),
             description: "A test analyser".into(),
-            maker: "Pro Wave".into(),
+            maker: "Dōri".into(),
             plugin_version: 1,
             copyright: "CC0".into(),
             input_domain: prowave_vamp::InputDomain::Time,

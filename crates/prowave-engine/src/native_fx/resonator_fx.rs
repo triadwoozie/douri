@@ -20,7 +20,7 @@ use crate::plugin_track::BlockProcessor;
 use mi_dsp::{Resonator as Dsp, ResonatorBlock, RESONATOR_BLOCK, RESONATOR_RATE};
 
 pub const ID: &str = "prowave:resonator-fx";
-pub const NAME: &str = "Pro Wave Resonator FX";
+pub const NAME: &str = "Dōri Resonator FX";
 
 pub const MODEL: usize = 0;
 pub const VOICES: usize = 1;

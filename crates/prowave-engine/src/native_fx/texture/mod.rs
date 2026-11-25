@@ -75,7 +75,7 @@ use resample::Resampler;
 use trigger::SeedState;
 
 pub const ID: &str = "prowave:texture";
-pub const NAME: &str = "Pro Wave Texture";
+pub const NAME: &str = "Dōri Texture";
 
 // The parameters, in saved order.
 pub const TIME: usize = 0;

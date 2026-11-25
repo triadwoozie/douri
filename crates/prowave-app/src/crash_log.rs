@@ -11,7 +11,7 @@ const KEEP: usize = 10;
 /// The most one crash takes in the log (a backtrace can be long).
 const MAX_ENTRY_BYTES: usize = 64 * 1024;
 /// The first line of every entry.
-const HEADING: &str = "==== Pro Wave crash ====";
+const HEADING: &str = "==== Dōri crash ====";
 
 /// `<settings folder>/crash.log`.
 pub fn path() -> Option<PathBuf> {

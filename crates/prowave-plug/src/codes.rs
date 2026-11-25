@@ -11,7 +11,10 @@ pub const PREFIX: &str = "Dori";
 /// The plug-in's name (and its bundles' file name): the registry name with "Dori " in front
 /// (replacing any leading "Pro Wave ").
 pub fn bundle_name(name: &str) -> String {
-    let bare = name.strip_prefix("Pro Wave ").unwrap_or(name);
+    let bare = name
+        .strip_prefix("Pro Wave ")
+        .or_else(|| name.strip_prefix("Dōri "))
+        .unwrap_or(name);
     format!("{PREFIX} {bare}")
 }
 

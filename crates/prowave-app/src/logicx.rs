@@ -100,7 +100,7 @@ fn read(path: &Path) -> Result<logic::FullProject, String> {
     let full = logic::read_full(path).map_err(|e| e.to_string())?;
     check_resolution(full.ticks_per_quarter)?;
     if !full.tracks.iter().any(importable) {
-        return Err(tr("the Logic Pro project has no track Pro Wave can import").to_string());
+        return Err(tr("the Logic Pro project has no track Dōri can import").to_string());
     }
     Ok(full)
 }
@@ -194,7 +194,7 @@ fn map_into(
         };
         if p.tracks.len() >= prowave_engine::MAX_TRACKS {
             report.notes.push(trf(
-                "Only {} tracks fit in a Pro Wave project: the others are not imported",
+                "Only {} tracks fit in a Dōri project: the others are not imported",
                 &[&prowave_engine::MAX_TRACKS],
             ));
             break;
@@ -361,7 +361,7 @@ fn inserts_of(
                 };
                 if slot.au_type.is_some_and(|t| AU_INSTRUMENT.contains(&t)) {
                     report.notes.push(trf(
-                        "{}: the instrument {} is not hosted yet, so the track keeps Pro Wave's default instrument",
+                        "{}: the instrument {} is not hosted yet, so the track keeps Dōri's default instrument",
                         &[&strip.name, &slot.name],
                     ));
                     continue;
@@ -400,7 +400,7 @@ fn inserts_of(
                 report.stock.push(stock_label(&slot.name));
             }
             logic::PluginFormat::Unknown => report.notes.push(trf(
-                "{}: the plug-in {} is in a format Pro Wave does not know, so it is not carried over",
+                "{}: the plug-in {} is in a format Dōri does not know, so it is not carried over",
                 &[&strip.name, &slot.name],
             )),
         }

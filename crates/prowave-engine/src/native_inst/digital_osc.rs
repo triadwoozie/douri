@@ -22,7 +22,7 @@ use crate::native_fx::NativeParam;
 use mi_dsp::{Oscillator, OSCILLATOR_BLOCK, OSCILLATOR_RATE, OSCILLATOR_SHAPES};
 
 pub const ID: &str = "prowave:digital-osc";
-pub const NAME: &str = "Pro Wave Digital Oscillator";
+pub const NAME: &str = "Dōri Digital Oscillator";
 
 pub const SHAPE: usize = 0;
 pub const TIMBRE: usize = 1;

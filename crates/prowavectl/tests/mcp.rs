@@ -315,8 +315,8 @@ fn a_whole_session_with_the_handshake() {
     let answer = mcp.call_tool("prowave_transport_play", json!({}));
     assert_eq!(answer["result"]["isError"], true, "{answer}");
     let text = text_of(&answer);
-    assert!(text.contains("Start Pro Wave"), "{text}");
-    assert!(text.contains("Pro Wave is not running"), "{text}");
+    assert!(text.contains("Start Dōri"), "{text}");
+    assert!(text.contains("Dōri is not running"), "{text}");
     let answer = mcp.call_tool("prowave_status", json!({}));
     let report: Value = serde_json::from_str(text_of(&answer)).unwrap();
     assert_eq!(report["reachable"], false);
@@ -350,7 +350,7 @@ fn the_app_can_start_after_the_server_and_restart() {
     tool(&list, "prowave_call");
     let answer = mcp.call_tool("prowave_call", json!({"method": "transport.play"}));
     assert_eq!(answer["result"]["isError"], true);
-    assert!(text_of(&answer).contains("Start Pro Wave"));
+    assert!(text_of(&answer).contains("Start Dōri"));
     assert_eq!(mcp.close(), Some(0));
 
     // A kept connection that died is replaced without the agent noticing.

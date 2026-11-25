@@ -21,7 +21,7 @@ use crate::native_fx::NativeParam;
 use mi_dsp::{Resonator as Dsp, ResonatorBlock, RESONATOR_BLOCK, RESONATOR_RATE};
 
 pub const ID: &str = "prowave:resonator";
-pub const NAME: &str = "Pro Wave Resonator";
+pub const NAME: &str = "Dōri Resonator";
 
 pub const MODEL: usize = 0;
 pub const VOICES: usize = 1;
