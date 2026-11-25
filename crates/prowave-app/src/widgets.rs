@@ -319,14 +319,22 @@ pub fn draw_radial_pan(g: &Painter, c: Pos2, r: f32, value: f32) {
         g.add(Shape::line(active_pts, Stroke::new(2.4, arc_col)));
     }
 
-    // Inner dial knob body
+    // Solid dark-metallic inner dial knob body with metallic rim and crisp white radial pointer
     let inner_r = (r - 2.0).max(4.0);
-    g.circle_filled(c + vec2(0.5, 1.0), inner_r, Color32::from_black_alpha(80));
-    g.circle_filled(c, inner_r, Color32::from_rgb(0x18, 0x18, 0x1a));
+    g.circle_filled(c + vec2(0.5, 1.0), inner_r, Color32::from_black_alpha(95));
+    g.circle_filled(c, inner_r, Color32::from_rgb(0x24, 0x26, 0x2a));
     g.circle_stroke(
         c,
         inner_r,
-        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+        Stroke::new(1.0, Color32::from_rgb(0x46, 0x48, 0x50)),
+    );
+    let ptr_rad = (val_clamped * 135.0 - 90.0).to_radians();
+    g.line_segment(
+        [
+            c + vec2(ptr_rad.cos(), ptr_rad.sin()) * (inner_r * 0.25),
+            c + vec2(ptr_rad.cos(), ptr_rad.sin()) * (inner_r - 1.5),
+        ],
+        Stroke::new(1.5, Color32::from_rgb(0xf2, 0xf3, 0xf7)),
     );
 
     // Pointer indicator

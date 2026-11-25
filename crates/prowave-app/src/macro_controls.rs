@@ -84,7 +84,6 @@ pub struct MacroControlsView {
     snapshot: Option<MacroSnapshot>,
     pub midi_cc: [Option<u8>; 8],
     pub learning_knob: Option<usize>,
-    drag_eq_band: Option<usize>,
 }
 
 impl Default for MacroControlsView {
@@ -103,7 +102,6 @@ impl Default for MacroControlsView {
             snapshot: None,
             midi_cc: [None; 8],
             learning_knob: None,
-            drag_eq_band: None,
         }
     }
 }
@@ -872,7 +870,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
         s.macro_controls.compare_active = false;
     }
 
-    // 1. Dedicated 30px Top Menu Bar
+    // 1. Dedicated 30px Top Menu Bar with 3 explicit anchored regions
     let bar_h = 30.0;
     let bar = Rect::from_min_size(area.min, vec2(area.width(), bar_h));
     g.rect_filled(bar, 0.0, BAR_BG);
@@ -881,9 +879,26 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
         Stroke::new(1.0, BAR_BORDER),
     );
 
+    let center_pill_w = 116.0_f32;
+    let center_rect = Rect::from_center_size(bar.center(), vec2(center_pill_w, 22.0));
+    let left_rect = Rect::from_min_max(
+        pos2(bar.left() + 8.0, bar.top() + 3.0),
+        pos2(
+            (center_rect.left() - 8.0).max(bar.left() + 8.0),
+            bar.bottom() - 3.0,
+        ),
+    );
+    let right_rect = Rect::from_min_max(
+        pos2(
+            (center_rect.right() + 8.0).min(bar.right() - 8.0),
+            bar.top() + 3.0,
+        ),
+        pos2(bar.right() - 8.0, bar.bottom() - 3.0),
+    );
+
     let mut bar_ui = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(bar.shrink2(vec2(8.0, 4.0)))
+            .max_rect(left_rect)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     bar_ui.spacing_mut().item_spacing.x = 6.0;
@@ -1001,9 +1016,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
         }
     }
 
-    // Center Group: Controls | EQ
-    bar_ui.add_space((bar_ui.available_width() * 0.15).max(12.0));
-    let ctrl_btn = bar_ui.add(
+    // Center Group: Controls | EQ strictly centered at bar.center().x
+    let mut center_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(center_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    center_ui.spacing_mut().item_spacing.x = 0.0;
+    let half_w = center_pill_w * 0.5;
+    let ctrl_btn = center_ui.add_sized(
+        vec2(half_w, 22.0),
         egui::Button::new(RichText::new(tr("Controls")).size(11.0).color(TEXT))
             .fill(if !s.macro_controls.eq_tab {
                 PILL_ACTIVE
@@ -1017,7 +1039,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
                 se: 0,
             }),
     );
-    let eq_btn = bar_ui.add(
+    let eq_btn = center_ui.add_sized(
+        vec2(half_w, 22.0),
         egui::Button::new(RichText::new("EQ").size(11.0).color(TEXT))
             .fill(if s.macro_controls.eq_tab {
                 PILL_ACTIVE
@@ -1040,35 +1063,39 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
 
     // Right Group: Context utility (Tuner on Audio, Arpeggiator on Instrument/MIDI) + Pop-out
     let is_audio = !master && p.tracks.get(ti).is_some_and(|t| t.kind == TrackKind::Audio);
-    bar_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if !floating {
-            let pop_btn = ui.add(
-                egui::Button::new(RichText::new("Open Window").size(10.5).color(TEXT))
-                    .fill(PILL_INACTIVE)
-                    .corner_radius(CornerRadius::same(4)),
-            );
-            if pop_btn.clicked() {
-                s.show_macro_window = !s.show_macro_window;
-            }
-        }
-        let util_label = if is_audio {
-            tr("Tuner")
-        } else {
-            tr("Arpeggiator")
-        };
-        let util_btn = ui.add(
-            egui::Button::new(RichText::new(util_label).size(11.0).color(TEXT))
-                .fill(if s.macro_controls.show_utility {
-                    PILL_ACTIVE
-                } else {
-                    PILL_INACTIVE
-                })
+    let mut right_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(right_rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    right_ui.spacing_mut().item_spacing.x = 6.0;
+    if !floating {
+        let pop_btn = right_ui.add(
+            egui::Button::new(RichText::new("Open Window").size(10.5).color(TEXT))
+                .fill(PILL_INACTIVE)
                 .corner_radius(CornerRadius::same(4)),
         );
-        if util_btn.clicked() {
-            s.macro_controls.show_utility = !s.macro_controls.show_utility;
+        if pop_btn.clicked() {
+            s.show_macro_window = !s.show_macro_window;
         }
-    });
+    }
+    let util_label = if is_audio {
+        tr("Tuner")
+    } else {
+        tr("Arpeggiator")
+    };
+    let util_btn = right_ui.add(
+        egui::Button::new(RichText::new(util_label).size(11.0).color(TEXT))
+            .fill(if s.macro_controls.show_utility {
+                PILL_ACTIVE
+            } else {
+                PILL_INACTIVE
+            })
+            .corner_radius(CornerRadius::same(4)),
+    );
+    if util_btn.clicked() {
+        s.macro_controls.show_utility = !s.macro_controls.show_utility;
+    }
 
     // Main body below the 30px top bar
     let mut body = Rect::from_min_max(pos2(area.left(), bar.bottom()), area.max);
@@ -1187,15 +1214,39 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
 
     // EQ View vs Skinned Patch Faceplate
     if s.macro_controls.eq_tab {
-        draw_inline_eq(
-            ui,
-            &g,
-            body.shrink(10.0),
-            p,
-            ti,
-            master,
-            &mut s.macro_controls.drag_eq_band,
+        let eq_slot_opt = find_insert(target_inserts(p, ti, master), FxKind::ChannelEq);
+        let slot = eq_slot_opt.unwrap_or(0);
+        let mut eq_insert = eq_slot_opt
+            .map(|i| target_inserts(p, ti, master)[i])
+            .unwrap_or_else(|| Insert::new(FxKind::ChannelEq));
+        let mut edits = Vec::new();
+        let track_clone = if master {
+            None
+        } else {
+            p.tracks.get(ti).cloned()
+        };
+        let mut eq_ui =
+            ui.new_child(egui::UiBuilder::new().max_rect(body.shrink2(vec2(10.0, 6.0))));
+        crate::fx_ui::render_channel_eq_editor(
+            &mut eq_ui,
+            &mut eq_insert,
+            track_clone.as_ref(),
+            slot,
+            0.0,
+            &mut edits,
+            true,
         );
+        if !edits.is_empty() {
+            if let Some(real_slot) = ensure_target_insert(p, ti, master, FxKind::ChannelEq) {
+                let target_ins = if master {
+                    &mut p.master_inserts[real_slot]
+                } else {
+                    &mut p.tracks[ti].inserts[real_slot]
+                };
+                target_ins.params = eq_insert.params;
+                target_ins.bypass = false;
+            }
+        }
         return;
     }
 
@@ -1318,212 +1369,6 @@ fn paint_vertical_gradient(g: &egui::Painter, rect: Rect, top: Color32, bot: Col
             vec2(rect.width(), h + 0.5),
         );
         g.rect_filled(r, 0.0, col);
-    }
-}
-
-fn draw_inline_eq(
-    ui: &mut Ui,
-    g: &egui::Painter,
-    rect: Rect,
-    p: &mut Project,
-    ti: usize,
-    master: bool,
-    drag_band: &mut Option<usize>,
-) {
-    g.rect_filled(
-        rect,
-        CornerRadius::same(8),
-        Color32::from_rgb(0x16, 0x17, 0x1b),
-    );
-    g.rect_stroke(
-        rect,
-        CornerRadius::same(8),
-        Stroke::new(1.0, BAR_BORDER),
-        StrokeKind::Inside,
-    );
-
-    let plot = rect.shrink2(vec2(26.0, 22.0));
-    if plot.width() < 40.0 || plot.height() < 30.0 {
-        return;
-    }
-
-    // Frequency gridlines (50, 100, 200, 500, 1k, 2k, 5k, 10k)
-    for &f in &[
-        50.0_f32, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
-    ] {
-        let frac = (f / 20.0).ln() / (1000.0_f32).ln();
-        let x = plot.left() + frac * plot.width();
-        g.line_segment(
-            [pos2(x, plot.top()), pos2(x, plot.bottom())],
-            Stroke::new(1.0, Color32::from_rgb(0x23, 0x24, 0x2a)),
-        );
-        let lbl = if f >= 1000.0 {
-            format!("{}k", (f / 1000.0) as i32)
-        } else {
-            format!("{}", f as i32)
-        };
-        g.text(
-            pos2(x, plot.bottom() + 9.0),
-            Align2::CENTER_CENTER,
-            lbl,
-            FontId::proportional(9.5),
-            TEXT_DIM,
-        );
-    }
-
-    // 0 dB, +12 dB, -12 dB lines
-    let zero_y = plot.center().y;
-    for &(db, col) in &[
-        (0.0_f32, Color32::from_rgb(0x36, 0x38, 0x40)),
-        (12.0, Color32::from_rgb(0x23, 0x24, 0x2a)),
-        (-12.0, Color32::from_rgb(0x23, 0x24, 0x2a)),
-    ] {
-        let y = zero_y - (db / 18.0) * (plot.height() * 0.45);
-        g.line_segment(
-            [pos2(plot.left(), y), pos2(plot.right(), y)],
-            Stroke::new(1.0, col),
-        );
-    }
-
-    // 6 draggable EQ bands (Low Shelf, Low-Mid, Mid, High-Mid, Upper-Mid, High Shelf)
-    const BANDS: [(usize, usize, usize, usize, Color32); 6] = [
-        (
-            eq_idx::LOW_SHELF_ON,
-            eq_idx::LOW_SHELF_FREQ,
-            eq_idx::LOW_SHELF_GAIN,
-            eq_idx::LOW_SHELF_Q,
-            Color32::from_rgb(0xe8, 0x5c, 0x4a),
-        ),
-        (
-            eq_idx::LOW_MID_ON,
-            eq_idx::LOW_MID_FREQ,
-            eq_idx::LOW_MID_GAIN,
-            eq_idx::LOW_MID_Q,
-            Color32::from_rgb(0xeb, 0xa2, 0x3b),
-        ),
-        (
-            eq_idx::MID_ON,
-            eq_idx::MID_FREQ,
-            eq_idx::MID_GAIN,
-            eq_idx::MID_Q,
-            Color32::from_rgb(0x5b, 0xba, 0x6f),
-        ),
-        (
-            eq_idx::HIGH_MID_ON,
-            eq_idx::HIGH_MID_FREQ,
-            eq_idx::HIGH_MID_GAIN,
-            eq_idx::HIGH_MID_Q,
-            Color32::from_rgb(0x3e, 0x9b, 0xff),
-        ),
-        (
-            eq_idx::UPPER_MID_ON,
-            eq_idx::UPPER_MID_FREQ,
-            eq_idx::UPPER_MID_GAIN,
-            eq_idx::UPPER_MID_Q,
-            Color32::from_rgb(0x7c, 0x76, 0xf2),
-        ),
-        (
-            eq_idx::HIGH_SHELF_ON,
-            eq_idx::HIGH_SHELF_FREQ,
-            eq_idx::HIGH_SHELF_GAIN,
-            eq_idx::HIGH_SHELF_Q,
-            Color32::from_rgb(0xc6, 0x6b, 0xe8),
-        ),
-    ];
-
-    let resp = ui.interact(
-        plot,
-        ui.scope_id().with("macro_inline_eq"),
-        Sense::click_and_drag(),
-    );
-    let freq_to_x = |f: f32| -> f32 {
-        let frac = ((f.clamp(20.0, 20000.0)) / 20.0).ln() / (1000.0_f32).ln();
-        plot.left() + frac * plot.width()
-    };
-    let gain_to_y =
-        |db: f32| -> f32 { zero_y - (db.clamp(-18.0, 18.0) / 18.0) * (plot.height() * 0.45) };
-
-    let cur_params = find_insert(target_inserts(p, ti, master), FxKind::ChannelEq)
-        .map(|i| target_inserts(p, ti, master)[i].params)
-        .unwrap_or_else(|| FxKind::ChannelEq.defaults());
-
-    if resp.drag_started() {
-        if let Some(pt) = resp.interact_pointer_pos() {
-            *drag_band = BANDS
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| {
-                    let pa = pos2(freq_to_x(cur_params[a.1]), gain_to_y(cur_params[a.2]));
-                    let pb = pos2(freq_to_x(cur_params[b.1]), gain_to_y(cur_params[b.2]));
-                    pa.distance_sq(pt).total_cmp(&pb.distance_sq(pt))
-                })
-                .map(|(i, _)| i);
-        }
-    }
-    if resp.dragged() {
-        if let (Some(bi), Some(pt)) = (*drag_band, resp.interact_pointer_pos()) {
-            if let Some(slot) = ensure_target_insert(p, ti, master, FxKind::ChannelEq) {
-                let ins = if master {
-                    &mut p.master_inserts[slot]
-                } else {
-                    &mut p.tracks[ti].inserts[slot]
-                };
-                ins.bypass = false;
-                let (on_i, f_i, g_i, _, _) = BANDS[bi];
-                ins.params[on_i] = 1.0;
-                let frac = ((pt.x - plot.left()) / plot.width()).clamp(0.0, 1.0);
-                ins.params[f_i] = 20.0 * (1000.0_f32).powf(frac);
-                let db = ((zero_y - pt.y) / (plot.height() * 0.45)) * 18.0;
-                ins.params[g_i] = db.clamp(-18.0, 18.0);
-            }
-        }
-    }
-    if resp.drag_stopped() {
-        *drag_band = None;
-    }
-
-    let prm = find_insert(target_inserts(p, ti, master), FxKind::ChannelEq)
-        .map(|i| target_inserts(p, ti, master)[i].params)
-        .unwrap_or_else(|| FxKind::ChannelEq.defaults());
-
-    // Curve
-    let samples = 96;
-    let mut pts = Vec::with_capacity(samples + 1);
-    for i in 0..=samples {
-        let frac = i as f32 / samples as f32;
-        let freq = 20.0 * (1000.0_f32).powf(frac);
-        let mut db = 0.0_f32;
-        if prm[eq_idx::LOW_SHELF_ON] >= 0.5 {
-            let r = freq / prm[eq_idx::LOW_SHELF_FREQ].max(1.0);
-            db += prm[eq_idx::LOW_SHELF_GAIN] / (1.0 + r * r);
-        }
-        if prm[eq_idx::HIGH_SHELF_ON] >= 0.5 {
-            let r = prm[eq_idx::HIGH_SHELF_FREQ].max(1.0) / freq;
-            db += prm[eq_idx::HIGH_SHELF_GAIN] / (1.0 + r * r);
-        }
-        for &(on_i, f_i, g_i, q_i, _) in &BANDS[1..5] {
-            if prm[on_i] >= 0.5 {
-                let d = (freq / prm[f_i].max(1.0)).ln() * prm[q_i].max(0.1) * 2.0;
-                db += prm[g_i] * (-d * d).exp();
-            }
-        }
-        pts.push(pos2(
-            plot.left() + frac * plot.width(),
-            gain_to_y(db).clamp(plot.top(), plot.bottom()),
-        ));
-    }
-    g.add(Shape::line(pts, Stroke::new(2.0, BLUE)));
-
-    // Band handles
-    for (bi, &(_, f_i, g_i, _, col)) in BANDS.iter().enumerate() {
-        let p_handle = pos2(freq_to_x(prm[f_i]), gain_to_y(prm[g_i]));
-        let active = *drag_band == Some(bi);
-        g.circle_filled(p_handle, if active { 7.0 } else { 5.5 }, col);
-        g.circle_stroke(
-            p_handle,
-            if active { 7.0 } else { 5.5 },
-            Stroke::new(1.2, Color32::WHITE),
-        );
     }
 }
 

@@ -681,12 +681,19 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     let send_rows = send_rows_for(p, &keys);
     let r_rel = rows(0.0, fx_rows, send_rows);
 
-    let compact_strips_h = r_rel.fader_top + 108.0 + 48.0 + 4.0;
-    let min_top_h = HEADER_H * 2.0 + 8.0;
-    let strips_h = compact_strips_h.min((panel.height() - min_top_h - 1.0).max(STRIPS_MIN_H));
-    let divider_y = panel.bottom() - strips_h - 1.0;
+    let top_h_id = id("inspector_top_content_h");
+    let min_top_h = HEADER_H * 2.0 + 4.0;
+    let max_top_h = (panel.height() * 0.55)
+        .max(min_top_h)
+        .min((panel.height() - STRIPS_MIN_H - 4.0).max(min_top_h));
+    let last_top_h = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(top_h_id))
+        .unwrap_or(min_top_h);
+    let top_h = last_top_h.clamp(min_top_h, max_top_h);
+    let divider_y = panel.top() + top_h;
     let top_rect = Rect::from_min_max(panel.min, pos2(panel.max.x, divider_y));
-    let strips_rect = Rect::from_min_max(pos2(panel.left(), divider_y + 1.0), panel.max);
+    let strips_rect = Rect::from_min_max(pos2(panel.left(), divider_y + 4.0), panel.max);
 
     g.line_segment(
         [
@@ -2202,7 +2209,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             r,
                             "track_delay",
                             tp.delay_ms as i32,
-                            (-99, 99),
+                            (-250, 250),
                             0,
                             delay_text(tp.delay_ms as i32),
                             true,
@@ -2227,22 +2234,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                             tp.no_reset = !tp.no_reset;
                         }
                         y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Staff Style:"), false);
-                        let staff_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        popup(ui, &g_upper, staff_r, "staff", tr("Auto"), false);
-                        ui.interact(staff_r, id("staff_tip"), Sense::hover())
-                            .on_hover_text(
-                                "Staff Style notation assignment (Logic Pro score editor)",
-                            );
-                        y += ROW_H;
-                        label(&g_upper, label_right, y, tr("Articulation Set:"), false);
-                        let artic_r = Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0));
-                        popup(ui, &g_upper, artic_r, "artic", "", false);
-                        ui.interact(artic_r, id("artic_tip"), Sense::hover())
-                            .on_hover_text(
-                                "Articulation set mappings for sample libraries (Logic Pro)",
-                            );
-                        y += ROW_H;
                     }
                     if p.tracks[ti].params != tp {
                         p.tracks[ti].params = tp;
@@ -2251,7 +2242,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                     y += 4.0;
                 }
 
-                let total_h = (y - start_y).max(0.0);
+                let total_h = (y - start_y).max(min_top_h);
+                if (total_h - last_top_h).abs() > 1.0 {
+                    ui.ctx().data_mut(|d| d.insert_temp(top_h_id, total_h));
+                    ui.ctx().request_repaint();
+                }
                 ui.allocate_rect(
                     Rect::from_min_size(pos2(left, start_y), vec2(w, total_h)),
                     Sense::hover(),

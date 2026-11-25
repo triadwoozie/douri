@@ -242,14 +242,6 @@ fn slot(g: &Painter, r: Rect, text: &str, fill: Color32, color: Color32) {
         fill
     };
     g.rect_filled(r, 4.0, fill);
-    if fill != Color32::from_rgb(0x28, 0x28, 0x2b) && fill != SLOT_EMPTY {
-        g.rect_stroke(
-            r,
-            4.0,
-            Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-            StrokeKind::Inside,
-        );
-    }
     if !text.is_empty() {
         let font = FontId::proportional(10.5);
         let shown = elide(g, text, &font, r.width() - 6.0);
@@ -328,19 +320,12 @@ fn eq_thumb(
     eq: Option<(prowave_engine::FxKind, [f32; prowave_engine::MAX_FX_PARAMS])>,
     hovered: bool,
 ) {
-    let (bg, border) = if hovered {
-        (
-            Color32::from_rgb(0x32, 0x32, 0x36),
-            Color32::from_rgb(0x50, 0x50, 0x55),
-        )
+    let bg = if hovered {
+        Color32::from_rgb(0x32, 0x32, 0x36)
     } else {
-        (
-            Color32::from_rgb(0x2b, 0x2b, 0x2e),
-            Color32::from_rgb(0x38, 0x38, 0x3c),
-        )
+        Color32::from_rgb(0x28, 0x28, 0x2b)
     };
     g.rect_filled(r, 4.0, bg);
-    g.rect_stroke(r, 4.0, Stroke::new(1.0, border), StrokeKind::Inside);
     if let Some((kind, params)) = eq {
         // Faint zero-dB centerline
         g.line_segment(
@@ -415,7 +400,21 @@ fn pan_knob(
         out.started |= resp.drag_started();
         out.stopped |= resp.drag_stopped();
     }
-    crate::widgets::draw_radial_pan(g, c, 11.0, value);
+    crate::widgets::draw_radial_pan(g, c, 12.5, value);
+    if value.abs() > 0.01 {
+        let pan_num = if value < 0.0 {
+            (value * 64.0).round() as i32
+        } else {
+            (value * 63.0).round() as i32
+        };
+        g.text(
+            pos2(c.x + 17.0, c.y),
+            Align2::LEFT_CENTER,
+            format!("{pan_num:+}"),
+            FontId::monospace(8.5),
+            Color32::from_rgb(0xb8, 0xba, 0xc2),
+        );
+    }
     out
 }
 
@@ -459,29 +458,24 @@ fn fader_and_meter(
     let meter_left = (area.right() - 2.0 * bar_w - 6.0).max(fader_x + 28.0);
     let num_x = (fader_x + meter_left) * 0.5;
 
-    // Single unified centered dB scale between fader and stereo meter
-    for mark in SCALE {
+    // Single unified centered dB scale between fader and stereo meter (no horizontal tick dashes)
+    const LABELS: [f32; 15] = [
+        0.0, -3.0, -6.0, -9.0, -12.0, -15.0, -18.0, -21.0, -24.0, -30.0, -35.0, -40.0, -45.0,
+        -50.0, -60.0,
+    ];
+    let mut last_y = f32::NEG_INFINITY;
+    for mark in LABELS {
         let y = y_of(db_to_frac(mark));
-        let tick_len = if mark == 0.0 { 4.0 } else { 2.5 };
-        // Ticks flanking the numbers
-        g.line_segment(
-            [pos2(fader_x + 8.0, y), pos2(fader_x + 8.0 + tick_len, y)],
-            Stroke::new(1.0, scale_col),
-        );
-        g.line_segment(
-            [
-                pos2(meter_left - 4.0 - tick_len, y),
-                pos2(meter_left - 4.0, y),
-            ],
-            Stroke::new(1.0, scale_col),
-        );
-        g.text(
-            pos2(num_x, y),
-            Align2::CENTER_CENTER,
-            format!("{}", mark.abs() as i32),
-            tiny.clone(),
-            scale_col,
-        );
+        if (y - last_y).abs() >= 9.0 {
+            g.text(
+                pos2(num_x, y),
+                Align2::CENTER_CENTER,
+                format!("{}", mark.abs() as i32),
+                tiny.clone(),
+                scale_col,
+            );
+            last_y = y;
+        }
     }
 
     // Fader slot.
@@ -508,12 +502,6 @@ fn fader_and_meter(
         pos2(meter_left + 2.0 * bar_w + 3.0, bottom + 1.0),
     );
     g.rect_filled(housing, 4.0, Color32::from_rgb(0x18, 0x18, 0x1a));
-    g.rect_stroke(
-        housing,
-        4.0,
-        Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x3c)),
-        StrokeKind::Inside,
-    );
     for (i, (lvl, hd)) in [(levels.0, hold.0), (levels.1, hold.1)]
         .into_iter()
         .enumerate()
@@ -1807,12 +1795,6 @@ pub fn channel_strip(
         CornerRadius::same(2),
         Color32::from_rgb(0x18, 0x18, 0x1a),
     );
-    g.rect_stroke(
-        vol_r,
-        CornerRadius::same(2),
-        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
-        StrokeKind::Inside,
-    );
     let vol_col = Color32::from_rgb(0xea, 0xee, 0xf4);
     g.text(
         vol_r.center(),
@@ -1837,12 +1819,6 @@ pub fn channel_strip(
         pk_r,
         CornerRadius::same(2),
         Color32::from_rgb(0x18, 0x18, 0x1a),
-    );
-    g.rect_stroke(
-        pk_r,
-        CornerRadius::same(2),
-        Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
-        StrokeKind::Inside,
     );
     g.text(
         pk_r.center(),

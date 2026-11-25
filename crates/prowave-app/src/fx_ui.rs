@@ -1624,7 +1624,7 @@ fn eq_matrix_scrubber(
 }
 
 fn eq_set_param(
-    track: &Track,
+    track: Option<&Track>,
     slot: usize,
     insert: &mut Insert,
     edits: &mut Vec<Edit>,
@@ -1636,7 +1636,7 @@ fn eq_set_param(
         slot: slot as u8,
         param: param as u8,
     };
-    if automation::editable(track, target) {
+    if track.is_none_or(|t| automation::editable(t, target)) {
         insert.params[param] = val;
         edits.push(Edit {
             param,
@@ -1656,10 +1656,36 @@ fn channel_eq_window(
     input_level: f32,
     edits: &mut Vec<Edit>,
 ) {
+    render_channel_eq_editor(ui, insert, Some(track), slot, input_level, edits, false);
+}
+
+/// Shared 8-band Channel EQ editor used by both the floating Channel EQ window and the
+/// compact Macro Controls `EQ` tab.
+pub(crate) fn render_channel_eq_editor(
+    ui: &mut Ui,
+    insert: &mut Insert,
+    track: Option<&Track>,
+    slot: usize,
+    input_level: f32,
+    edits: &mut Vec<Edit>,
+    compact: bool,
+) {
     let sel_id = ui.scope_id().with("selected_eq_band");
     let mut selected_band: usize = ui
         .data_mut(|d| *d.get_temp_mut_or_insert_with(sel_id, || 3))
         .min(7);
+
+    let band_btn_size = if compact {
+        vec2(32.0, 22.0)
+    } else {
+        vec2(38.0, 26.0)
+    };
+    let ctrl_btn_h = if compact { 22.0 } else { 24.0 };
+    let gap_v = if compact { 4.0 } else { 8.0 };
+    let matrix_h = if compact { 76.0 } else { 98.0 };
+    let scrub_h = if compact { 16.0 } else { 18.0 };
+    let row_step = if compact { 18.0 } else { 22.0 };
+    let hdr_step = if compact { 15.0 } else { 18.0 };
 
     // -------------------------------------------------------------
     // Top Filter Icon Strip & Global Toolbar
@@ -1671,7 +1697,7 @@ fn channel_eq_window(
         for (i, meta) in EQ_BANDS_META.iter().enumerate() {
             let is_on = insert.params[meta.on_idx] > 0.5;
             let is_selected = i == selected_band;
-            let (rect, resp) = ui.allocate_exact_size(vec2(38.0, 26.0), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(band_btn_size, Sense::click());
             let g = ui.painter();
 
             let fill = if is_selected {
@@ -1734,7 +1760,7 @@ fn channel_eq_window(
                 egui::Button::new(RichText::new(proc_label).size(10.0))
                     .fill(Color32::from_rgb(0x25, 0x26, 0x2b))
                     .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
-                    .min_size(vec2(76.0, 24.0)),
+                    .min_size(vec2(76.0, ctrl_btn_h)),
             );
             egui::Popup::menu(&proc_resp).show(|ui| {
                 for (idx, name) in PROCESSING_MODES.iter().enumerate() {
@@ -1760,7 +1786,7 @@ fn channel_eq_window(
                 egui::Button::new(RichText::new(ana_label).size(10.0))
                     .fill(Color32::from_rgb(0x25, 0x26, 0x2b))
                     .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
-                    .min_size(vec2(90.0, 24.0)),
+                    .min_size(vec2(90.0, ctrl_btn_h)),
             );
             egui::Popup::menu(&ana_resp).show(|ui| {
                 for (idx, name) in ANALYZER_MODES.iter().enumerate() {
@@ -1794,7 +1820,7 @@ fn channel_eq_window(
                         Color32::from_rgb(0x25, 0x26, 0x2b)
                     })
                     .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
-                    .min_size(vec2(34.0, 24.0)),
+                    .min_size(vec2(34.0, ctrl_btn_h)),
                 )
                 .clicked()
             {
@@ -1824,7 +1850,7 @@ fn channel_eq_window(
                         Color32::from_rgb(0x25, 0x26, 0x2b)
                     })
                     .stroke(Stroke::new(1.0, Color32::from_rgb(0x38, 0x38, 0x40)))
-                    .min_size(vec2(64.0, 24.0)),
+                    .min_size(vec2(64.0, ctrl_btn_h)),
                 )
                 .clicked()
             {
@@ -1841,7 +1867,7 @@ fn channel_eq_window(
         });
     });
 
-    ui.add_space(8.0);
+    ui.add_space(gap_v);
 
     // -------------------------------------------------------------
     // Center Frequency Graph + Master Gain Fader
@@ -1849,7 +1875,11 @@ fn channel_eq_window(
     let full_w = ui.available_width();
     let fader_w = 42.0;
     let graph_w = (full_w - fader_w - 8.0).max(100.0);
-    let graph_h = 210.0;
+    let graph_h = if compact {
+        (ui.available_height() - matrix_h - gap_v * 2.0 - 4.0).clamp(72.0, 210.0)
+    } else {
+        210.0
+    };
 
     ui.horizontal(|ui| {
         // Log Frequency Plot Rect
@@ -2231,7 +2261,7 @@ fn channel_eq_window(
         );
     });
 
-    ui.add_space(8.0);
+    ui.add_space(gap_v);
 
     // -------------------------------------------------------------
     // Bottom 8-Column Parameter Matrix
@@ -2243,7 +2273,8 @@ fn channel_eq_window(
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
         for (i, meta) in EQ_BANDS_META.iter().enumerate() {
-            let (col_rect, col_resp) = ui.allocate_exact_size(vec2(col_w, 98.0), Sense::click());
+            let (col_rect, col_resp) =
+                ui.allocate_exact_size(vec2(col_w, matrix_h), Sense::click());
 
             let is_on = insert.params[meta.on_idx] > 0.5;
             let is_sel = i == selected_band;
@@ -2279,7 +2310,7 @@ fn channel_eq_window(
             let pad = 4.0;
             let row_w = col_rect.width() - pad * 2.0;
             let x0 = col_rect.left() + pad;
-            let mut y = col_rect.top() + 6.0;
+            let mut y = col_rect.top() + if compact { 4.0 } else { 6.0 };
 
             // Column Header: Power Toggle + Short Name
             let p_center = pos2(x0 + 6.0, y + 6.0);
@@ -2316,10 +2347,10 @@ fn channel_eq_window(
                 FontId::proportional(10.0),
                 if is_on { TXT } else { FAINT },
             );
-            y += 18.0;
+            y += hdr_step;
 
             // Row 1: Frequency Scrubber
-            let freq_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let freq_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, scrub_h));
             let f = insert.params[meta.freq_idx];
             let f_resp = eq_matrix_scrubber(
                 ui,
@@ -2344,10 +2375,10 @@ fn channel_eq_window(
             if f_resp.drag_stopped() {
                 eq_set_param(track, slot, insert, edits, meta.freq_idx, f, true);
             }
-            y += 22.0;
+            y += row_step;
 
             // Row 2: Gain / Slope Scrubber
-            let gain_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let gain_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, scrub_h));
             let gain_val = insert.params[meta.gain_idx];
             let gain_text = if meta.is_cut {
                 let s_idx = gain_val.clamp(0.0, 5.0).round() as usize;
@@ -2386,10 +2417,10 @@ fn channel_eq_window(
             if g_resp.drag_stopped() {
                 eq_set_param(track, slot, insert, edits, meta.gain_idx, gain_val, true);
             }
-            y += 22.0;
+            y += row_step;
 
             // Row 3: Q Scrubber
-            let q_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, 18.0));
+            let q_r = Rect::from_min_size(pos2(x0, y), vec2(row_w, scrub_h));
             let q_val = insert.params[meta.q_idx];
             let q_resp = eq_matrix_scrubber(
                 ui,
