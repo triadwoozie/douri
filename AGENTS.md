@@ -1,8 +1,8 @@
-# AGENTS.md — Multi-Agent Development Protocol for Pro Wave
+# AGENTS.md — Multi-Agent Development Protocol for Dōri
 This file tells AI coding agents (Claude Code, Codex, Cursor, Jolly) how to work in this repo. If you are an AI agent, read this first.
 
 ## 1. Project Intent
-We are building Pro Wave — a complete functional clone of Apple Logic Pro 11 in pure Rust + WASM. Every Logic Pro feature must be cloned: Drummer, Flex Time/Pitch, Sampler, Quick Sampler, Drum Machine Designer, Alchemy-lite, ES2, Vintage B3/Clav/E-Piano, Sculpture, Retro Synth, Ultrabeat, Studio Strings/Horns, Channel EQ, Compressor (6 models), Space Designer, ChromaVerb, Delay Designer, Pedalboard, Amp Designer, Mastering Assistant, Stem Splitter, Live Loops, Smart Tempo, Score Editor, etc. See roadmap.md Section 1 for exhaustive inventory.
+We are building Dōri — inspired by Apple Logic Pro 13 rather than a strict 1:1 clone. It borrows Logic Pro 13's workflows, layout clarity, and production ergonomics while embracing Linux-first performance, native UTAU/DiffSinger vocal synthesis, custom hardware-inspired controls, and Dōri's own identity. Features include: Drummer, Flex Time/Pitch, Sampler, Quick Sampler, Drum Machine Designer, Alchemy-lite, ES2, Vintage B3/Clav/E-Piano, Sculpture, Retro Synth, Ultrabeat, Studio Strings/Horns, Channel EQ, Compressor (6 models), Space Designer, ChromaVerb, Delay Designer, Pedalboard, Amp Designer, Mastering Assistant, Stem Splitter, Live Loops, Smart Tempo, Score Editor, and more. See roadmap.md Section 1 for inventory.
 
 This is NOT a wrapper around JUCE or Electron. Every agent must respect audio-thread constraints.
 
@@ -16,7 +16,7 @@ This is NOT a wrapper around JUCE or Electron. Every agent must respect audio-th
 | **midi-agent** | `prowave-midi` | Piano Roll logic, Score data, Step Seq, Event List, MIDI Transform, MIDI FX chain (Arp, Chord Trigger, Scripter via Rhai), MPE, MIDI 2.0, Articulation ID | No direct audio buffer access | Quantize, Humanize, Flam, Brush, Time Handles, MIDI Draw |
 | **mixer-agent** | `prowave-mixer` | Summing, busses, Aux, VCA, Groups, Sends on Fader, Automation (Read/Touch/Latch/Write/Trim, Bezier curves) | No UI code | Must implement PDC, 64-bit summing, automation sample-accurate |
 | **plugin-agent** | `prowave-plugin-host` | CLAP primary, VST3, AU, out-of-process sandbox (seccomp/seatbelt/AppContainer), scanner, quarantine | No unsafe without SAFETY comment + miri test | Must survive plugin crash without DAW crash |
-| **ui-agent** | `prowave-ui` | egui widgets: Tracks area, Mixer, Piano Roll, Score Editor, Step Seq Grid, Audio Track Editor, Smart Controls, Library/Patches, Loop Browser, Live Loops Grid, Video Track, Key Commands window, Channel Strip | No audio processing, only Commands via ringbuf | Must look like Logic dark gray, 1:1 controls |
+| **ui-agent** | `prowave-ui` | egui widgets: Tracks area, Mixer, Piano Roll, Score Editor, Step Seq Grid, Audio Track Editor, Smart Controls, Library/Patches, Loop Browser, Live Loops Grid, Video Track, Key Commands window, Channel Strip | No audio processing, only Commands via ringbuf | Inspired by Logic Pro 13 dark-mode ergonomics and workflows (not a rigid 1:1 clone) |
 | **wasm-agent** | `prowave-wasm` | wasm-bindgen, AudioWorkletGlobalScope (128 samples), SharedArrayBuffer + Atomics, OPFS, Web Remote (Logic Remote clone via browser) | No cpal, no native-only deps | Must play 32 tracks in Chrome |
 | **qa-agent** | all | RTL benchmarks, clippy -D warnings, miri, fuzzing (wav, project), drop-out detection, preset compatibility tests vs Logic presets corpus | No feature work | Must verify no alloc on audio thread |
 
@@ -125,4 +125,4 @@ No secrets. If you need signing cert for macOS, ask human. Never commit `.p12`, 
 If plugin sandbox crashes >3 times on scan, @plugin-agent must quarantine plugin and log to `quarantine.json` - never infinite loop scan. If audio thread xrun >10 times per minute, @qa-agent must open issue.
 
 ---
-> TL;DR for agents: You are building Pro Wave, a complete Logic Pro clone in Rust + WASM. Audio thread is real-time, no alloc. UI is egui + wgpu. Everything is Rust. If you allocate on audio thread, you break music. Check roadmap.md Section 1 for exact Logic features to clone.
+> TL;DR for agents: You are building Dōri, a pure-Rust DAW inspired by Apple Logic Pro 13 (not a rigid 1:1 clone). Audio thread is real-time, no alloc. UI is egui + wgpu. Everything is Rust. If you allocate on audio thread, you break music. Check roadmap.md Section 1 for feature scope.
