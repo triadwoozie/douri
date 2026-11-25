@@ -1720,11 +1720,18 @@ impl eframe::App for App {
         flex_edit::poll(&ctx, &mut self.project, &mut self.ui);
         groove::poll(&ctx, &mut self.project, &mut self.ui);
         if !ctx.egui_wants_keyboard_input() {
+            let marquee_start = self
+                .ui
+                .tracks
+                .range
+                .range
+                .filter(|r| !r.is_empty())
+                .map(|r| r.start);
             if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space)) {
-                self.project.playing = !self.project.playing;
+                toggle_playback_with_cycle(&mut self.project, marquee_start);
             } else if self.ui.keymap_prefs.profile == key_commands::KeymapProfile::Reaper {
                 if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
-                    self.project.playing = !self.project.playing;
+                    toggle_playback_with_cycle(&mut self.project, marquee_start);
                 }
             }
         }
@@ -3299,6 +3306,21 @@ fn main() -> eframe::Result {
     result
 }
 
+fn toggle_playback_with_cycle(p: &mut model::Project, selected_range_start: Option<f64>) {
+    if !p.playing {
+        if p.cycle {
+            if let Some(start) = selected_range_start {
+                p.position_beats = start.max(0.0);
+            } else if p.cycle_end > p.cycle_start {
+                p.position_beats = p.cycle_start.max(0.0);
+            }
+        }
+        p.playing = true;
+    } else {
+        p.playing = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -3307,5 +3329,35 @@ mod tests {
         assert_eq!(icon.width, icon.height);
         assert!(icon.width >= 256);
         assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+    }
+
+    #[test]
+    fn space_restarts_playback_from_selected_range_start_when_cycle_enabled() {
+        let mut p = super::model::Project::empty();
+        p.cycle = true;
+        p.cycle_start = 8.0;
+        p.cycle_end = 16.0;
+        p.position_beats = 12.0;
+
+        // With an explicit marquee range start, playback jumps to marquee start.
+        super::toggle_playback_with_cycle(&mut p, Some(4.0));
+        assert!(p.playing);
+        assert!((p.position_beats - 4.0).abs() < 1e-9);
+
+        // Stop and restart with no marquee range -> jumps to cycle_start.
+        super::toggle_playback_with_cycle(&mut p, None);
+        assert!(!p.playing);
+        p.position_beats = 14.0;
+        super::toggle_playback_with_cycle(&mut p, None);
+        assert!(p.playing);
+        assert!((p.position_beats - 8.0).abs() < 1e-9);
+
+        // With cycle disabled, position_beats stays unchanged.
+        p.playing = false;
+        p.cycle = false;
+        p.position_beats = 3.0;
+        super::toggle_playback_with_cycle(&mut p, Some(4.0));
+        assert!(p.playing);
+        assert!((p.position_beats - 3.0).abs() < 1e-9);
     }
 }
