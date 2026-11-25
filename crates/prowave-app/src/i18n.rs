@@ -34,10 +34,11 @@ pub enum Lang {
     Fi,
     Pl,
     Lt,
+    Tr,
 }
 
 impl Lang {
-    pub const ALL: [Lang; 18] = [
+    pub const ALL: [Lang; 19] = [
         Lang::En,
         Lang::ZhHans,
         Lang::Ja,
@@ -56,6 +57,7 @@ impl Lang {
         Lang::Fi,
         Lang::Pl,
         Lang::Lt,
+        Lang::Tr,
     ];
 
     /// BCP 47 code, as saved and as accepted by `PROWAVE_LANG`.
@@ -79,6 +81,7 @@ impl Lang {
             Lang::Fi => "fi",
             Lang::Pl => "pl",
             Lang::Lt => "lt",
+            Lang::Tr => "tr",
         }
     }
 
@@ -103,6 +106,7 @@ impl Lang {
             Lang::Fi => "Suomi",
             Lang::Pl => "Polski",
             Lang::Lt => "Lietuvių",
+            Lang::Tr => "Türkçe",
         }
     }
 
@@ -131,6 +135,7 @@ impl Lang {
             Lang::Fi => include_str!("../locales/fi.txt"),
             Lang::Pl => include_str!("../locales/pl.txt"),
             Lang::Lt => include_str!("../locales/lt.txt"),
+            Lang::Tr => include_str!("../locales/tr.txt"),
         })
     }
 
@@ -152,8 +157,8 @@ fn parse(src: &'static str) -> HashMap<&'static str, &'static str> {
 }
 
 fn table(lang: Lang) -> Option<&'static HashMap<&'static str, &'static str>> {
-    static TABLES: [OnceLock<HashMap<&'static str, &'static str>>; 18] =
-        [const { OnceLock::new() }; 18];
+    static TABLES: [OnceLock<HashMap<&'static str, &'static str>>; 19] =
+        [const { OnceLock::new() }; 19];
     let i = Lang::ALL.iter().position(|l| *l == lang)?;
     let src = lang.source()?;
     Some(TABLES[i].get_or_init(|| parse(src)))

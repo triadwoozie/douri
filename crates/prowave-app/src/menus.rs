@@ -527,6 +527,7 @@ const LANGUAGE: &[&str] = &[
     "Suomi",
     "Polski",
     "Lietuvių",
+    "Türkçe",
 ];
 
 const DORI: &[&str] = &[

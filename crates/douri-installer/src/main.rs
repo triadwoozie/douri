@@ -78,6 +78,18 @@ const LOCALES: &[LocaleChoice] = &[
         code: "hi",
     },
     LocaleChoice {
+        name: "Italiano",
+        code: "it",
+    },
+    LocaleChoice {
+        name: "Lietuvių",
+        code: "lt",
+    },
+    LocaleChoice {
+        name: "Türkçe",
+        code: "tr",
+    },
+    LocaleChoice {
         name: "Bahasa Indonesia",
         code: "id",
     },
