@@ -240,6 +240,8 @@ Per **Section 5 of the GNU General Public License v3**, Dōri attributes and bui
 * **[yuribeats/prowave](https://github.com/yuribeats/prowave)** (GPL-3.0-or-later): Yuri's Version arranging tools (Marquee selection, snap grid, Option-drag), crash recovery, and 808 Bass synthesizer.
 * **[storytold/soundcraft](https://github.com/storytold/soundcraft)** (MIT / Apache-2.0): Faster-than-realtime offline mixdown architecture, TPDF dither generator, and ITU-R BS.1770 / EBU R128 True Peak and loudness metering.
 * **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.
+* **[DAW UI Design](https://www.figma.com/community/file/1240550915764011777/daw-ui-design)** (CC BY 4.0, Dicky Jiang): Modern flat-bevel vector rotary knob and DAW hardware control styling reference.
+* **[webaudio-controls](https://github.com/g200kg/webaudio-controls)** (Apache-2.0, g200kg, Eiji Kitamura, Ryoya Kawai, and Keisuke Ai): Hardware rotary, slider, and keyboard control ergonomics and inline parameter editing patterns.
 * **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 
 All original copyright notices and license texts are retained. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for third-party attributions, and [`LICENSE`](https://www.google.com/search?q=LICENSE) for complete terms.
