@@ -507,6 +507,8 @@ const HELP: &[&str] = &[
     "Check for Updates…",
     "Check for Updates Automatically",
     "-",
+    "Diagnostics…",
+    "-",
     "About Dōri",
 ];
 
@@ -1005,6 +1007,7 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         | "Quick Help"
         | "Quick Help Window"
         | "Show Quick Help"
+        | "Diagnostics…"
         | "Show Macro Controls"
         | "Open Macro Controls"
         | "Show Toolbar"
@@ -1398,6 +1401,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Show List Editors" => s.show_lists = !s.show_lists,
         "Show Quick Help" | "Quick Help" => s.show_quick_help = !s.show_quick_help,
         "Quick Help Window" => s.show_quick_help_window = !s.show_quick_help_window,
+        "Diagnostics…" => s.diagnostics_window.open = !s.diagnostics_window.open,
         "Show Toolbar" => s.show_toolbar = !s.show_toolbar,
         "Show Project Notes" => s.show_notes = !s.show_notes,
         "Enable Collaborate" => s.collaborate_enabled = !s.collaborate_enabled,

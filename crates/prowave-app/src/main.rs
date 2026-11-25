@@ -22,12 +22,15 @@ mod bounce;
 mod clock_follow;
 mod clock_in;
 mod collaborate_panel;
+pub mod command_palette;
 mod control;
 mod count_in;
 mod crash_log;
 pub mod cycle_area;
 mod daw_knob;
 pub mod diagnostics;
+pub mod modulation_drawer;
+pub mod stems_ui;
 mod drag_modes;
 mod drum_kit;
 mod drum_machine_ui;
@@ -197,6 +200,11 @@ pub struct UiState {
     pub lists: event_list::ListView,
     /// Collaborate Version History & Project Alternatives panel.
     pub show_collaborate: bool,
+    pub command_palette: command_palette::CommandPaletteState,
+    pub modulation_drawer: modulation_drawer::ModulationDrawerState,
+    pub diagnostics_window: diagnostics::DiagnosticsWindowState,
+    pub git_ab_audition: bool,
+    pub stem_regions: std::collections::HashMap<(usize, usize), stems_ui::StemRegionState>,
     pub collaborate_enabled: bool,
     pub collaborate_worker: Option<prowave_vcs::VcsWorker>,
     pub collaborate_note_input: String,
@@ -432,6 +440,11 @@ impl UiState {
             show_lists: false,
             lists: event_list::ListView::default(),
             show_collaborate: false,
+            command_palette: command_palette::CommandPaletteState::default(),
+            modulation_drawer: modulation_drawer::ModulationDrawerState::default(),
+            diagnostics_window: diagnostics::DiagnosticsWindowState::default(),
+            git_ab_audition: false,
+            stem_regions: std::collections::HashMap::new(),
             collaborate_enabled: false,
             collaborate_worker: None,
             collaborate_note_input: String::new(),
@@ -1882,6 +1895,32 @@ impl eframe::App for App {
             }
         }
         collaborate_panel::show(&ctx, &mut self.project, &mut self.ui, self.path.as_deref());
+        if ctx.input(|i| {
+            (i.modifiers.command && i.key_pressed(egui::Key::K))
+                || (!ctx.egui_wants_keyboard_input() && i.key_pressed(egui::Key::Colon))
+        }) {
+            self.ui.command_palette.toggle();
+        }
+        let mut palette_state = std::mem::take(&mut self.ui.command_palette);
+        if let Some(cmd_label) = command_palette::show(&ctx, &mut palette_state, &self.ui, &self.project) {
+            if cmd_label == "Diagnostics…" {
+                self.ui.diagnostics_window.open = true;
+            }
+        }
+        self.ui.command_palette = palette_state;
+        let mut mod_drawer = std::mem::take(&mut self.ui.modulation_drawer);
+        let sel_track = 0usize;
+        let track_name = self
+            .project
+            .tracks
+            .get(sel_track)
+            .map(|t| t.name.as_str())
+            .unwrap_or("Track");
+        modulation_drawer::show_drawer(ui, &mut mod_drawer, track_name);
+        self.ui.modulation_drawer = mod_drawer;
+        let mut diag_win = std::mem::take(&mut self.ui.diagnostics_window);
+        diagnostics::show_diagnostics_window(&ctx, &mut diag_win, &self.project, sel_track);
+        self.ui.diagnostics_window = diag_win;
         quick_help::begin_frame(&ctx);
         let p = &mut self.project;
         let s = &mut self.ui;
