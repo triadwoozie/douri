@@ -638,16 +638,108 @@ impl McpEngine {
             }),
             json!({
                 "name": "configure_builtin_fx",
-                "description": "Configure Lemon Studio DSP plugins, Bode Frequency Shifter, or Auto-Pan.",
+                "description": "Insert or update any built-in DSP effect (Channel EQ, Compressor, Tape Delay, Lemon FX, Frequency Shifter, Auto-Pan, Pitch Correction, etc.) on a track slot.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "track_index": { "type": "integer" },
                         "slot_index": { "type": "integer" },
-                        "effect": { "type": "string", "enum": ["lemon_eq", "lemon_comp", "lemon_sat", "lemon_delay", "bode_shifter", "auto_pan"] },
-                        "params": { "type": "object", "description": "Effect parameter key-value pairs" }
+                        "effect": {
+                            "type": "string",
+                            "enum": [
+                                "channel_eq", "compressor", "multi_comp", "reverb", "delay",
+                                "chorus", "phaser", "overdrive", "filter", "gate", "limiter",
+                                "multi_eq", "amp", "pult_eq", "lemon_limiter", "lemon_clip",
+                                "lemon_dist", "lemon_transient", "lemon_delay", "lemon_reverb",
+                                "freq_shifter", "auto_pan", "pitch_correction",
+                                "lemon_eq", "lemon_comp", "lemon_sat", "bode_shifter"
+                            ]
+                        },
+                        "bypass": { "type": "boolean" },
+                        "params": { "type": "object", "description": "Effect parameter name/index -> numeric value map" }
                     },
                     "required": ["track_index", "slot_index", "effect"]
+                }
+            }),
+            json!({
+                "name": "manage_fx_insert",
+                "description": "Add, remove, toggle bypass, move, or duplicate (Alt-drag copy) an FX insert between track slots.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "enum": ["add", "remove", "bypass", "duplicate", "move"] },
+                        "track_index": { "type": "integer" },
+                        "slot_index": { "type": "integer" },
+                        "target_track_index": { "type": "integer" },
+                        "target_slot_index": { "type": "integer" },
+                        "effect": { "type": "string" }
+                    },
+                    "required": ["action", "track_index", "slot_index"]
+                }
+            }),
+            json!({
+                "name": "configure_pitch_correction",
+                "description": "Configure Pitch Correction insert on a track (scale, root key, piano notes mask, bypassed notes, response ms, tolerance ct, detune ct, neural pitch detection, mix).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" },
+                        "slot_index": { "type": "integer" },
+                        "root_key": { "type": "integer", "description": "0=Project, 1..=12=C..B" },
+                        "scale": { "type": "integer", "description": "0=Project..7=Chromatic, 8=Custom" },
+                        "response_ms": { "type": "number" },
+                        "detune_ct": { "type": "number" },
+                        "mix": { "type": "number" },
+                        "notes_mask": { "type": "integer" },
+                        "tolerance_ct": { "type": "number" },
+                        "bypass_notes_mask": { "type": "integer" },
+                        "bypass_all": { "type": "boolean" },
+                        "neural_pitch": { "type": "boolean" },
+                        "pitch_range": { "type": "string", "enum": ["normal", "low"] },
+                        "global_tuning": { "type": "boolean" },
+                        "show_pitch": { "type": "string", "enum": ["input", "output"] }
+                    },
+                    "required": ["track_index"]
+                }
+            }),
+            json!({
+                "name": "create_track_from_region",
+                "description": "Create a new Software Instrument track from an existing audio, MIDI, or Drummer region using Quick Sampler, Drum Kit Designer, Spectral Sampler, or Sampler (Zone Per Note).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" },
+                        "region_index": { "type": "integer" },
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "quick_sampler_original",
+                                "quick_sampler_optimized",
+                                "drum_kit_designer",
+                                "spectral_sampler",
+                                "sampler_zone_per_note"
+                            ]
+                        }
+                    },
+                    "required": ["track_index", "region_index", "mode"]
+                }
+            }),
+            json!({
+                "name": "configure_appearance",
+                "description": "Update Project Settings > Appearance options (General, Tracks, Mixer, Editors).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "display_middle_c": { "type": "string", "enum": ["c4", "c3"] },
+                        "track_colors_palette": { "type": "string", "enum": ["logic_24", "fine_96", "monochrome"] },
+                        "waveform_display": { "type": "string", "enum": ["bipolar", "rectified", "rms"] },
+                        "grid_lines_on_top": { "type": "boolean" },
+                        "peak_hold_time": { "type": "string", "enum": ["1s", "2s", "3s", "infinite"] },
+                        "open_plugin_on_insert": { "type": "boolean" },
+                        "show_fader_db": { "type": "boolean" },
+                        "musical_grid": { "type": "boolean" },
+                        "select_regions_on_track_select": { "type": "boolean" }
+                    }
                 }
             }),
             json!({
@@ -1076,12 +1168,307 @@ impl McpEngine {
                 }))
             }
             "configure_builtin_fx" => {
-                let ti = args["track_index"].as_u64().unwrap_or(0) as usize;
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
                 let si = args["slot_index"].as_u64().unwrap_or(0) as usize;
-                let fx = args["effect"].as_str().unwrap_or("lemon_eq");
-                Ok(
-                    json!({ "track_index": ti, "slot_index": si, "effect": fx, "status": "updated" }),
-                )
+                let fx_name = args["effect"].as_str().unwrap_or("channel_eq");
+                let kind = parse_fx_kind(fx_name)?;
+                let track = p.tracks.get_mut(ti).ok_or("Track index out of range")?;
+                let slot = if si < track.inserts.len() {
+                    if track.inserts[si].kind != kind {
+                        track.inserts[si] = crate::model::Insert::new(kind);
+                    }
+                    si
+                } else {
+                    if track.inserts.len() >= prowave_engine::MAX_INSERTS {
+                        return Err("Maximum insert slots reached".to_string());
+                    }
+                    track.inserts.push(crate::model::Insert::new(kind));
+                    track.inserts.len() - 1
+                };
+                if let Some(bypass) = args["bypass"].as_bool() {
+                    track.inserts[slot].bypass = bypass;
+                }
+                if let Some(obj) = args["params"].as_object() {
+                    let infos = kind.params();
+                    for (k, v) in obj {
+                        if let Some(val) = v.as_f64() {
+                            if let Ok(idx) = k.parse::<usize>() {
+                                if idx < infos.len() {
+                                    track.inserts[slot].params[idx] = val as f32;
+                                }
+                            } else if let Some(idx) =
+                                infos.iter().position(|p| p.name.eq_ignore_ascii_case(k))
+                            {
+                                track.inserts[slot].params[idx] = val as f32;
+                            }
+                        }
+                    }
+                    track.inserts[slot].params = kind.clamp_params(track.inserts[slot].params);
+                }
+                p.song_rev = p.song_rev.wrapping_add(1);
+                Ok(json!({
+                    "track_index": ti,
+                    "slot_index": slot,
+                    "effect": kind.name(),
+                    "bypass": track.inserts[slot].bypass,
+                    "status": "updated"
+                }))
+            }
+            "manage_fx_insert" => {
+                let action = args["action"].as_str().ok_or("Missing action")?;
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                let si = args["slot_index"].as_u64().unwrap_or(0) as usize;
+                if ti >= p.tracks.len() {
+                    return Err("Track index out of range".to_string());
+                }
+                match action {
+                    "add" => {
+                        let fx_name = args["effect"].as_str().unwrap_or("channel_eq");
+                        let kind = parse_fx_kind(fx_name)?;
+                        let ins = crate::model::Insert::new(kind);
+                        let t = &mut p.tracks[ti];
+                        if t.inserts.len() >= prowave_engine::MAX_INSERTS {
+                            return Err("Maximum insert slots reached".to_string());
+                        }
+                        t.inserts.push(ins);
+                        p.song_rev = p.song_rev.wrapping_add(1);
+                        Ok(
+                            json!({ "action": "add", "track_index": ti, "slot_index": t.inserts.len() - 1, "effect": kind.name() }),
+                        )
+                    }
+                    "remove" => {
+                        let t = &mut p.tracks[ti];
+                        if si >= t.inserts.len() {
+                            return Err("Slot index out of range".to_string());
+                        }
+                        t.inserts.remove(si);
+                        p.song_rev = p.song_rev.wrapping_add(1);
+                        Ok(json!({ "action": "remove", "track_index": ti, "slot_index": si }))
+                    }
+                    "bypass" => {
+                        let t = &mut p.tracks[ti];
+                        if si >= t.inserts.len() {
+                            return Err("Slot index out of range".to_string());
+                        }
+                        t.inserts[si].bypass = !t.inserts[si].bypass;
+                        p.song_rev = p.song_rev.wrapping_add(1);
+                        Ok(
+                            json!({ "action": "bypass", "track_index": ti, "slot_index": si, "bypass": t.inserts[si].bypass }),
+                        )
+                    }
+                    "duplicate" => {
+                        let dst_ti =
+                            args["target_track_index"].as_u64().unwrap_or(ti as u64) as usize;
+                        if dst_ti >= p.tracks.len() || si >= p.tracks[ti].inserts.len() {
+                            return Err("Track or slot index out of range".to_string());
+                        }
+                        let copied = p.tracks[ti].inserts[si];
+                        let dst = &mut p.tracks[dst_ti].inserts;
+                        let dst_slot = args["target_slot_index"].as_u64().map(|x| x as usize);
+                        let placed = if let Some(ds) = dst_slot.filter(|&ds| ds < dst.len()) {
+                            dst[ds] = copied;
+                            ds
+                        } else {
+                            if dst.len() >= prowave_engine::MAX_INSERTS {
+                                return Err("Target track insert slots full".to_string());
+                            }
+                            dst.push(copied);
+                            dst.len() - 1
+                        };
+                        p.song_rev = p.song_rev.wrapping_add(1);
+                        Ok(json!({
+                            "action": "duplicate",
+                            "src_track": ti,
+                            "src_slot": si,
+                            "target_track_index": dst_ti,
+                            "target_slot_index": placed,
+                            "effect": copied.kind.name()
+                        }))
+                    }
+                    "move" => {
+                        let dst_slot = args["target_slot_index"]
+                            .as_u64()
+                            .ok_or("Missing target_slot_index")?
+                            as usize;
+                        let t = &mut p.tracks[ti];
+                        if si >= t.inserts.len() || dst_slot >= t.inserts.len() {
+                            return Err("Slot index out of range".to_string());
+                        }
+                        let ins = t.inserts.remove(si);
+                        t.inserts.insert(dst_slot, ins);
+                        p.song_rev = p.song_rev.wrapping_add(1);
+                        Ok(
+                            json!({ "action": "move", "track_index": ti, "from": si, "to": dst_slot }),
+                        )
+                    }
+                    _ => Err(format!("Unsupported insert action: {action}")),
+                }
+            }
+            "configure_pitch_correction" => {
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                let t = p.tracks.get_mut(ti).ok_or("Track index out of range")?;
+                let slot = if let Some(si) = args["slot_index"].as_u64().map(|x| x as usize) {
+                    if si < t.inserts.len() {
+                        if t.inserts[si].kind != prowave_engine::FxKind::PitchCorrection {
+                            t.inserts[si] =
+                                crate::model::Insert::new(prowave_engine::FxKind::PitchCorrection);
+                        }
+                        si
+                    } else {
+                        if t.inserts.len() >= prowave_engine::MAX_INSERTS {
+                            return Err("Maximum insert slots reached".to_string());
+                        }
+                        t.inserts.push(crate::model::Insert::new(
+                            prowave_engine::FxKind::PitchCorrection,
+                        ));
+                        t.inserts.len() - 1
+                    }
+                } else if let Some(existing) = t
+                    .inserts
+                    .iter()
+                    .position(|ins| ins.kind == prowave_engine::FxKind::PitchCorrection)
+                {
+                    existing
+                } else {
+                    if t.inserts.len() >= prowave_engine::MAX_INSERTS {
+                        return Err("Maximum insert slots reached".to_string());
+                    }
+                    t.inserts.push(crate::model::Insert::new(
+                        prowave_engine::FxKind::PitchCorrection,
+                    ));
+                    t.inserts.len() - 1
+                };
+                let pr = &mut t.inserts[slot].params;
+                if let Some(v) = args["root_key"].as_u64() {
+                    pr[0] = v as f32;
+                }
+                if let Some(v) = args["scale"].as_u64() {
+                    pr[1] = v as f32;
+                }
+                if let Some(v) = args["response_ms"].as_f64() {
+                    pr[2] = v as f32;
+                }
+                if let Some(v) = args["detune_ct"].as_f64() {
+                    pr[3] = v as f32;
+                }
+                if let Some(v) = args["mix"].as_f64() {
+                    pr[4] = v as f32;
+                }
+                if let Some(v) = args["notes_mask"].as_u64() {
+                    pr[5] = v as f32;
+                }
+                if let Some(v) = args["tolerance_ct"].as_f64() {
+                    pr[6] = v as f32;
+                }
+                if let Some(v) = args["bypass_notes_mask"].as_u64() {
+                    pr[7] = v as f32;
+                }
+                if let Some(v) = args["bypass_all"].as_bool() {
+                    pr[8] = if v { 1.0 } else { 0.0 };
+                }
+                if let Some(v) = args["neural_pitch"].as_bool() {
+                    pr[9] = if v { 1.0 } else { 0.0 };
+                }
+                if let Some(v) = args["pitch_range"].as_str() {
+                    pr[10] = if v == "low" { 1.0 } else { 0.0 };
+                }
+                if let Some(v) = args["global_tuning"].as_bool() {
+                    pr[11] = if v { 1.0 } else { 0.0 };
+                }
+                if let Some(v) = args["show_pitch"].as_str() {
+                    pr[12] = if v == "output" { 1.0 } else { 0.0 };
+                }
+                *pr = prowave_engine::FxKind::PitchCorrection.clamp_params(*pr);
+                p.song_rev = p.song_rev.wrapping_add(1);
+                Ok(json!({
+                    "track_index": ti,
+                    "slot_index": slot,
+                    "effect": "Pitch Correction",
+                    "response_ms": pr[2],
+                    "detune_ct": pr[3],
+                    "tolerance_ct": pr[6],
+                    "mix": pr[4]
+                }))
+            }
+            "create_track_from_region" => {
+                let ti = args["track_index"].as_u64().ok_or("Missing track_index")? as usize;
+                let ri = args["region_index"]
+                    .as_u64()
+                    .ok_or("Missing region_index")? as usize;
+                let mode_str = args["mode"].as_str().ok_or("Missing mode")?;
+                let mode = match mode_str {
+                    "quick_sampler_original" => {
+                        crate::track_drop_slice::TrackCreateMode::QuickSamplerOriginal
+                    }
+                    "quick_sampler_optimized" => {
+                        crate::track_drop_slice::TrackCreateMode::QuickSamplerOptimized
+                    }
+                    "drum_kit_designer" => {
+                        crate::track_drop_slice::TrackCreateMode::DrumKitDesigner
+                    }
+                    "spectral_sampler" => crate::track_drop_slice::TrackCreateMode::SpectralSampler,
+                    "sampler_zone_per_note" => {
+                        crate::track_drop_slice::TrackCreateMode::SamplerZonePerNote
+                    }
+                    _ => return Err(format!("Unsupported mode: {mode_str}")),
+                };
+                let source = crate::track_drop_slice::source_from_region(p, ti, ri)
+                    .ok_or("Region not found or empty")?;
+                let new_ti = crate::track_drop_slice::apply_create_mode(p, &source, mode)?;
+                Ok(json!({
+                    "new_track_index": new_ti,
+                    "track_name": p.tracks[new_ti].name,
+                    "mode": mode_str
+                }))
+            }
+            "configure_appearance" => {
+                if let Some(mc) = args["display_middle_c"].as_str() {
+                    s.app_settings.display_middle_c = match mc {
+                        "c3" => crate::project_settings::MiddleCDisplay::C3YamahaRoland,
+                        _ => crate::project_settings::MiddleCDisplay::C4LogicApple,
+                    };
+                }
+                if let Some(tcp) = args["track_colors_palette"].as_str() {
+                    s.app_settings.track_colors_palette = match tcp {
+                        "fine_96" => crate::project_settings::TrackColorsPalette::Fine96Colors,
+                        "monochrome" => {
+                            crate::project_settings::TrackColorsPalette::MonochromeSlate
+                        }
+                        _ => crate::project_settings::TrackColorsPalette::Logic24Colors,
+                    };
+                }
+                if let Some(wfd) = args["waveform_display"].as_str() {
+                    s.app_settings.waveform_display = match wfd {
+                        "rectified" => crate::project_settings::WaveformDisplay::RectifiedLinear,
+                        "rms" => crate::project_settings::WaveformDisplay::LogarithmicRms,
+                        _ => crate::project_settings::WaveformDisplay::BipolarStereo,
+                    };
+                }
+                if let Some(v) = args["grid_lines_on_top"].as_bool() {
+                    s.app_settings.grid_lines_on_top = v;
+                }
+                if let Some(pht) = args["peak_hold_time"].as_str() {
+                    s.app_settings.peak_hold_time = match pht {
+                        "1s" => crate::project_settings::PeakHoldTime::OneSecond,
+                        "3s" => crate::project_settings::PeakHoldTime::ThreeSeconds,
+                        "infinite" => crate::project_settings::PeakHoldTime::Infinite,
+                        _ => crate::project_settings::PeakHoldTime::TwoSeconds,
+                    };
+                }
+                if let Some(v) = args["open_plugin_on_insert"].as_bool() {
+                    s.app_settings.open_plugin_on_insert = v;
+                }
+                if let Some(v) = args["show_fader_db"].as_bool() {
+                    s.app_settings.show_fader_db = v;
+                }
+                if let Some(v) = args["musical_grid"].as_bool() {
+                    s.app_settings.musical_grid = v;
+                }
+                if let Some(v) = args["select_regions_on_track_select"].as_bool() {
+                    s.app_settings.select_regions_on_track_select = v;
+                }
+                s.app_settings.save();
+                Ok(json!({ "status": "updated" }))
             }
             "load_sampler_instrument" => {
                 let ti = args["track_index"].as_u64().unwrap_or(0) as usize;
@@ -1148,6 +1535,36 @@ impl McpEngine {
             }
             _ => Err(format!("Unknown tool: {name}")),
         }
+    }
+}
+
+fn parse_fx_kind(name: &str) -> Result<prowave_engine::FxKind, String> {
+    use prowave_engine::FxKind;
+    match name.trim().to_ascii_lowercase().as_str() {
+        "channel_eq" | "lemon_eq" => Ok(FxKind::ChannelEq),
+        "compressor" | "lemon_comp" => Ok(FxKind::Compressor),
+        "multi_comp" => Ok(FxKind::MultiComp),
+        "reverb" => Ok(FxKind::Reverb),
+        "delay" => Ok(FxKind::Delay),
+        "chorus" => Ok(FxKind::Chorus),
+        "phaser" => Ok(FxKind::Phaser),
+        "overdrive" => Ok(FxKind::Overdrive),
+        "filter" => Ok(FxKind::Filter),
+        "gate" => Ok(FxKind::Gate),
+        "limiter" => Ok(FxKind::Limiter),
+        "multi_eq" => Ok(FxKind::MultiEq),
+        "amp" => Ok(FxKind::Amp),
+        "pult_eq" => Ok(FxKind::PultEq),
+        "lemon_limiter" => Ok(FxKind::LemonLimiter),
+        "lemon_clip" => Ok(FxKind::LemonClip),
+        "lemon_dist" | "lemon_sat" => Ok(FxKind::LemonDist),
+        "lemon_transient" => Ok(FxKind::LemonTransient),
+        "lemon_delay" => Ok(FxKind::LemonDelay),
+        "lemon_reverb" => Ok(FxKind::LemonReverb),
+        "freq_shifter" | "bode_shifter" => Ok(FxKind::FreqShifter),
+        "auto_pan" => Ok(FxKind::AutoPan),
+        "pitch_correction" => Ok(FxKind::PitchCorrection),
+        other => FxKind::from_name(other).ok_or_else(|| format!("Unknown FX kind: {name}")),
     }
 }
 
@@ -1438,5 +1855,90 @@ mod tests {
         assert!(lp_resp.error.is_none());
         assert_eq!(p.tempo, 102.0);
         let _ = std::fs::remove_file(&tmp_proj);
+
+        // 10. configure_pitch_correction + manage_fx_insert (duplicate) + configure_builtin_fx + configure_appearance
+        let pc_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(110)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_pitch_correction",
+                "arguments": {
+                    "track_index": 0,
+                    "response_ms": 15.0,
+                    "detune_ct": -12.0,
+                    "tolerance_ct": 20.0,
+                    "mix": 85.0
+                }
+            })),
+        };
+        let pc_resp = McpEngine::handle_request(pc_req, &mut p, &mut s, None);
+        assert!(pc_resp.error.is_none());
+        assert!(p.tracks[0]
+            .inserts
+            .iter()
+            .any(|ins| ins.kind == prowave_engine::FxKind::PitchCorrection
+                && (ins.params[2] - 15.0).abs() < 0.01
+                && (ins.params[6] - 20.0).abs() < 0.01));
+
+        let dup_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(111)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "manage_fx_insert",
+                "arguments": {
+                    "action": "duplicate",
+                    "track_index": 0,
+                    "slot_index": 0,
+                    "target_track_index": 0
+                }
+            })),
+        };
+        let dup_resp = McpEngine::handle_request(dup_req, &mut p, &mut s, None);
+        assert!(dup_resp.error.is_none());
+        assert!(p.tracks[0].inserts.len() >= 2);
+
+        let fx_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(112)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_builtin_fx",
+                "arguments": {
+                    "track_index": 0,
+                    "slot_index": 99,
+                    "effect": "auto_pan",
+                    "params": { "Rate": 4.0 }
+                }
+            })),
+        };
+        let fx_resp = McpEngine::handle_request(fx_req, &mut p, &mut s, None);
+        assert!(fx_resp.error.is_none());
+        assert_eq!(
+            p.tracks[0].inserts.last().unwrap().kind,
+            prowave_engine::FxKind::AutoPan
+        );
+
+        let app_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(113)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_appearance",
+                "arguments": {
+                    "display_middle_c": "c3",
+                    "waveform_display": "rectified",
+                    "show_fader_db": false
+                }
+            })),
+        };
+        let app_resp = McpEngine::handle_request(app_req, &mut p, &mut s, None);
+        assert!(app_resp.error.is_none());
+        assert_eq!(
+            s.app_settings.display_middle_c,
+            crate::project_settings::MiddleCDisplay::C3YamahaRoland
+        );
+        assert!(!s.app_settings.show_fader_db);
     }
 }
