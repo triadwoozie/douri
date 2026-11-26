@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "douri"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "assert_no_alloc",
  "bytemuck",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "douri-installer"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "eframe",
  "egui 0.37.0",
@@ -3630,7 +3630,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "prowave-dssi"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "libc",
  "libloading 0.8.9",
@@ -3638,7 +3638,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-engine"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "assert_no_alloc",
  "chip-dsp",
@@ -3657,14 +3657,14 @@ dependencies = [
 
 [[package]]
 name = "prowave-exs"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-garageband-import"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "plist",
  "tempfile",
@@ -3673,7 +3673,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-guitarpro"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "quick-xml 0.42.0",
  "zip",
@@ -3681,21 +3681,21 @@ dependencies = [
 
 [[package]]
 name = "prowave-hydrogen-import"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "quick-xml 0.42.0",
 ]
 
 [[package]]
 name = "prowave-ladspa"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "libloading 0.8.9",
 ]
 
 [[package]]
 name = "prowave-logicx-import"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "plist",
  "prowave-plugin-host",
@@ -3704,14 +3704,14 @@ dependencies = [
 
 [[package]]
 name = "prowave-musicxml"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "quick-xml 0.42.0",
 ]
 
 [[package]]
 name = "prowave-mxl"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "quick-xml 0.42.0",
  "zip",
@@ -3719,7 +3719,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-plugin-host"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "libc",
  "libloading 0.8.9",
@@ -3728,7 +3728,7 @@ dependencies = [
 
 [[package]]
 name = "prowave-project"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "serde",
  "serde_json",
@@ -3738,32 +3738,32 @@ dependencies = [
 
 [[package]]
 name = "prowave-rex"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-sfz"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "prowave-stretch"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 
 [[package]]
 name = "prowave-vamp"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "libloading 0.8.9",
 ]
 
 [[package]]
 name = "prowave-vcs"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "prowave-project",
  "serde",

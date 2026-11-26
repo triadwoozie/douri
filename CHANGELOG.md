@@ -2,6 +2,14 @@
 
 What changed in each Dōri release.
 
+## [0.1.0-alpha.10] - 2026-11-27
+
+- **Local AI Stem Separation & Stem Splitter Sheet**: Integrated local AI stem separation (with settings wiring and clean Logic Pro-style Stem Splitter sheet) and Windows startup deadlock fix (`#5`, with contributor attribution).
+- **Audio-UI & Metering Upgrades**: Ported IEC VU/PPM meter ballistics, 45° Mid/Side stereo goniometer, interactive ADSR breakpoint envelope (Sampler Instrument tab), and velocity-metered drum pads from `ouestlabs/audio-ui`.
+- **Modulation Matrix & Control Bar Cleanup**: Relocated `A/B Diff` into the Collaborate window and `Modulation` into Smart Controls, and fixed bottom Modulation Drawer panel layout.
+- **Command Palette & Diagnostics**: Added Command Palette and privacy-redacted Diagnostics window.
+- **Credits**: Added `ouestlabs/audio-ui` attribution to `README.md`, `THIRD_PARTY_LICENSES.md`, and About Dōri.
+
 ## [0.1.0-alpha.9] - 2026-11-25
 
 - **Drag-to-Track-Header & Drum Kit Designer**: Added `Create New Track using:` modal (`Quick Sampler (Original)`, `Quick Sampler (Optimized)`, `Drum Kit Designer` collapsible Summing Track Stack + groove MIDI, `Sampler (Zone Per Note)`) and `Add Region to Loops Library` tagged user loop persistence.
