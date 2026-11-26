@@ -1070,3 +1070,4 @@ Pitch Range = Saklaw ng Tono
 Normal = Normal
 Global Tuning = Pangkalahatang Tono
 Reference = Sanggunian
+Diagnostics… = Diagnostics…

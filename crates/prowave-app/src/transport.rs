@@ -1358,6 +1358,69 @@ pub fn control_bar(
 
     // Centre: LCD, transport to its left, master volume & editors to its right.
     let lcd_w = 540.0;
+    let lcd_left_check = bar.center().x - lcd_w * 0.5;
+    let pill2_right = bar.left() + PANES_LEFT + 92.0;
+    if pill2_right + 84.0 < lcd_left_check - 210.0 {
+        let ab_rect = egui::Rect::from_center_size(
+            egui::pos2(pill2_right + 22.0, cy),
+            egui::vec2(34.0, 22.0),
+        );
+        let ab_resp = ui.interact(
+            ab_rect,
+            ui.scope_id().with("git_ab_toggle"),
+            egui::Sense::click(),
+        );
+        if ab_resp.clicked() {
+            s.git_ab_audition = !s.git_ab_audition;
+        }
+        g.rect_filled(
+            ab_rect,
+            4.0,
+            if s.git_ab_audition {
+                Color32::from_rgb(0x2e, 0xa0, 0x43)
+            } else {
+                Color32::from_rgb(0x28, 0x2a, 0x32)
+            },
+        );
+        g.text(
+            ab_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "A/B",
+            egui::FontId::proportional(10.5),
+            Color32::WHITE,
+        );
+        ab_resp.on_hover_text("Audible git diff A/B Switcher");
+
+        let mod_rect = egui::Rect::from_center_size(
+            egui::pos2(pill2_right + 62.0, cy),
+            egui::vec2(38.0, 22.0),
+        );
+        let mod_resp = ui.interact(
+            mod_rect,
+            ui.scope_id().with("mod_drawer_toggle"),
+            egui::Sense::click(),
+        );
+        if mod_resp.clicked() {
+            s.modulation_drawer.open = !s.modulation_drawer.open;
+        }
+        g.rect_filled(
+            mod_rect,
+            4.0,
+            if s.modulation_drawer.open {
+                Color32::from_rgb(0x12, 0x69, 0xcc)
+            } else {
+                Color32::from_rgb(0x28, 0x2a, 0x32)
+            },
+        );
+        g.text(
+            mod_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "MOD",
+            egui::FontId::proportional(10.5),
+            Color32::WHITE,
+        );
+        mod_resp.on_hover_text("Toggle Modulation Matrix & LFO/Env Drawer");
+    }
     let lcd_rect = Rect::from_center_size(pos2(lcd_center_x(bar), cy), vec2(lcd_w, 42.0));
     lcd(ui, &g, p, s, lcd_rect, s.glass_quality);
 

@@ -1070,3 +1070,4 @@ Pitch Range = Estensione
 Normal = Normale
 Global Tuning = Accordatura globale
 Reference = Riferimento
+Diagnostics… = Diagnostica…

@@ -1070,3 +1070,4 @@ Pitch Range = Plage de hauteur
 Normal = Normal
 Global Tuning = Accord global
 Reference = Référence
+Diagnostics… = Diagnostics…

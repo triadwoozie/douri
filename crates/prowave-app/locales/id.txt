@@ -1070,3 +1070,4 @@ Pitch Range = Rentang Nada
 Normal = Normal
 Global Tuning = Penalaan Global
 Reference = Referensi
+Diagnostics… = Diagnostik…

@@ -1070,3 +1070,4 @@ Pitch Range = पिच रेंज
 Normal = सामान्य
 Global Tuning = ग्लोबल ट्यूनिंग
 Reference = संदर्भ
+Diagnostics… = डायग्नोस्टिक्स…

@@ -1070,3 +1070,4 @@ Pitch Range = Tonområde
 Normal = Normal
 Global Tuning = Global stämning
 Reference = Referens
+Diagnostics… = Diagnostik…

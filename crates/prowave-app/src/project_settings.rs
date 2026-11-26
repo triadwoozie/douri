@@ -2658,6 +2658,42 @@ fn advanced(ui: &mut egui::Ui, s: &mut crate::UiState) {
         save_simplified_mode(s.simplified_mode);
     }
 
+    card_group(ui, "Local AI Stem Separation & Diagnostics", None, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Models folder:")
+                    .color(egui::Color32::from_rgb(0xb8, 0xb8, 0xc0)),
+            );
+            ui.label(
+                egui::RichText::new(
+                    prowave_engine::stems::stems_model_dir()
+                        .to_string_lossy()
+                        .as_ref(),
+                )
+                .monospace()
+                .size(11.0)
+                .color(egui::Color32::from_rgb(0x8e, 0x8e, 0x96)),
+            );
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("De-Bleed / Spill Reducer (%):")
+                    .color(egui::Color32::from_rgb(0xd4, 0xd4, 0xdc)),
+            );
+            ui.add(egui::Slider::new(&mut s.stem_splitter.debleed_pct, 0.0..=100.0).suffix("%"));
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.button("Open Stem Splitter…").clicked() {
+                s.stem_splitter.open_dialog();
+            }
+            if ui.button("Open Diagnostics & Stress Bench…").clicked() {
+                s.diagnostics_window.open = true;
+            }
+        });
+    });
+
     card_group(
         ui,
         "First-Launch & Factory Reset",

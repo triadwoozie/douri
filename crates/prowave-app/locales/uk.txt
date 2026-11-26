@@ -1070,3 +1070,4 @@ Pitch Range = Діапазон висоти
 Normal = Звичайний
 Global Tuning = Глобальне строєння
 Reference = Еталон
+Diagnostics… = Діагностика…

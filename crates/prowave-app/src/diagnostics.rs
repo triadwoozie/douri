@@ -228,3 +228,101 @@ mod tests {
         assert_eq!(clean, "Error loading ~/Documents/Douri for user <user>.");
     }
 }
+
+/// UI state for Help -> Diagnostics (Engine Stress Benchmark & PDC Inspector).
+#[derive(Clone, Default)]
+pub struct DiagnosticsWindowState {
+    pub open: bool,
+    pub last_report: Option<prowave_engine::stress_bench::StressBenchReport>,
+}
+
+/// Renders the Diagnostics, 32-Track Stress Benchmark, and Sample-Accurate PDC Inspector window.
+pub fn show_diagnostics_window(
+    ctx: &egui::Context,
+    state: &mut DiagnosticsWindowState,
+    project: &crate::model::Project,
+    selected_track: usize,
+) {
+    if !state.open {
+        return;
+    }
+    let mut open = state.open;
+    egui::Window::new("Diagnostics — Stress Bench & PDC Inspector")
+        .open(&mut open)
+        .default_size([560.0, 420.0])
+        .show(ctx, |ui| {
+            ui.heading("Engine Stress & Torture Benchmark (32 Tracks)");
+            ui.label("Spawns 32 tracks with 4-slot DSP chains + automation curves and measures callback jitter (µs), XRuns, and PDC drift.");
+            ui.horizontal(|ui| {
+                if ui.button("▶ Run 32-Track Stress Benchmark").clicked() {
+                    state.last_report = Some(prowave_engine::stress_bench::run_stress_benchmark(32, 128));
+                }
+                if let Some(ref rep) = state.last_report {
+                    if ui.button("Copy Verifiable Badge").clicked() {
+                        ctx.copy_text(rep.format_badge());
+                    }
+                }
+            });
+
+            if let Some(ref rep) = state.last_report {
+                let badge_color = if rep.passed {
+                    egui::Color32::from_rgb(0x2e, 0xa0, 0x43)
+                } else {
+                    egui::Color32::from_rgb(0xd2, 0x99, 0x22)
+                };
+                ui.colored_label(badge_color, rep.format_badge());
+                egui::Grid::new("stress_grid").striped(true).show(ui, |ui| {
+                    ui.label("Audio Budget:");
+                    ui.label(format!("{:.1} µs ({} smp @ {} Hz)", rep.budget_us, rep.block_size, rep.sample_rate));
+                    ui.end_row();
+                    ui.label("Avg Callback:");
+                    ui.label(format!("{:.1} µs", rep.avg_callback_us));
+                    ui.end_row();
+                    ui.label("Worst Callback / Jitter:");
+                    ui.label(format!("{:.1} µs / {:.1} µs", rep.worst_callback_us, rep.jitter_us));
+                    ui.end_row();
+                    ui.label("XRun Count / PDC Drift:");
+                    ui.label(format!("{} XRuns / {} samples", rep.xruns, rep.pdc_drift_samples));
+                    ui.end_row();
+                });
+            }
+
+            ui.separator();
+            ui.heading("Sample-Accurate PDC Inspector");
+            if let Some(track) = project.tracks.get(selected_track) {
+                ui.label(format!("Channel: {} (48000 Hz)", track.name));
+                let mut total_samples = 0usize;
+                egui::Grid::new("pdc_grid").striped(true).show(ui, |ui| {
+                    ui.strong("Slot");
+                    ui.strong("Plugin / DSP");
+                    ui.strong("Latency (samples)");
+                    ui.strong("Latency (ms)");
+                    ui.end_row();
+
+                    for (idx, ins) in track.inserts.iter().enumerate() {
+                        let smp: usize = match ins.kind {
+                            prowave_engine::FxKind::Limiter => 64,
+                            _ => 0,
+                        };
+                        total_samples += smp;
+                        ui.label(format!("#{}", idx + 1));
+                        ui.label(format!("{:?}", ins.kind));
+                        ui.label(format!("{smp} smp"));
+                        ui.label(format!("{:.2} ms", smp as f32 / 48.0));
+                        ui.end_row();
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Total Compensated Path Delay: {} samples ({:.2} ms)",
+                        total_samples,
+                        total_samples as f32 / 48.0
+                    ))
+                    .strong(),
+                );
+            } else {
+                ui.label("No track selected.");
+            }
+        });
+    state.open = open;
+}

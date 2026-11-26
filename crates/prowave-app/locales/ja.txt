@@ -1070,3 +1070,4 @@ Pitch Range = ピッチ範囲
 Normal = 標準
 Global Tuning = グローバルチューニング
 Reference = 基準
+Diagnostics… = 診断…

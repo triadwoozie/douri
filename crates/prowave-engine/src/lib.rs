@@ -54,6 +54,8 @@ pub mod sampler;
 mod sf2;
 mod soundfont;
 pub mod spectral;
+pub mod stems;
+pub mod stress_bench;
 mod synth;
 mod tempo_map;
 pub mod tri_osc;

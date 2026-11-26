@@ -1070,3 +1070,4 @@ Pitch Range = Aukščio diapazonas
 Normal = Įprastas
 Global Tuning = Globalus derinimas
 Reference = Nuoroda
+Diagnostics… = Diagnostika…

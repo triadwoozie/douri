@@ -1070,3 +1070,4 @@ Pitch Range = 音高范围
 Normal = 标准
 Global Tuning = 全局调音
 Reference = 参考
+Diagnostics… = 诊断…

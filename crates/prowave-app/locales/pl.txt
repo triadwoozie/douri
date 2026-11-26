@@ -1070,3 +1070,4 @@ Pitch Range = Zakres wysokości
 Normal = Normalny
 Global Tuning = Strojenie globalne
 Reference = Odniesienie
+Diagnostics… = Diagnostyka…

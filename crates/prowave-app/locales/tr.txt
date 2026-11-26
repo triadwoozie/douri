@@ -1068,3 +1068,4 @@ Pitch Range = Perde Aralığı
 Normal = Normal
 Global Tuning = Genel Akort
 Reference = Referans
+Diagnostics… = Tanılama…

@@ -1070,3 +1070,4 @@ Pitch Range = Faixa de afinação
 Normal = Normal
 Global Tuning = Afinação global
 Reference = Referência
+Diagnostics… = Diagnóstico…
