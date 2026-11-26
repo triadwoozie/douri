@@ -2990,6 +2990,7 @@ fn main() -> eframe::Result {
             icons::install_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
             theme::apply(&cc.egui_ctx);
+            liquid_glass::init(cc.wgpu_render_state.as_ref());
             // Cmd/Ctrl + = / - / 0 resize the interface through `ui_scale` instead, which
             // also keeps the fit for small windows.
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -3193,6 +3194,7 @@ fn main() -> eframe::Result {
                     "settings-tuning" => Some(project_settings::SettingsTab::Tuning),
                     "settings-audio" => Some(project_settings::SettingsTab::Audio),
                     "settings-midi" => Some(project_settings::SettingsTab::Midi),
+                    "settings-appearance" => Some(project_settings::SettingsTab::Appearance),
                     _ => None,
                 };
                 if scene == "score" || scene == "midifx" {
@@ -3262,6 +3264,19 @@ fn main() -> eframe::Result {
             if scene == "glass-menu" {
                 app.ui.show_multimeter = true;
                 app.ui.shot_top_menu = Some("Track".to_string());
+            }
+            if let Some(tab) = match scene.as_str() {
+                "settings-general" => Some(project_settings::SettingsTab::General),
+                "settings-sync" => Some(project_settings::SettingsTab::Synchronization),
+                "settings-metronome" => Some(project_settings::SettingsTab::Metronome),
+                "settings-recording" => Some(project_settings::SettingsTab::Recording),
+                "settings-tuning" => Some(project_settings::SettingsTab::Tuning),
+                "settings-audio" => Some(project_settings::SettingsTab::Audio),
+                "settings-midi" => Some(project_settings::SettingsTab::Midi),
+                "settings-appearance" => Some(project_settings::SettingsTab::Appearance),
+                _ => None,
+            } {
+                app.ui.settings_tab = Some(tab);
             }
             let is_project = |a: &std::ffi::OsString| is_project_path(a.as_os_str());
             let args: Vec<std::ffi::OsString> = if measuring {

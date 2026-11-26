@@ -607,31 +607,84 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     };
     let mut open = true;
     crate::liquid_glass::glass_window(tr("Project Settings"))
-        .id(egui::Id::unique("project_settings_window"))
+        .id(egui::Id::unique("project_settings_window_v3"))
+        .frame(
+            egui::Frame::window(&egui::Style::default())
+                .fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e))
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgb(0x34, 0x34, 0x39),
+                ))
+                .corner_radius(egui::CornerRadius::same(12))
+                .inner_margin(egui::Margin::ZERO)
+                .shadow(egui::Shadow {
+                    offset: [0, 8],
+                    blur: 24,
+                    spread: 1,
+                    color: egui::Color32::from_black_alpha(150),
+                }),
+        )
         .open(&mut open)
-        .default_size([760.0, 580.0])
-        .min_size([640.0, 480.0])
-        .resizable(true)
+        .default_size([880.0, 580.0])
+        .min_size([880.0, 560.0])
+        .resizable(false)
         .show(ctx, |ui| {
+            ui.set_min_width(880.0);
             render_top_toolbar(ui, &mut tab);
-            ui.add_space(8.0);
-            ui.separator();
-            ui.add_space(6.0);
 
+            ui.add_space(24.0);
+
+            let box_w = (ui.available_width() - 36.0).max(680.0);
+            let box_h = 436.0;
+            let group_rect = ui
+                .horizontal(|ui| {
+                    ui.add_space(18.0);
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(box_w, box_h), egui::Sense::hover());
+                    r
+                })
+                .inner;
+            ui.add_space(20.0);
+
+            // Unified full-width recessed group box (#232326 fill, 1px #38383d border, 8px radius).
+            ui.painter().rect_filled(
+                group_rect,
+                egui::CornerRadius::same(8),
+                egui::Color32::from_rgb(0x23, 0x23, 0x26),
+            );
+            ui.painter().rect_stroke(
+                group_rect,
+                egui::CornerRadius::same(8),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x38, 0x38, 0x3d)),
+                egui::StrokeKind::Inside,
+            );
+
+            let inner_rect = egui::Rect::from_min_max(
+                egui::pos2(group_rect.left() + 22.0, group_rect.top() + 24.0),
+                egui::pos2(group_rect.right() - 22.0, group_rect.bottom() - 14.0),
+            );
+            let mut inner_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(inner_rect)
+                    .layout(egui::Layout::top_down(egui::Align::LEFT)),
+            );
             egui::ScrollArea::vertical()
                 .id_salt("settings_content_scroll")
-                .show(ui, |ui| match tab {
-                    SettingsTab::General => general(ui, p, s),
-                    SettingsTab::Audio => audio(ui, s),
-                    SettingsTab::Recording => recording(ui, p, s),
-                    SettingsTab::Midi => midi(ui, p, s),
-                    SettingsTab::Appearance => appearance(ui, s),
-                    SettingsTab::Synchronization => synchronization(ui, p),
-                    SettingsTab::Metronome => metronome(ui, p, s),
-                    SettingsTab::Tuning => tuning(ui, p, s),
-                    SettingsTab::Keymap => keymap_settings(ui, s),
-                    SettingsTab::McpServer => mcp_settings(ui, s),
-                    SettingsTab::Advanced => advanced(ui, s),
+                .show(&mut inner_ui, |ui| {
+                    ui.set_min_width(inner_rect.width());
+                    match tab {
+                        SettingsTab::General => general(ui, p, s),
+                        SettingsTab::Audio => audio(ui, s),
+                        SettingsTab::Recording => recording(ui, p, s),
+                        SettingsTab::Midi => midi(ui, p, s),
+                        SettingsTab::Appearance => appearance(ui, s, group_rect),
+                        SettingsTab::Synchronization => synchronization(ui, p),
+                        SettingsTab::Metronome => metronome(ui, p, s),
+                        SettingsTab::Tuning => tuning(ui, p, s),
+                        SettingsTab::Keymap => keymap_settings(ui, s),
+                        SettingsTab::McpServer => mcp_settings(ui, s),
+                        SettingsTab::Advanced => advanced(ui, s),
+                    }
                 });
         });
     s.settings_tab = open.then_some(tab);
@@ -645,74 +698,324 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
     s.audio_tab_open = audio_open;
 }
 
-/// Renders the top toolbar tab bar with crisp Phosphor icons and titles.
+/// Renders the single-row macOS/Logic Pro Settings toolbar with vertical Phosphor icon-above-label tiles.
 fn render_top_toolbar(ui: &mut egui::Ui, current_tab: &mut SettingsTab) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-        for &tab in &SettingsTab::ALL {
-            let active = *current_tab == tab;
-            let (bg, stroke, text_color) = if active {
-                (
-                    egui::Color32::from_rgb(0x2A, 0x2D, 0x35),
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(0x42, 0x46, 0x52)),
-                    egui::Color32::from_rgb(0xF2, 0xF3, 0xF5),
-                )
-            } else {
-                (
-                    egui::Color32::from_rgb(0x20, 0x22, 0x26),
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(0x2E, 0x31, 0x38)),
-                    egui::Color32::from_rgb(0x8E, 0x92, 0x9C),
-                )
-            };
+    let strip_w = ui.available_width();
+    let (strip_rect, _) = ui.allocate_exact_size(egui::vec2(strip_w, 68.0), egui::Sense::hover());
+    ui.painter().rect_filled(
+        strip_rect,
+        egui::CornerRadius::ZERO,
+        egui::Color32::from_rgb(0x26, 0x26, 0x29),
+    );
+    ui.painter().line_segment(
+        [
+            egui::pos2(strip_rect.left(), strip_rect.bottom()),
+            egui::pos2(strip_rect.right(), strip_rect.bottom()),
+        ],
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x38, 0x38, 0x3d)),
+    );
 
-            let btn = egui::Button::new(
-                egui::RichText::new(format!("{}  {}", tab.icon(), tab.title()))
-                    .color(text_color)
-                    .strong(),
-            )
-            .fill(bg)
-            .stroke(stroke)
-            .corner_radius(egui::CornerRadius::same(6))
-            .min_size(egui::vec2(0.0, 28.0));
+    let count = SettingsTab::ALL.len() as f32;
+    let pad_x = 8.0;
+    let gap = 4.0;
+    let avail_w = (strip_rect.width() - pad_x * 2.0 - gap * (count - 1.0)).max(200.0);
+    let tile_w = (avail_w / count).min(74.0);
+    let total_w = tile_w * count + gap * (count - 1.0);
+    let start_x = strip_rect.left() + ((strip_rect.width() - total_w) * 0.5).max(pad_x);
+    let tile_h = 56.0;
+    let tile_y = strip_rect.top() + 6.0;
 
-            if ui.add(btn).clicked() {
-                *current_tab = tab;
-            }
+    for (idx, &tab) in SettingsTab::ALL.iter().enumerate() {
+        let x = start_x + idx as f32 * (tile_w + gap);
+        let tile_rect =
+            egui::Rect::from_min_size(egui::pos2(x, tile_y), egui::vec2(tile_w, tile_h));
+        let resp = ui.interact(
+            tile_rect,
+            ui.make_persistent_id(("settings_tab_tile", idx)),
+            egui::Sense::click(),
+        );
+        let active = *current_tab == tab;
+        if active {
+            ui.painter().rect_filled(
+                tile_rect,
+                egui::CornerRadius::same(6),
+                egui::Color32::from_rgb(0x35, 0x35, 0x3a),
+            );
+            ui.painter().rect_stroke(
+                tile_rect,
+                egui::CornerRadius::same(6),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x48, 0x48, 0x4f)),
+                egui::StrokeKind::Inside,
+            );
+        } else if resp.hovered() {
+            ui.painter().rect_filled(
+                tile_rect,
+                egui::CornerRadius::same(6),
+                egui::Color32::from_rgb(0x2e, 0x2e, 0x32),
+            );
         }
-    });
+
+        let icon_color = if active {
+            egui::Color32::from_rgb(0x2e, 0x8c, 0xff)
+        } else {
+            egui::Color32::from_rgb(0x9e, 0x9e, 0xa6)
+        };
+        let label_color = if active {
+            egui::Color32::from_rgb(0xf2, 0xf2, 0xf7)
+        } else {
+            egui::Color32::from_rgb(0xb8, 0xb8, 0xc0)
+        };
+
+        ui.painter().text(
+            egui::pos2(tile_rect.center().x, strip_rect.top() + 10.0 + 12.0),
+            egui::Align2::CENTER_CENTER,
+            tab.icon(),
+            egui::FontId::proportional(24.0),
+            icon_color,
+        );
+        let title = tab.title();
+        let font_size = if title.len() > 13 { 9.5 } else { 11.0 };
+        ui.painter().text(
+            egui::pos2(
+                tile_rect.center().x,
+                strip_rect.top() + 10.0 + 24.0 + 6.0 + 5.5,
+            ),
+            egui::Align2::CENTER_CENTER,
+            title,
+            egui::FontId::proportional(font_size),
+            label_color,
+        );
+
+        if resp.clicked() {
+            *current_tab = tab;
+        }
+    }
 }
 
-/// Renders an elevated obsidian section container for grouped settings.
+/// Renders a straddling segmented control bar centered on the top border of `group_rect`.
+fn straddling_subtabs(
+    ui: &mut egui::Ui,
+    group_rect: egui::Rect,
+    id: &str,
+    labels: &[&str],
+    selected: &mut usize,
+) {
+    let seg_w = 78.0;
+    let total_w = seg_w * labels.len() as f32 + 4.0;
+    let bar_rect = egui::Rect::from_center_size(
+        egui::pos2(group_rect.center().x, group_rect.top()),
+        egui::vec2(total_w, 24.0),
+    );
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        ui.make_persistent_id(("subtab_layer", &id)),
+    ));
+    painter.rect_filled(
+        bar_rect,
+        egui::CornerRadius::same(6),
+        egui::Color32::from_rgb(0x2d, 0x2d, 0x31),
+    );
+    painter.rect_stroke(
+        bar_rect,
+        egui::CornerRadius::same(6),
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x42, 0x42, 0x48)),
+        egui::StrokeKind::Inside,
+    );
+    for (idx, label) in labels.iter().enumerate() {
+        let seg_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                bar_rect.left() + 2.0 + idx as f32 * seg_w,
+                bar_rect.top() + 2.0,
+            ),
+            egui::vec2(seg_w, 20.0),
+        );
+        let resp = ui.interact(
+            seg_rect,
+            ui.make_persistent_id(("subtab_btn", &id, idx)),
+            egui::Sense::click(),
+        );
+        let active = *selected == idx;
+        if active {
+            painter.rect_filled(
+                seg_rect,
+                egui::CornerRadius::same(5),
+                egui::Color32::from_rgb(0x46, 0x46, 0x4d),
+            );
+            painter.rect_stroke(
+                seg_rect,
+                egui::CornerRadius::same(5),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(0x5c, 0x5c, 0x64)),
+                egui::StrokeKind::Inside,
+            );
+        } else if resp.hovered() {
+            painter.rect_filled(
+                seg_rect,
+                egui::CornerRadius::same(5),
+                egui::Color32::from_rgb(0x36, 0x36, 0x3b),
+            );
+        }
+        painter.text(
+            seg_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            *label,
+            egui::FontId::proportional(11.0),
+            if active {
+                egui::Color32::from_rgb(0xf2, 0xf2, 0xf7)
+            } else {
+                egui::Color32::from_rgb(0xb4, 0xb4, 0xbc)
+            },
+        );
+        if resp.clicked() {
+            *selected = idx;
+        }
+    }
+}
+
+/// Section heading inside the unified group box (`13px` semibold `#f2f2f7`).
+fn section_heading(ui: &mut egui::Ui, title: &str) {
+    ui.label(
+        egui::RichText::new(title)
+            .font(egui::FontId::proportional(13.0))
+            .color(egui::Color32::from_rgb(0xf2, 0xf2, 0xf7))
+            .strong(),
+    );
+    ui.add_space(10.0);
+}
+
+/// Full-width `1px` `#35353a` horizontal divider rule between sections.
+fn section_divider(ui: &mut egui::Ui) {
+    ui.add_space(16.0);
+    let r = ui.available_rect_before_wrap();
+    ui.painter().line_segment(
+        [
+            egui::pos2(r.left(), r.top()),
+            egui::pos2(r.right(), r.top()),
+        ],
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x35, 0x35, 0x3a)),
+    );
+    ui.add_space(16.0);
+}
+
+/// Custom 15x15 blue rounded checkbox aligned at `split_x + 10.0`.
+fn logic_checkbox(
+    ui: &mut egui::Ui,
+    split_x: f32,
+    id: &str,
+    checked: &mut bool,
+    label: &str,
+) -> bool {
+    let row_w = ui.available_width().max(320.0);
+    let (row_rect, _) = ui.allocate_exact_size(egui::vec2(row_w, 22.0), egui::Sense::hover());
+    let box_rect = egui::Rect::from_min_size(
+        egui::pos2(split_x + 10.0, row_rect.center().y - 7.5),
+        egui::vec2(15.0, 15.0),
+    );
+    let hit_rect =
+        egui::Rect::from_min_max(box_rect.min, egui::pos2(row_rect.right(), box_rect.max.y));
+    let resp = ui.interact(hit_rect, ui.make_persistent_id(id), egui::Sense::click());
+    let mut changed = false;
+    if resp.clicked() {
+        *checked = !*checked;
+        changed = true;
+    }
+    if *checked {
+        ui.painter().rect_filled(
+            box_rect,
+            egui::CornerRadius::same(4),
+            egui::Color32::from_rgb(0x12, 0x69, 0xcc),
+        );
+        let p0 = egui::pos2(box_rect.left() + 3.5, box_rect.center().y + 0.5);
+        let p1 = egui::pos2(box_rect.left() + 6.5, box_rect.bottom() - 4.0);
+        let p2 = egui::pos2(box_rect.right() - 3.2, box_rect.top() + 4.0);
+        ui.painter()
+            .line_segment([p0, p1], egui::Stroke::new(1.8, egui::Color32::WHITE));
+        ui.painter()
+            .line_segment([p1, p2], egui::Stroke::new(1.8, egui::Color32::WHITE));
+    } else {
+        ui.painter().rect_filled(
+            box_rect,
+            egui::CornerRadius::same(4),
+            egui::Color32::from_rgb(0x2f, 0x2f, 0x34),
+        );
+        ui.painter().rect_stroke(
+            box_rect,
+            egui::CornerRadius::same(4),
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0x4c, 0x53)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    ui.painter().text(
+        egui::pos2(box_rect.right() + 8.0, row_rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(12.0),
+        egui::Color32::from_rgb(0xe5, 0xe5, 0xea),
+    );
+    changed
+}
+
+/// Right-aligned label at `split_x` + uniform `250px` ComboBox at `split_x + 10.0`.
+fn logic_combo_row(
+    ui: &mut egui::Ui,
+    split_x: f32,
+    id: &str,
+    label: &str,
+    selected_text: &str,
+    helper: Option<&str>,
+    add_items: impl FnOnce(&mut egui::Ui),
+) {
+    let row_w = ui.available_width().max(480.0);
+    let (row_rect, _) = ui.allocate_exact_size(egui::vec2(row_w, 26.0), egui::Sense::hover());
+    ui.painter().text(
+        egui::pos2(split_x, row_rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        label,
+        egui::FontId::proportional(12.0),
+        egui::Color32::from_rgb(0xd4, 0xd4, 0xdc),
+    );
+    let combo_rect = egui::Rect::from_min_size(
+        egui::pos2(split_x + 10.0, row_rect.top() + 1.0),
+        egui::vec2(250.0, 24.0),
+    );
+    let mut combo_ui = ui.new_child(egui::UiBuilder::new().max_rect(combo_rect));
+    let s = combo_ui.style_mut();
+    s.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(0x32, 0x32, 0x36);
+    s.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(0x32, 0x32, 0x36);
+    s.visuals.widgets.inactive.bg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x46, 0x46, 0x4d));
+    s.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x3a, 0x3a, 0x40);
+    s.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(0x3a, 0x3a, 0x40);
+    s.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(5);
+    s.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(5);
+    egui::ComboBox::from_id_salt(id)
+        .width(250.0)
+        .selected_text(selected_text)
+        .show_ui(&mut combo_ui, add_items);
+
+    if let Some(desc) = helper {
+        ui.add_space(4.0);
+        let (h_rect, _) = ui.allocate_exact_size(egui::vec2(row_w, 18.0), egui::Sense::hover());
+        ui.painter().text(
+            egui::pos2(split_x + 10.0, h_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            desc,
+            egui::FontId::proportional(11.5),
+            egui::Color32::from_rgb(0x8e, 0x8e, 0x96),
+        );
+    }
+    ui.add_space(6.0);
+}
+
+/// Renders a clean section inside the unified group box with `1px` `#35353a` divider below.
 fn card_group<R>(
     ui: &mut egui::Ui,
     title: &str,
-    icon: Option<&str>,
+    _icon: Option<&str>,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        if let Some(ic) = icon {
-            ui.label(egui::RichText::new(ic).color(egui::Color32::from_rgb(0x8E, 0x92, 0x9C)));
-        }
-        ui.label(
-            egui::RichText::new(title)
-                .font(egui::FontId::proportional(12.5))
-                .color(egui::Color32::from_rgb(0xE6, 0xE8, 0xEC))
-                .strong(),
-        );
-    });
-    ui.add_space(4.0);
-    let res = egui::Frame::new()
-        .fill(egui::Color32::from_rgb(0x20, 0x22, 0x26))
-        .stroke(egui::Stroke::new(
-            1.0,
-            egui::Color32::from_rgb(0x2E, 0x31, 0x38),
-        ))
-        .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::same(12))
-        .show(ui, add_contents)
-        .inner;
-    ui.add_space(6.0);
+    section_heading(ui, title);
+    let res = add_contents(ui);
+    section_divider(ui);
     res
 }
 
@@ -1610,160 +1913,200 @@ fn midi(ui: &mut egui::Ui, p: &mut Project, s: &mut UiState) {
 // 5. Appearance / View Settings
 // ---------------------------------------------------------------------------
 
-fn appearance(ui: &mut egui::Ui, s: &mut UiState) {
+fn appearance(ui: &mut egui::Ui, s: &mut UiState, group_rect: egui::Rect) {
+    let subtab_id = ui.make_persistent_id("appearance_subtab");
+    let mut subtab = ui
+        .ctx()
+        .data_mut(|d| d.get_temp::<usize>(subtab_id).unwrap_or(0));
+    let subtab_labels = ["General", "Tracks", "Mixer", "Editors"];
+    straddling_subtabs(ui, group_rect, "appearance", &subtab_labels, &mut subtab);
+    ui.ctx().data_mut(|d| d.insert_temp(subtab_id, subtab));
+
+    let split_x = ui.max_rect().left() + 210.0;
     let mut changed = false;
 
-    card_group(
-        ui,
-        "UI Theme & Liquid Glass",
-        Some(phosphor_egui::regular::APP_WINDOW),
-        |ui| {
-            egui::Grid::new("appearance_theme_grid")
-                .num_columns(2)
-                .spacing([16.0, 10.0])
-                .show(ui, |ui| {
-                    row_label(ui, "Glass Quality");
-                    egui::ComboBox::from_id_salt("glass_quality_selector")
-                        .selected_text(s.glass_quality.name())
-                        .show_ui(ui, |ui| {
-                            for q in crate::liquid_glass::GlassQuality::ALL {
-                                ui.selectable_value(&mut s.glass_quality, q, q.name());
-                            }
-                        });
-                    ui.end_row();
-
-                    row_label(ui, "Theme Palette");
-                    let mut theme = s.app_settings.theme_palette;
-                    egui::ComboBox::from_id_salt("theme_palette_combo")
-                        .selected_text(theme.label())
-                        .show_ui(ui, |ui| {
-                            for t in ThemePalette::ALL {
-                                if ui.selectable_value(&mut theme, t, t.label()).clicked() {
-                                    s.app_settings.theme_palette = theme;
-                                    changed = true;
-                                }
-                            }
-                        });
-                    ui.end_row();
-                });
-            ui.add_space(6.0);
-            match s.glass_quality {
+    match subtab {
+        0 => {
+            section_heading(ui, "UI Theme & Liquid Glass");
+            let glass_desc = match s.glass_quality {
                 crate::liquid_glass::GlassQuality::FullRefraction => {
-                    ui.weak("Native Vulkan WGSL pipeline with Snell's law edge refraction, dispersion, and Fresnel rim lighting.");
+                    "Native Vulkan WGSL pipeline with Snell's law edge refraction and Fresnel rim."
                 }
                 crate::liquid_glass::GlassQuality::FrostedBlur => {
-                    ui.weak(
-                        "Frosted translucent obsidian squircle pills with specular edge lighting.",
-                    );
+                    "Frosted translucent obsidian squircle pills with specular edge lighting."
                 }
                 crate::liquid_glass::GlassQuality::FlatLowPower => {
-                    ui.weak("Optimized flat obsidian palette without dynamic glass shaders for maximum battery life.");
+                    "Flat obsidian palette without dynamic glass shaders for maximum battery life."
                 }
+            };
+            logic_combo_row(
+                ui,
+                split_x,
+                "glass_quality_selector",
+                "Glass Quality:",
+                s.glass_quality.name(),
+                Some(glass_desc),
+                |ui| {
+                    for q in crate::liquid_glass::GlassQuality::ALL {
+                        ui.selectable_value(&mut s.glass_quality, q, q.name());
+                    }
+                },
+            );
+
+            let mut theme = s.app_settings.theme_palette;
+            logic_combo_row(
+                ui,
+                split_x,
+                "theme_palette_combo",
+                "Theme Palette:",
+                theme.label(),
+                None,
+                |ui| {
+                    for t in ThemePalette::ALL {
+                        if ui.selectable_value(&mut theme, t, t.label()).clicked() {
+                            s.app_settings.theme_palette = theme;
+                            changed = true;
+                        }
+                    }
+                },
+            );
+
+            section_divider(ui);
+            section_heading(ui, "Displays");
+
+            let mut mc = s.app_settings.display_middle_c;
+            logic_combo_row(
+                ui,
+                split_x,
+                "appearance_middle_c",
+                "Display Middle C:",
+                mc.label(),
+                Some("Sets the octave numbering convention across Piano Roll and Score."),
+                |ui| {
+                    for m in MiddleCDisplay::ALL {
+                        if ui.selectable_value(&mut mc, m, m.label()).clicked() {
+                            s.app_settings.display_middle_c = mc;
+                            changed = true;
+                        }
+                    }
+                },
+            );
+        }
+        1 => {
+            section_heading(ui, "Tracks Area & Waveforms");
+            let mut tcp = s.app_settings.track_colors_palette;
+            logic_combo_row(
+                ui,
+                split_x,
+                "track_color_palette_combo",
+                "Track Color Palette:",
+                tcp.label(),
+                None,
+                |ui| {
+                    for p in TrackColorsPalette::ALL {
+                        if ui.selectable_value(&mut tcp, p, p.label()).clicked() {
+                            s.app_settings.track_colors_palette = tcp;
+                            changed = true;
+                        }
+                    }
+                },
+            );
+
+            let mut wfd = s.app_settings.waveform_display;
+            logic_combo_row(
+                ui,
+                split_x,
+                "waveform_display_combo",
+                "Waveform Display:",
+                wfd.label(),
+                Some("Controls whether audio regions draw bipolar stereo waveforms or rectified peaks."),
+                |ui| {
+                    for w in WaveformDisplay::ALL {
+                        if ui.selectable_value(&mut wfd, w, w.label()).clicked() {
+                            s.app_settings.waveform_display = wfd;
+                            changed = true;
+                        }
+                    }
+                },
+            );
+
+            section_divider(ui);
+            section_heading(ui, "Grid & Region Overlays");
+            if logic_checkbox(
+                ui,
+                split_x,
+                "grid_lines_on_top",
+                &mut s.app_settings.grid_lines_on_top,
+                "Display beat and bar grid lines on top of regions",
+            ) {
+                changed = true;
             }
-        },
-    );
-
-    card_group(
-        ui,
-        "Tracks Area & Waveforms",
-        Some(phosphor_egui::regular::WAVEFORM),
-        |ui| {
-            egui::Grid::new("appearance_tracks_grid")
-                .num_columns(2)
-                .spacing([16.0, 10.0])
-                .show(ui, |ui| {
-                    row_label(ui, "Track Color Palette");
-                    let mut tcp = s.app_settings.track_colors_palette;
-                    egui::ComboBox::from_id_salt("track_color_palette_combo")
-                        .selected_text(tcp.label())
-                        .show_ui(ui, |ui| {
-                            for p in TrackColorsPalette::ALL {
-                                if ui.selectable_value(&mut tcp, p, p.label()).clicked() {
-                                    s.app_settings.track_colors_palette = tcp;
-                                    changed = true;
-                                }
-                            }
-                        });
-                    ui.end_row();
-
-                    row_label(ui, "Waveform Display");
-                    let mut wfd = s.app_settings.waveform_display;
-                    egui::ComboBox::from_id_salt("waveform_display_combo")
-                        .selected_text(wfd.label())
-                        .show_ui(ui, |ui| {
-                            for w in WaveformDisplay::ALL {
-                                if ui.selectable_value(&mut wfd, w, w.label()).clicked() {
-                                    s.app_settings.waveform_display = wfd;
-                                    changed = true;
-                                }
-                            }
-                        });
-                    ui.end_row();
-
-                    row_label(ui, "Grid Lines");
-                    if ui
-                        .checkbox(
-                            &mut s.app_settings.grid_lines_on_top,
-                            "Display beat and bar grid lines on top of regions",
-                        )
-                        .changed()
-                    {
-                        changed = true;
+        }
+        2 => {
+            section_heading(ui, "Mixer View");
+            let mut pht = s.app_settings.peak_hold_time;
+            logic_combo_row(
+                ui,
+                split_x,
+                "peak_hold_time_combo",
+                "Peak Hold Time:",
+                pht.label(),
+                Some("How long peak level indicators remain held on channel strip meters."),
+                |ui| {
+                    for h in PeakHoldTime::ALL {
+                        if ui.selectable_value(&mut pht, h, h.label()).clicked() {
+                            s.app_settings.peak_hold_time = pht;
+                            changed = true;
+                        }
                     }
-                    ui.end_row();
-                });
-        },
-    );
+                },
+            );
 
-    card_group(
-        ui,
-        "Mixer View",
-        Some(phosphor_egui::regular::SLIDERS),
-        |ui| {
-            egui::Grid::new("appearance_mixer_grid")
-                .num_columns(2)
-                .spacing([16.0, 10.0])
-                .show(ui, |ui| {
-                    row_label(ui, "Peak Hold Time");
-                    let mut pht = s.app_settings.peak_hold_time;
-                    egui::ComboBox::from_id_salt("peak_hold_time_combo")
-                        .selected_text(pht.label())
-                        .show_ui(ui, |ui| {
-                            for h in PeakHoldTime::ALL {
-                                if ui.selectable_value(&mut pht, h, h.label()).clicked() {
-                                    s.app_settings.peak_hold_time = pht;
-                                    changed = true;
-                                }
-                            }
-                        });
-                    ui.end_row();
-
-                    row_label(ui, "Plugin Window");
-                    if ui
-                        .checkbox(
-                            &mut s.app_settings.open_plugin_on_insert,
-                            "Open plug-in window immediately on insertion",
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    ui.end_row();
-
-                    row_label(ui, "Channel Faders");
-                    if ui
-                        .checkbox(
-                            &mut s.app_settings.show_fader_db,
-                            "Display exact numeric dB readout above faders",
-                        )
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    ui.end_row();
-                });
-        },
-    );
+            section_divider(ui);
+            section_heading(ui, "Channel Strips & Plug-in Windows");
+            if logic_checkbox(
+                ui,
+                split_x,
+                "open_plugin_on_insert",
+                &mut s.app_settings.open_plugin_on_insert,
+                "Open plug-in window immediately on insertion",
+            ) {
+                changed = true;
+            }
+            ui.add_space(6.0);
+            if logic_checkbox(
+                ui,
+                split_x,
+                "show_fader_db",
+                &mut s.app_settings.show_fader_db,
+                "Display exact numeric dB readout above faders",
+            ) {
+                changed = true;
+            }
+        }
+        _ => {
+            section_heading(ui, "Piano Roll & Editors");
+            if logic_checkbox(
+                ui,
+                split_x,
+                "appearance_musical_grid",
+                &mut s.app_settings.musical_grid,
+                "Use musical bar and beat grid in Piano Roll and Step Editor",
+            ) {
+                changed = true;
+            }
+            ui.add_space(6.0);
+            if logic_checkbox(
+                ui,
+                split_x,
+                "appearance_select_regions",
+                &mut s.app_settings.select_regions_on_track_select,
+                "Select regions on track selection for immediate editor focus",
+            ) {
+                changed = true;
+            }
+        }
+    }
 
     if changed {
         s.app_settings.save();

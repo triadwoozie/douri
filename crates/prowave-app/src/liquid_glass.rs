@@ -6,8 +6,8 @@
 
 use eframe::egui_wgpu::{Callback, CallbackResources, CallbackTrait, ScreenDescriptor};
 use eframe::wgpu;
-use egui::{Color32, CornerRadius, PaintCallbackInfo, Pos2, Rect, Stroke, StrokeKind, Ui, Vec2};
-use std::sync::Arc;
+use egui::{Color32, CornerRadius, PaintCallbackInfo, Rect, Stroke, StrokeKind, Ui, Vec2};
+use std::sync::{Arc, OnceLock};
 
 /// UI Glass Quality mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -145,46 +145,64 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
     
-    // Snell's Law virtual edge refraction & 3D normal synthesis
+    // Snell's Law virtual edge refraction & 3D normal synthesis (adapted from liquid-rust)
     let edge_dist = max(-dist, 0.0);
-    let bevel_w = min(radius * 0.6, 12.0);
-    let bevel_factor = clamp(edge_dist / bevel_w, 0.0, 1.0);
-    
-    let z_norm = sqrt(max(1.0 - dot(normal_2d * (1.0 - bevel_factor), normal_2d * (1.0 - bevel_factor)), 0.05));
-    var surf_norm = normalize(vec3<f32>(normal_2d * (1.0 - bevel_factor), z_norm));
+    let bevel_w = min(radius * 0.65, 14.0);
+    let t_bevel = clamp(edge_dist / max(bevel_w, 1.0), 0.0, 1.0);
+    let u = 1.0 - t_bevel;
+    let u3 = u * u * u;
+    let bevel_slope = u3 * pow(max(1.0 - u3 * u, 1e-5), -0.75);
+    let eta = max(globals.params.y, 1.01);
+    let theta = atan(bevel_slope);
+    let refract_mag = tan(theta - asin(clamp(sin(theta) / eta, -1.0, 1.0)));
+
+    let z_norm = sqrt(max(1.0 - dot(normal_2d * (1.0 - t_bevel), normal_2d * (1.0 - t_bevel)), 0.05));
+    var surf_norm = normalize(vec3<f32>(normal_2d * (1.0 - t_bevel), z_norm));
     if (is_recessed) {
         surf_norm.x = -surf_norm.x;
         surf_norm.y = -surf_norm.y;
     }
-    
+
     let view_dir = vec3<f32>(0.0, 0.0, 1.0);
     let light_dir = normalize(globals.light_dir.xyz);
-    
+
     // Fresnel rim intensity
     let fresnel = pow(1.0 - max(dot(view_dir, surf_norm), 0.0), globals.params.w);
-    
+
     // Specular highlight
     let half_vec = normalize(light_dir + view_dir);
-    let spec = pow(max(dot(surf_norm, half_vec), 0.0), 32.0) * 0.6;
-    
-    // Base obsidian glass tint
+    let spec = pow(max(dot(surf_norm, half_vec), 0.0), 36.0) * 0.72;
+
+    // Chromatic dispersion + optical bevel lift in Full Refraction mode (quality >= 1.5)
     var col = pill.tint.rgb;
     if (is_recessed) {
-        col = col * 0.6; // Darker recessed cavity
+        col = col * 0.6;
     }
-    
-    // Blend in rim glow & specular
-    col = mix(col, pill.rim.rgb, fresnel * pill.rim.a);
-    col = col + vec3<f32>(spec);
-    
-    let out_a = pill.tint.a * alpha;
+    if (globals.params.x >= 1.5 && t_bevel < 1.0) {
+        let disp = globals.params.z;
+        let disp_vec = vec3<f32>(
+            0.5 + 0.5 * normal_2d.x * (1.0 + disp),
+            0.5 + 0.5 * normal_2d.y,
+            0.5 - 0.5 * normal_2d.x * (1.0 - disp)
+        );
+        let refract_glow = clamp(refract_mag * 0.28, 0.0, 0.35);
+        col = col + disp_vec * refract_glow;
+    }
+
+    // Blend in Fresnel rim glow & top-left specular
+    col = mix(col, pill.rim.rgb, clamp(fresnel * pill.rim.a * 1.4, 0.0, 1.0));
+    col = col + vec3<f32>(spec * (1.0 - t_bevel * 0.6));
+
+    let out_a = clamp(pill.tint.a + fresnel * 0.25 + spec * 0.2, 0.0, 1.0) * alpha;
     return vec4<f32>(col * out_a, out_a);
 }
 "#;
 
 struct GlassGpuPipeline {
     pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
     globals_buffer: wgpu::Buffer,
+    target_format: wgpu::TextureFormat,
 }
 
 impl GlassGpuPipeline {
@@ -269,16 +287,26 @@ impl GlassGpuPipeline {
 
         Self {
             pipeline,
+            bind_group_layout,
             globals_buffer,
+            target_format,
         }
     }
+}
+
+/// Initializes the Vulkan/wgpu Liquid Glass pipeline with the exact swapchain format.
+pub fn init(render_state: Option<&eframe::egui_wgpu::RenderState>) {
+    let Some(rs) = render_state else {
+        return;
+    };
+    let pipeline = Arc::new(GlassGpuPipeline::new(&rs.device, rs.target_format));
+    rs.renderer.write().callback_resources.insert(pipeline);
 }
 
 /// Callback implementing `egui_wgpu::CallbackTrait` to execute the Vulkan WGSL glass pipeline.
 pub struct GlassCallback {
     pub pill: GlassPill,
-    pub screen_size: Vec2,
-    pub ppi: f32,
+    pub bind: OnceLock<(wgpu::Buffer, wgpu::BindGroup)>,
 }
 
 impl CallbackTrait for GlassCallback {
@@ -292,6 +320,7 @@ impl CallbackTrait for GlassCallback {
     ) -> Vec<wgpu::CommandBuffer> {
         let width = screen_descriptor.size_in_pixels[0] as f32;
         let height = screen_descriptor.size_in_pixels[1] as f32;
+        let ppi = screen_descriptor.pixels_per_point.max(0.5);
 
         let res = callback_resources
             .entry::<Arc<GlassGpuPipeline>>()
@@ -301,9 +330,14 @@ impl CallbackTrait for GlassCallback {
                     wgpu::TextureFormat::Bgra8UnormSrgb,
                 ))
             });
+        let _ = res.target_format;
 
-        // Update globals
-        let globals_data = [
+        let quality_f = match self.pill.quality {
+            GlassQuality::FlatLowPower => 0.0,
+            GlassQuality::FrostedBlur => 1.0,
+            GlassQuality::FullRefraction => 2.0,
+        };
+        let globals_data: [f32; 16] = [
             width,
             height,
             1.0 / width.max(1.0),
@@ -311,17 +345,64 @@ impl CallbackTrait for GlassCallback {
             -0.35,
             -0.65,
             0.67,
-            0.0, // light direction
-            1.0,
+            0.0,
+            quality_f,
             1.5,
-            0.02,
-            3.2, // quality, eta, dispersion, fresnel exp
+            0.04,
+            3.0,
             0.0,
             0.0,
             0.0,
             0.0,
         ];
         queue.write_buffer(&res.globals_buffer, 0, bytemuck::cast_slice(&globals_data));
+
+        let (pill_buf, _) = self.bind.get_or_init(|| {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("liquid_glass_pill"),
+                size: 64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("liquid_glass_bg"),
+                layout: &res.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: res.globals_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf.as_entire_binding(),
+                    },
+                ],
+            });
+            (buf, bg)
+        });
+
+        let r = self.pill.rect;
+        let tint = self.pill.tint;
+        let rim = self.pill.rim_color;
+        let pill_data: [f32; 16] = [
+            r.min.x * ppi,
+            r.min.y * ppi,
+            r.max.x * ppi,
+            r.max.y * ppi,
+            self.pill.radius * ppi,
+            if self.pill.is_recessed { 1.0 } else { 0.0 },
+            2.75,
+            3.0 * ppi,
+            tint.r() as f32 / 255.0,
+            tint.g() as f32 / 255.0,
+            tint.b() as f32 / 255.0,
+            tint.a() as f32 / 255.0,
+            rim.r() as f32 / 255.0,
+            rim.g() as f32 / 255.0,
+            rim.b() as f32 / 255.0,
+            rim.a() as f32 / 255.0,
+        ];
+        queue.write_buffer(pill_buf, 0, bytemuck::cast_slice(&pill_data));
 
         Vec::new()
     }
@@ -335,9 +416,12 @@ impl CallbackTrait for GlassCallback {
         let Some(res) = callback_resources.get::<Arc<GlassGpuPipeline>>() else {
             return;
         };
+        let Some((_, bg)) = self.bind.get() else {
+            return;
+        };
 
-        // Draw quad
         render_pass.set_pipeline(&res.pipeline);
+        render_pass.set_bind_group(0, bg, &[]);
         render_pass.draw(0..4, 0..1);
     }
 }
@@ -361,63 +445,73 @@ pub fn paint_glass_pill(
     let r = radius.clamp(2.0, (rect.height() * 0.5).min(rect.width() * 0.5));
     let corners = CornerRadius::same(r.round() as u8);
 
-    if is_recessed {
-        // Recessed cavity styling (LCD display & recessed wells)
-        let tint = tint_opt.unwrap_or(Color32::from_rgb(0x11, 0x11, 0x13)); // #111113 deep pill LCD cavity
-        painter.rect_filled(rect, corners, tint);
-        // Subtle top inset shadow
-        let top_shadow = Rect::from_min_max(rect.min, Pos2::new(rect.max.x, rect.min.y + 2.0));
-        painter.rect_filled(top_shadow, corners, Color32::from_black_alpha(65));
-        // Subtle 1px neutral border
-        let border_col = rim_opt.unwrap_or(Color32::from_rgb(0x28, 0x28, 0x2c));
-        painter.rect_stroke(
-            rect,
-            corners,
-            Stroke::new(1.0, border_col),
-            StrokeKind::Inside,
-        );
-    } else {
-        // Floating pill capsule styling (soft translucent dark-charcoal)
-        // 1. Soft dark drop shadow (rgba(0, 0, 0, 0.45), 2px Y-offset)
+    if quality == GlassQuality::FlatLowPower {
+        if is_recessed {
+            let tint = tint_opt.unwrap_or(Color32::from_rgb(0x11, 0x11, 0x13));
+            painter.rect_filled(rect, corners, tint);
+            let border_col = rim_opt.unwrap_or(Color32::from_rgb(0x28, 0x28, 0x2c));
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(1.0, border_col),
+                StrokeKind::Inside,
+            );
+        } else {
+            let tint = tint_opt.unwrap_or(Color32::from_rgb(0x24, 0x24, 0x28));
+            painter.rect_filled(rect, corners, tint);
+            let border_col = rim_opt.unwrap_or(Color32::from_rgb(0x3a, 0x3a, 0x40));
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(1.0, border_col),
+                StrokeKind::Inside,
+            );
+        }
+        return;
+    }
+
+    if !is_recessed {
         let shadow_rect = rect.translate(Vec2::new(0.0, 2.0));
         painter.rect_filled(
             shadow_rect,
             corners,
-            Color32::from_rgba_unmultiplied(0, 0, 0, 115),
-        );
-
-        // 2. Subtle vertical gradient (#2C2D31 top to #1F2024 bottom)
-        let mut mesh = egui::Mesh::default();
-        let mut tessellator = eframe::epaint::Tessellator::new(
-            ui.ctx().pixels_per_point(),
-            eframe::epaint::TessellationOptions::default(),
-            [1, 1],
-            Vec::new(),
-        );
-        let rect_shape = eframe::epaint::RectShape::filled(rect, corners, Color32::WHITE);
-        tessellator.tessellate_rect(&rect_shape, &mut mesh);
-        let top_c = Color32::from_rgb(0x2c, 0x2d, 0x31);
-        let bot_c = Color32::from_rgb(0x1f, 0x20, 0x24);
-        for v in &mut mesh.vertices {
-            let t = ((v.pos.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
-            v.color = Color32::from_rgba_premultiplied(
-                (top_c.r() as f32 * (1.0 - t) + bot_c.r() as f32 * t).round() as u8,
-                (top_c.g() as f32 * (1.0 - t) + bot_c.g() as f32 * t).round() as u8,
-                (top_c.b() as f32 * (1.0 - t) + bot_c.b() as f32 * t).round() as u8,
-                255,
-            );
-        }
-        painter.add(mesh);
-
-        // 3. Soft 1px inner border (rgba(255, 255, 255, 0.08)) following rounded path
-        let stroke_color = rim_opt.unwrap_or(Color32::from_rgba_unmultiplied(255, 255, 255, 20));
-        painter.rect_stroke(
-            rect,
-            corners,
-            Stroke::new(1.0, stroke_color),
-            StrokeKind::Inside,
+            Color32::from_rgba_unmultiplied(0, 0, 0, 110),
         );
     }
+
+    let base_alpha = match (quality, is_recessed) {
+        (GlassQuality::FullRefraction, false) => 156,
+        (GlassQuality::FullRefraction, true) => 196,
+        (GlassQuality::FrostedBlur, false) => 204,
+        (GlassQuality::FrostedBlur, true) => 222,
+        (GlassQuality::FlatLowPower, _) => 255,
+    };
+    let default_tint = if is_recessed {
+        Color32::from_rgba_unmultiplied(17, 17, 19, base_alpha)
+    } else {
+        Color32::from_rgba_unmultiplied(36, 38, 44, base_alpha)
+    };
+    let tint = tint_opt.unwrap_or(default_tint);
+    let rim_color = rim_opt.unwrap_or(if is_recessed {
+        Color32::from_rgba_unmultiplied(120, 140, 165, 55)
+    } else {
+        Color32::from_rgba_unmultiplied(170, 225, 255, 115)
+    });
+
+    painter.add(Callback::new_paint_callback(
+        rect,
+        GlassCallback {
+            pill: GlassPill {
+                rect,
+                radius: r,
+                tint,
+                rim_color,
+                is_recessed,
+                quality,
+            },
+            bind: OnceLock::new(),
+        },
+    ));
 }
 
 /// Renders a floating capsule pill around child widgets.
@@ -445,8 +539,8 @@ pub fn glass_pill<R>(
 pub fn glass_window(name: impl Into<egui::WidgetText>) -> egui::Window<'static> {
     egui::Window::new(name).frame(
         egui::Frame::window(&egui::Style::default())
-            .fill(Color32::from_rgb(28, 28, 30))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)))
+            .fill(Color32::from_rgba_unmultiplied(28, 28, 30, 232))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x42)))
             .corner_radius(CornerRadius::same(12))
             .inner_margin(egui::Margin::same(12))
             .shadow(egui::Shadow {
