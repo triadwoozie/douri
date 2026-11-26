@@ -1081,7 +1081,8 @@ fn insert_slot(
         }
         let mut act = None;
         crate::plugin_picker::popup(&resp).show(|ui| {
-            ui.set_min_width(150.0);
+            ui.set_min_width(196.0);
+            ui.set_max_width(210.0);
             if let Some(pick) = crate::plugin_picker::show(ui, &mut v.picker_search) {
                 act = Some(InsertAct::Add(pick_insert(pick)));
                 v.picker_search.clear();

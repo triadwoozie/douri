@@ -85,7 +85,18 @@ fn list_height(ui: &Ui) -> f32 {
 /// the usual 6-point margin its first row sat 7 points lower than the name it belongs to.
 pub fn popup_style(style: &mut egui::Style) {
     egui::containers::menu::menu_style(style);
-    style.spacing.menu_margin = egui::Margin::symmetric(4, 0);
+    style.visuals.window_fill = egui::Color32::from_rgb(0x28, 0x28, 0x2b);
+    style.visuals.panel_fill = egui::Color32::from_rgb(0x28, 0x28, 0x2b);
+    style.visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x3a, 0x3a, 0x40));
+    style.visuals.window_corner_radius = egui::CornerRadius::same(6);
+    style.visuals.selection.bg_fill = egui::Color32::from_rgb(0x12, 0x69, 0xcc);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x12, 0x69, 0xcc);
+    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0x12, 0x69, 0xcc);
+    style.spacing.menu_margin = egui::Margin::same(4);
+    style.spacing.item_spacing = egui::vec2(0.0, 1.0);
+    // Overlap submenu by 2px so diagonal pointer movement never hits a dead gap.
+    style.spacing.menu_spacing = -2.0;
+    style.spacing.interact_size.y = 24.0;
 }
 
 /// The popup of a slot's plug-in menu: it closes when the user clicks outside it or chooses
@@ -114,12 +125,15 @@ pub fn show(ui: &mut Ui, search: &mut String) -> Option<Pick> {
     // The first time a picker opens, the installed plug-ins are listed in the background.
     crate::hosted_plugins::scan(false);
     let catalog = crate::hosted_plugins::catalog();
-    ui.set_min_width(200.0);
-    ui.add(
+    ui.set_min_width(196.0);
+    ui.set_max_width(210.0);
+    ui.add_sized(
+        egui::vec2(ui.available_width(), 26.0),
         egui::TextEdit::singleline(search)
             .hint_text(tr("Search"))
             .desired_width(f32::INFINITY),
     );
+    ui.add_space(3.0);
     let mut picked = None;
     if search.trim().is_empty() {
         for name in CATEGORIES {

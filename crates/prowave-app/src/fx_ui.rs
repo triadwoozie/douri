@@ -203,12 +203,6 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, meters: &Mete
                         } else {
                             knob_rack(ui, &mut edited, track, slot, beat, accent, &mut edits);
                         }
-                        ui.add_space(6.0);
-                        ui.label(
-                            RichText::new("Drag a knob to adjust · double-click to reset")
-                                .size(9.5)
-                                .color(FAINT),
-                        );
                     }
                 });
         });
@@ -626,6 +620,19 @@ fn header(
         .inner_margin(egui::Margin::symmetric(14, 7))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
+                let mut bypass = edited.bypass;
+                let (sw_rect, _) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::hover());
+                if crate::widgets::daw_rocker_switch(
+                    ui,
+                    sw_rect,
+                    ui.make_persistent_id(("fx_pwr", edited.label())),
+                    !bypass,
+                    false,
+                ) {
+                    bypass = !bypass;
+                    edited.bypass = bypass;
+                }
+                ui.add_space(6.0);
                 ui.label(RichText::new(family_name).size(9.5).color(accent));
                 ui.label(RichText::new("·").size(10.0).color(FAINT));
                 ui.label(RichText::new(edited.label()).size(13.5).color(TXT));
@@ -638,66 +645,6 @@ fn header(
                         .clicked()
                     {
                         edited.params = edited.kind.defaults();
-                    }
-                    let mut bypass = edited.bypass;
-                    let (sw_rect, _) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::hover());
-                    if crate::widgets::daw_rocker_switch(
-                        ui,
-                        sw_rect,
-                        ui.make_persistent_id(("fx_pwr", edited.label())),
-                        !bypass,
-                        false,
-                    ) {
-                        bypass = !bypass;
-                        edited.bypass = bypass;
-                    }
-                    let plate_label = match edited.kind {
-                        FxKind::Overdrive | FxKind::LemonDist | FxKind::Amp => "DRIVE",
-                        FxKind::Limiter | FxKind::LemonLimiter | FxKind::LemonClip => "LIMIT",
-                        FxKind::Compressor | FxKind::MultiComp => "COMP",
-                        _ => "ACTIVE",
-                    };
-                    let (pl_rect, _) = ui.allocate_exact_size(vec2(52.0, 20.0), Sense::hover());
-                    if crate::widgets::daw_backlit_plate(
-                        ui,
-                        pl_rect,
-                        ui.make_persistent_id(("fx_plate", edited.label())),
-                        plate_label,
-                        !bypass,
-                        matches!(
-                            edited.kind,
-                            FxKind::Overdrive | FxKind::LemonDist | FxKind::Amp
-                        ),
-                    ) {
-                        bypass = !bypass;
-                        edited.bypass = bypass;
-                    }
-                    let response = ui.add(
-                        egui::Button::new(
-                            RichText::new(tr("Bypass")).size(10.5).color(if bypass {
-                                Color32::WHITE
-                            } else {
-                                DIM
-                            }),
-                        )
-                        .fill(if bypass {
-                            Color32::from_rgb(0xd9, 0x77, 0x06)
-                        } else {
-                            Color32::from_rgb(0x2b, 0x2b, 0x2e)
-                        })
-                        .stroke(Stroke::new(
-                            1.0,
-                            if bypass {
-                                Color32::from_rgb(0xf5, 0x9e, 0x0b)
-                            } else {
-                                Color32::from_rgb(0x38, 0x38, 0x3c)
-                            },
-                        ))
-                        .min_size(vec2(52.0, 20.0)),
-                    );
-                    if response.clicked() {
-                        bypass = !bypass;
-                        edited.bypass = bypass;
                     }
                 });
             });
@@ -1066,99 +1013,83 @@ fn param_knob(
     kind: FxKind,
     text: Option<&dyn Fn(f32) -> String>,
 ) -> Option<(f32, bool)> {
-    let mut change = None;
-    ui.allocate_ui_with_layout(vec2(94.0, 74.0), Layout::top_down(Align::Center), |ui| {
-        ui.add_space(1.0);
-        let label =
-            ui.label(
-                RichText::new(info.name)
-                    .size(9.5)
-                    .color(if locked { FAINT } else { DIM }),
-            );
-        if automated {
-            label.on_hover_text(tr("Automated"));
-        }
-        let (rect, response) = ui.allocate_exact_size(vec2(44.0, 38.0), Sense::click_and_drag());
+    let (cell, _) = ui.allocate_exact_size(vec2(94.0, 86.0), Sense::hover());
+    let g = ui.painter_at(cell);
+    if automated {
+        g.circle_filled(pos2(cell.left() + 6.0, cell.top() + 6.0), 2.5, accent);
+    }
+    if locked {
         let norm = info.to_norm(value);
-        let painter = ui.painter_at(rect);
-        let c = rect.center();
-        // The value arc behind the knob.
+        let c = pos2(cell.center().x, cell.center().y + 2.0);
+        g.text(
+            pos2(cell.center().x, cell.top() + 8.0),
+            Align2::CENTER_CENTER,
+            info.name,
+            FontId::proportional(9.5),
+            FAINT,
+        );
         arc(
-            &painter,
+            &g,
             c,
-            17.0,
+            19.0,
             -225f32.to_radians(),
             (-225.0 + 270.0 * norm).to_radians(),
-            accent.gamma_multiply(0.75),
+            FAINT,
             2.2,
         );
-        crate::widgets::draw_knob(&painter, c, 13.0, norm * 2.0 - 1.0);
-        if automated {
-            painter.circle_filled(pos2(rect.left() + 2.0, rect.top() + 3.0), 2.2, accent);
-        }
-        if !locked {
-            let ctrl_cmd = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
-            if response.double_clicked() || (response.clicked() && ctrl_cmd) {
-                change = Some((info.default, true));
-            } else if response.dragged() {
-                response.request_focus();
-                let fine = if ui.input(|i| i.modifiers.shift) {
-                    0.1
-                } else {
-                    1.0
-                };
-                let n = (norm - response.drag_delta().y * 0.006 * fine).clamp(0.0, 1.0);
-                change = Some((info.from_norm(n), false));
-            } else if response.drag_stopped() {
-                change = Some((value, true));
-            } else if response.has_focus() {
-                let (up, down) = ui.input(|i| {
-                    (
-                        i.key_pressed(egui::Key::ArrowUp),
-                        i.key_pressed(egui::Key::ArrowDown),
-                    )
-                });
-                if up || down {
-                    let dir = if up { 1.0 } else { -1.0 };
-                    let step = dir * if ctrl_cmd { 0.005 } else { 0.02 };
-                    let n = (norm + step).clamp(0.0, 1.0);
-                    change = Some((info.from_norm(n), true));
-                }
-            }
-        }
-        let v = change.map_or(value, |(v, _)| v);
+        crate::widgets::draw_knob(&g, c, 15.0, norm * 2.0 - 1.0);
         let formatted = match text {
-            Some(f) => f(v),
-            None => param_text(kind, info, v),
+            Some(f) => f(value),
+            None => param_text(kind, info, value),
         };
-        let (r_rect, _) = ui.allocate_exact_size(vec2(88.0, 14.0), Sense::hover());
-        let r_painter = ui.painter_at(r_rect);
-        if !locked {
-            if let Some(edited) = crate::widgets::daw_param_readout(
-                ui,
-                &r_painter,
-                r_rect,
-                response.id.with("readout"),
-                &formatted,
-                info.unit,
-                info.min,
-                info.max,
-                true,
-                None,
-            ) {
-                change = Some((edited, true));
-            }
-        } else {
-            r_painter.text(
-                r_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                formatted,
-                egui::FontId::monospace(9.5),
-                FAINT,
-            );
-        }
-    });
-    change
+        g.text(
+            pos2(cell.center().x, cell.bottom() - 8.0),
+            Align2::CENTER_CENTER,
+            formatted,
+            FontId::monospace(9.5),
+            FAINT,
+        );
+        return None;
+    }
+
+    let style = if kind == FxKind::Filter && info.name == "Mode" {
+        crate::daw_knob::DawKnobStyle::Stepped { steps: 3 }
+    } else {
+        crate::daw_knob::DawKnobStyle::Continuous
+    };
+    let res = crate::daw_knob::draw(
+        ui,
+        &g,
+        cell,
+        crate::daw_knob::DawKnobConfig {
+            id: ui.scope_id().with(("fx_knob", kind as u8, info.name)),
+            label: info.name,
+            help_id: "",
+            style,
+            min: info.min,
+            max: info.max,
+            default: info.default,
+            log: info.log && info.min > 0.0,
+            bipolar: info.min < 0.0 && info.max > 0.0,
+            accent: accent == Color32::from_rgb(0x51, 0xee, 0xfc),
+            unit: info.unit,
+            diameter: 40.0,
+        },
+        value,
+        None,
+    );
+    let stopped = res.response.drag_stopped();
+    let dragged = res.response.dragged();
+    if automated {
+        res.response.on_hover_text(tr("Automated"));
+    }
+    if res.changed {
+        Some((res.value, stopped || !dragged))
+    } else if stopped {
+        Some((value, true))
+    } else {
+        None
+    }
 }
 
 /// A parameter's value with the units the effect uses (and names for mode switches).
@@ -2974,38 +2905,26 @@ fn delay_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accen
     });
 }
 
-/// Chorus: two slow LFOs, one per side.
-fn chorus_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accent: Color32) {
-    inset(ui, 150.0, |g, rect| {
+/// Chorus: compact phosphor dual-phase LFO scope.
+fn chorus_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], _accent: Color32) {
+    inset(ui, 118.0, |g, rect| {
         let rate = params[0].max(0.01);
         let depth = params[1].clamp(0.0, 8.0) / 8.0;
-        let mid = rect.center().y;
-        let amp = rect.height() * 0.3 * depth;
-        for (offset, alpha) in [(0.0f32, 0.9f32), (std::f32::consts::PI, 0.55f32)] {
-            let pts: Vec<Pos2> = (0..=140)
-                .map(|i| {
-                    let t = i as f32 / 140.0;
-                    let a = t * rate * std::f32::consts::TAU + offset;
-                    pos2(
-                        rect.left() + 10.0 + t * (rect.width() - 20.0),
-                        mid + a.sin() * amp,
-                    )
-                })
-                .collect();
-            g.add(Shape::line(
-                pts,
-                Stroke::new(1.6, accent.gamma_multiply(alpha)),
-            ));
-        }
-        g.line_segment(
-            [
-                pos2(rect.left() + 10.0, mid),
-                pos2(rect.right() - 10.0, mid),
-            ],
-            Stroke::new(1.0, Color32::from_gray(0x30)),
+        let scope_rect = Rect::from_min_max(
+            pos2(rect.left() + 10.0, rect.top() + 8.0),
+            pos2(rect.right() - 10.0, rect.bottom() - 22.0),
         );
+        let samples: Vec<f32> = (0..96)
+            .map(|i| {
+                let t = i as f32 / 95.0;
+                let a = t * rate * std::f32::consts::TAU;
+                ((a.sin() * 0.7 + (a + std::f32::consts::FRAC_PI_2).sin() * 0.3) * depth)
+                    .clamp(-1.0, 1.0)
+            })
+            .collect();
+        crate::widgets::daw_phosphor_scope(g, scope_rect, &samples);
         g.text(
-            pos2(rect.left() + 12.0, rect.bottom() - 8.0),
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
             Align2::LEFT_BOTTOM,
             format!("{:.2} Hz · depth {:.1} ms", rate, params[1]),
             FontId::monospace(8.5),
@@ -3014,37 +2933,37 @@ fn chorus_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], acce
     });
 }
 
-/// Phaser: the notches sweep with the LFO; `beat` drives the animation.
+/// Phaser: compact phosphor LFO notch sweep scope; `beat` drives the animation.
 fn phaser_panel(
     ui: &mut Ui,
     params: &[f32; prowave_engine::MAX_FX_PARAMS],
     beat: f64,
-    accent: Color32,
+    _accent: Color32,
 ) {
-    inset(ui, 150.0, |g, rect| {
+    inset(ui, 118.0, |g, rect| {
         let rate = params[0].max(0.01);
         let depth = params[1].clamp(0.0, 1.0);
         let phase = ((beat * f64::from(rate)) as f32).fract() * std::f32::consts::TAU;
-        let mid = rect.center().y;
-        let pts: Vec<Pos2> = (0..=160)
+        let scope_rect = Rect::from_min_max(
+            pos2(rect.left() + 10.0, rect.top() + 8.0),
+            pos2(rect.right() - 10.0, rect.bottom() - 22.0),
+        );
+        let samples: Vec<f32> = (0..96)
             .map(|i| {
-                let t = i as f32 / 160.0;
+                let t = i as f32 / 95.0;
                 let hz = 20.0 * 1000f32.powf(t);
                 let mut gain = 0.0f32;
                 for notch in 0..4 {
                     let center = 180.0 * 2.4f32.powi(notch) * (1.0 + 0.35 * depth * phase.sin());
                     let d = (hz / center.max(1.0)).ln().abs();
-                    gain -= 14.0 * depth * (-(d * d) / 0.08).exp();
+                    gain -= 0.85 * depth * (-(d * d) / 0.08).exp();
                 }
-                pos2(
-                    rect.left() + 10.0 + t * (rect.width() - 20.0),
-                    mid - gain / 28.0 * rect.height(),
-                )
+                (0.4 + gain).clamp(-1.0, 1.0)
             })
             .collect();
-        g.add(Shape::line(pts, Stroke::new(1.8, accent)));
+        crate::widgets::daw_phosphor_scope(g, scope_rect, &samples);
         g.text(
-            pos2(rect.left() + 12.0, rect.bottom() - 8.0),
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
             Align2::LEFT_BOTTOM,
             format!("{:.2} Hz · feedback {:.0}%", rate, params[2] * 100.0),
             FontId::monospace(8.5),
