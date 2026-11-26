@@ -396,26 +396,13 @@ fn draw_glow_window_btn(
     let resp = ui.interact(rect, id, Sense::click());
     let t = ui.ctx().animate_bool(id.with("glow"), resp.hovered());
     let default_tint = Color32::from_rgb(0xa0, 0xa0, 0xa6);
-    let p = ui.painter();
-    if t > 0.0 {
-        let [r, g, b, _] = accent.to_array();
-        let center = rect.center();
-        // Soft radial halo behind the icon itself (no box or border).
-        for (radius, alpha_base) in [(13.0, 14.0), (10.0, 26.0), (7.0, 42.0), (4.5, 58.0)] {
-            p.circle_filled(
-                center,
-                radius,
-                Color32::from_rgba_unmultiplied(r, g, b, (alpha_base * t) as u8),
-            );
-        }
-    }
     let lerp = |a: u8, b: u8| -> u8 { (a as f32 + (b as f32 - a as f32) * t).round() as u8 };
     let glyph_col = Color32::from_rgb(
         lerp(default_tint.r(), accent.r()),
         lerp(default_tint.g(), accent.g()),
         lerp(default_tint.b(), accent.b()),
     );
-    p.text(
+    ui.painter().text(
         rect.center(),
         Align2::CENTER_CENTER,
         icon,
