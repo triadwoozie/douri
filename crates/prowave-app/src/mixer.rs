@@ -119,6 +119,10 @@ pub struct MixerView {
     pub plugin_editor: Option<crate::fx_ui::EditorWindow>,
     /// Bounce project/section dialog triggered from the Stereo Out channel strip.
     pub bounce_cmd: bool,
+    /// Open plug-in window automatically when an insert is added (synced from Project Settings > Appearance).
+    pub open_plugin_on_insert: bool,
+    /// Show numeric dB readout above channel faders (synced from Project Settings > Appearance).
+    pub show_fader_db: bool,
 }
 
 /// A channel strip's effects, sends, level and pan, as Copy Channel Strip keeps them.
@@ -153,6 +157,8 @@ impl Default for MixerView {
             fx_drag: None,
             plugin_editor: None,
             bounce_cmd: false,
+            open_plugin_on_insert: true,
+            show_fader_db: true,
         }
     }
 }
@@ -1377,7 +1383,9 @@ fn apply_insert(p: &mut Project, v: &mut MixerView, i: usize, k: usize, act: Ins
         InsertAct::Add(insert) => {
             if inserts.len() < prowave_engine::MAX_INSERTS {
                 inserts.push(insert);
-                v.fx_window = Some((i, inserts.len() - 1));
+                if v.open_plugin_on_insert {
+                    v.fx_window = Some((i, inserts.len() - 1));
+                }
             }
         }
         InsertAct::Replace(insert) if filled => {
@@ -1936,13 +1944,15 @@ pub fn channel_strip(
         Color32::from_rgb(0x18, 0x18, 0x1a),
     );
     let vol_col = Color32::from_rgb(0xea, 0xee, 0xf4);
-    g.text(
-        vol_r.center(),
-        Align2::CENTER_CENTER,
-        &vol_text,
-        font_mono.clone(),
-        vol_col,
-    );
+    if v.show_fader_db {
+        g.text(
+            vol_r.center(),
+            Align2::CENTER_CENTER,
+            &vol_text,
+            font_mono.clone(),
+            vol_col,
+        );
+    }
 
     let hold_db = lin_to_db(*hold);
     let pk_text = if *hold <= 1e-5 {
@@ -2520,6 +2530,8 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect) {
     let (can_undo, can_redo) = (s.can_undo, s.can_redo);
     let mut undo_pick = None;
     let v = &mut s.mixer;
+    v.open_plugin_on_insert = s.app_settings.open_plugin_on_insert;
+    v.show_fader_db = s.app_settings.show_fader_db;
 
     let mut x = bar.left() + 32.0;
     let (edit, w) = menu_title(ui, &g, x, cy, tr("Edit"), id(NS, "Edit"));
@@ -2940,6 +2952,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
     let bar = Rect::from_min_size(area.min, vec2(area.width(), TOOLBAR_H));
     toolbar(ui, p, s, bar);
     let v = &mut s.mixer;
+    v.open_plugin_on_insert = s.app_settings.open_plugin_on_insert;
+    v.show_fader_db = s.app_settings.show_fader_db;
 
     let body = Rect::from_min_max(pos2(area.left(), bar.bottom()), area.max);
     let labels = Rect::from_min_max(body.min, pos2(body.left() + LABEL_W, body.bottom()));

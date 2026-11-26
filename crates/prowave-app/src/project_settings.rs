@@ -243,7 +243,8 @@ impl MiddleCDisplay {
     }
 }
 
-/// Studio color themes for Dōri.
+/// Studio color themes for Dōri (kept for settings file backwards compatibility).
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ThemePalette {
     ObsidianDark,
@@ -251,6 +252,7 @@ pub enum ThemePalette {
     PureMidnight,
 }
 
+#[allow(dead_code)]
 impl ThemePalette {
     pub const ALL: [ThemePalette; 3] =
         [Self::ObsidianDark, Self::GraphiteStudio, Self::PureMidnight];
@@ -1927,51 +1929,6 @@ fn appearance(ui: &mut egui::Ui, s: &mut UiState, group_rect: egui::Rect) {
 
     match subtab {
         0 => {
-            section_heading(ui, "UI Theme & Liquid Glass");
-            let glass_desc = match s.glass_quality {
-                crate::liquid_glass::GlassQuality::FullRefraction => {
-                    "Native Vulkan WGSL pipeline with Snell's law edge refraction and Fresnel rim."
-                }
-                crate::liquid_glass::GlassQuality::FrostedBlur => {
-                    "Frosted translucent obsidian squircle pills with specular edge lighting."
-                }
-                crate::liquid_glass::GlassQuality::FlatLowPower => {
-                    "Flat obsidian palette without dynamic glass shaders for maximum battery life."
-                }
-            };
-            logic_combo_row(
-                ui,
-                split_x,
-                "glass_quality_selector",
-                "Glass Quality:",
-                s.glass_quality.name(),
-                Some(glass_desc),
-                |ui| {
-                    for q in crate::liquid_glass::GlassQuality::ALL {
-                        ui.selectable_value(&mut s.glass_quality, q, q.name());
-                    }
-                },
-            );
-
-            let mut theme = s.app_settings.theme_palette;
-            logic_combo_row(
-                ui,
-                split_x,
-                "theme_palette_combo",
-                "Theme Palette:",
-                theme.label(),
-                None,
-                |ui| {
-                    for t in ThemePalette::ALL {
-                        if ui.selectable_value(&mut theme, t, t.label()).clicked() {
-                            s.app_settings.theme_palette = theme;
-                            changed = true;
-                        }
-                    }
-                },
-            );
-
-            section_divider(ui);
             section_heading(ui, "Displays");
 
             let mut mc = s.app_settings.display_middle_c;

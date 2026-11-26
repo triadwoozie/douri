@@ -265,9 +265,13 @@ pub(crate) fn is_black(pitch: i32) -> bool {
     matches!(pitch.rem_euclid(12), 1 | 3 | 6 | 8 | 10)
 }
 
-/// Logic octave naming: pitch 60 is C3.
-pub(crate) fn c_label(pitch: i32) -> String {
-    format!("C{}", pitch / 12 - 2)
+/// Octave naming respecting Project Settings > Appearance > Display Middle C.
+pub(crate) fn c_label_for(pitch: i32, middle_c: crate::project_settings::MiddleCDisplay) -> String {
+    let offset = match middle_c {
+        crate::project_settings::MiddleCDisplay::C4LogicApple => 1,
+        crate::project_settings::MiddleCDisplay::C3YamahaRoland => 2,
+    };
+    format!("C{}", pitch / 12 - offset)
 }
 
 /// The region the editor shows: the selected MIDI region, else the first one of the track.
@@ -1649,7 +1653,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             gk.text(
                 pos2(keys.right() - 4.0, y + key_h / 2.0),
                 Align2::RIGHT_CENTER,
-                c_label(pitch),
+                c_label_for(pitch, s.app_settings.display_middle_c),
                 FontId::proportional(9.5),
                 Color32::from_gray(0x30),
             );

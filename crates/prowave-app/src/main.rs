@@ -2990,7 +2990,6 @@ fn main() -> eframe::Result {
             icons::install_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
             theme::apply(&cc.egui_ctx);
-            liquid_glass::init(cc.wgpu_render_state.as_ref());
             // Cmd/Ctrl + = / - / 0 resize the interface through `ui_scale` instead, which
             // also keeps the fit for small windows.
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);

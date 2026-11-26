@@ -350,6 +350,7 @@ pub struct TracksView {
     pub tempo_jobs: Vec<crate::smart_tempo::Job>,
     pub tempo_all: Option<crate::smart_tempo::AllJob>,
     pub tempo_editor: crate::smart_tempo::Editor,
+    pub waveform_display: crate::project_settings::WaveformDisplay,
 }
 
 impl TracksView {
@@ -588,6 +589,7 @@ impl Default for TracksView {
             tempo_jobs: Vec::new(),
             tempo_all: None,
             tempo_editor: Default::default(),
+            waveform_display: crate::project_settings::WaveformDisplay::BipolarStereo,
         }
     }
 }
@@ -2426,6 +2428,7 @@ fn draw_region(
     recording: bool,
     silenced: bool,
     seed: u32,
+    waveform_display: crate::project_settings::WaveformDisplay,
 ) {
     // Muted regions are drawn grey, like Logic.
     let base = if region.params.mute {
@@ -2537,6 +2540,7 @@ fn draw_region(
             gain,
             region.params.reverse,
             ink,
+            waveform_display,
         );
     } else if region.audio.is_some() {
         g.line_segment(
@@ -2727,6 +2731,7 @@ fn draw_peaks(
     gain: f32,
     reverse: bool,
     col: Color32,
+    waveform_display: crate::project_settings::WaveformDisplay,
 ) {
     if peaks.is_empty() || full_w <= 0.0 {
         return;
@@ -2750,13 +2755,35 @@ fn draw_peaks(
             .iter()
             .fold((0f32, 0f32), |(l, h), p| (l.min(p.0), h.max(p.1)));
         let (lo, hi) = (display_amp(lo * gain), display_amp(hi * gain));
-        g.line_segment(
-            [
-                pos2(x, mid - hi.min(1.0) * half),
-                pos2(x, mid - lo.max(-1.0) * half),
-            ],
-            Stroke::new(1.0, col),
-        );
+        match waveform_display {
+            crate::project_settings::WaveformDisplay::BipolarStereo => {
+                g.line_segment(
+                    [
+                        pos2(x, mid - hi.min(1.0) * half),
+                        pos2(x, mid - lo.max(-1.0) * half),
+                    ],
+                    Stroke::new(1.0, col),
+                );
+            }
+            crate::project_settings::WaveformDisplay::RectifiedLinear => {
+                let peak = hi.abs().max(lo.abs()).min(1.0);
+                g.line_segment(
+                    [
+                        pos2(x, body.bottom()),
+                        pos2(x, body.bottom() - peak * body.height() * 0.92),
+                    ],
+                    Stroke::new(1.0, col),
+                );
+            }
+            crate::project_settings::WaveformDisplay::LogarithmicRms => {
+                let peak = hi.abs().max(lo.abs()).min(1.0);
+                let rms = peak.sqrt();
+                g.line_segment(
+                    [pos2(x, mid - rms * half), pos2(x, mid + rms * half)],
+                    Stroke::new(1.0, col),
+                );
+            }
+        }
         x += 1.0;
     }
 }
@@ -3224,6 +3251,7 @@ fn master_strip(
 }
 
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer::Meters) {
+    s.tracks.waveform_display = s.app_settings.waveform_display;
     // Regions removed or moved by an undo or a track change are no longer selected.
     s.tracks.prune(p);
     let rec_targets: Vec<(usize, usize)> = s
@@ -4080,6 +4108,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 rec_targets.contains(&(ti, ri)),
                 silenced_by_solo(p, ti),
                 ti as u32 * 77 + ri as u32 * 13 + 3,
+                v.waveform_display,
             );
         }
     }
@@ -4118,6 +4147,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     false,
                     false,
                     gt as u32 * 77 + gr as u32 * 13 + 3,
+                    v.waveform_display,
                 );
             }
         }
