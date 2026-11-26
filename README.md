@@ -2,7 +2,7 @@
 
 <h1 align="center">Dōri</h1>
 
-<p align="center"><b>A pure-Rust digital audio workstation built Linux-first with cross-platform desktop support.</b></p>
+<p align="center"><b>A pure-Rust digital audio workstation inspired by Logic Pro 13 built with cross-platform desktop support.</b></p>
 
 <p align="center">Sample-accurate transport, MIDI and audio editing, a Piano Roll, a 64-bit Mixer with real-time DSP effects and automation, and a lock-free audio engine — rendered with <code>egui</code> (<code>wgpu</code>/Vulkan) and played through <code>cpal</code> (PipeWire/ALSA, WASAPI/ASIO, CoreAudio), without Electron or JUCE.</p>
 
