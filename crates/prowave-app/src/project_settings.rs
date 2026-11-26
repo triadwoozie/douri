@@ -661,6 +661,19 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                 egui::StrokeKind::Inside,
             );
 
+            let appearance_subtab = if tab == SettingsTab::Appearance {
+                let subtab_id = ui.make_persistent_id("appearance_subtab");
+                let mut subtab = ui
+                    .ctx()
+                    .data_mut(|d| d.get_temp::<usize>(subtab_id).unwrap_or(0));
+                let subtab_labels = ["General", "Tracks", "Mixer", "Editors"];
+                straddling_subtabs(ui, group_rect, "appearance", &subtab_labels, &mut subtab);
+                ui.ctx().data_mut(|d| d.insert_temp(subtab_id, subtab));
+                subtab
+            } else {
+                0
+            };
+
             let inner_rect = egui::Rect::from_min_max(
                 egui::pos2(group_rect.left() + 22.0, group_rect.top() + 24.0),
                 egui::pos2(group_rect.right() - 22.0, group_rect.bottom() - 14.0),
@@ -679,7 +692,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                         SettingsTab::Audio => audio(ui, s),
                         SettingsTab::Recording => recording(ui, p, s),
                         SettingsTab::Midi => midi(ui, p, s),
-                        SettingsTab::Appearance => appearance(ui, s, group_rect),
+                        SettingsTab::Appearance => appearance(ui, s, appearance_subtab),
                         SettingsTab::Synchronization => synchronization(ui, p),
                         SettingsTab::Metronome => metronome(ui, p, s),
                         SettingsTab::Tuning => tuning(ui, p, s),
@@ -808,10 +821,7 @@ fn straddling_subtabs(
         egui::pos2(group_rect.center().x, group_rect.top()),
         egui::vec2(total_w, 24.0),
     );
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
-        ui.make_persistent_id(("subtab_layer", &id)),
-    ));
+    let painter = ui.painter();
     painter.rect_filled(
         bar_rect,
         egui::CornerRadius::same(6),
@@ -1915,15 +1925,7 @@ fn midi(ui: &mut egui::Ui, p: &mut Project, s: &mut UiState) {
 // 5. Appearance / View Settings
 // ---------------------------------------------------------------------------
 
-fn appearance(ui: &mut egui::Ui, s: &mut UiState, group_rect: egui::Rect) {
-    let subtab_id = ui.make_persistent_id("appearance_subtab");
-    let mut subtab = ui
-        .ctx()
-        .data_mut(|d| d.get_temp::<usize>(subtab_id).unwrap_or(0));
-    let subtab_labels = ["General", "Tracks", "Mixer", "Editors"];
-    straddling_subtabs(ui, group_rect, "appearance", &subtab_labels, &mut subtab);
-    ui.ctx().data_mut(|d| d.insert_temp(subtab_id, subtab));
-
+fn appearance(ui: &mut egui::Ui, s: &mut UiState, subtab: usize) {
     let split_x = ui.max_rect().left() + 210.0;
     let mut changed = false;
 
