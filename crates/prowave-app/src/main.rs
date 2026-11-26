@@ -394,6 +394,10 @@ pub struct UiState {
     pub user_loops: user_loops::UserLoopsCatalog,
     /// Last rendered Track Header gutter rect for drop detection.
     pub tracks_headers_rect: Option<egui::Rect>,
+    /// Last rendered Sound Library / Loops panel rect for drop detection.
+    pub library_panel_rect: Option<egui::Rect>,
+    /// Active cross-panel region drag payload mirrored alongside egui DragAndDrop.
+    pub dragged_region: Option<track_drop_slice::DraggedRegionPayload>,
     /// Measured round-trip loopback latency calibration figure.
     pub measured_roundtrip: Option<prowave_engine::calibration::Measured>,
     /// URL to open in external browser.
@@ -474,6 +478,8 @@ impl UiState {
             add_loop_modal: user_loops::AddLoopModal::default(),
             user_loops: user_loops::UserLoopsCatalog::default(),
             tracks_headers_rect: None,
+            library_panel_rect: None,
+            dragged_region: None,
             piano: piano_roll::PianoView::default(),
             steps: step_editor::StepView::default(),
             show_midi_fx: false,
@@ -1995,6 +2001,71 @@ impl eframe::App for App {
                 ui.set_min_width(420.0);
                 tracks_area::show(ui, p, s, &meters);
             });
+        // Floating top-layer drag badge for cross-panel region drags (never clipped by ScrollArea).
+        let active_drag = s.dragged_region.clone().or_else(|| {
+            egui::DragAndDrop::payload::<track_drop_slice::DraggedRegionPayload>(&ctx)
+                .map(|a| (*a).clone())
+        });
+        if let Some(payload) = active_drag {
+            let ptr = ctx.input(|i| i.pointer.latest_pos().or(i.pointer.interact_pos()));
+            let target = ptr.and_then(|pos| {
+                track_drop_slice::cross_panel_drop_target(
+                    pos,
+                    s.tracks_headers_rect,
+                    s.library_panel_rect,
+                )
+            });
+            if ctx.input(|i| i.pointer.any_released()) && target.is_none() {
+                s.dragged_region = None;
+                egui::DragAndDrop::clear_payload(&ctx);
+            } else if let Some(pos) = ptr {
+                let hint = match target {
+                    Some(track_drop_slice::CrossPanelDropTarget::TrackHeaders)
+                        if !payload.is_midi =>
+                    {
+                        Some(i18n::tr("Create Track / Drum Kit"))
+                    }
+                    Some(track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {
+                        Some(i18n::tr("Add to Loops Library"))
+                    }
+                    _ => None,
+                };
+                egui::Area::new(egui::Id::unique("region_drag_badge"))
+                    .order(egui::Order::Tooltip)
+                    .interactable(false)
+                    .fixed_pos(pos + egui::vec2(12.0, 12.0))
+                    .show(&ctx, |ui| {
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                match target {
+                                    Some(track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {
+                                        egui::Color32::from_rgb(0x51, 0xee, 0xfc)
+                                    }
+                                    _ => egui::Color32::from_rgb(0x12, 0x69, 0xcc),
+                                },
+                            ))
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(&payload.region_name)
+                                        .size(11.5)
+                                        .strong()
+                                        .color(egui::Color32::WHITE),
+                                );
+                                if let Some(h) = hint {
+                                    ui.label(
+                                        egui::RichText::new(h)
+                                            .size(10.5)
+                                            .color(egui::Color32::from_rgb(0x51, 0xee, 0xfc)),
+                                    );
+                                }
+                            });
+                    });
+            }
+        }
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
         free_plugins::show(&ctx, s);

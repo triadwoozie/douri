@@ -1050,3 +1050,7 @@ Key = Sävellaji
 Instrument Descriptors = Soitinkuvaukset
 Sub-Descriptors = Alakuvaukset
 Mood & Character = Tunnelma ja luonne
+Create Track / Drum Kit = Luo raita / rumpusetti
+Add to Loops Library = Lisää silmukkakirjastoon
+Drop Audio to Create Track / Drum Kit = Pudota ääni luodaksesi raidan / rumpusetin
+Drop Region to Save as User Loop = Pudota alue tallentaaksesi sen käyttäjäsilmukkana

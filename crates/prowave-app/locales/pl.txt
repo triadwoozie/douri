@@ -1050,3 +1050,7 @@ Key = Tonacja
 Instrument Descriptors = Deskryptory instrumentu
 Sub-Descriptors = Poddeskryptory
 Mood & Character = Nastrój i charakter
+Create Track / Drum Kit = Utwórz ścieżkę / zestaw perkusyjny
+Add to Loops Library = Dodaj do biblioteki pętli
+Drop Audio to Create Track / Drum Kit = Upuść dźwięk, aby utworzyć ścieżkę / zestaw
+Drop Region to Save as User Loop = Upuść region, aby zapisać jako pętlę użytkownika

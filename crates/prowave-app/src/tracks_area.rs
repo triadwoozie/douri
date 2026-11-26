@@ -3867,29 +3867,63 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     && v.start_drag.is_none()
                     && v.edge_drag.is_none()
                 {
+                    if let Some(&(gt, gr, orig_beats)) = v.group_drag.first() {
+                        if let Some(reg) = p.tracks.get(gt).and_then(|t| t.regions.get(gr)) {
+                            let payload = crate::track_drop_slice::DraggedRegionPayload {
+                                track_index: gt,
+                                region_index: gr,
+                                region_name: reg.name.clone(),
+                                is_midi: reg.audio.is_none(),
+                                original_start_beats: orig_beats,
+                            };
+                            egui::DragAndDrop::set_payload(ui.ctx(), payload.clone());
+                            s.dragged_region = Some(payload);
+                        }
+                    }
                     let copy = ui.input(|i| i.modifiers.alt);
-                    if let Some(pt) = resp.interact_pointer_pos() {
-                        let raw = (beat_of(pt.x) - v.grab_beats).max(0.0);
-                        let grabbed = v
-                            .group_drag
-                            .iter()
-                            .find(|g| (g.0, g.1) == (ti, ri))
-                            .map_or(start_beat, |g| g.2);
-                        let nb = v.grid.region_start(raw, grabbed, &snap_pos);
-                        let delta = nb - grabbed;
-                        let now_y = pt.y - lanes.top() + scroll_y;
-                        let row_under = row_at(&rows, now_y).unwrap_or(ti);
-                        let down = row_under as isize - ti as isize;
-                        v.drag_by = (delta, down);
-                        if !copy && down == 0 {
-                            let moves: Vec<(usize, usize, f32)> = v
+                    if let Some(pt) = ui
+                        .ctx()
+                        .input(|i| i.pointer.latest_pos())
+                        .or_else(|| resp.interact_pointer_pos())
+                    {
+                        if lanes.contains(pt) {
+                            let raw = (beat_of(pt.x) - v.grab_beats).max(0.0);
+                            let grabbed = v
+                                .group_drag
+                                .iter()
+                                .find(|g| (g.0, g.1) == (ti, ri))
+                                .map_or(start_beat, |g| g.2);
+                            let nb = v.grid.region_start(raw, grabbed, &snap_pos);
+                            let delta = nb - grabbed;
+                            let now_y = pt.y - lanes.top() + scroll_y;
+                            let row_under = row_at(&rows, now_y).unwrap_or(ti);
+                            let down = row_under as isize - ti as isize;
+                            v.drag_by = (delta, down);
+                            if !copy && down == 0 {
+                                let moves: Vec<(usize, usize, f32)> = v
+                                    .group_drag
+                                    .iter()
+                                    .map(|&(gt, gr, s0)| {
+                                        (gt, gr, crate::region_edit::landing_bar(p, s0, delta))
+                                    })
+                                    .collect();
+                                for (gt, gr, bar) in moves {
+                                    if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
+                                        reg.start_bar = bar;
+                                    }
+                                }
+                            }
+                        } else {
+                            // Pointer is outside the timeline: suspend snapping and restore original positions.
+                            v.drag_by = (0.0, 0);
+                            let restores: Vec<(usize, usize, f32)> = v
                                 .group_drag
                                 .iter()
                                 .map(|&(gt, gr, s0)| {
-                                    (gt, gr, crate::region_edit::landing_bar(p, s0, delta))
+                                    (gt, gr, crate::region_edit::landing_bar(p, s0, 0.0))
                                 })
                                 .collect();
-                            for (gt, gr, bar) in moves {
+                            for (gt, gr, bar) in restores {
                                 if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
                                     reg.start_bar = bar;
                                 }
@@ -3898,10 +3932,68 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     }
                 }
                 if resp.drag_stopped() && !v.group_drag.is_empty() {
-                    let copy = ui.input(|i| i.modifiers.alt);
-                    let group = std::mem::take(&mut v.group_drag);
-                    let (delta, down) = std::mem::take(&mut v.drag_by);
-                    tool_act = Some(ToolAct::Drop(group, delta, down, copy));
+                    let release_pos = ui
+                        .ctx()
+                        .input(|i| i.pointer.latest_pos().or(i.pointer.interact_pos()));
+                    let drop_target = release_pos.and_then(|pos| {
+                        crate::track_drop_slice::cross_panel_drop_target(
+                            pos,
+                            Some(headers),
+                            s.library_panel_rect,
+                        )
+                    });
+                    let mut handled_cross_panel = false;
+                    match drop_target {
+                        Some(crate::track_drop_slice::CrossPanelDropTarget::TrackHeaders) => {
+                            if let Some(&(gt, gr, _)) = v.group_drag.first() {
+                                if let Some((rname, audio)) = p
+                                    .tracks
+                                    .get(gt)
+                                    .and_then(|t| t.regions.get(gr))
+                                    .and_then(|r| r.audio.as_ref().map(|a| (r.name.clone(), a)))
+                                {
+                                    let src = crate::track_drop_slice::DropAudioSource::Region {
+                                        name: rname,
+                                        path: audio.file.path.clone(),
+                                        start_frame: audio.start_frame,
+                                        len_frames: audio.len_frames,
+                                    };
+                                    s.track_drop_slice.open(src);
+                                    handled_cross_panel = true;
+                                }
+                            }
+                        }
+                        Some(crate::track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {
+                            if let Some(&(gt, gr, _)) = v.group_drag.first() {
+                                s.add_loop_modal.open_from_region(p, gt, gr);
+                                handled_cross_panel = true;
+                            }
+                        }
+                        None => {}
+                    }
+                    if handled_cross_panel {
+                        let restores: Vec<(usize, usize, f32)> = v
+                            .group_drag
+                            .iter()
+                            .map(|&(gt, gr, s0)| {
+                                (gt, gr, crate::region_edit::landing_bar(p, s0, 0.0))
+                            })
+                            .collect();
+                        for (gt, gr, bar) in restores {
+                            if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
+                                reg.start_bar = bar;
+                            }
+                        }
+                        v.group_drag.clear();
+                        v.drag_by = (0.0, 0);
+                    } else {
+                        let copy = ui.input(|i| i.modifiers.alt);
+                        let group = std::mem::take(&mut v.group_drag);
+                        let (delta, down) = std::mem::take(&mut v.drag_by);
+                        tool_act = Some(ToolAct::Drop(group, delta, down, copy));
+                    }
+                    s.dragged_region = None;
+                    egui::DragAndDrop::clear_payload(ui.ctx());
                 }
             }
             let (is_audio, muted) = (
@@ -4093,7 +4185,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         }
     }
     // Drag audio region or OS file onto Track Header gutter -> Create New Track using:
-    let ptr_pos = ui.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+    let ptr_pos = ui.ctx().input(|i| {
+        i.pointer
+            .latest_pos()
+            .or(i.pointer.hover_pos())
+            .or(i.pointer.interact_pos())
+    });
     let os_hover = ui.input(|i| !i.raw.hovered_files.is_empty());
     let dragging_audio = v.group_drag.first().and_then(|&(gt, gr, _)| {
         p.tracks
@@ -4101,9 +4198,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             .and_then(|t| t.regions.get(gr))
             .and_then(|r| r.audio.as_ref().map(|a| (gt, gr, r.name.clone(), a)))
     });
+    let has_audio_payload =
+        dragging_audio.is_some() || s.dragged_region.as_ref().is_some_and(|d| !d.is_midi);
     let mut dropped_audio: Option<crate::track_drop_slice::DropAudioSource> = None;
     if let Some(pos) = ptr_pos {
-        if headers.contains(pos) && (os_hover || dragging_audio.is_some()) {
+        if headers.contains(pos) && (os_hover || has_audio_payload) {
             let hl = ui.painter_at(headers);
             hl.rect_filled(
                 headers,
@@ -4115,6 +4214,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 4.0,
                 Stroke::new(2.0, Color32::from_rgb(0x12, 0x69, 0xcc)),
                 egui::StrokeKind::Inside,
+            );
+            hl.text(
+                pos2(headers.center().x, headers.top() + 14.0),
+                Align2::CENTER_CENTER,
+                tr("Drop Audio to Create Track / Drum Kit"),
+                FontId::proportional(11.0),
+                Color32::WHITE,
             );
             if let Some((_gt, _gr, rname, audio)) = dragging_audio {
                 if ui.input(|i| i.pointer.any_released()) {
@@ -4129,7 +4235,20 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         }
     }
     if let Some(src) = dropped_audio {
+        let restores: Vec<(usize, usize, f32)> = v
+            .group_drag
+            .iter()
+            .map(|&(gt, gr, s0)| (gt, gr, crate::region_edit::landing_bar(p, s0, 0.0)))
+            .collect();
+        for (gt, gr, bar) in restores {
+            if let Some(reg) = p.tracks[gt].regions.get_mut(gr) {
+                reg.start_bar = bar;
+            }
+        }
         v.group_drag.clear();
+        v.drag_by = (0.0, 0);
+        s.dragged_region = None;
+        egui::DragAndDrop::clear_payload(ui.ctx());
         s.track_drop_slice.open(src);
     }
 

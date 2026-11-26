@@ -12,6 +12,37 @@ use std::sync::Arc;
 
 const MAX_DRUM_KIT_SLICES: usize = 32;
 
+/// Shared cross-panel payload when dragging an Audio or MIDI region out of the Tracks Area.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DraggedRegionPayload {
+    pub track_index: usize,
+    pub region_index: usize,
+    pub region_name: String,
+    pub is_midi: bool,
+    pub original_start_beats: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossPanelDropTarget {
+    TrackHeaders,
+    SoundLibrary,
+}
+
+/// Hit-tests `pos` against the full Track Header column rect and Sound Library panel rect.
+pub fn cross_panel_drop_target(
+    pos: egui::Pos2,
+    headers_rect: Option<egui::Rect>,
+    library_rect: Option<egui::Rect>,
+) -> Option<CrossPanelDropTarget> {
+    if headers_rect.is_some_and(|r| r.contains(pos)) {
+        Some(CrossPanelDropTarget::TrackHeaders)
+    } else if library_rect.is_some_and(|r| r.contains(pos)) {
+        Some(CrossPanelDropTarget::SoundLibrary)
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum DropAudioSource {
     File {
@@ -531,5 +562,24 @@ mod tests {
         assert!(reg.notes.len() >= 2);
         assert_eq!(reg.notes[0].pitch, 36);
         assert_eq!(reg.notes[1].pitch, 37);
+    }
+
+    #[test]
+    fn cross_panel_drop_target_hit_tests_headers_and_library_rects() {
+        let headers = egui::Rect::from_min_max(egui::pos2(0.0, 80.0), egui::pos2(240.0, 800.0));
+        let library = egui::Rect::from_min_max(egui::pos2(1100.0, 80.0), egui::pos2(1440.0, 800.0));
+
+        assert_eq!(
+            cross_panel_drop_target(egui::pos2(120.0, 420.0), Some(headers), Some(library)),
+            Some(CrossPanelDropTarget::TrackHeaders)
+        );
+        assert_eq!(
+            cross_panel_drop_target(egui::pos2(1250.0, 300.0), Some(headers), Some(library)),
+            Some(CrossPanelDropTarget::SoundLibrary)
+        );
+        assert_eq!(
+            cross_panel_drop_target(egui::pos2(600.0, 300.0), Some(headers), Some(library)),
+            None
+        );
     }
 }

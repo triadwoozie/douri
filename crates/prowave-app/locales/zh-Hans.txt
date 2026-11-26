@@ -1050,3 +1050,7 @@ Key = 调性
 Instrument Descriptors = 乐器描述
 Sub-Descriptors = 子描述
 Mood & Character = 情绪与特征
+Create Track / Drum Kit = 创建轨道 / 鼓组
+Add to Loops Library = 添加到乐段库
+Drop Audio to Create Track / Drum Kit = 拖放音频以创建轨道 / 鼓组
+Drop Region to Save as User Loop = 拖放片段以保存为用户乐段

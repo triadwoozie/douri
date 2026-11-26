@@ -1050,3 +1050,7 @@ Key = कुंजी
 Instrument Descriptors = वाद्य विवरणक
 Sub-Descriptors = उप-विवरणक
 Mood & Character = मूड और चरित्र
+Create Track / Drum Kit = ट्रैक / ड्रम किट बनाएं
+Add to Loops Library = लूप लाइब्रेरी में जोड़ें
+Drop Audio to Create Track / Drum Kit = ट्रैक / ड्रम किट बनाने के लिए ऑडियो छोड़ें
+Drop Region to Save as User Loop = यूज़र लूप के रूप में सहेजने के लिए क्षेत्र छोड़ें

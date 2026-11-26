@@ -785,10 +785,35 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
     );
     s.user_loops.ensure_loaded();
-    let ptr_pos = ui.input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
-    let dragging_reg = s.tracks.group_drag.first().copied();
+    s.library_panel_rect = Some(panel);
+    let ptr_pos = ui.ctx().input(|i| {
+        i.pointer
+            .latest_pos()
+            .or(i.pointer.hover_pos())
+            .or(i.pointer.interact_pos())
+    });
+    let drag_payload = s
+        .dragged_region
+        .clone()
+        .or_else(|| {
+            egui::DragAndDrop::payload::<crate::track_drop_slice::DraggedRegionPayload>(ui.ctx())
+                .map(|a| (*a).clone())
+        })
+        .or_else(|| {
+            s.tracks.group_drag.first().and_then(|&(gt, gr, s0)| {
+                p.tracks.get(gt).and_then(|t| t.regions.get(gr)).map(|r| {
+                    crate::track_drop_slice::DraggedRegionPayload {
+                        track_index: gt,
+                        region_index: gr,
+                        region_name: r.name.clone(),
+                        is_midi: r.audio.is_none(),
+                        original_start_beats: s0,
+                    }
+                })
+            })
+        });
     let mut dropped_loop_region: Option<(usize, usize)> = None;
-    if let (Some(pos), Some((gt, gr, _))) = (ptr_pos, dragging_reg) {
+    if let (Some(pos), Some(payload)) = (ptr_pos, drag_payload) {
         if panel.contains(pos) {
             g.rect_filled(
                 panel,
@@ -801,13 +826,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
                 egui::StrokeKind::Inside,
             );
+            g.text(
+                pos2(panel.center().x, panel.top() + 14.0),
+                Align2::CENTER_CENTER,
+                tr("Drop Region to Save as User Loop"),
+                FontId::proportional(11.0),
+                Color32::WHITE,
+            );
             if ui.input(|i| i.pointer.any_released()) {
-                dropped_loop_region = Some((gt, gr));
+                dropped_loop_region = Some((payload.track_index, payload.region_index));
             }
         }
     }
     if let Some((gt, gr)) = dropped_loop_region {
+        let restores: Vec<(usize, usize, f32)> = s
+            .tracks
+            .group_drag
+            .iter()
+            .map(|&(t_i, r_i, s0)| (t_i, r_i, crate::region_edit::landing_bar(p, s0, 0.0)))
+            .collect();
+        for (t_i, r_i, bar) in restores {
+            if let Some(reg) = p.tracks[t_i].regions.get_mut(r_i) {
+                reg.start_bar = bar;
+            }
+        }
         s.tracks.group_drag.clear();
+        s.tracks.drag_by = (0.0, 0);
+        s.dragged_region = None;
+        egui::DragAndDrop::clear_payload(ui.ctx());
         s.add_loop_modal.open_from_region(p, gt, gr);
     }
 

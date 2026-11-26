@@ -1050,3 +1050,7 @@ Key = キー
 Instrument Descriptors = 楽器記述子
 Sub-Descriptors = サブ記述子
 Mood & Character = ムードとキャラクター
+Create Track / Drum Kit = トラック / ドラムキットを作成
+Add to Loops Library = ループライブラリに追加
+Drop Audio to Create Track / Drum Kit = オーディオをドロップしてトラック / ドラムキットを作成
+Drop Region to Save as User Loop = リージョンをドロップしてユーザーループとして保存

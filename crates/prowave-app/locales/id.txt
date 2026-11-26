@@ -1050,3 +1050,7 @@ Key = Nada Dasar
 Instrument Descriptors = Deskriptor Instrumen
 Sub-Descriptors = Sub-Deskriptor
 Mood & Character = Suasana & Karakter
+Create Track / Drum Kit = Buat Trek / Drum Kit
+Add to Loops Library = Tambahkan ke Pustaka Loop
+Drop Audio to Create Track / Drum Kit = Lepaskan Audio untuk Membuat Trek / Drum Kit
+Drop Region to Save as User Loop = Lepaskan Wilayah untuk Menyimpan sebagai Loop Pengguna

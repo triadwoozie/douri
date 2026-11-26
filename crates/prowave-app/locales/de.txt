@@ -1050,3 +1050,7 @@ Key = Tonart
 Instrument Descriptors = Instrumenten-Beschreibungen
 Sub-Descriptors = Unter-Beschreibungen
 Mood & Character = Stimmung & Charakter
+Create Track / Drum Kit = Spur / Drum-Kit erstellen
+Add to Loops Library = Zur Loop-Mediathek hinzufügen
+Drop Audio to Create Track / Drum Kit = Audio ablegen, um Spur / Drum-Kit zu erstellen
+Drop Region to Save as User Loop = Region ablegen, um als Benutzer-Loop zu speichern

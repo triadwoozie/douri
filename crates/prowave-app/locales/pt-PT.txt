@@ -1050,3 +1050,7 @@ Key = Tonalidade
 Instrument Descriptors = Descritores de instrumento
 Sub-Descriptors = Subdescritores
 Mood & Character = Ambiente e carácter
+Create Track / Drum Kit = Criar faixa / bateria
+Add to Loops Library = Adicionar à biblioteca de loops
+Drop Audio to Create Track / Drum Kit = Largue o áudio para criar faixa / bateria
+Drop Region to Save as User Loop = Largue a região para guardar como loop do utilizador
