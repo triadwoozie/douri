@@ -7,11 +7,6 @@
 <p align="center">Sample-accurate transport, MIDI and audio editing, a Piano Roll, a Mixer with real-time DSP effects and automation, and a lock-free audio engine. Rendered with egui and played through cpal (PipeWire/ALSA on Linux, WASAPI on Windows, CoreAudio on macOS), without Electron or JUCE.</p>
 
 <p align="center"><i>Named after the Japanese <b>dōri</b> (道理)</i></p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="license GPL-3.0">
-  <img src="https://img.shields.io/badge/rust-stable-orange" alt="rust">
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational" alt="platform">
 </p>
 <p align="center">
   <a href="https://github.com/triadwoozie/douri/releases/latest">
