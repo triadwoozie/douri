@@ -452,13 +452,20 @@ const AUTOPAN_PARAMS: [ParamInfo; 4] = [
     p("Waveform", 0.0, 4.0, 0.0, ""),
     p("Output", -24.0, 12.0, 0.0, "dB"),
 ];
-const PITCH_CORRECTION_PARAMS: [ParamInfo; 6] = [
+const PITCH_CORRECTION_PARAMS: [ParamInfo; 13] = [
     p("Root Key", 0.0, 12.0, 0.0, ""),
     p("Scale", 0.0, 8.0, 7.0, ""),
     p("Response", 0.0, 400.0, 20.0, "ms"),
     p("Detune", -50.0, 50.0, 0.0, "ct"),
     p("Mix", 0.0, 100.0, 100.0, "%"),
     p("Notes Mask", 0.0, 4095.0, 4095.0, ""),
+    p("Tolerance", 0.0, 100.0, 10.0, "ct"),
+    p("Bypass Notes", 0.0, 4095.0, 0.0, ""),
+    p("Bypass All", 0.0, 1.0, 0.0, ""),
+    p("Neural Pitch", 0.0, 1.0, 1.0, ""),
+    p("Pitch Range", 0.0, 1.0, 0.0, ""),
+    p("Global Tuning", 0.0, 1.0, 1.0, ""),
+    p("Show Pitch", 0.0, 1.0, 0.0, ""),
 ];
 
 /// The amp models, in the order of the "Amp" parameter (Logic's Amp Designer has a list of
@@ -1613,6 +1620,7 @@ impl LemonTransientState {
 struct PitchCorrectionState {
     node: crate::native_fx::tune::ProWaveTune,
     sr: u32,
+    bypass_all: bool,
 }
 
 impl Clone for PitchCorrectionState {
@@ -1620,6 +1628,7 @@ impl Clone for PitchCorrectionState {
         Self {
             node: crate::native_fx::tune::ProWaveTune::new(self.sr, &[]),
             sr: self.sr,
+            bypass_all: self.bypass_all,
         }
     }
 }
@@ -1637,6 +1646,7 @@ impl PitchCorrectionState {
         let mut s = Self {
             node: crate::native_fx::tune::ProWaveTune::new(sr.round() as u32, &[]),
             sr: sr.round() as u32,
+            bypass_all: false,
         };
         s.apply_params(pr);
         s
@@ -1648,13 +1658,24 @@ impl PitchCorrectionState {
         self.node.set_param(tune::KEY, pr[0].round());
         self.node.set_param(tune::SCALE, pr[1].round());
         self.node.set_param(tune::RETUNE, pr[2]);
-        self.node.set_param(tune::FLEX, pr[3].abs());
         self.node.set_param(tune::MIX, pr[4]);
-        self.node.set_param(tune::NOTES, pr[5].round());
+        let notes = (pr[5].round() as u16) & !(pr[7].round() as u16);
+        self.node.set_param(tune::NOTES, f32::from(notes));
+        self.node.set_param(tune::FLEX, pr[6]);
+        self.bypass_all = pr[8] >= 0.5;
+        let voice = if pr[9] < 0.5 && pr[10] >= 0.5 {
+            0.0
+        } else {
+            1.0
+        };
+        self.node.set_param(tune::VOICE, voice);
     }
 
     #[inline]
     fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        if self.bypass_all {
+            return (l, r);
+        }
         use crate::plugin_track::BlockProcessor;
         let il = [l];
         let ir = [r];

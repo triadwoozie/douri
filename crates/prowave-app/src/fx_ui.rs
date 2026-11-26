@@ -193,6 +193,16 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState, meters: &Mete
                             input_level,
                             &mut edits,
                         );
+                    } else if edited.kind == FxKind::PitchCorrection {
+                        pitch_correction_window(
+                            ui,
+                            &mut edited,
+                            track,
+                            slot,
+                            beat,
+                            accent,
+                            &mut edits,
+                        );
                     } else {
                         visual(ui, &edited, reduction, beat, accent);
                         ui.add_space(10.0);
@@ -660,7 +670,8 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => {
             eq_curve(ui, insert.kind, &params, accent)
         }
-        FxKind::Compressor | FxKind::Gate | FxKind::Limiter => {
+        FxKind::Compressor => compressor_panel(ui, &params, reduction, accent),
+        FxKind::Gate | FxKind::Limiter => {
             transfer_curve(ui, insert.kind, &params, reduction, accent)
         }
         FxKind::MultiComp => multicomp(ui, &params, reduction, accent),
@@ -673,8 +684,8 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         FxKind::LemonDelay => delay_panel(ui, &params, accent),
         FxKind::LemonDist => drive_panel(ui, &params, accent),
         FxKind::AutoPan => phaser_panel(ui, &params, beat, accent),
-        FxKind::PitchCorrection => pitch_correction_panel(ui, &params, accent),
-        FxKind::LemonClip
+        FxKind::PitchCorrection
+        | FxKind::LemonClip
         | FxKind::LemonTransient
         | FxKind::LemonReverb
         | FxKind::FreqShifter
@@ -715,7 +726,7 @@ fn knob_rack(
             }
         });
         ui.add_space(4.0);
-    } else if matches!(insert.kind, FxKind::Overdrive | FxKind::LemonDist) && cells >= 3 {
+    } else if insert.kind == FxKind::LemonDist && cells >= 3 {
         let infos = insert.kind.params();
         let mut norm_vals = [
             infos[0].to_norm(insert.params[0]),
@@ -763,104 +774,6 @@ fn knob_rack(
             }
         });
         ui.add_space(4.0);
-    } else if insert.kind == FxKind::PitchCorrection && cells >= 6 {
-        let keys = [
-            "Project", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
-        ];
-        let scales = [
-            "Project",
-            "Major",
-            "Minor",
-            "Harmonic Minor",
-            "Major Pentatonic",
-            "Minor Pentatonic",
-            "Blues",
-            "Chromatic",
-            "Custom",
-        ];
-        let mut cur_key = (insert.params[0].round() as usize).min(keys.len() - 1);
-        let mut cur_scale = (insert.params[1].round() as usize).min(scales.len() - 1);
-        let mut mask = (insert.params[5].round() as u16) & 0x0fff;
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(tr("Root Key")).size(10.5).color(DIM));
-            egui::ComboBox::from_id_salt(("pc_key", slot))
-                .selected_text(keys[cur_key])
-                .show_ui(ui, |ui| {
-                    for (ki, kname) in keys.iter().enumerate() {
-                        if ui.selectable_value(&mut cur_key, ki, *kname).changed() {
-                            edits.push(Edit {
-                                param: 0,
-                                value: ki as f32,
-                                ended: true,
-                            });
-                        }
-                    }
-                });
-            ui.add_space(6.0);
-            ui.label(RichText::new(tr("Scale")).size(10.5).color(DIM));
-            egui::ComboBox::from_id_salt(("pc_scale", slot))
-                .selected_text(scales[cur_scale])
-                .show_ui(ui, |ui| {
-                    for (si, sname) in scales.iter().enumerate() {
-                        if ui.selectable_value(&mut cur_scale, si, *sname).changed() {
-                            edits.push(Edit {
-                                param: 1,
-                                value: si as f32,
-                                ended: true,
-                            });
-                        }
-                    }
-                });
-        });
-        ui.add_space(4.0);
-        // Clickable 12-note pitch-class bypass/enable strip.
-        let pitch_names = [
-            "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
-        ];
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-            for (ni, pname) in pitch_names.iter().enumerate() {
-                let bit = 1u16 << ni;
-                let active = (mask & bit) != 0;
-                let (pr, presp) = ui.allocate_exact_size(vec2(36.0, 24.0), Sense::click());
-                let fill = if active {
-                    Color32::from_rgb(0x12, 0x69, 0xcc)
-                } else {
-                    Color32::from_rgb(0x28, 0x28, 0x2b)
-                };
-                ui.painter().rect_filled(pr, CornerRadius::same(4), fill);
-                ui.painter().rect_stroke(
-                    pr,
-                    CornerRadius::same(4),
-                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)),
-                    egui::StrokeKind::Inside,
-                );
-                ui.painter().text(
-                    pr.center(),
-                    Align2::CENTER_CENTER,
-                    *pname,
-                    FontId::proportional(10.5),
-                    if active { Color32::WHITE } else { FAINT },
-                );
-                if presp.clicked() {
-                    mask ^= bit;
-                    if mask == 0 {
-                        mask = bit;
-                    }
-                    edits.push(Edit {
-                        param: 5,
-                        value: f32::from(mask),
-                        ended: true,
-                    });
-                    edits.push(Edit {
-                        param: 1,
-                        value: 8.0,
-                        ended: true,
-                    });
-                }
-            }
-        });
-        ui.add_space(6.0);
     } else if matches!(
         insert.kind,
         FxKind::Compressor | FxKind::MultiComp | FxKind::Limiter
@@ -884,6 +797,12 @@ fn knob_rack(
     }
     ui.horizontal_wrapped(|ui| {
         for k in 0..cells {
+            if insert.kind == FxKind::Filter && k == 2 {
+                continue;
+            }
+            if insert.kind == FxKind::LemonDist && k < 3 {
+                continue;
+            }
             let info = &insert.kind.params()[k];
             let target = AutoTarget::Fx {
                 slot: slot as u8,
@@ -2641,6 +2560,164 @@ pub(crate) fn render_channel_eq_editor(
     });
 }
 
+/// Compressor: circuit model selector + Meter (VU gain-reduction needle) / Graph toggle,
+/// matching `docs/logic-pro-mac-effects-user-guide.pdf` (p. 90).
+fn compressor_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    reduction: f32,
+    accent: Color32,
+) {
+    let circuit_id = ui.make_persistent_id("comp_circuit");
+    let graph_id = ui.make_persistent_id("comp_graph_mode");
+    let mut circuit = ui
+        .ctx()
+        .data_mut(|d| d.get_temp::<usize>(circuit_id).unwrap_or(0));
+    let mut show_graph = ui
+        .ctx()
+        .data_mut(|d| d.get_temp::<bool>(graph_id).unwrap_or(false));
+
+    let circuits = [
+        "Platinum Digital",
+        "Studio VCA",
+        "Studio FET",
+        "Classic VCA",
+        "Vintage Opto",
+    ];
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+        for (idx, name) in circuits.iter().enumerate() {
+            let active = circuit == idx;
+            let (r, resp) = ui.allocate_exact_size(vec2(84.0, 20.0), Sense::click());
+            let fill = if active {
+                Color32::from_rgb(0x12, 0x69, 0xcc)
+            } else {
+                Color32::from_rgb(0x28, 0x28, 0x2b)
+            };
+            ui.painter().rect_filled(r, CornerRadius::same(4), fill);
+            ui.painter().rect_stroke(
+                r,
+                CornerRadius::same(4),
+                Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                *name,
+                FontId::proportional(9.0),
+                if active { Color32::WHITE } else { DIM },
+            );
+            if resp.clicked() {
+                circuit = idx;
+                ui.ctx().data_mut(|d| d.insert_temp(circuit_id, circuit));
+            }
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            for (is_graph, label) in [(true, tr("Graph")), (false, tr("Meter"))] {
+                let active = show_graph == is_graph;
+                let (r, resp) = ui.allocate_exact_size(vec2(48.0, 20.0), Sense::click());
+                let fill = if active {
+                    Color32::from_rgb(0x12, 0x69, 0xcc)
+                } else {
+                    Color32::from_rgb(0x28, 0x28, 0x2b)
+                };
+                ui.painter().rect_filled(r, CornerRadius::same(4), fill);
+                ui.painter().text(
+                    r.center(),
+                    Align2::CENTER_CENTER,
+                    label,
+                    FontId::proportional(9.5),
+                    if active { Color32::WHITE } else { DIM },
+                );
+                if resp.clicked() {
+                    show_graph = is_graph;
+                    ui.ctx().data_mut(|d| d.insert_temp(graph_id, show_graph));
+                }
+            }
+        });
+    });
+    ui.add_space(6.0);
+
+    if show_graph {
+        transfer_curve(ui, FxKind::Compressor, params, reduction, accent);
+    } else {
+        inset(ui, 132.0, |g, rect| {
+            let pivot = pos2(rect.center().x, rect.bottom() + 26.0);
+            let radius = 112.0;
+            let start_ang = -132.0f32.to_radians();
+            let end_ang = -48.0f32.to_radians();
+            let ticks = [
+                (0.0, "-50"),
+                (0.25, "-30"),
+                (0.5, "-20"),
+                (0.7, "-10"),
+                (0.85, "-5"),
+                (1.0, "0"),
+            ];
+            let arc_pts: Vec<Pos2> = (0..=48)
+                .map(|i| {
+                    let t = i as f32 / 48.0;
+                    let a = start_ang + (end_ang - start_ang) * t;
+                    pos2(pivot.x + radius * a.cos(), pivot.y + radius * a.sin())
+                })
+                .collect();
+            g.add(Shape::line(
+                arc_pts,
+                Stroke::new(1.5, Color32::from_gray(0x4a)),
+            ));
+            for &(t, label) in &ticks {
+                let a = start_ang + (end_ang - start_ang) * t;
+                let p0 = pos2(
+                    pivot.x + (radius - 6.0) * a.cos(),
+                    pivot.y + (radius - 6.0) * a.sin(),
+                );
+                let p1 = pos2(
+                    pivot.x + (radius + 2.0) * a.cos(),
+                    pivot.y + (radius + 2.0) * a.sin(),
+                );
+                g.line_segment([p0, p1], Stroke::new(1.0, DIM));
+                let tp = pos2(
+                    pivot.x + (radius + 14.0) * a.cos(),
+                    pivot.y + (radius + 14.0) * a.sin(),
+                );
+                g.text(
+                    tp,
+                    Align2::CENTER_CENTER,
+                    label,
+                    FontId::monospace(8.5),
+                    DIM,
+                );
+            }
+            let gr = reduction.clamp(0.0, 24.0);
+            let needle_t = 1.0 - (gr / 24.0);
+            let na = start_ang + (end_ang - start_ang) * needle_t;
+            let tip = pos2(
+                pivot.x + (radius - 4.0) * na.cos(),
+                pivot.y + (radius - 4.0) * na.sin(),
+            );
+            g.line_segment(
+                [pos2(pivot.x, rect.bottom() - 2.0), tip],
+                Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
+            );
+            g.text(
+                pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+                Align2::LEFT_BOTTOM,
+                trf("Gain Reduction: {} dB", &[&format!("{gr:.1}")]),
+                FontId::monospace(8.5),
+                accent,
+            );
+            g.text(
+                pos2(rect.right() - 12.0, rect.bottom() - 6.0),
+                Align2::RIGHT_BOTTOM,
+                circuits[circuit],
+                FontId::proportional(9.0),
+                DIM,
+            );
+        });
+    }
+}
+
 /// Compressor, gate and limiter: the static transfer curve plus live gain reduction.
 fn transfer_curve(
     ui: &mut Ui,
@@ -3021,40 +3098,511 @@ fn drive_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accen
     });
 }
 
-/// Pitch Correction: phosphor pitch/cents meter showing retune speed and mix.
-fn pitch_correction_panel(
+/// Pitch Correction window: matches `docs/logic-pro-mac-effects-user-guide.pdf` (p. 300).
+/// Top row: Root Note / Scale/Chord / Show Pitch | Edit Scale / Bypass Notes / Bypass All +
+/// procedural 1-octave piano keyboard | Correction live readout + vertical cent meter.
+/// Bottom row: Settings (Neural Pitch Detection, Pitch Range, Response, Tolerance) | Tuning
+/// (Global Tuning, Reference, Detune, Mix).
+fn pitch_correction_window(
     ui: &mut Ui,
-    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    insert: &mut Insert,
+    track: &Track,
+    slot: usize,
+    beat: f64,
     accent: Color32,
+    edits: &mut Vec<Edit>,
 ) {
-    inset(ui, 92.0, |g, rect| {
-        let scope_rect = Rect::from_min_max(
-            pos2(rect.left() + 12.0, rect.top() + 12.0),
-            pos2(rect.right() - 12.0, rect.bottom() - 24.0),
+    let params = insert.kind.clamp_params(insert.params);
+    let keys = [
+        "Project", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+    ];
+    let scales = [
+        "Project",
+        "Major",
+        "Minor",
+        "Harmonic Minor",
+        "Major Pentatonic",
+        "Minor Pentatonic",
+        "Blues",
+        "Chromatic",
+        "Custom",
+    ];
+    let mut cur_key = (params[0].round() as usize).min(keys.len() - 1);
+    let mut cur_scale = (params[1].round() as usize).min(scales.len() - 1);
+    let mut notes_mask = (params[5].round() as u16) & 0x0fff;
+    let mut bypass_mask = (params[7].round() as u16) & 0x0fff;
+    let bypass_all = params[8] >= 0.5;
+    let neural_pitch = params[9] >= 0.5;
+    let mut pitch_range = (params[10].round() as usize).min(1);
+    let global_tuning = params[11] >= 0.5;
+    let show_output = params[12] >= 0.5;
+
+    let mode_id = ui.make_persistent_id(("pc_kbd_mode", slot));
+    let mut bypass_mode = ui
+        .ctx()
+        .data_mut(|d| d.get_temp::<bool>(mode_id).unwrap_or(false));
+
+    let seg_btn =
+        |ui: &mut Ui, label: &str, active: bool, active_fill: Color32, width: f32| -> bool {
+            let (r, resp) = ui.allocate_exact_size(vec2(width, 22.0), Sense::click());
+            let fill = if active {
+                active_fill
+            } else {
+                Color32::from_rgb(0x28, 0x28, 0x2b)
+            };
+            ui.painter().rect_filled(r, CornerRadius::same(4), fill);
+            ui.painter().rect_stroke(
+                r,
+                CornerRadius::same(4),
+                Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                label,
+                FontId::proportional(10.0),
+                if active { Color32::WHITE } else { DIM },
+            );
+            resp.clicked()
+        };
+
+    let push_edit = |edits: &mut Vec<Edit>, param: usize, value: f32, ended: bool| {
+        edits.push(Edit {
+            param,
+            value,
+            ended,
+        });
+    };
+
+    // --- Top section: Left controls | Center Piano | Right Correction Meter ---
+    ui.horizontal_top(|ui| {
+        // Left Column: Root Note, Scale/Chord, Show Pitch
+        ui.allocate_ui_with_layout(
+            vec2(132.0, 148.0),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| {
+                ui.label(RichText::new(tr("Root Note")).size(10.0).color(DIM));
+                egui::ComboBox::from_id_salt(("pc_key", slot))
+                    .width(124.0)
+                    .selected_text(keys[cur_key])
+                    .show_ui(ui, |ui| {
+                        for (ki, kname) in keys.iter().enumerate() {
+                            if ui.selectable_value(&mut cur_key, ki, *kname).changed() {
+                                push_edit(edits, 0, ki as f32, true);
+                            }
+                        }
+                    });
+                ui.add_space(6.0);
+                ui.label(RichText::new(tr("Scale/Chord")).size(10.0).color(DIM));
+                egui::ComboBox::from_id_salt(("pc_scale", slot))
+                    .width(124.0)
+                    .selected_text(scales[cur_scale])
+                    .show_ui(ui, |ui| {
+                        for (si, sname) in scales.iter().enumerate() {
+                            if ui.selectable_value(&mut cur_scale, si, *sname).changed() {
+                                push_edit(edits, 1, si as f32, true);
+                            }
+                        }
+                    });
+                ui.add_space(16.0);
+                ui.label(RichText::new(tr("Show Pitch")).size(10.0).color(DIM));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                    let active_blue = Color32::from_rgb(0x12, 0x69, 0xcc);
+                    if seg_btn(ui, &tr("Input"), !show_output, active_blue, 58.0) {
+                        push_edit(edits, 12, 0.0, true);
+                    }
+                    if seg_btn(ui, &tr("Output"), show_output, active_blue, 62.0) {
+                        push_edit(edits, 12, 1.0, true);
+                    }
+                });
+            },
         );
-        let speed = (params[2] / 400.0).clamp(0.0, 1.0);
-        let detune = (params[3] / 50.0).clamp(-1.0, 1.0);
-        let samples: Vec<f32> = (0..64)
-            .map(|i| {
-                let t = i as f32 / 63.0;
-                let step = if speed < 0.05 {
-                    detune * 0.15
-                } else {
-                    (t * std::f32::consts::TAU * 2.0).sin() * (0.2 + speed * 0.6)
-                };
-                step.clamp(-1.0, 1.0)
-            })
-            .collect();
-        crate::widgets::daw_phosphor_scope(g, scope_rect, &samples);
-        g.text(
-            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
-            Align2::LEFT_BOTTOM,
-            format!(
-                "Response {:.0} ms · Detune {:+.0} ct · Mix {:.0}%",
-                params[2], params[3], params[4]
-            ),
-            FontId::monospace(9.0),
+
+        ui.add_space(8.0);
+
+        // Center Column: Mode switches + Procedural 1-octave Piano Keyboard
+        ui.allocate_ui_with_layout(
+            vec2(316.0, 148.0),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+                    let active_blue = Color32::from_rgb(0x12, 0x69, 0xcc);
+                    let orange = Color32::from_rgb(0xd9, 0x7b, 0x24);
+                    if seg_btn(ui, &tr("Edit Scale"), !bypass_mode, active_blue, 78.0) {
+                        bypass_mode = false;
+                        ui.ctx().data_mut(|d| d.insert_temp(mode_id, false));
+                    }
+                    if seg_btn(ui, &tr("Bypass Notes"), bypass_mode, orange, 88.0) {
+                        bypass_mode = true;
+                        ui.ctx().data_mut(|d| d.insert_temp(mode_id, true));
+                    }
+                    ui.add_space(64.0);
+                    if seg_btn(ui, &tr("Bypass All"), bypass_all, orange, 78.0) {
+                        push_edit(edits, 8, if bypass_all { 0.0 } else { 1.0 }, true);
+                    }
+                });
+                ui.add_space(8.0);
+
+                let (kbd_rect, kbd_resp) =
+                    ui.allocate_exact_size(vec2(312.0, 114.0), Sense::click());
+                let g = ui.painter();
+                g.rect_filled(
+                    kbd_rect,
+                    CornerRadius::same(6),
+                    Color32::from_rgb(0x14, 0x14, 0x17),
+                );
+                g.rect_stroke(
+                    kbd_rect,
+                    CornerRadius::same(6),
+                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)),
+                    egui::StrokeKind::Inside,
+                );
+
+                // White keys: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
+                let white_pcs = [0u16, 2, 4, 5, 7, 9, 11];
+                let white_names = ["C", "D", "E", "F", "G", "A", "B"];
+                let inner = kbd_rect.shrink(4.0);
+                let wk_w = inner.width() / 7.0;
+                let mut white_rects = [Rect::NOTHING; 7];
+                for i in 0..7 {
+                    let r = Rect::from_min_max(
+                        pos2(inner.left() + i as f32 * wk_w + 1.0, inner.top()),
+                        pos2(inner.left() + (i + 1) as f32 * wk_w - 1.0, inner.bottom()),
+                    );
+                    white_rects[i] = r;
+                    let pc = white_pcs[i];
+                    let bit = 1u16 << pc;
+                    let in_scale = (notes_mask & bit) != 0;
+                    let bypassed = (bypass_mask & bit) != 0;
+                    let fill = if bypassed {
+                        Color32::from_rgb(0xc8, 0x72, 0x20)
+                    } else if in_scale {
+                        Color32::from_rgb(0x2a, 0x76, 0xb8)
+                    } else {
+                        Color32::from_rgb(0x25, 0x25, 0x2a)
+                    };
+                    g.rect_filled(r, CornerRadius::same(3), fill);
+                    if in_scale && !bypassed {
+                        g.rect_stroke(
+                            r,
+                            CornerRadius::same(3),
+                            Stroke::new(
+                                1.0,
+                                Color32::from_rgb(0x51, 0xee, 0xfc).gamma_multiply(0.5),
+                            ),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    g.text(
+                        pos2(r.center().x, r.bottom() - 8.0),
+                        Align2::CENTER_BOTTOM,
+                        white_names[i],
+                        FontId::proportional(10.0),
+                        if in_scale || bypassed {
+                            Color32::WHITE
+                        } else {
+                            FAINT
+                        },
+                    );
+                }
+
+                // Black keys: C#(1), D#(3), F#(6), G#(8), A#(10)
+                let black_defs: [(u16, f32, &str); 5] = [
+                    (1, 1.0, "C#"),
+                    (3, 2.0, "D#"),
+                    (6, 4.0, "F#"),
+                    (8, 5.0, "G#"),
+                    (10, 6.0, "A#"),
+                ];
+                let bk_w = wk_w * 0.62;
+                let bk_h = inner.height() * 0.62;
+                let mut black_rects = [(0u16, Rect::NOTHING); 5];
+                for (bi, &(pc, boundary, bname)) in black_defs.iter().enumerate() {
+                    let cx = inner.left() + boundary * wk_w;
+                    let r = Rect::from_min_max(
+                        pos2(cx - bk_w * 0.5, inner.top()),
+                        pos2(cx + bk_w * 0.5, inner.top() + bk_h),
+                    );
+                    black_rects[bi] = (pc, r);
+                    let bit = 1u16 << pc;
+                    let in_scale = (notes_mask & bit) != 0;
+                    let bypassed = (bypass_mask & bit) != 0;
+                    let fill = if bypassed {
+                        Color32::from_rgb(0xd9, 0x7b, 0x24)
+                    } else if in_scale {
+                        Color32::from_rgb(0x1b, 0x4f, 0x80)
+                    } else {
+                        Color32::from_rgb(0x16, 0x16, 0x19)
+                    };
+                    g.rect_filled(r, CornerRadius::same(3), fill);
+                    g.rect_stroke(
+                        r,
+                        CornerRadius::same(3),
+                        Stroke::new(
+                            1.0,
+                            if in_scale && !bypassed {
+                                Color32::from_rgb(0x51, 0xee, 0xfc).gamma_multiply(0.6)
+                            } else {
+                                Color32::from_rgb(0x3a, 0x3a, 0x40)
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    g.text(
+                        pos2(r.center().x, r.bottom() - 6.0),
+                        Align2::CENTER_BOTTOM,
+                        bname,
+                        FontId::proportional(9.0),
+                        if in_scale || bypassed {
+                            Color32::WHITE
+                        } else {
+                            FAINT
+                        },
+                    );
+                }
+
+                // Hit-test black keys first, then white keys.
+                if kbd_resp.clicked() {
+                    if let Some(pos) = kbd_resp.interact_pointer_pos() {
+                        let mut hit_pc: Option<u16> = None;
+                        for &(pc, r) in &black_rects {
+                            if r.contains(pos) {
+                                hit_pc = Some(pc);
+                                break;
+                            }
+                        }
+                        if hit_pc.is_none() {
+                            for (i, r) in white_rects.iter().enumerate() {
+                                if r.contains(pos) {
+                                    hit_pc = Some(white_pcs[i]);
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(pc) = hit_pc {
+                            let bit = 1u16 << pc;
+                            if bypass_mode {
+                                bypass_mask ^= bit;
+                                push_edit(edits, 7, f32::from(bypass_mask), true);
+                            } else {
+                                notes_mask ^= bit;
+                                if notes_mask == 0 {
+                                    notes_mask = bit;
+                                }
+                                push_edit(edits, 5, f32::from(notes_mask), true);
+                                push_edit(edits, 1, 8.0, true);
+                            }
+                        }
+                    }
+                }
+            },
+        );
+
+        ui.add_space(8.0);
+
+        // Right Column: Correction readout + vertical bipolar cent deviation meter (+100..-100)
+        ui.allocate_ui_with_layout(
+            vec2(76.0, 148.0),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.label(RichText::new(tr("Correction")).size(10.0).color(DIM));
+                let cents = params[3];
+                ui.label(
+                    RichText::new(format!("{cents:+.0} {}", tr("Cent")))
+                        .size(11.0)
+                        .monospace()
+                        .color(Color32::from_rgb(0x51, 0xee, 0xfc)),
+                );
+                ui.add_space(4.0);
+                let (m_rect, _) = ui.allocate_exact_size(vec2(66.0, 108.0), Sense::hover());
+                let g = ui.painter();
+                g.rect_filled(
+                    m_rect,
+                    CornerRadius::same(4),
+                    Color32::from_rgb(0x14, 0x14, 0x17),
+                );
+                let bar = Rect::from_min_max(
+                    pos2(m_rect.right() - 18.0, m_rect.top() + 8.0),
+                    pos2(m_rect.right() - 8.0, m_rect.bottom() - 8.0),
+                );
+                g.rect_filled(
+                    bar,
+                    CornerRadius::same(2),
+                    Color32::from_rgb(0x23, 0x23, 0x27),
+                );
+                let cy = bar.center().y;
+                let frac = (cents / 100.0).clamp(-1.0, 1.0);
+                let fill_y = cy - frac * (bar.height() * 0.5);
+                let fill_rect = Rect::from_min_max(
+                    pos2(bar.left(), fill_y.min(cy)),
+                    pos2(bar.right(), fill_y.max(cy).max(fill_y.min(cy) + 2.0)),
+                );
+                g.rect_filled(
+                    fill_rect,
+                    CornerRadius::same(1),
+                    Color32::from_rgb(0x51, 0xee, 0xfc),
+                );
+                for (val, label) in [
+                    (1.0, "+100"),
+                    (0.5, "50"),
+                    (0.0, "0 -"),
+                    (-0.5, "50"),
+                    (-1.0, "-100"),
+                ] {
+                    let y = cy - val * (bar.height() * 0.5);
+                    g.text(
+                        pos2(bar.left() - 6.0, y),
+                        Align2::RIGHT_CENTER,
+                        label,
+                        FontId::monospace(8.5),
+                        DIM,
+                    );
+                }
+            },
+        );
+    });
+
+    ui.add_space(8.0);
+    let sep_rect = ui.available_rect_before_wrap();
+    ui.painter().line_segment(
+        [
+            pos2(sep_rect.left(), sep_rect.top()),
+            pos2(sep_rect.right(), sep_rect.top()),
+        ],
+        Stroke::new(1.0, LINE),
+    );
+    ui.add_space(8.0);
+
+    // --- Bottom Split Section: Settings | Tuning ---
+    let infos = insert.kind.params();
+    let draw_pc_knob = |ui: &mut Ui, param_idx: usize, edits: &mut Vec<Edit>| {
+        let info = &infos[param_idx];
+        let target = AutoTarget::Fx {
+            slot: slot as u8,
+            param: param_idx as u8,
+        };
+        let played = track.auto.played(target, beat);
+        let value = played
+            .map(|n| info.from_norm(n))
+            .unwrap_or(insert.params[param_idx]);
+        let locked = played.is_some() || !automation::editable(track, target);
+        let automated = !track.auto.lane(target).is_empty();
+        if let Some((v, ended)) = param_knob(
+            ui,
+            info,
+            value,
+            locked,
+            automated,
             accent,
+            insert.kind,
+            None,
+        ) {
+            edits.push(Edit {
+                param: param_idx,
+                value: v,
+                ended,
+            });
+        }
+    };
+
+    ui.horizontal_top(|ui| {
+        // Left: Settings
+        ui.allocate_ui_with_layout(
+            vec2(304.0, 114.0),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| {
+                ui.label(
+                    RichText::new(tr("Settings"))
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::WHITE),
+                );
+                ui.add_space(4.0);
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(120.0);
+                        let active_blue = Color32::from_rgb(0x12, 0x69, 0xcc);
+                        if seg_btn(
+                            ui,
+                            &tr("Neural Pitch Detection"),
+                            neural_pitch,
+                            active_blue,
+                            118.0,
+                        ) {
+                            push_edit(edits, 9, if neural_pitch { 0.0 } else { 1.0 }, true);
+                        }
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(tr("Pitch Range")).size(10.0).color(DIM));
+                        ui.add_enabled_ui(!neural_pitch, |ui| {
+                            let ranges = [tr("Normal"), tr("Low")];
+                            egui::ComboBox::from_id_salt(("pc_range", slot))
+                                .width(114.0)
+                                .selected_text(ranges[pitch_range])
+                                .show_ui(ui, |ui| {
+                                    for (ri, rname) in ranges.iter().enumerate() {
+                                        if ui
+                                            .selectable_value(&mut pitch_range, ri, *rname)
+                                            .changed()
+                                        {
+                                            push_edit(edits, 10, ri as f32, true);
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                    ui.add_space(8.0);
+                    draw_pc_knob(ui, 2, edits); // Response
+                    draw_pc_knob(ui, 6, edits); // Tolerance
+                });
+            },
+        );
+
+        // Vertical divider
+        let (div_r, _) = ui.allocate_exact_size(vec2(12.0, 108.0), Sense::hover());
+        ui.painter().line_segment(
+            [
+                pos2(div_r.center().x, div_r.top() + 4.0),
+                pos2(div_r.center().x, div_r.bottom() - 4.0),
+            ],
+            Stroke::new(1.0, LINE),
+        );
+
+        // Right: Tuning
+        ui.allocate_ui_with_layout(
+            vec2(228.0, 114.0),
+            egui::Layout::top_down(egui::Align::LEFT),
+            |ui| {
+                ui.label(
+                    RichText::new(tr("Tuning"))
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::WHITE),
+                );
+                ui.add_space(4.0);
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(86.0);
+                        let active_blue = Color32::from_rgb(0x12, 0x69, 0xcc);
+                        if seg_btn(ui, &tr("Global Tuning"), global_tuning, active_blue, 84.0) {
+                            push_edit(edits, 11, if global_tuning { 0.0 } else { 1.0 }, true);
+                        }
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(tr("Reference")).size(10.0).color(DIM));
+                        ui.label(
+                            RichText::new("0 ct · 440 Hz")
+                                .size(10.0)
+                                .monospace()
+                                .color(FAINT),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    draw_pc_knob(ui, 3, edits); // Detune
+                    draw_pc_knob(ui, 4, edits); // Mix
+                });
+            },
         );
     });
 }

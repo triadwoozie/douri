@@ -57,9 +57,11 @@ pub fn category(kind: FxKind) -> &'static str {
         | FxKind::LemonTransient => "Dynamics",
         FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => "EQ",
         FxKind::Filter => "Filter",
-        FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter | FxKind::AutoPan => "Modulation",
+        FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter => "Modulation",
+        FxKind::AutoPan => "Imaging",
+        FxKind::PitchCorrection => "Pitch",
         FxKind::Reverb | FxKind::LemonReverb => "Reverb",
-        FxKind::Plugin | FxKind::PitchCorrection => "Specialized",
+        FxKind::Plugin => "Specialized",
     }
 }
 
@@ -131,6 +133,8 @@ pub fn show(ui: &mut Ui, search: &mut String) -> Option<Pick> {
         egui::vec2(ui.available_width(), 26.0),
         egui::TextEdit::singleline(search)
             .hint_text(tr("Search"))
+            .align(egui::Align2::LEFT_CENTER)
+            .margin(egui::Margin::symmetric(8, 5))
             .desired_width(f32::INFINITY),
     );
     ui.add_space(3.0);
