@@ -44,6 +44,11 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: MIT License
 - **Description**: Clean vector iconography used throughout Dōri's menus, headers, toolbars, and studio controls.
 
+- **Project**: audio-ui ([ouestlabs/audio-ui](https://github.com/ouestlabs/audio-ui))
+- **Copyright**: (c) 2025 Ouest Labs
+- **License**: MIT License
+- **Description**: Reference implementations for IEC VU/PPM meter ballistics, 45-degree Mid/Side stereo goniometer, interactive ADSR breakpoint envelope, and velocity-metered drum pad feedback.
+
 - **Artwork**: Dōri 3D Studio App Icon & Custom Artwork
 - **Creator**: triadwoozie
 - **Description**: Blender-rendered high-resolution application icon and 3D studio visual assets.

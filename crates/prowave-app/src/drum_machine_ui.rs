@@ -71,6 +71,20 @@ fn release(s: &mut UiState) {
 /// The 4 x 4 grid of pads: the bottom row is pads 1 to 4, as on a drum machine. Pressing a pad
 /// selects it and plays it; letting go ends its note.
 fn pads(ui: &mut Ui, kit: &DrumsUse, s: &mut UiState, ti: usize) {
+    let dt = ui.input(|i| i.unstable_dt).clamp(0.001, 0.05);
+    let meter_id = egui::Id::unique("drum_pad_hit_levels");
+    let mut levels: [f32; PADS] = ui
+        .ctx()
+        .data(|d| d.get_temp(meter_id).unwrap_or([0.0; PADS]));
+    let decay = (dt * 4.5).min(1.0);
+    let mut any_active = false;
+    for lv in &mut levels {
+        *lv = (*lv - decay).max(0.0);
+        if *lv > 0.005 {
+            any_active = true;
+        }
+    }
+
     for row in (0..4).rev() {
         ui.horizontal(|ui| {
             for col in 0..4 {
@@ -82,15 +96,32 @@ fn pads(ui: &mut Ui, kit: &DrumsUse, s: &mut UiState, ti: usize) {
                     release(s);
                     s.drum_pad = pad;
                     s.drum_held = Some(pad);
+                    let vel = resp
+                        .interact_pointer_pos()
+                        .map(|p| {
+                            let norm = (1.0 - (p.y - rect.top()) / rect.height()).clamp(0.25, 1.0);
+                            (norm * 127.0).round() as u8
+                        })
+                        .unwrap_or(110);
+                    levels[pad] = f32::from(vel) / 127.0;
+                    any_active = true;
                     s.audition.push(Audition::On {
                         pitch: key_of(pad),
-                        vel: 110,
+                        vel,
                         track: ti as u16,
                     });
                 }
-                draw_pad(ui, rect, kit, pad, s.drum_pad == pad, down);
+                if down {
+                    levels[pad] = levels[pad].max(0.65);
+                    any_active = true;
+                }
+                draw_pad(ui, rect, kit, pad, s.drum_pad == pad, down, levels[pad]);
             }
         });
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(meter_id, levels));
+    if any_active {
+        ui.ctx().request_repaint();
     }
     // Letting go anywhere ends the note.
     if s.drum_held.is_some() && !ui.input(|i| i.pointer.primary_down()) {
@@ -98,9 +129,18 @@ fn pads(ui: &mut Ui, kit: &DrumsUse, s: &mut UiState, ti: usize) {
     }
 }
 
-fn draw_pad(ui: &Ui, rect: Rect, kit: &DrumsUse, pad: usize, selected: bool, down: bool) {
+fn draw_pad(
+    ui: &Ui,
+    rect: Rect,
+    kit: &DrumsUse,
+    pad: usize,
+    selected: bool,
+    down: bool,
+    level: f32,
+) {
     let g = ui.painter_at(rect);
     g.rect_filled(rect, 6.0, if down { PAD_HOT } else { PAD_BG });
+    crate::widgets::daw_pad_meter_glow(&g, rect, level, down, PAD_HOT);
     g.rect_stroke(
         rect,
         6.0,

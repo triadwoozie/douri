@@ -752,3 +752,469 @@ pub fn daw_phosphor_scope(g: &Painter, rect: Rect, samples: &[f32]) {
         ));
     }
 }
+
+/// Floor level in dBFS for VU / PPM meter ballistics (ported from `ouestlabs/audio-ui`).
+pub const METER_FLOOR_DB: f32 = -60.0;
+
+/// Converts a linear amplitude (`0.0..=1.0+`) to dBFS clamped to [`METER_FLOOR_DB`].
+pub fn linear_to_db(linear: f32) -> f32 {
+    if linear <= 1e-6 {
+        METER_FLOOR_DB
+    } else {
+        (20.0 * linear.log10()).max(METER_FLOOR_DB)
+    }
+}
+
+/// IEC 60268-17 / ANSI C16.5 VU meter ballistics (300 ms rise, 0.81 damping, ~1.3% overshoot),
+/// ported from `ouestlabs/audio-ui` (`meter/ballistics.ts`).
+#[derive(Clone, Copy, Debug)]
+pub struct VuBallistics {
+    pos: f32,
+    vel: f32,
+}
+
+impl Default for VuBallistics {
+    fn default() -> Self {
+        Self {
+            pos: METER_FLOOR_DB,
+            vel: 0.0,
+        }
+    }
+}
+
+impl VuBallistics {
+    /// Advances the VU needle/bar toward `target_db` over `dt` seconds.
+    pub fn step(&mut self, target_db: f32, dt: f32) -> f32 {
+        let target = target_db.clamp(METER_FLOOR_DB, 6.0);
+        let dt = dt.clamp(0.0, 0.05);
+        if dt <= 0.0 {
+            return self.pos;
+        }
+        // 300 ms rise time, damping ratio zeta = 0.81 (~1.3% overshoot)
+        let omega = 1.9 / 0.300;
+        let zeta = 0.81;
+        let steps = ((dt / (1.0 / 120.0)).ceil() as usize).max(1);
+        let sub_dt = dt / steps as f32;
+        for _ in 0..steps {
+            let acc = omega * omega * (target - self.pos) - 2.0 * zeta * omega * self.vel;
+            self.vel += acc * sub_dt;
+            self.pos += self.vel * sub_dt;
+        }
+        self.pos = self.pos.clamp(METER_FLOOR_DB, 6.0);
+        self.pos
+    }
+
+    /// Current smoothed level in dB.
+    pub fn db(self) -> f32 {
+        self.pos
+    }
+
+    /// Normalized `0.0..=1.0` position across `[METER_FLOOR_DB, 0.0]`.
+    pub fn norm(self) -> f32 {
+        ((self.pos - METER_FLOOR_DB) / -METER_FLOOR_DB).clamp(0.0, 1.0)
+    }
+}
+
+/// IEC 60268-10 Type I PPM ballistics (5 ms attack, 20 dB / 1.5 s linear release),
+/// ported from `ouestlabs/audio-ui` (`meter/ballistics.ts`).
+#[derive(Clone, Copy, Debug)]
+pub struct PpmBallistics {
+    level_db: f32,
+}
+
+impl Default for PpmBallistics {
+    fn default() -> Self {
+        Self {
+            level_db: METER_FLOOR_DB,
+        }
+    }
+}
+
+impl PpmBallistics {
+    /// Advances the PPM level toward `target_db` over `dt` seconds.
+    pub fn step(&mut self, target_db: f32, dt: f32) -> f32 {
+        let target = target_db.clamp(METER_FLOOR_DB, 6.0);
+        let dt = dt.clamp(0.0, 0.05);
+        if target > self.level_db {
+            // 5 ms attack time constant
+            let alpha = 1.0 - (-dt / 0.005).exp();
+            self.level_db += (target - self.level_db) * alpha;
+        } else {
+            // 20 dB / 1.5 s release rate
+            let drop = (20.0 / 1.5) * dt;
+            self.level_db = (self.level_db - drop).max(target).max(METER_FLOOR_DB);
+        }
+        self.level_db
+    }
+
+    /// Current smoothed level in dB.
+    pub fn db(self) -> f32 {
+        self.level_db
+    }
+
+    /// Normalized `0.0..=1.0` position across `[METER_FLOOR_DB, 0.0]`.
+    pub fn norm(self) -> f32 {
+        ((self.level_db - METER_FLOOR_DB) / -METER_FLOOR_DB).clamp(0.0, 1.0)
+    }
+}
+
+/// 45°-rotated Mid/Side stereo goniometer (vectorscope) with trail history,
+/// ported from `ouestlabs/audio-ui` (`stereo-field.tsx`).
+pub fn daw_goniometer(
+    ui: &mut Ui,
+    rect: Rect,
+    left: f32,
+    right: f32,
+    history: &mut Vec<(f32, f32)>,
+) {
+    let g = ui.painter_at(rect);
+    g.rect_filled(rect, 6.0, Color32::from_rgb(0x12, 0x15, 0x1a));
+    g.rect_stroke(
+        rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x2e, 0x33, 0x3d)),
+        egui::StrokeKind::Inside,
+    );
+
+    let center = rect.center();
+    let radius = (rect.width().min(rect.height()) * 0.5) - 10.0;
+    if radius <= 4.0 {
+        return;
+    }
+
+    // Outer circle & 45-degree L/R + M/S crosshairs
+    let grid_col = Color32::from_rgba_unmultiplied(0x90, 0x98, 0xa6, 42);
+    g.circle_stroke(center, radius, Stroke::new(1.0, grid_col));
+    let diag = radius * std::f32::consts::FRAC_1_SQRT_2;
+    g.line_segment(
+        [
+            pos2(center.x - diag, center.y - diag),
+            pos2(center.x + diag, center.y + diag),
+        ],
+        Stroke::new(1.0, grid_col),
+    );
+    g.line_segment(
+        [
+            pos2(center.x + diag, center.y - diag),
+            pos2(center.x - diag, center.y + diag),
+        ],
+        Stroke::new(1.0, grid_col),
+    );
+    g.line_segment(
+        [
+            pos2(center.x, center.y - radius),
+            pos2(center.x, center.y + radius),
+        ],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x90, 0x98, 0xa6, 24)),
+    );
+    g.line_segment(
+        [
+            pos2(center.x - radius, center.y),
+            pos2(center.x + radius, center.y),
+        ],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x90, 0x98, 0xa6, 24)),
+    );
+
+    // Axis labels (+L, +R, M, S)
+    let label_col = Color32::from_rgb(0x78, 0x80, 0x8e);
+    g.text(
+        pos2(center.x, rect.top() + 7.0),
+        Align2::CENTER_CENTER,
+        "M",
+        FontId::proportional(8.5),
+        label_col,
+    );
+    g.text(
+        pos2(center.x - diag - 3.0, center.y - diag),
+        Align2::RIGHT_CENTER,
+        "L",
+        FontId::proportional(8.5),
+        label_col,
+    );
+    g.text(
+        pos2(center.x + diag + 3.0, center.y - diag),
+        Align2::LEFT_CENTER,
+        "R",
+        FontId::proportional(8.5),
+        label_col,
+    );
+
+    // Push current (l, r) point to trail history (capped at 48 samples)
+    let l = left.clamp(0.0, 1.5);
+    let r = right.clamp(0.0, 1.5);
+    history.push((l, r));
+    if history.len() > 48 {
+        history.drain(0..history.len() - 48);
+    }
+
+    // 45-degree rotation: x = (r - l) * FRAC_1_SQRT_2, y = -(l + r) * FRAC_1_SQRT_2
+    let to_pt = |lv: f32, rv: f32| -> Pos2 {
+        let mid = (lv + rv) * std::f32::consts::FRAC_1_SQRT_2;
+        let side = (rv - lv) * std::f32::consts::FRAC_1_SQRT_2;
+        pos2(
+            center.x + side.clamp(-1.0, 1.0) * radius,
+            center.y - (mid * 0.7).clamp(-1.0, 1.0) * radius,
+        )
+    };
+
+    let n = history.len();
+    for (idx, &(lv, rv)) in history.iter().enumerate() {
+        let age = (idx + 1) as f32 / n.max(1) as f32;
+        let alpha = (age * age * 190.0) as u8;
+        let pt = to_pt(lv, rv);
+        g.circle_filled(
+            pt,
+            1.4 + age * 1.4,
+            Color32::from_rgba_unmultiplied(0x38, 0xd9, 0xa9, alpha),
+        );
+    }
+
+    if l > 0.002 || r > 0.002 {
+        let head = to_pt(l, r);
+        g.line_segment(
+            [center, head],
+            Stroke::new(1.5, Color32::from_rgba_unmultiplied(0x38, 0xd9, 0xa9, 170)),
+        );
+        g.circle_filled(head, 3.0, Color32::from_rgb(0x64, 0xf0, 0xc8));
+    }
+}
+
+/// Interactive draggable ADSR breakpoint envelope editor, ported from
+/// `ouestlabs/audio-ui` (`envelope/envelope.ts`). Returns `true` if any parameter changed.
+#[allow(clippy::too_many_arguments)]
+pub fn daw_adsr_envelope(
+    ui: &mut Ui,
+    id: egui::Id,
+    rect: Rect,
+    attack: &mut f32,
+    decay: &mut f32,
+    sustain: &mut f32,
+    release: &mut f32,
+    max_a: f32,
+    max_d: f32,
+    max_r: f32,
+) -> bool {
+    let resp = ui.interact(rect, id, Sense::click_and_drag());
+    let g = ui.painter_at(rect);
+
+    g.rect_filled(rect, 6.0, Color32::from_rgb(0x14, 0x18, 0x1e));
+    g.rect_stroke(
+        rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x2c, 0x32, 0x3d)),
+        egui::StrokeKind::Inside,
+    );
+
+    let inner = rect.shrink2(vec2(10.0, 10.0));
+    if inner.width() <= 20.0 || inner.height() <= 16.0 {
+        return false;
+    }
+
+    // Subtle 4x4 grid
+    let grid_col = Color32::from_rgba_unmultiplied(0x8a, 0x94, 0xa6, 24);
+    for i in 1..4 {
+        let t = i as f32 / 4.0;
+        let x = inner.left() + inner.width() * t;
+        let y = inner.top() + inner.height() * t;
+        g.line_segment(
+            [pos2(x, inner.top()), pos2(x, inner.bottom())],
+            Stroke::new(1.0, grid_col),
+        );
+        g.line_segment(
+            [pos2(inner.left(), y), pos2(inner.right(), y)],
+            Stroke::new(1.0, grid_col),
+        );
+    }
+
+    // Allocate normalized horizontal segments: Attack (0..0.30), Decay (0..0.30), Sustain hold (0.15), Release (0..0.25)
+    let a_norm = (*attack / max_a.max(0.001)).clamp(0.0, 1.0);
+    let d_norm = (*decay / max_d.max(0.001)).clamp(0.0, 1.0);
+    let s_norm = (*sustain).clamp(0.0, 1.0);
+    let r_norm = (*release / max_r.max(0.001)).clamp(0.0, 1.0);
+
+    let x0 = inner.left();
+    let xa = x0 + inner.width() * (0.04 + a_norm * 0.26);
+    let xd = xa + inner.width() * (0.04 + d_norm * 0.26);
+    let xs = xd + inner.width() * 0.14;
+    let xr = (xs + inner.width() * (0.04 + r_norm * 0.22)).min(inner.right());
+
+    let y_bot = inner.bottom();
+    let y_top = inner.top();
+    let ys = y_bot - s_norm * inner.height();
+
+    let p_start = pos2(x0, y_bot);
+    let p_att = pos2(xa, y_top);
+    let p_dec = pos2(xd, ys);
+    let p_sus = pos2(xs, ys);
+    let p_rel = pos2(xr, y_bot);
+
+    // Drag interaction: lock active node on pointer press, update on drag
+    let mut changed = false;
+    let active_id = id.with("active_node");
+    if resp.drag_started() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let nodes = [(0usize, p_att), (1, p_dec), (2, p_rel)];
+            let nearest = nodes
+                .iter()
+                .min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)))
+                .map(|n| n.0);
+            ui.ctx()
+                .memory_mut(|m| m.data.insert_temp(active_id, nearest));
+        }
+    }
+    if resp.dragged() {
+        let active: Option<usize> = ui
+            .ctx()
+            .memory(|m| m.data.get_temp(active_id).unwrap_or(None));
+        if let Some(pos) = resp.interact_pointer_pos() {
+            match active {
+                Some(0) => {
+                    let frac = ((pos.x - x0) / inner.width() - 0.04) / 0.26;
+                    *attack = (frac.clamp(0.0, 1.0) * max_a).max(0.001);
+                    changed = true;
+                }
+                Some(1) => {
+                    let frac_x = ((pos.x - xa) / inner.width() - 0.04) / 0.26;
+                    *decay = (frac_x.clamp(0.0, 1.0) * max_d).max(0.001);
+                    *sustain = ((y_bot - pos.y) / inner.height()).clamp(0.0, 1.0);
+                    changed = true;
+                }
+                Some(2) => {
+                    let frac = ((pos.x - xs) / inner.width() - 0.04) / 0.22;
+                    *release = (frac.clamp(0.0, 1.0) * max_r).max(0.01);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    if resp.drag_stopped() {
+        ui.ctx()
+            .memory_mut(|m| m.data.insert_temp::<Option<usize>>(active_id, None));
+    }
+
+    // Filled polygon under ADSR curve
+    let fill_col = Color32::from_rgba_unmultiplied(0x38, 0xd9, 0xa9, 36);
+    let poly = vec![p_start, p_att, p_dec, p_sus, p_rel];
+    g.add(Shape::convex_polygon(poly.clone(), fill_col, Stroke::NONE));
+    g.add(Shape::line(
+        poly,
+        Stroke::new(2.0, Color32::from_rgb(0x38, 0xd9, 0xa9)),
+    ));
+
+    // Breakpoint handles
+    for (idx, pt) in [(0usize, p_att), (1, p_dec), (2, p_rel)] {
+        let hovered = resp.hover_pos().is_some_and(|hp| hp.distance(pt) <= 9.0);
+        let active_node: Option<usize> = ui
+            .ctx()
+            .memory(|m| m.data.get_temp(active_id).unwrap_or(None));
+        let is_active = active_node == Some(idx);
+        let r = if is_active || hovered { 5.5 } else { 4.2 };
+        g.circle_filled(pt, r, Color32::from_rgb(0x14, 0x18, 0x1e));
+        g.circle_stroke(
+            pt,
+            r,
+            Stroke::new(
+                2.0,
+                if is_active {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(0x38, 0xd9, 0xa9)
+                },
+            ),
+        );
+    }
+
+    // Compact readout in top-right
+    g.text(
+        pos2(inner.right() - 2.0, inner.top() + 2.0),
+        Align2::RIGHT_TOP,
+        format!(
+            "A {:.0}ms · D {:.0}ms · S {:.0}% · R {:.0}ms",
+            *attack * 1000.0,
+            *decay * 1000.0,
+            *sustain * 100.0,
+            *release * 1000.0
+        ),
+        FontId::proportional(9.5),
+        TEXT_DIM,
+    );
+
+    changed
+}
+
+/// Velocity/hit-intensity proportional pad meter bar & glow overlay, inspired by
+/// `ouestlabs/audio-ui` (`pad/pad.ts`).
+pub fn daw_pad_meter_glow(g: &Painter, rect: Rect, level: f32, active: bool, accent: Color32) {
+    let lv = level.clamp(0.0, 1.0);
+    if lv > 0.01 {
+        let alpha = (lv * if active { 72.0 } else { 44.0 }) as u8;
+        g.rect_filled(
+            rect.shrink(1.5),
+            5.0,
+            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), alpha),
+        );
+        // Bottom velocity/activity meter strip
+        let bar_bg = Rect::from_min_max(
+            pos2(rect.left() + 6.0, rect.bottom() - 4.5),
+            pos2(rect.right() - 6.0, rect.bottom() - 2.0),
+        );
+        g.rect_filled(bar_bg, 1.0, Color32::from_rgb(0x1b, 0x1e, 0x24));
+        let fill_w = bar_bg.width() * lv;
+        g.rect_filled(
+            Rect::from_min_size(bar_bg.min, vec2(fill_w, bar_bg.height())),
+            1.0,
+            accent,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linear_to_db_maps_unity_and_silence() {
+        assert!((linear_to_db(1.0) - 0.0).abs() < 1e-4);
+        assert!((linear_to_db(0.0) - METER_FLOOR_DB).abs() < 1e-4);
+        assert!((linear_to_db(0.5) - (-6.0206)).abs() < 0.01);
+    }
+
+    #[test]
+    fn vu_ballistics_rises_toward_target_and_settles() {
+        let mut vu = VuBallistics::default();
+        assert_eq!(vu.db(), METER_FLOOR_DB);
+        for _ in 0..60 {
+            vu.step(0.0, 1.0 / 60.0);
+        }
+        assert!(
+            vu.db() > -3.0,
+            "VU should settle near 0 dB after 1s, got {}",
+            vu.db()
+        );
+        assert!(vu.norm() > 0.95);
+    }
+
+    #[test]
+    fn ppm_ballistics_fast_attack_and_controlled_release() {
+        let mut ppm = PpmBallistics::default();
+        // 5 ms attack should jump quickly toward 0 dB
+        ppm.step(0.0, 0.02);
+        assert!(
+            ppm.db() > -2.0,
+            "PPM attack should be fast, got {}",
+            ppm.db()
+        );
+
+        // Release at 20 dB / 1.5 s: after 0.75 s should drop ~10 dB
+        let before = ppm.db();
+        for _ in 0..15 {
+            ppm.step(METER_FLOOR_DB, 0.05);
+        }
+        let drop = before - ppm.db();
+        assert!(
+            (drop - 10.0).abs() < 0.5,
+            "expected ~10 dB drop, got {drop}"
+        );
+    }
+}

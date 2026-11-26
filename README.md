@@ -242,6 +242,7 @@ Per **Section 5 of the GNU General Public License v3**, Dōri attributes and bui
 * **[Ardour](https://github.com/Ardour/ardour)** (GPL-2.0-or-later): Hardware MIDI patch definition library (`.midnam`) and Scala microtonal tuning references.
 * **[DAW UI Design](https://www.figma.com/community/file/1240550915764011777/daw-ui-design)** (CC BY 4.0, Dicky Jiang): Modern flat-bevel vector rotary knob and DAW hardware control styling reference.
 * **[webaudio-controls](https://github.com/g200kg/webaudio-controls)** (Apache-2.0, g200kg, Eiji Kitamura, Ryoya Kawai, and Keisuke Ai): Hardware rotary, slider, and keyboard control ergonomics and inline parameter editing patterns.
+* **[ouestlabs/audio-ui](https://github.com/ouestlabs/audio-ui)** (MIT License, Ouest Labs): IEC VU/PPM meter ballistics, 45° Mid/Side stereo goniometer, interactive ADSR breakpoint envelope, and velocity-metered pad styling.
 * **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 
 All original copyright notices and license texts are retained. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for third-party attributions, and [`LICENSE`](https://www.google.com/search?q=LICENSE) for complete terms.

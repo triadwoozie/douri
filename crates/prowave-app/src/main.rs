@@ -2378,6 +2378,7 @@ fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 ui.label("• Phosphor Icons by Helena Zhang & Tobias Fried (MIT License)");
                 ui.label("• DAW UI Design by Dicky Jiang (CC BY 4.0) - Rotary knob and DAW control styling");
                 ui.label("• webaudio-controls by g200kg et al. (Apache-2.0) - Hardware control ergonomics");
+                ui.label("• ouestlabs/audio-ui by Ouest Labs (MIT License) - Meter ballistics, goniometer & ADSR UI");
                 ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
                 ui.add_space(8.0);
                 ui.label(

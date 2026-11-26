@@ -245,6 +245,50 @@ fn show_instrument_tab(ui: &mut egui::Ui, zones: &mut [Zone]) {
     );
     ui.add_space(6.0);
 
+    let sel_id = egui::Id::unique("sampler_selected_zone");
+    let mut selected_zone: usize = ui
+        .ctx()
+        .data(|d| d.get_temp(sel_id).unwrap_or(0))
+        .min(zones.len().saturating_sub(1));
+
+    if zones.len() > 1 {
+        ui.horizontal_wrapped(|ui| {
+            for (i, z) in zones.iter().enumerate().take(8) {
+                if ui
+                    .selectable_label(
+                        selected_zone == i,
+                        format!("Zone {} (K{})", i + 1, z.root_key),
+                    )
+                    .clicked()
+                {
+                    selected_zone = i;
+                }
+            }
+        });
+        ui.add_space(4.0);
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(sel_id, selected_zone));
+
+    if let Some(zone) = zones.get_mut(selected_zone) {
+        let (env_rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width().max(260.0), 108.0),
+            egui::Sense::hover(),
+        );
+        crate::widgets::daw_adsr_envelope(
+            ui,
+            egui::Id::unique(("sampler_adsr", selected_zone)),
+            env_rect,
+            &mut zone.attack,
+            &mut zone.decay,
+            &mut zone.sustain,
+            &mut zone.release,
+            2.0,
+            2.0,
+            5.0,
+        );
+        ui.add_space(6.0);
+    }
+
     for (i, zone) in zones.iter_mut().enumerate().take(8) {
         ui.horizontal(|ui| {
             ui.label(format!("Zone {}: Root Key {}", i + 1, zone.root_key));

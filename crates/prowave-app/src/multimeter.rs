@@ -11,6 +11,7 @@ use egui::{pos2, vec2, Color32, CornerRadius, Rect, RichText, Sense, Stroke, Ui}
 use crate::engine_sync::EngineSync;
 use crate::i18n::tr;
 use crate::mixer::Meters;
+use crate::widgets::{daw_goniometer, linear_to_db, PpmBallistics, VuBallistics, METER_FLOOR_DB};
 
 const WIN_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24);
 const CARD_BG: Color32 = Color32::from_rgb(0x27, 0x2a, 0x30);
@@ -117,6 +118,9 @@ fn render_content(ui: &mut Ui, meters: &Meters, sync: &mut Option<EngineSync>) {
     ui.add_space(6.0);
     meter_bar(ui, "Short-Term (3 s)", meters.master_lufs_short, -14.0);
 
+    ui.add_space(12.0);
+    render_stereo_and_ballistics(ui, meters);
+
     ui.add_space(14.0);
 
     // Bottom controls
@@ -200,4 +204,126 @@ fn meter_bar(ui: &mut Ui, label: &str, lufs: f32, target: f32) {
         [pos2(target_x, rect.top()), pos2(target_x, rect.bottom())],
         Stroke::new(1.5, TARGET_BLUE),
     );
+}
+
+#[derive(Clone, Default)]
+struct BallisticsState {
+    vu_l: VuBallistics,
+    vu_r: VuBallistics,
+    ppm_l: PpmBallistics,
+    ppm_r: PpmBallistics,
+    trail: Vec<(f32, f32)>,
+}
+
+fn render_stereo_and_ballistics(ui: &mut Ui, meters: &Meters) {
+    ui.label(
+        RichText::new("STEREO FIELD & IEC BALLISTICS")
+            .size(11.0)
+            .strong()
+            .color(TEXT_DIM),
+    );
+    ui.add_space(6.0);
+
+    let dt = ui.input(|i| i.unstable_dt).clamp(0.001, 0.05);
+    let (l, r) = meters.master;
+    let l_db = linear_to_db(l);
+    let r_db = linear_to_db(r);
+
+    let state_id = egui::Id::unique("multimeter_ballistics_state");
+    let mut state = ui
+        .ctx()
+        .data_mut(|d| d.get_temp::<BallisticsState>(state_id))
+        .unwrap_or_default();
+
+    state.vu_l.step(l_db, dt);
+    state.vu_r.step(r_db, dt);
+    state.ppm_l.step(l_db, dt);
+    state.ppm_r.step(r_db, dt);
+
+    ui.horizontal(|ui| {
+        let (gonio_rect, _) = ui.allocate_exact_size(vec2(124.0, 124.0), Sense::hover());
+        daw_goniometer(ui, gonio_rect, l, r, &mut state.trail);
+
+        ui.add_space(10.0);
+
+        ui.vertical(|ui| {
+            ballistic_bar(
+                ui,
+                "VU L (300 ms)",
+                state.vu_l.db(),
+                state.vu_l.norm(),
+                LUFS_GREEN,
+            );
+            ui.add_space(4.0);
+            ballistic_bar(
+                ui,
+                "VU R (300 ms)",
+                state.vu_r.db(),
+                state.vu_r.norm(),
+                LUFS_GREEN,
+            );
+            ui.add_space(6.0);
+            ballistic_bar(
+                ui,
+                "PPM L (5 ms)",
+                state.ppm_l.db(),
+                state.ppm_l.norm(),
+                TARGET_BLUE,
+            );
+            ui.add_space(4.0);
+            ballistic_bar(
+                ui,
+                "PPM R (5 ms)",
+                state.ppm_r.db(),
+                state.ppm_r.norm(),
+                TARGET_BLUE,
+            );
+        });
+    });
+
+    if l > 0.001
+        || r > 0.001
+        || state.ppm_l.db() > METER_FLOOR_DB + 0.5
+        || state.ppm_r.db() > METER_FLOOR_DB + 0.5
+    {
+        ui.ctx().request_repaint();
+    }
+
+    ui.ctx().data_mut(|d| d.insert_temp(state_id, state));
+}
+
+fn ballistic_bar(ui: &mut Ui, label: &str, db: f32, norm: f32, color: Color32) {
+    let w = 278.0;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(label).size(9.5).color(TEXT_DIM));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let txt = if db <= METER_FLOOR_DB + 0.1 {
+                "-∞ dB".to_string()
+            } else {
+                format!("{db:+.1} dB")
+            };
+            ui.label(RichText::new(txt).size(9.5).monospace().color(TEXT_MAIN));
+        });
+    });
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 8.0), Sense::hover());
+    let g = ui.painter();
+    g.rect_filled(
+        rect,
+        CornerRadius::same(2),
+        Color32::from_rgb(0x16, 0x18, 0x1b),
+    );
+    if norm > 0.005 {
+        let fill_col = if db > -3.0 {
+            CLIP_RED
+        } else if db > -12.0 {
+            LUFS_YELLOW
+        } else {
+            color
+        };
+        g.rect_filled(
+            Rect::from_min_size(rect.min, vec2(rect.width() * norm, rect.height())),
+            CornerRadius::same(2),
+            fill_col,
+        );
+    }
 }
