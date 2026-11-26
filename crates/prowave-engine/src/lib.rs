@@ -21,6 +21,7 @@ mod convolver;
 mod core;
 mod disk;
 pub mod drum_machine;
+pub mod eclipsa;
 pub mod epiano;
 mod flac;
 mod flex;

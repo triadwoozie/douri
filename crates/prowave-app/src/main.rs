@@ -32,6 +32,7 @@ pub mod diagnostics;
 mod drag_modes;
 mod drum_kit;
 mod drum_machine_ui;
+mod eclipsa_ui;
 mod engine_sync;
 mod event_list;
 mod fade_curve;
@@ -376,6 +377,10 @@ pub struct UiState {
     pub show_bass808: Option<usize>,
     /// MultiMeter analyzer window is open.
     pub show_multimeter: bool,
+    /// Eclipsa Audio Master Renderer window is open.
+    pub show_eclipsa_renderer: bool,
+    /// Eclipsa Track Spatial Panner window is open.
+    pub show_eclipsa_panner: bool,
     /// The text in the Plugin Manager's search field, and the manufacturer chosen in its list
     /// (`None`: Show All).
     pub plugin_manager_search: String,
@@ -566,6 +571,8 @@ impl UiState {
             drum_error: None,
             show_bass808: None,
             show_multimeter: false,
+            show_eclipsa_renderer: false,
+            show_eclipsa_panner: false,
             plugin_manager_search: String::new(),
             plugin_manager_vendor: None,
             plugin_manager_category: None,
@@ -2316,6 +2323,7 @@ impl eframe::App for App {
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
         bass808_ui::show(&ctx, &mut self.project, &mut self.ui);
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
+        eclipsa_ui::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
         if let Some(url) = self.ui.open_url.take() {
@@ -2380,6 +2388,7 @@ fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 ui.label("• DAW UI Design by Dicky Jiang (CC BY 4.0) - Rotary knob and DAW control styling");
                 ui.label("• webaudio-controls by g200kg et al. (Apache-2.0) - Hardware control ergonomics");
                 ui.label("• ouestlabs/audio-ui by Ouest Labs (MIT License) - Meter ballistics, goniometer & ADSR UI");
+                ui.label("• google/eclipsa-studio by Google LLC (Apache-2.0) - Eclipsa IAMF 7.1.2/7.1.4 spatial audio");
                 ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
                 ui.add_space(8.0);
                 ui.label(

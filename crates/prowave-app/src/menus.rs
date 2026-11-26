@@ -400,6 +400,8 @@ const MIX: &[&str] = &[
     "Mastering",
     "Create Mastering Track",
     "Stem Splitter…",
+    "Eclipsa Audio…",
+    "Spatial Panner…",
     "-",
     "Space Designer",
     "-",
@@ -870,9 +872,12 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
-        "Configure Track Header…" | "Show Master Track" | "Show Automation" | "Stem Splitter…" => {
-            true
-        }
+        "Configure Track Header…"
+        | "Show Master Track"
+        | "Show Automation"
+        | "Stem Splitter…"
+        | "Eclipsa Audio…"
+        | "Spatial Panner…" => true,
         "Delete Automation" => p
             .tracks
             .get(p.selected_track)
@@ -1719,6 +1724,22 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         "Undo" => s.undo_cmd = Some(UndoCmd::Undo),
         "Show Automation" => s.mixer.auto_editor.track = Some(p.selected_track),
         "Stem Splitter…" => s.stem_splitter.open_dialog(),
+        "Eclipsa Audio…" => {
+            if !p.spatial_format.is_spatial() {
+                p.spatial_format = prowave_engine::eclipsa::SpatialFormat::EclipsaAudio;
+                p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+            }
+            p.eclipsa_master.enabled = true;
+            s.show_eclipsa_renderer = true;
+        }
+        "Spatial Panner…" => {
+            if !p.spatial_format.is_spatial() {
+                p.spatial_format = prowave_engine::eclipsa::SpatialFormat::EclipsaAudio;
+                p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+            }
+            p.eclipsa_master.enabled = true;
+            s.show_eclipsa_panner = true;
+        }
         "Delete Automation" => {
             if let Some(t) = p.tracks.get_mut(p.selected_track) {
                 let shown = t.auto.shown;

@@ -12,6 +12,8 @@ This product includes software developed by:
 - Phosphor Icons / Helena Zhang & Tobias Fried (https://phosphoricons.com, MIT)
 - DAW UI Design by Dicky Jiang (https://www.figma.com/community/file/1240550915764011777/daw-ui-design, CC BY 4.0) — Rotary knob and modern DAW control styling reference
 - webaudio-controls (https://github.com/g200kg/webaudio-controls, Apache-2.0) by g200kg, Eiji Kitamura, Ryoya Kawai, and Keisuke Ai — Hardware control interaction ergonomics
+- ouestlabs/audio-ui (https://github.com/ouestlabs/audio-ui, MIT) by Ouest Labs — Meter ballistics, goniometer, ADSR envelope, and velocity-metered pads
+- google/eclipsa-studio (https://github.com/google/eclipsa-studio, Apache-2.0) by Google LLC — Eclipsa Audio / IAMF spatial rendering architecture
 
 All original copyright notices and licenses are retained.
 See THIRD_PARTY_LICENSES.md and LICENSE for details.

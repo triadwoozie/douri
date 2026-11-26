@@ -689,7 +689,7 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut crate::UiState) {
                     ui.set_min_width(inner_rect.width());
                     match tab {
                         SettingsTab::General => general(ui, p, s),
-                        SettingsTab::Audio => audio(ui, s),
+                        SettingsTab::Audio => audio(ui, p, s),
                         SettingsTab::Recording => recording(ui, p, s),
                         SettingsTab::Midi => midi(ui, p, s),
                         SettingsTab::Appearance => appearance(ui, s, appearance_subtab),
@@ -1265,7 +1265,7 @@ fn general(ui: &mut egui::Ui, p: &mut Project, s: &mut UiState) {
 // 2. Audio Settings
 // ---------------------------------------------------------------------------
 
-pub fn audio(ui: &mut egui::Ui, s: &mut crate::UiState) {
+pub fn audio(ui: &mut egui::Ui, p: &mut crate::model::Project, s: &mut crate::UiState) {
     let prefs = s.audio_prefs.clone();
     let info = s.audio_info.clone();
     let mut request = None;
@@ -1473,6 +1473,44 @@ pub fn audio(ui: &mut egui::Ui, s: &mut crate::UiState) {
                         Some(i) => ui.label(trf("{} Hz", &[&i.sample_rate])),
                         None => ui.label("48,000 Hz"),
                     };
+                    ui.end_row();
+
+                    row_label(ui, "Spatial Audio");
+                    ui.horizontal(|ui| {
+                        let on = p.eclipsa_master.enabled
+                            || p.spatial_format
+                                == prowave_engine::eclipsa::SpatialFormat::EclipsaAudio;
+                        if ui.selectable_label(!on, "Off").clicked() {
+                            p.eclipsa_master.enabled = false;
+                            if p.spatial_format
+                                == prowave_engine::eclipsa::SpatialFormat::EclipsaAudio
+                            {
+                                p.spatial_format = prowave_engine::eclipsa::SpatialFormat::Stereo;
+                            }
+                        }
+                        if ui.selectable_label(on, "Eclipsa Audio").clicked() {
+                            p.eclipsa_master.enabled = true;
+                            p.spatial_format = prowave_engine::eclipsa::SpatialFormat::EclipsaAudio;
+                            p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+                        }
+                    });
+                    ui.end_row();
+
+                    row_label(ui, "Surround Format");
+                    egui::ComboBox::from_id_salt("settings_surround_format")
+                        .selected_text(p.spatial_format.label())
+                        .show_ui(ui, |ui| {
+                            for fmt in prowave_engine::eclipsa::SpatialFormat::ALL {
+                                if ui
+                                    .selectable_value(&mut p.spatial_format, fmt, fmt.label())
+                                    .clicked()
+                                    && fmt == prowave_engine::eclipsa::SpatialFormat::EclipsaAudio
+                                {
+                                    p.eclipsa_master.enabled = true;
+                                    p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+                                }
+                            }
+                        });
                     ui.end_row();
 
                     row_label(ui, tr("MIDI Device"));
@@ -2842,7 +2880,8 @@ mod tests {
         // Only a choice made in the popup asks for a change.
         assert!(request.is_none());
         // The whole tab draws with the lists and the info given above.
-        h.frame(vec![], |ui| audio(ui, &mut s));
+        let mut p = Project::empty();
+        h.frame(vec![], |ui| audio(ui, &mut p, &mut s));
         assert!(s.audio_tab_open && s.audio_prefs.buffer == Some(128));
     }
 

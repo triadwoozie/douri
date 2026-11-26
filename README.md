@@ -49,7 +49,7 @@ Counted directly from source (`menus::enabled` and `ROADMAP.md`). Run `cargo xta
 
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
-| Menu entries | 229 | 0 | 335 | 68.36% |
+| Menu entries | 231 | 0 | 337 | 68.55% |
 | Roadmap items | 15 | 2 | 27 | 55.56% |
 
 </div>
@@ -139,6 +139,7 @@ Dōri is free software licensed under the **GNU General Public License v3.0 or l
 - **[DAW UI Design](https://www.figma.com/community/file/1240550915764011777/daw-ui-design)** (CC BY 4.0, Dicky Jiang): Flat-bevel vector rotary knob styling.
 - **[webaudio-controls](https://github.com/g200kg/webaudio-controls)** (Apache-2.0, g200kg et al.): Hardware rotary, slider, and keyboard control ergonomics.
 - **[ouestlabs/audio-ui](https://github.com/ouestlabs/audio-ui)** (MIT License, Ouest Labs): IEC VU/PPM meter ballistics, 45° Mid/Side stereo goniometer, interactive ADSR envelope, and velocity-metered pad styling.
+- **[google/eclipsa-studio](https://github.com/google/eclipsa-studio)** (Apache-2.0, Google LLC): Eclipsa Audio / IAMF 7.1.2 & 7.1.4 spatial audio rendering, OAR monitoring, and binaural downmix architecture.
 - **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 
 See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for full attributions and [`LICENSE`](LICENSE) for complete license terms.

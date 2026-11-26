@@ -49,6 +49,11 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: MIT License
 - **Description**: Reference implementations for IEC VU/PPM meter ballistics, 45-degree Mid/Side stereo goniometer, interactive ADSR breakpoint envelope, and velocity-metered drum pad feedback.
 
+- **Project**: Eclipsa Studio ([google/eclipsa-studio](https://github.com/google/eclipsa-studio))
+- **Copyright**: (c) Google LLC
+- **License**: Apache License 2.0
+- **Description**: Eclipsa Audio / IAMF 7.1.2 & 7.1.4 spatial audio architecture, OAR monitoring layouts, and binaural spatialization reference.
+
 - **Artwork**: Dōri 3D Studio App Icon & Custom Artwork
 - **Creator**: triadwoozie
 - **Description**: Blender-rendered high-resolution application icon and 3D studio visual assets.

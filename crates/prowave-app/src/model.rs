@@ -1246,6 +1246,69 @@ pub struct Project {
     pub region_solo: Option<(usize, usize)>,
     /// Default MIDI region parameters (Logic Pro: Region Inspector when no region is selected).
     pub midi_defaults: RegionParams,
+    /// Project spatial / surround format (`Stereo`, `5.1`, `7.1.2`, `EclipsaAudio`).
+    pub spatial_format: prowave_engine::eclipsa::SpatialFormat,
+    /// Eclipsa Audio master spatial renderer configuration.
+    pub eclipsa_master: EclipsaMasterConfig,
+    /// Per-track Eclipsa Audio 3D Object / Surround Panner configuration keyed by track index.
+    pub eclipsa_tracks: std::collections::BTreeMap<usize, EclipsaTrackConfig>,
+}
+
+/// How a track participates in Eclipsa Spatial Audio mixing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EclipsaTrackRole {
+    #[default]
+    SurroundBed,
+    Object3D,
+    Off,
+}
+
+/// Per-track Eclipsa spatial configuration (3D Object Panner + Surround Panner).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EclipsaTrackConfig {
+    pub role: EclipsaTrackRole,
+    pub object: prowave_engine::eclipsa::EclipsaObjectParams,
+    pub surround: prowave_engine::eclipsa::SurroundPannerParams,
+}
+
+impl Default for EclipsaTrackConfig {
+    fn default() -> Self {
+        Self {
+            role: EclipsaTrackRole::SurroundBed,
+            object: prowave_engine::eclipsa::EclipsaObjectParams::default(),
+            surround: prowave_engine::eclipsa::SurroundPannerParams::default(),
+        }
+    }
+}
+
+/// Master Eclipsa Audio renderer state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EclipsaMasterConfig {
+    pub enabled: bool,
+    pub monitoring: prowave_engine::eclipsa::MonitoringFormat,
+    pub bed_binaural: [prowave_engine::eclipsa::BinauralMode; 10],
+}
+
+impl Default for EclipsaMasterConfig {
+    fn default() -> Self {
+        use prowave_engine::eclipsa::BinauralMode;
+        Self {
+            enabled: false,
+            monitoring: prowave_engine::eclipsa::MonitoringFormat::Binaural,
+            bed_binaural: [
+                BinauralMode::Mid, // Left
+                BinauralMode::Mid, // Right
+                BinauralMode::Mid, // Center
+                BinauralMode::Off, // LFE
+                BinauralMode::Mid, // Left Mid
+                BinauralMode::Mid, // Right Mid
+                BinauralMode::Mid, // Left Surround
+                BinauralMode::Mid, // Right Surround
+                BinauralMode::Mid, // Left Top Mid
+                BinauralMode::Mid, // Right Top Mid
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1518,6 +1581,9 @@ impl Project {
             midi_clock_out: None,
             midi_clock_in: None,
             midi_defaults: RegionParams::default(),
+            spatial_format: prowave_engine::eclipsa::SpatialFormat::Stereo,
+            eclipsa_master: EclipsaMasterConfig::default(),
+            eclipsa_tracks: std::collections::BTreeMap::new(),
         }
     }
 

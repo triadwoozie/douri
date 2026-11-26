@@ -81,6 +81,15 @@ impl ChooserDetails {
         p.sig = self.time_signature();
         p.key = self.key_str();
         p.smpte_rate = self.smpte_rate();
+        p.spatial_format = match self.surround_idx {
+            1 => prowave_engine::eclipsa::SpatialFormat::Surround51,
+            2 => prowave_engine::eclipsa::SpatialFormat::EclipsaAudio,
+            _ => prowave_engine::eclipsa::SpatialFormat::Stereo,
+        };
+        if p.spatial_format == prowave_engine::eclipsa::SpatialFormat::EclipsaAudio {
+            p.eclipsa_master.enabled = true;
+            p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+        }
         p.song_rev += 1;
     }
 
@@ -674,12 +683,24 @@ pub fn show(ui: &mut egui::Ui, s: &mut UiState) {
                             });
 
                         ui.label(egui::RichText::new(tr("Surround Format:")).color(DIM));
-                        const SURR: [&str; 2] = ["Stereo", "5.1 Surround"];
+                        const SURR: [&str; 3] =
+                            ["Stereo", "5.1 Surround", "Eclipsa Audio (7.1.2 IAMF)"];
+                        let sel_idx = c.details.surround_idx.min(SURR.len() - 1);
                         egui::ComboBox::from_id_salt("chooser_surround")
-                            .selected_text(SURR[c.details.surround_idx])
+                            .selected_text(SURR[sel_idx])
                             .show_ui(ui, |ui| {
                                 for (i, sr) in SURR.iter().enumerate() {
-                                    ui.selectable_value(&mut c.details.surround_idx, i, *sr);
+                                    if ui
+                                        .selectable_value(&mut c.details.surround_idx, i, *sr)
+                                        .clicked()
+                                        && i == 2
+                                    {
+                                        // Eclipsa Spatial Audio recommends 48 kHz and 24 fps
+                                        if c.details.sample_rate_idx == 0 {
+                                            c.details.sample_rate_idx = 1;
+                                        }
+                                        c.details.frame_rate_idx = 1;
+                                    }
                                 }
                             });
                     });
@@ -891,5 +912,19 @@ mod tests {
         choose(ch, &c, &mut s);
         assert!(s.chooser.is_none());
         assert_eq!(s.file_cmd, Some(FileCmd::NewFrom(Template::Empty)));
+    }
+
+    #[test]
+    fn chooser_eclipsa_surround_enables_spatial_and_24fps() {
+        let mut details = ChooserDetails::default();
+        details.surround_idx = 2;
+        let mut p = Project::empty();
+        details.apply(&mut p);
+        assert_eq!(
+            p.spatial_format,
+            prowave_engine::eclipsa::SpatialFormat::EclipsaAudio
+        );
+        assert!(p.eclipsa_master.enabled);
+        assert_eq!(p.smpte_rate, prowave_engine::SmpteRate::Fps24);
     }
 }
