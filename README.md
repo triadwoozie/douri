@@ -134,6 +134,15 @@ Dōri handles arranging, recording, editing, mixing, and bouncing in a single wi
 - **Matte Obsidian Workspace**: Dark palette (`#0D0F14` canvas, `#13161E` panels, `#1A1E29` cards/capsules) with radial-arc pan knobs and channel faders.
 - **Built-in Model Context Protocol (MCP) Server**: Zero-alloc real-time safe MCP bridge over local TCP (`127.0.0.1:38420`) and `--mcp-stdio` CLI mode, exposing 4 live resources and 19 automation and control tools.
 
+### Local AI Stem Separation & Workflow Tools
+- **100% Local AI Stem Separation (`Mix > Stem Splitter…`)**: Separates any imported audio region (`.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`, `.aiff`) into 4 playable stem tracks (**Vocals**, **Drums**, **Bass**, **Other**) on a background worker thread without blocking the audio or UI thread.
+  - **Built-in Local AI Hybrid**: Works 100% offline out of the box with zero external downloads (STFT + HPSS + Mid/Side Wiener masking).
+  - **Local ONNX Neural Models (`ort` + `tract-onnx`)**: Supports local `.onnx` models (such as **HTDemucs v4**) with hardware-optimized ONNX Runtime (`onnxruntime.dll`) and pure-Rust `tract-onnx` fallback, plus one-click local model download to `%LOCALAPPDATA%\douri\models\` (Windows) or `~/.local/share/douri/models/` (Linux/macOS).
+  - **De-Bleed / Spill Reducer (0%–100%)** and **Extract Drum Kit & Groove** (slices drum transients into `.wav` + `.sfz` and generates a MIDI drum track).
+- **Command Palette (`Ctrl+K` / `:`)**: Fuzzy-search modal for quickly triggering menu actions and tools.
+- **Modulation Drawer (`MOD`) & Git A/B Audition (`A/B`)**: Quick-access transport toggles for per-track modulation routing and A/B project auditioning.
+- **Stress Bench & PDC Inspector (`Diagnostics…`)**: Built-in audio engine stress benchmarking and Plug-in Delay Compensation inspection window.
+
 ## Quick Start
 
 ### Prerequisites (Linux)
@@ -151,6 +160,20 @@ sudo dnf install -y pkgconf-pkg-config alsa-lib-devel libxkbcommon-devel wayland
 sudo pacman -S --needed pkgconf alsa-lib libxkbcommon wayland
 
 ```
+
+### Prerequisites & Setup (Windows)
+
+- **Installer / Portable**: Run `dist/Dori-Setup-<version>-x86_64.exe` (or extract `dist/Dori-Portable-<version>-Windows-x86_64.zip`). Both include `douri.exe` and `onnxruntime.dll` for hardware-accelerated local AI stem separation.
+- **Building from Source on Windows** (using `x86_64-pc-windows-gnu`):
+  1. Install Rust via [rustup](https://rustup.rs/) with the `x86_64-pc-windows-gnu` toolchain.
+  2. Install WinLibs MinGW-w64 (provides `gcc`, `as`, `dlltool`, `windres`):
+     ```powershell
+     winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT
+     ```
+  3. Build and run:
+     ```powershell
+     cargo build --release -p douri --bin douri
+     ```
 
 ### Build & Run from Source
 

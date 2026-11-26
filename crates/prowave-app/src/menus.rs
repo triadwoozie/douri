@@ -870,7 +870,9 @@ pub(crate) fn enabled(label: &str, p: &Project, s: &crate::UiState) -> bool {
         "Rename Track" | "Assign Track Color…" | "Assign Track Icon…" => {
             p.tracks.get(p.selected_track).is_some()
         }
-        "Configure Track Header…" | "Show Master Track" | "Show Automation" => true,
+        "Configure Track Header…" | "Show Master Track" | "Show Automation" | "Stem Splitter…" => {
+            true
+        }
         "Delete Automation" => p
             .tracks
             .get(p.selected_track)
@@ -1716,6 +1718,7 @@ pub(crate) fn apply(label: &str, p: &mut Project, s: &mut crate::UiState) {
         }
         "Undo" => s.undo_cmd = Some(UndoCmd::Undo),
         "Show Automation" => s.mixer.auto_editor.track = Some(p.selected_track),
+        "Stem Splitter…" => s.stem_splitter.open_dialog(),
         "Delete Automation" => {
             if let Some(t) = p.tracks.get_mut(p.selected_track) {
                 let shown = t.auto.shown;
@@ -2368,6 +2371,8 @@ mod tests {
                         s.show_multimeter,
                         s.export_all_tracks_cmd,
                         s.show_about,
+                        s.stem_splitter.open,
+                        s.diagnostics_window.open,
                     )
                 ),
                 (
@@ -2487,7 +2492,7 @@ mod tests {
             );
         }
         // And unimplemented ones are greyed, like the ones from the GitHub report.
-        for label in ["Close", "Export", "Stem Splitter…"] {
+        for label in ["Close", "Export"] {
             assert!(!enabled(label, &p, &s), "{label}");
         }
     }

@@ -205,6 +205,7 @@ pub struct UiState {
     pub diagnostics_window: diagnostics::DiagnosticsWindowState,
     pub git_ab_audition: bool,
     pub stem_regions: std::collections::HashMap<(usize, usize), stems_ui::StemRegionState>,
+    pub stem_splitter: stems_ui::StemSplitterState,
     pub collaborate_enabled: bool,
     pub collaborate_worker: Option<prowave_vcs::VcsWorker>,
     pub collaborate_note_input: String,
@@ -445,6 +446,7 @@ impl UiState {
             diagnostics_window: diagnostics::DiagnosticsWindowState::default(),
             git_ab_audition: false,
             stem_regions: std::collections::HashMap::new(),
+            stem_splitter: stems_ui::StemSplitterState::default(),
             collaborate_enabled: false,
             collaborate_worker: None,
             collaborate_note_input: String::new(),
@@ -1635,14 +1637,11 @@ impl App {
             .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
             .show(ui, |ui| start_screen::show(ui, &mut self.ui));
         // If chooser was dismissed / template chosen, open and maximize main DAW
-        if self.ui.chooser.is_none() {
-            self.transition_to_daw(ctx);
-        }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
-            if self.ui.chooser.is_none() {
-                self.transition_to_daw(ctx);
-            }
+        }
+        if self.ui.chooser.is_none() {
+            self.transition_to_daw(ctx);
         }
         self.show_save_prompt(ctx);
         window_chrome::resize_edges(ctx);
@@ -1660,9 +1659,11 @@ impl App {
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
             800.0, 520.0,
         )));
+        #[cfg(not(target_os = "windows"))]
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+        ctx.request_repaint();
     }
 }
 
@@ -1895,9 +1896,10 @@ impl eframe::App for App {
             }
         }
         collaborate_panel::show(&ctx, &mut self.project, &mut self.ui, self.path.as_deref());
+        let wants_kb = ctx.egui_wants_keyboard_input();
         if ctx.input(|i| {
             (i.modifiers.command && i.key_pressed(egui::Key::K))
-                || (!ctx.egui_wants_keyboard_input() && i.key_pressed(egui::Key::Colon))
+                || (!wants_kb && i.key_pressed(egui::Key::Colon))
         }) {
             self.ui.command_palette.toggle();
         }
@@ -1905,6 +1907,8 @@ impl eframe::App for App {
         if let Some(cmd_label) = command_palette::show(&ctx, &mut palette_state, &self.ui, &self.project) {
             if cmd_label == "Diagnostics…" {
                 self.ui.diagnostics_window.open = true;
+            } else {
+                menus::apply(&cmd_label, &mut self.project, &mut self.ui);
             }
         }
         self.ui.command_palette = palette_state;
@@ -2179,6 +2183,7 @@ impl eframe::App for App {
         midi_fx_ui::show(&ctx, &mut self.project, &mut self.ui);
         transform_ui::show(&ctx, &mut self.project, &mut self.ui);
         smart_tempo::show(&ctx, &mut self.project, &mut self.ui);
+        stems_ui::show(&ctx, &mut self.project, &mut self.ui);
         group_editor::show(&ctx, &mut self.project, &mut self.ui);
         let (typed, typed_key_limit) = self
             .project
