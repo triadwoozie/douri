@@ -1637,14 +1637,11 @@ impl App {
             .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
             .show(ui, |ui| start_screen::show(ui, &mut self.ui));
         // If chooser was dismissed / template chosen, open and maximize main DAW
-        if self.ui.chooser.is_none() {
-            self.transition_to_daw(ctx);
-        }
         if let Some(cmd) = self.ui.file_cmd.take() {
             self.run_file_cmd(cmd, ctx);
-            if self.ui.chooser.is_none() {
-                self.transition_to_daw(ctx);
-            }
+        }
+        if self.ui.chooser.is_none() {
+            self.transition_to_daw(ctx);
         }
         self.show_save_prompt(ctx);
         window_chrome::resize_edges(ctx);
@@ -1662,9 +1659,11 @@ impl App {
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
             800.0, 520.0,
         )));
+        #[cfg(not(target_os = "windows"))]
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(mon_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Title("Dōri".into()));
+        ctx.request_repaint();
     }
 }
 

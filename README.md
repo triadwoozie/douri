@@ -54,7 +54,7 @@ to update this section.
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
 | Menu entries | 227 | 0 | 334 | 67.96% |
-| Roadmap items | 13 | 0 | 27 | 48.15% |
+| Roadmap items | 14 | 0 | 28 | 50.00% |
 <!-- status:end -->
 
 Dōri handles arranging, recording, editing, mixing, and bouncing in a single window on an engine built so the audio thread never blocks.

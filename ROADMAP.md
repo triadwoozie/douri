@@ -173,7 +173,8 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 ### Phase 4: WebAssembly, ML Assisted Tools & Spatial Audio (`v0.4.0+`)
 
 * [ ] **WebAssembly & AudioWorklet Target:** Compile `prowave-engine` to `wasm32` with `SharedArrayBuffer` lock-free ring buffers, OPFS project storage, and a browser-based Web Remote.
-* [ ] **Local ML Stem Separation & Mastering Assistant:** Optional ONNX (`ort`/`tract`) stem separation (Drums, Bass, Vocals, Other) and reference-assisted loudness/EQ balancing.
+* [x] **Windows Startup Deadlock Fix (PR #5):** Avoid `InnerSize` + `Maximized` Win32 message-loop deadlock on chooser-to-DAW transition.
+* [ ] **Local ML Stem Separation & Mastering Assistant (PR #5 audit):** Audit and integrate `stems.rs` (STFT + HPSS + Mid/Side Wiener hybrid + optional ONNX `ort`/`tract` stem separation for Drums, Bass, Vocals, Other), `stems_ui.rs` (`Mix > Stem Splitter…`), `command_palette.rs`, and `diagnostics.rs` without overlapping transport pills or unpinned `Cargo.lock` bloat.
 * [ ] **MPE & MIDI 2.0 Property Exchange:** Full per-note pitch/pressure/timbre expression lanes inside the Piano Roll.
 * [ ] **Spatial Audio / Multi-Channel Bed Mixing:** Surround/7.1.4 bed routing, 3D panner UI, and ADM BWF export.
 
