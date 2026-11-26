@@ -1054,3 +1054,4 @@ Create Track / Drum Kit = Sukurti takelį / būgnų rinkinį
 Add to Loops Library = Pridėti prie kilpų bibliotekos
 Drop Audio to Create Track / Drum Kit = Numeskite garso įrašą takeliui / būgnų rinkiniui sukurti
 Drop Region to Save as User Loop = Numeskite regioną, kad išsaugotumėte kaip naudotojo kilpą
+Spectral Sampler = Spektrinis sempleris

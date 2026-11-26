@@ -1054,3 +1054,4 @@ Create Track / Drum Kit = Skapa spår / trumset
 Add to Loops Library = Lägg till i loopbiblioteket
 Drop Audio to Create Track / Drum Kit = Släpp ljud för att skapa spår / trumset
 Drop Region to Save as User Loop = Släpp region för att spara som användarloop
+Spectral Sampler = Spectral Sampler

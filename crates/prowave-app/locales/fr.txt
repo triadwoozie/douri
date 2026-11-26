@@ -1054,3 +1054,4 @@ Create Track / Drum Kit = Créer une piste / kit de batterie
 Add to Loops Library = Ajouter à la bibliothèque de boucles
 Drop Audio to Create Track / Drum Kit = Déposer l'audio pour créer une piste / un kit
 Drop Region to Save as User Loop = Déposer la région pour l'enregistrer comme boucle
+Spectral Sampler = Spectral Sampler

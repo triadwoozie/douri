@@ -3450,7 +3450,7 @@ fn resolve_pending_drops(
                         payload.track_index,
                         payload.region_index,
                     ) {
-                        s.track_drop_slice.open(src);
+                        s.track_drop_slice.open_at(src, Some(pos));
                     }
                 }
                 Some(track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {

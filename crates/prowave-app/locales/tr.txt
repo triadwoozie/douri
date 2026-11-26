@@ -1052,3 +1052,4 @@ Create Track / Drum Kit = Kanal / Davul Kiti Oluştur
 Add to Loops Library = Döngü Kitaplığına Ekle
 Drop Audio to Create Track / Drum Kit = Kanal / Davul Kiti Oluşturmak İçin Sesi Bırakın
 Drop Region to Save as User Loop = Kullanıcı Döngüsü Olarak Kaydetmek İçin Bölgeyi Bırakın
+Spectral Sampler = Spectral Sampler

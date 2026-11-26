@@ -1054,3 +1054,4 @@ Create Track / Drum Kit = Criar faixa / bateria
 Add to Loops Library = Adicionar à biblioteca de loops
 Drop Audio to Create Track / Drum Kit = Solte o áudio para criar faixa / bateria
 Drop Region to Save as User Loop = Solte a região para salvar como loop do usuário
+Spectral Sampler = Spectral Sampler

@@ -81,6 +81,7 @@ pub enum TrackCreateMode {
     QuickSamplerOriginal,
     QuickSamplerOptimized,
     DrumKitDesigner,
+    SpectralSampler,
     SamplerZonePerNote,
 }
 
@@ -88,24 +89,34 @@ pub enum TrackCreateMode {
 pub struct TrackDropSliceModal {
     pub pending: Option<DropAudioSource>,
     pub selected: Option<TrackCreateMode>,
+    pub anchor_pos: Option<egui::Pos2>,
+    pub skip_outside_once: bool,
     pub error: Option<String>,
 }
 
 impl TrackDropSliceModal {
     pub fn open(&mut self, source: DropAudioSource) {
+        self.open_at(source, None);
+    }
+
+    pub fn open_at(&mut self, source: DropAudioSource, pos: Option<egui::Pos2>) {
         self.pending = Some(source);
         self.selected = Some(TrackCreateMode::DrumKitDesigner);
+        self.anchor_pos = pos;
+        self.skip_outside_once = true;
         self.error = None;
     }
 
     pub fn close(&mut self) {
         self.pending = None;
+        self.anchor_pos = None;
+        self.skip_outside_once = false;
         self.error = None;
     }
 }
 
-/// Renders the `Create New Track using:` modal when an audio region or file was dropped
-/// onto the Track Header gutter.
+/// Renders the compact Logic-style `Create New Track using:` popover anchored at the
+/// Track Header drop position.
 pub fn show(ctx: &egui::Context, p: &mut Project, modal: &mut TrackDropSliceModal) {
     let Some(source) = modal.pending.clone() else {
         return;
@@ -113,102 +124,112 @@ pub fn show(ctx: &egui::Context, p: &mut Project, modal: &mut TrackDropSliceModa
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut picked: Option<TrackCreateMode> = None;
 
-    egui::Window::new(tr("Create New Track using:"))
-        .title_bar(false)
-        .resizable(false)
-        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
-        .frame(
-            egui::Frame::new()
-                .fill(Color32::from_rgb(0x1c, 0x1c, 0x1e))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)))
-                .corner_radius(10)
-                .inner_margin(Margin::same(16)),
-        )
+    let menu_w = 236.0_f32;
+    let est_h = 188.0_f32;
+    let vp = ctx.input(|i| i.viewport_rect());
+    let raw_pos = modal.anchor_pos.unwrap_or(vp.center());
+    let pos = egui::pos2(
+        raw_pos.x.clamp(
+            vp.left() + 8.0,
+            (vp.right() - menu_w - 8.0).max(vp.left() + 8.0),
+        ),
+        raw_pos.y.clamp(
+            vp.top() + 8.0,
+            (vp.bottom() - est_h - 8.0).max(vp.top() + 8.0),
+        ),
+    );
+
+    let area_resp = egui::Area::new(egui::Id::unique("create_new_track_popover"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
         .show(ctx, |ui| {
-            ui.set_width(340.0);
-            ui.label(
-                RichText::new(tr("Create New Track using:"))
-                    .strong()
-                    .size(14.0)
-                    .color(Color32::WHITE),
-            );
-            ui.label(
-                RichText::new(source.name())
-                    .size(11.5)
-                    .color(Color32::from_rgb(0x98, 0x98, 0x9f)),
-            );
-            ui.add_space(10.0);
+            egui::Frame::new()
+                .fill(Color32::from_rgb(0x28, 0x28, 0x2b))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)))
+                .corner_radius(8)
+                .inner_margin(Margin::same(8))
+                .show(ui, |ui| {
+                    ui.set_width(menu_w - 16.0);
+                    ui.label(
+                        RichText::new(tr("Create New Track using:"))
+                            .size(12.0)
+                            .color(Color32::from_rgb(0xb0, 0xb0, 0xb6)),
+                    );
+                    ui.add_space(6.0);
 
-            let choices = [
-                (
-                    TrackCreateMode::QuickSamplerOriginal,
-                    tr("Quick Sampler (Original)"),
-                    "Maps full audio sample to C3",
-                ),
-                (
-                    TrackCreateMode::QuickSamplerOptimized,
-                    tr("Quick Sampler (Optimized)"),
-                    "Trims silence, normalizes peak, and detects pitch",
-                ),
-                (
-                    TrackCreateMode::DrumKitDesigner,
-                    tr("Drum Kit Designer"),
-                    "Auto-slices transients into a Drum Kit Track Stack + MIDI groove",
-                ),
-                (
-                    TrackCreateMode::SamplerZonePerNote,
-                    tr("Sampler (Zone Per Note)"),
-                    "Maps detected transient slices chromatically from C1",
-                ),
-            ];
+                    egui::Frame::new()
+                        .fill(Color32::from_rgb(0x32, 0x32, 0x36))
+                        .corner_radius(6)
+                        .inner_margin(Margin::same(4))
+                        .show(ui, |ui| {
+                            ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
+                            let choices = [
+                                (
+                                    TrackCreateMode::QuickSamplerOriginal,
+                                    tr("Quick Sampler (Original)"),
+                                ),
+                                (
+                                    TrackCreateMode::QuickSamplerOptimized,
+                                    tr("Quick Sampler (Optimized)"),
+                                ),
+                                (TrackCreateMode::DrumKitDesigner, tr("Drum Kit Designer")),
+                                (TrackCreateMode::SpectralSampler, tr("Spectral Sampler")),
+                                (
+                                    TrackCreateMode::SamplerZonePerNote,
+                                    tr("Sampler (Zone Per Note)"),
+                                ),
+                            ];
 
-            for (mode, title, desc) in choices {
-                let is_sel = modal.selected == Some(mode);
-                let resp = ui.add_sized(
-                    vec2(340.0, 44.0),
-                    egui::Button::new(RichText::new(format!("{title}\n{desc}")).size(11.5).color(
-                        if is_sel {
-                            Color32::WHITE
-                        } else {
-                            Color32::from_rgb(0xd8, 0xd8, 0xde)
-                        },
-                    ))
-                    .fill(if is_sel {
-                        Color32::from_rgb(0x12, 0x69, 0xcc)
-                    } else {
-                        Color32::from_rgb(0x28, 0x28, 0x2b)
-                    })
-                    .corner_radius(6),
-                );
-                if resp.clicked() {
-                    picked = Some(mode);
-                }
-                ui.add_space(4.0);
-            }
+                            for (mode, title) in choices {
+                                let row_w = ui.available_width();
+                                let (r, resp) =
+                                    ui.allocate_exact_size(vec2(row_w, 26.0), egui::Sense::click());
+                                let hovered = resp.hovered();
+                                if hovered {
+                                    modal.selected = Some(mode);
+                                    ui.painter().rect_filled(
+                                        r,
+                                        4.0,
+                                        Color32::from_rgb(0x12, 0x69, 0xcc),
+                                    );
+                                }
+                                ui.painter().text(
+                                    egui::pos2(r.left() + 8.0, r.center().y),
+                                    Align2::LEFT_CENTER,
+                                    title,
+                                    egui::FontId::proportional(12.0),
+                                    if hovered {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_rgb(0xe8, 0xe8, 0xed)
+                                    },
+                                );
+                                if resp.clicked() {
+                                    picked = Some(mode);
+                                }
+                            }
+                        });
 
-            if let Some(err) = &modal.error {
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(err)
-                        .size(11.0)
-                        .color(Color32::from_rgb(0xff, 0x5c, 0x5c)),
-                );
-            }
-
-            ui.add_space(8.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(RichText::new(tr("Cancel")).color(Color32::WHITE))
-                            .fill(Color32::from_rgb(0x3a, 0x3a, 0x3e))
-                            .corner_radius(5),
-                    )
-                    .clicked()
-                {
-                    close = true;
-                }
-            });
+                    if let Some(err) = &modal.error {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(err)
+                                .size(11.0)
+                                .color(Color32::from_rgb(0xff, 0x5c, 0x5c)),
+                        );
+                    }
+                });
         });
+
+    if modal.skip_outside_once {
+        modal.skip_outside_once = false;
+    } else if ctx.input(|i| i.pointer.any_pressed()) {
+        if let Some(ptr) = ctx.input(|i| i.pointer.interact_pos()) {
+            if !area_resp.response.rect.contains(ptr) {
+                close = true;
+            }
+        }
+    }
 
     if let Some(mode) = picked {
         match apply_create_mode(p, &source, mode) {
@@ -220,19 +241,25 @@ pub fn show(ctx: &egui::Context, p: &mut Project, modal: &mut TrackDropSliceModa
     }
 }
 
-/// Executes the chosen `TrackCreateMode` on `p` for `source`.
+/// Executes the chosen `TrackCreateMode` on `p` for `source` and bumps `song_rev` so
+/// `engine_sync.rs` syncs the new sampler/stack to the live audio engine immediately.
 pub fn apply_create_mode(
     p: &mut Project,
     source: &DropAudioSource,
     mode: TrackCreateMode,
 ) -> Result<usize, String> {
     let sample = load_sample_from_source(source)?;
-    match mode {
+    let res = match mode {
         TrackCreateMode::QuickSamplerOriginal => create_quick_sampler_original(p, source, sample),
         TrackCreateMode::QuickSamplerOptimized => create_quick_sampler_optimized(p, source, sample),
         TrackCreateMode::DrumKitDesigner => slice_sample_to_drum_kit_stack(p, source, sample, None),
+        TrackCreateMode::SpectralSampler => create_spectral_sampler(p, source, sample),
         TrackCreateMode::SamplerZonePerNote => create_sampler_zone_per_note(p, source, sample),
+    };
+    if res.is_ok() {
+        p.song_rev = p.song_rev.wrapping_add(1);
     }
+    res
 }
 
 fn load_sample_from_source(source: &DropAudioSource) -> Result<Arc<SampleData>, String> {
@@ -444,7 +471,8 @@ fn create_quick_sampler_optimized(
 }
 
 fn optimize_sample(sample: &SampleData) -> (SampleData, u8) {
-    let thresh = 0.004_f32;
+    // Trim leading & trailing silence below -48 dBFS.
+    let thresh = 10.0_f32.powf(-48.0 / 20.0);
     let first = sample
         .frames
         .iter()
@@ -460,11 +488,13 @@ fn optimize_sample(sample: &SampleData) -> (SampleData, u8) {
     } else {
         sample.frames.clone()
     };
+    // Peak-normalize to -0.3 dBFS.
     let peak = frames
         .iter()
         .fold(0.0_f32, |m, &[l, r]| m.max(l.abs()).max(r.abs()));
+    let target_peak = 10.0_f32.powf(-0.3 / 20.0);
     if peak > 1e-5 {
-        let gain = 0.98 / peak;
+        let gain = target_peak / peak;
         for [l, r] in &mut frames {
             *l *= gain;
             *r *= gain;
@@ -492,6 +522,34 @@ fn optimize_sample(sample: &SampleData) -> (SampleData, u8) {
         },
         root,
     )
+}
+
+fn create_spectral_sampler(
+    p: &mut Project,
+    source: &DropAudioSource,
+    sample: Arc<SampleData>,
+) -> Result<usize, String> {
+    let p_wav = slice_cache_dir(source.name()).join("spectral.wav");
+    write_sample_wav(&p_wav, &sample)?;
+    let mut sampler = SamplerUse::new(SamplerSource::Audio {
+        path: p_wav,
+        root: 60,
+        looped: true,
+    });
+    // Smooth pad/spectral crossfade envelope.
+    sampler.params[prowave_engine::sampler::dial::ATTACK] = 0.08;
+    sampler.params[prowave_engine::sampler::dial::RELEASE] = 0.45;
+    let mut t = Track::new(
+        format!("{} (Spectral)", source.name()),
+        TrackKind::Instrument,
+    );
+    t.sampler = Some(sampler);
+    t.inserts
+        .push(crate::model::Insert::new(prowave_engine::FxKind::Chorus));
+    let idx = p.tracks.len();
+    p.tracks.push(t);
+    p.selected_track = idx;
+    Ok(idx)
 }
 
 fn create_sampler_zone_per_note(
@@ -691,5 +749,48 @@ mod tests {
             cross_panel_drop_target(egui::pos2(600.0, 300.0), Some(headers), Some(library)),
             None
         );
+    }
+
+    #[test]
+    fn all_five_create_modes_load_non_empty_sampler_zones_and_bump_song_rev() {
+        let mut p = Project::empty();
+        let sr = 44_100u32;
+        let mut frames = vec![[0.0f32, 0.0]; sr as usize];
+        for hit_sec in [0.05_f32, 0.35, 0.7] {
+            let start = (hit_sec * sr as f32) as usize;
+            for j in 0..600 {
+                let env = (1.0 - j as f32 / 600.0) * 0.8;
+                frames[start + j] = [env, env];
+            }
+        }
+        let sample = Arc::new(SampleData {
+            frames,
+            sample_rate: sr,
+        });
+        let source = DropAudioSource::Buffer {
+            name: "KitLoop".into(),
+            sample,
+        };
+
+        for mode in [
+            TrackCreateMode::QuickSamplerOriginal,
+            TrackCreateMode::QuickSamplerOptimized,
+            TrackCreateMode::DrumKitDesigner,
+            TrackCreateMode::SpectralSampler,
+            TrackCreateMode::SamplerZonePerNote,
+        ] {
+            let rev_before = p.song_rev;
+            let idx = apply_create_mode(&mut p, &source, mode).unwrap();
+            assert_ne!(p.song_rev, rev_before);
+            if mode == TrackCreateMode::DrumKitDesigner {
+                assert!(p.tracks[idx].summing_stack);
+                assert!(!p.tracks[idx].regions.is_empty());
+                assert!(!p.tracks[idx].regions[0].notes.is_empty());
+            } else {
+                let sampler = p.tracks[idx].sampler.as_ref().expect("sampler loaded");
+                let zones = crate::sampler_load::build_zones(&sampler.source).unwrap();
+                assert!(!zones.is_empty());
+            }
+        }
     }
 }

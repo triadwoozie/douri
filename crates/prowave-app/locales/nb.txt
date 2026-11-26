@@ -1054,3 +1054,4 @@ Create Track / Drum Kit = Opprett spor / trommesett
 Add to Loops Library = Legg til i loop-biblioteket
 Drop Audio to Create Track / Drum Kit = Slipp lyd for å opprette spor / trommesett
 Drop Region to Save as User Loop = Slipp region for å lagre som bruker-loop
+Spectral Sampler = Spectral Sampler
