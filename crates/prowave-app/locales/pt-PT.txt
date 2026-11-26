@@ -1055,3 +1055,4 @@ Add to Loops Library = Adicionar à biblioteca de loops
 Drop Audio to Create Track / Drum Kit = Largue o áudio para criar faixa / bateria
 Drop Region to Save as User Loop = Largue a região para guardar como loop do utilizador
 Spectral Sampler = Spectral Sampler
+Root Key = Tónica

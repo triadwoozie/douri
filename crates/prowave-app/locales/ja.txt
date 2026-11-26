@@ -1055,3 +1055,4 @@ Add to Loops Library = ループライブラリに追加
 Drop Audio to Create Track / Drum Kit = オーディオをドロップしてトラック / ドラムキットを作成
 Drop Region to Save as User Loop = リージョンをドロップしてユーザーループとして保存
 Spectral Sampler = スペクトラルサンプラー
+Root Key = ルートキー

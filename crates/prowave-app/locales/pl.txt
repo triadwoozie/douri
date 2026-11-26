@@ -1055,3 +1055,4 @@ Add to Loops Library = Dodaj do biblioteki pętli
 Drop Audio to Create Track / Drum Kit = Upuść dźwięk, aby utworzyć ścieżkę / zestaw
 Drop Region to Save as User Loop = Upuść region, aby zapisać jako pętlę użytkownika
 Spectral Sampler = Spectral Sampler
+Root Key = Pryma

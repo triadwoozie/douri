@@ -1055,3 +1055,4 @@ Add to Loops Library = 添加到乐段库
 Drop Audio to Create Track / Drum Kit = 拖放音频以创建轨道 / 鼓组
 Drop Region to Save as User Loop = 拖放片段以保存为用户乐段
 Spectral Sampler = 频谱采样器
+Root Key = 根音

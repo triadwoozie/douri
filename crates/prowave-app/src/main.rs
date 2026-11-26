@@ -3470,6 +3470,7 @@ fn resolve_pending_drops(
             }
         }
     }
+    s.mixer.fx_drag = None;
 }
 
 pub(crate) fn start_or_toggle_playback(p: &mut model::Project, s: &UiState) {

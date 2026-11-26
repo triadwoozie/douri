@@ -1055,3 +1055,4 @@ Add to Loops Library = Aggiungi alla libreria dei loop
 Drop Audio to Create Track / Drum Kit = Rilascia l'audio per creare traccia / Drum Kit
 Drop Region to Save as User Loop = Rilascia la regione per salvarla come loop utente
 Spectral Sampler = Spectral Sampler
+Root Key = Tonica

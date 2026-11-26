@@ -113,6 +113,8 @@ pub struct MixerView {
     /// A hosted plug-in is shown as its Controls (the sliders) and not in its own window:
     /// Logic's View > Controls instead of View > Editor.
     pub plugin_controls: bool,
+    /// Active FX insert drag `(strip_index, slot_index)` for move or Alt-drag duplication.
+    pub fx_drag: Option<(usize, usize)>,
     /// The hosted plug-in whose own window was asked for (see `fx_ui`).
     pub plugin_editor: Option<crate::fx_ui::EditorWindow>,
     /// Bounce project/section dialog triggered from the Stereo Out channel strip.
@@ -148,6 +150,7 @@ impl Default for MixerView {
             picker_search: String::new(),
             plugin_search: String::new(),
             plugin_controls: false,
+            fx_drag: None,
             plugin_editor: None,
             bounce_cmd: false,
         }
@@ -1051,6 +1054,31 @@ fn insert_slot(
             Color32::from_rgb(0xa0, 0xa0, 0xa6),
         );
         let resp = ui.interact(r, uid, Sense::click());
+        if v.fx_drag.is_some() && ui.rect_contains_pointer(r) {
+            let copy = ui.input(|inp| inp.modifiers.alt);
+            if copy {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+            }
+            g.rect_stroke(
+                r,
+                CornerRadius::same(4),
+                Stroke::new(
+                    1.5,
+                    if copy {
+                        Color32::from_rgb(0x51, 0xee, 0xfc)
+                    } else {
+                        Color32::from_rgb(0x12, 0x69, 0xcc)
+                    },
+                ),
+                StrokeKind::Inside,
+            );
+            if ui.input(|inp| inp.pointer.any_released()) {
+                if let Some((src_i, src_k)) = v.fx_drag.take() {
+                    drop_insert(p, v, src_i, src_k, i, k, copy);
+                }
+                return;
+            }
+        }
         let mut act = None;
         crate::plugin_picker::popup(&resp).show(|ui| {
             ui.set_min_width(150.0);
@@ -1149,7 +1177,38 @@ fn insert_slot(
         text_ink,
     );
 
-    let center_resp = ui.interact(center_r, uid.with("center"), Sense::click());
+    let center_resp = ui.interact(center_r, uid.with("center"), Sense::click_and_drag());
+    if center_resp.drag_started() || center_resp.dragged() {
+        v.fx_drag = Some((i, k));
+        if ui.input(|inp| inp.modifiers.alt) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+        }
+    }
+    if v.fx_drag.is_some_and(|src| src != (i, k)) && ui.rect_contains_pointer(r) {
+        let copy = ui.input(|inp| inp.modifiers.alt);
+        if copy {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+        }
+        g.rect_stroke(
+            r,
+            CornerRadius::same(4),
+            Stroke::new(
+                1.5,
+                if copy {
+                    Color32::from_rgb(0x51, 0xee, 0xfc)
+                } else {
+                    Color32::from_rgb(0x12, 0x69, 0xcc)
+                },
+            ),
+            StrokeKind::Inside,
+        );
+        if ui.input(|inp| inp.pointer.any_released()) {
+            if let Some((src_i, src_k)) = v.fx_drag.take() {
+                drop_insert(p, v, src_i, src_k, i, k, copy);
+            }
+            return;
+        }
+    }
     if center_resp.double_clicked() || (center_resp.clicked() && !off) {
         v.fx_window = Some((i, k));
         v.plugin_controls = false;
@@ -1217,6 +1276,86 @@ fn pick_insert(pick: crate::plugin_picker::Pick) -> Insert {
         crate::plugin_picker::Pick::Hosted(info) => {
             Insert::new_hosted(crate::hosted_plugins::add(&info, None))
         }
+    }
+}
+
+/// Moves or Alt-duplicates an FX insert from `(src_strip, src_slot)` to `(dst_strip, dst_slot)`.
+pub fn drop_insert(
+    p: &mut Project,
+    v: &mut MixerView,
+    src_strip: usize,
+    src_slot: usize,
+    dst_strip: usize,
+    dst_slot: usize,
+    copy: bool,
+) {
+    let Some(src_fx) = strip_inserts(p, src_strip).get(src_slot).copied() else {
+        return;
+    };
+    if copy {
+        let dst = if dst_strip == MASTER_STRIP {
+            &mut p.master_inserts
+        } else {
+            let Some(t) = p.tracks.get_mut(dst_strip) else {
+                return;
+            };
+            &mut t.inserts
+        };
+        if dst_slot < dst.len() {
+            dst[dst_slot] = src_fx;
+            v.fx_window = Some((dst_strip, dst_slot));
+        } else if dst.len() < prowave_engine::MAX_INSERTS {
+            dst.push(src_fx);
+            v.fx_window = Some((dst_strip, dst.len() - 1));
+        }
+        p.song_rev = p.song_rev.wrapping_add(1);
+        return;
+    }
+
+    if src_strip == dst_strip {
+        let inserts = if src_strip == MASTER_STRIP {
+            &mut p.master_inserts
+        } else {
+            let Some(t) = p.tracks.get_mut(src_strip) else {
+                return;
+            };
+            &mut t.inserts
+        };
+        if src_slot < inserts.len() && dst_slot < inserts.len() && src_slot != dst_slot {
+            inserts.swap(src_slot, dst_slot);
+            if src_strip != MASTER_STRIP {
+                if let Some(t) = p.tracks.get_mut(src_strip) {
+                    t.auto.insert_swapped(src_slot, dst_slot);
+                }
+            }
+            p.song_rev = p.song_rev.wrapping_add(1);
+        }
+        return;
+    }
+
+    // Cross-strip move: insert into destination, then remove from source.
+    let added = {
+        let dst = if dst_strip == MASTER_STRIP {
+            &mut p.master_inserts
+        } else {
+            let Some(t) = p.tracks.get_mut(dst_strip) else {
+                return;
+            };
+            &mut t.inserts
+        };
+        if dst_slot < dst.len() {
+            dst[dst_slot] = src_fx;
+            true
+        } else if dst.len() < prowave_engine::MAX_INSERTS {
+            dst.push(src_fx);
+            true
+        } else {
+            false
+        }
+    };
+    if added {
+        apply_insert(p, v, src_strip, src_slot, InsertAct::Remove);
+        p.song_rev = p.song_rev.wrapping_add(1);
     }
 }
 
@@ -3374,5 +3513,27 @@ mod tests {
         p.set_solo(1, true);
         assert!(p.tracks[0].solo);
         assert!(p.tracks[1].solo);
+    }
+
+    #[test]
+    fn alt_drag_insert_duplication_preserves_params_and_bypass() {
+        let mut p = Project::empty();
+        p.tracks
+            .push(crate::model::Track::new("Track 2", TrackKind::Audio));
+        let mut ins = Insert::new(prowave_engine::FxKind::PitchCorrection);
+        ins.params[0] = 2.0; // C#
+        ins.params[2] = 35.0; // Response ms
+        ins.bypass = true;
+        p.tracks[0].inserts.push(ins);
+
+        let mut v = MixerView::default();
+        let rev_before = p.song_rev;
+        drop_insert(&mut p, &mut v, 0, 0, 1, 0, true);
+        assert_ne!(p.song_rev, rev_before);
+        // Source insert remains untouched.
+        assert_eq!(p.tracks[0].inserts.len(), 1);
+        assert_eq!(p.tracks[1].inserts.len(), 1);
+        assert_eq!(p.tracks[1].inserts[0], p.tracks[0].inserts[0]);
+        assert!(p.tracks[1].inserts[0].bypass);
     }
 }

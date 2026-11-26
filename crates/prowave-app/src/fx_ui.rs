@@ -76,8 +76,8 @@ fn family(kind: FxKind) -> (Family, &'static str, Color32) {
             (Family::Time, "Time", TIME_BLUE)
         }
         FxKind::Overdrive | FxKind::Amp | FxKind::LemonDist => (Family::Drive, "Drive", DRIVE_RUST),
-        FxKind::Filter | FxKind::FreqShifter | FxKind::AutoPan => {
-            (Family::Filter, "Modulation", FILTER_TEAL)
+        FxKind::Filter | FxKind::FreqShifter | FxKind::AutoPan | FxKind::PitchCorrection => {
+            (Family::Filter, "Pitch / Mod", FILTER_TEAL)
         }
     }
 }
@@ -726,6 +726,7 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         FxKind::LemonDelay => delay_panel(ui, &params, accent),
         FxKind::LemonDist => drive_panel(ui, &params, accent),
         FxKind::AutoPan => phaser_panel(ui, &params, beat, accent),
+        FxKind::PitchCorrection => pitch_correction_panel(ui, &params, accent),
         FxKind::LemonClip
         | FxKind::LemonTransient
         | FxKind::LemonReverb
@@ -815,6 +816,104 @@ fn knob_rack(
             }
         });
         ui.add_space(4.0);
+    } else if insert.kind == FxKind::PitchCorrection && cells >= 6 {
+        let keys = [
+            "Project", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+        ];
+        let scales = [
+            "Project",
+            "Major",
+            "Minor",
+            "Harmonic Minor",
+            "Major Pentatonic",
+            "Minor Pentatonic",
+            "Blues",
+            "Chromatic",
+            "Custom",
+        ];
+        let mut cur_key = (insert.params[0].round() as usize).min(keys.len() - 1);
+        let mut cur_scale = (insert.params[1].round() as usize).min(scales.len() - 1);
+        let mut mask = (insert.params[5].round() as u16) & 0x0fff;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(tr("Root Key")).size(10.5).color(DIM));
+            egui::ComboBox::from_id_salt(("pc_key", slot))
+                .selected_text(keys[cur_key])
+                .show_ui(ui, |ui| {
+                    for (ki, kname) in keys.iter().enumerate() {
+                        if ui.selectable_value(&mut cur_key, ki, *kname).changed() {
+                            edits.push(Edit {
+                                param: 0,
+                                value: ki as f32,
+                                ended: true,
+                            });
+                        }
+                    }
+                });
+            ui.add_space(6.0);
+            ui.label(RichText::new(tr("Scale")).size(10.5).color(DIM));
+            egui::ComboBox::from_id_salt(("pc_scale", slot))
+                .selected_text(scales[cur_scale])
+                .show_ui(ui, |ui| {
+                    for (si, sname) in scales.iter().enumerate() {
+                        if ui.selectable_value(&mut cur_scale, si, *sname).changed() {
+                            edits.push(Edit {
+                                param: 1,
+                                value: si as f32,
+                                ended: true,
+                            });
+                        }
+                    }
+                });
+        });
+        ui.add_space(4.0);
+        // Clickable 12-note pitch-class bypass/enable strip.
+        let pitch_names = [
+            "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
+        ];
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
+            for (ni, pname) in pitch_names.iter().enumerate() {
+                let bit = 1u16 << ni;
+                let active = (mask & bit) != 0;
+                let (pr, presp) = ui.allocate_exact_size(vec2(36.0, 24.0), Sense::click());
+                let fill = if active {
+                    Color32::from_rgb(0x12, 0x69, 0xcc)
+                } else {
+                    Color32::from_rgb(0x28, 0x28, 0x2b)
+                };
+                ui.painter().rect_filled(pr, CornerRadius::same(4), fill);
+                ui.painter().rect_stroke(
+                    pr,
+                    CornerRadius::same(4),
+                    Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3a, 0x40)),
+                    egui::StrokeKind::Inside,
+                );
+                ui.painter().text(
+                    pr.center(),
+                    Align2::CENTER_CENTER,
+                    *pname,
+                    FontId::proportional(10.5),
+                    if active { Color32::WHITE } else { FAINT },
+                );
+                if presp.clicked() {
+                    mask ^= bit;
+                    if mask == 0 {
+                        mask = bit;
+                    }
+                    edits.push(Edit {
+                        param: 5,
+                        value: f32::from(mask),
+                        ended: true,
+                    });
+                    edits.push(Edit {
+                        param: 1,
+                        value: 8.0,
+                        ended: true,
+                    });
+                }
+            }
+        });
+        ui.add_space(6.0);
     } else if matches!(
         insert.kind,
         FxKind::Compressor | FxKind::MultiComp | FxKind::Limiter
@@ -2999,6 +3098,44 @@ fn drive_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accen
             format!("drive {:.0} dB · tone {:.0} Hz", params[0], params[1]),
             FontId::monospace(8.5),
             DIM,
+        );
+    });
+}
+
+/// Pitch Correction: phosphor pitch/cents meter showing retune speed and mix.
+fn pitch_correction_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    accent: Color32,
+) {
+    inset(ui, 92.0, |g, rect| {
+        let scope_rect = Rect::from_min_max(
+            pos2(rect.left() + 12.0, rect.top() + 12.0),
+            pos2(rect.right() - 12.0, rect.bottom() - 24.0),
+        );
+        let speed = (params[2] / 400.0).clamp(0.0, 1.0);
+        let detune = (params[3] / 50.0).clamp(-1.0, 1.0);
+        let samples: Vec<f32> = (0..64)
+            .map(|i| {
+                let t = i as f32 / 63.0;
+                let step = if speed < 0.05 {
+                    detune * 0.15
+                } else {
+                    (t * std::f32::consts::TAU * 2.0).sin() * (0.2 + speed * 0.6)
+                };
+                step.clamp(-1.0, 1.0)
+            })
+            .collect();
+        crate::widgets::daw_phosphor_scope(g, scope_rect, &samples);
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "Response {:.0} ms · Detune {:+.0} ct · Mix {:.0}%",
+                params[2], params[3], params[4]
+            ),
+            FontId::monospace(9.0),
+            accent,
         );
     });
 }

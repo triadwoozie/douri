@@ -59,7 +59,7 @@ pub fn category(kind: FxKind) -> &'static str {
         FxKind::Filter => "Filter",
         FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter | FxKind::AutoPan => "Modulation",
         FxKind::Reverb | FxKind::LemonReverb => "Reverb",
-        FxKind::Plugin => "Specialized",
+        FxKind::Plugin | FxKind::PitchCorrection => "Specialized",
     }
 }
 

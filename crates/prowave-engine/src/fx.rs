@@ -54,6 +54,8 @@ pub enum FxKind {
     FreqShifter,
     /// Auto-Pan from SoundCraft (MIT/Apache-2.0).
     AutoPan,
+    /// Real-time Pitch Correction (PSOLA pitch tracking + scale quantization).
+    PitchCorrection,
 }
 
 /// One parameter of an effect.
@@ -450,6 +452,14 @@ const AUTOPAN_PARAMS: [ParamInfo; 4] = [
     p("Waveform", 0.0, 4.0, 0.0, ""),
     p("Output", -24.0, 12.0, 0.0, "dB"),
 ];
+const PITCH_CORRECTION_PARAMS: [ParamInfo; 6] = [
+    p("Root Key", 0.0, 12.0, 0.0, ""),
+    p("Scale", 0.0, 8.0, 7.0, ""),
+    p("Response", 0.0, 400.0, 20.0, "ms"),
+    p("Detune", -50.0, 50.0, 0.0, "ct"),
+    p("Mix", 0.0, 100.0, 100.0, "%"),
+    p("Notes Mask", 0.0, 4095.0, 4095.0, ""),
+];
 
 /// The amp models, in the order of the "Amp" parameter (Logic's Amp Designer has a list of
 /// amplifier models; these are Pro Wave's own).
@@ -649,7 +659,7 @@ fn limiter_len(sr: f32) -> usize {
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 22] = [
+    pub const ALL: [FxKind; 23] = [
         FxKind::ChannelEq,
         FxKind::Compressor,
         FxKind::MultiComp,
@@ -672,6 +682,7 @@ impl FxKind {
         FxKind::LemonReverb,
         FxKind::FreqShifter,
         FxKind::AutoPan,
+        FxKind::PitchCorrection,
     ];
 
     /// The name the mixer shows in the slot.
@@ -700,6 +711,7 @@ impl FxKind {
             FxKind::LemonReverb => "Lemon Reverb",
             FxKind::FreqShifter => "Frequency Shifter",
             FxKind::AutoPan => "Auto-Pan",
+            FxKind::PitchCorrection => "Pitch Correction",
         }
     }
 
@@ -711,6 +723,9 @@ impl FxKind {
             FxKind::LemonLimiter => {
                 ((0.005 * sample_rate.clamp(8_000.0, 384_000.0)).round() as usize).max(1)
             }
+            FxKind::PitchCorrection => (crate::native_fx::tune::LATENCY_SECONDS
+                * f64::from(sample_rate.clamp(8_000.0, 384_000.0)))
+            .round() as usize,
             FxKind::Amp => AMP_LATENCY,
             FxKind::Plugin => PLUGIN_BLOCK,
             FxKind::Reverb => crate::convolver::BLOCK,
@@ -754,6 +769,7 @@ impl FxKind {
                 FxKind::FreqShifter
             }
             "auto-pan" | "autopan" | "auto pan" => FxKind::AutoPan,
+            "pitch correction" | "tune" | "dori tune" | "auto tune" => FxKind::PitchCorrection,
             _ => return None,
         })
     }
@@ -784,6 +800,7 @@ impl FxKind {
             FxKind::LemonReverb => &LEMON_REVERB_PARAMS,
             FxKind::FreqShifter => &FREQ_SHIFTER_PARAMS,
             FxKind::AutoPan => &AUTOPAN_PARAMS,
+            FxKind::PitchCorrection => &PITCH_CORRECTION_PARAMS,
         }
     }
 
@@ -1593,6 +1610,61 @@ impl LemonTransientState {
     }
 }
 
+struct PitchCorrectionState {
+    node: crate::native_fx::tune::ProWaveTune,
+    sr: u32,
+}
+
+impl Clone for PitchCorrectionState {
+    fn clone(&self) -> Self {
+        Self {
+            node: crate::native_fx::tune::ProWaveTune::new(self.sr, &[]),
+            sr: self.sr,
+        }
+    }
+}
+
+impl std::fmt::Debug for PitchCorrectionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PitchCorrectionState")
+            .field("sr", &self.sr)
+            .finish()
+    }
+}
+
+impl PitchCorrectionState {
+    fn new(sr: f32, pr: &[f32]) -> Self {
+        let mut s = Self {
+            node: crate::native_fx::tune::ProWaveTune::new(sr.round() as u32, &[]),
+            sr: sr.round() as u32,
+        };
+        s.apply_params(pr);
+        s
+    }
+
+    fn apply_params(&mut self, pr: &[f32]) {
+        use crate::native_fx::tune;
+        use crate::native_fx::NativeFx;
+        self.node.set_param(tune::KEY, pr[0].round());
+        self.node.set_param(tune::SCALE, pr[1].round());
+        self.node.set_param(tune::RETUNE, pr[2]);
+        self.node.set_param(tune::FLEX, pr[3].abs());
+        self.node.set_param(tune::MIX, pr[4]);
+        self.node.set_param(tune::NOTES, pr[5].round());
+    }
+
+    #[inline]
+    fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        use crate::plugin_track::BlockProcessor;
+        let il = [l];
+        let ir = [r];
+        let mut ol = [0.0_f32];
+        let mut or = [0.0_f32];
+        self.node.process((&il, &ir), (&mut ol, &mut or));
+        (ol[0], or[0])
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LemonDelayState {
     lines: [Line; 2],
@@ -1769,6 +1841,7 @@ enum State {
     LemonReverb(Box<LemonReverbState>),
     FreqShifter(Box<crate::freq_shifter::FreqShifterNode>),
     AutoPan(Box<crate::auto_pan::AutoPanNode>),
+    PitchCorrection(Box<PitchCorrectionState>),
 }
 
 /// One effect with its state. Make it with [`Fx::new`] off the audio thread.
@@ -1859,6 +1932,9 @@ impl Fx {
                 State::FreqShifter(Box::new(crate::freq_shifter::FreqShifterNode::new(sr)))
             }
             FxKind::AutoPan => State::AutoPan(Box::new(crate::auto_pan::AutoPanNode::new(sr))),
+            FxKind::PitchCorrection => {
+                State::PitchCorrection(Box::new(PitchCorrectionState::new(sr, &params)))
+            }
         };
         let mut fx = Self {
             kind,
@@ -2126,6 +2202,9 @@ impl Fx {
                 for (k, val) in pr[..5].iter().enumerate() {
                     s.node.set_param(k, *val);
                 }
+            }
+            State::PitchCorrection(s) => {
+                s.apply_params(&pr);
             }
             State::Chorus(s) => {
                 s.tone_coeff = 1.0 - (-std::f32::consts::TAU * pr[2] / sr).exp();
@@ -2481,6 +2560,7 @@ impl Fx {
                 s.process_frame(l, r, pr[0], pr[1].round() as usize, pr[2], pr[3])
             }
             State::AutoPan(s) => s.process_frame(l, r, pr[0], pr[1], pr[2].round() as usize, pr[3]),
+            State::PitchCorrection(s) => s.process(l, r),
         };
         // A bad sample (NaN, infinity) never travels on: it becomes silence and the
         // effect's memory is dropped by the caller's next reset.
@@ -3341,5 +3421,21 @@ mod tests {
         let mut none = Pdc::new(0, 0);
         assert_eq!(none.delay_before(0.5, 0.25), (0.5, 0.25));
         assert_eq!(Pdc::new(usize::MAX, 0).lengths().0, 192_000);
+    }
+
+    #[test]
+    fn pitch_correction_processes_without_allocating() {
+        let mut params = FxKind::PitchCorrection.defaults();
+        params[0] = 1.0; // C
+        params[1] = 1.0; // Major
+        params[2] = 10.0; // 10 ms response
+        let mut fx = Fx::new(FxKind::PitchCorrection, params, false, 48_000.0);
+        assert_no_alloc::assert_no_alloc(|| {
+            for i in 0..2048 {
+                let s = (i as f32 * 440.0 * std::f32::consts::TAU / 48_000.0).sin() * 0.5;
+                let (l, r) = fx.process(s, s);
+                assert!(l.is_finite() && r.is_finite());
+            }
+        });
     }
 }

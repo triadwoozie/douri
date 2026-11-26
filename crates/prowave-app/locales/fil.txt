@@ -1055,3 +1055,4 @@ Add to Loops Library = Idagdag sa Loops Library
 Drop Audio to Create Track / Drum Kit = I-drop ang Audio upang Gumawa ng Track / Drum Kit
 Drop Region to Save as User Loop = I-drop ang Rehiyon upang I-save bilang User Loop
 Spectral Sampler = Spectral Sampler
+Root Key = Root Key
