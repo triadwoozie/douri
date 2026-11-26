@@ -387,8 +387,8 @@ fn block(menus: &[Group], roadmap: &[Group]) -> String {
         )
     };
     format!(
-        "{START}\n![Dōri status: menu entries and roadmap items, done and to do]({SVG})\n\n\
-         | | Done | Started | Total | Done % |\n| --- | ---: | ---: | ---: | ---: |\n{}{}{END}",
+        "{START}\n<div align=\"center\">\n\n![Dōri status: menu entries and roadmap items, done and to do]({SVG})\n\n\
+         | | Done | Started | Total | Done % |\n| --- | ---: | ---: | ---: | ---: |\n{}{}\n</div>\n{END}",
         row("Menu entries", menus),
         row("Roadmap items", roadmap),
     )
