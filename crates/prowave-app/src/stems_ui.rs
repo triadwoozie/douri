@@ -64,8 +64,10 @@ pub struct StemSplitterState {
     pub custom_onnx_path: Option<PathBuf>,
     pub discovered_models: Vec<LocalStemModel>,
     pub include_stems: [bool; 4],
+    pub individual_kit_pieces: bool,
     pub debleed_pct: f32,
     pub mute_source_region: bool,
+    pub show_advanced: bool,
     pub job_running: bool,
     pub progress: Arc<Mutex<(f32, String)>>,
     pub result_rx: Option<mpsc::Receiver<Result<StemSplitOutput, String>>>,
@@ -82,8 +84,10 @@ impl Default for StemSplitterState {
             custom_onnx_path: None,
             discovered_models: Vec::new(),
             include_stems: [true, true, true, true],
+            individual_kit_pieces: false,
             debleed_pct: 15.0,
             mute_source_region: true,
+            show_advanced: false,
             job_running: false,
             progress: Arc::new(Mutex::new((0.0, String::new()))),
             result_rx: None,
@@ -185,188 +189,481 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
 
     let mut open = s.stem_splitter.open;
     let target = target_audio_region(project, s);
+    let can_run = target.is_some()
+        && !s.stem_splitter.job_running
+        && (s.stem_splitter.include_stems.iter().any(|&b| b)
+            || s.stem_splitter.individual_kit_pieces);
+    let mut trigger_run = false;
+    let mut dismiss = false;
 
-    egui::Window::new("Local AI Stem Splitter")
+    let frame = egui::Frame::window(&egui::Style::default())
+        .fill(Color32::from_rgb(0x1c, 0x1c, 0x1e))
+        .stroke(Stroke::new(1.0, Color32::from_rgb(0x36, 0x36, 0x3c)))
+        .corner_radius(CornerRadius::same(14))
+        .inner_margin(egui::Margin::same(14));
+
+    egui::Window::new("Stem Splitter")
+        .id(egui::Id::unique("stem_splitter_sheet"))
+        .title_bar(false)
+        .frame(frame)
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .default_width(440.0)
+        .default_width(420.0)
         .show(ctx, |ui| {
-            ui.label(
-                RichText::new("100% Local AI Audio Source Separation")
-                    .strong()
-                    .size(14.0),
-            );
-            ui.add_space(4.0);
+            ui.set_width(392.0);
 
-            if let Some((ti, ri)) = target {
-                let track_name = &project.tracks[ti].name;
-                let reg_name = &project.tracks[ti].regions[ri].name;
-                ui.label(format!("Target Region: {track_name} › {reg_name}"));
-            } else {
-                ui.colored_label(
-                    Color32::from_rgb(0xff, 0x9b, 0x4a),
-                    "No audio region found. Import an audio file first (File > Import > Audio File…).",
+            // Top header bar: circular X | centered "Stem Splitter" | circular blue checkmark
+            ui.horizontal(|ui| {
+                let (x_rect, x_resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
+                ui.painter().circle_filled(
+                    x_rect.center(),
+                    14.0,
+                    if x_resp.hovered() {
+                        Color32::from_rgb(0x38, 0x38, 0x3e)
+                    } else {
+                        Color32::from_rgb(0x2c, 0x2c, 0x30)
+                    },
                 );
-            }
+                ui.painter().text(
+                    x_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    phosphor_egui::regular::X,
+                    egui::FontId::proportional(14.0),
+                    Color32::from_rgb(0xe5, 0xe5, 0xea),
+                );
+                if x_resp.clicked() {
+                    dismiss = true;
+                }
 
-            ui.separator();
-            ui.label(RichText::new("Local AI Model").strong());
-
-            let model_label = if let Some(ref p) = s.stem_splitter.custom_onnx_path {
-                format!(
-                    "Custom ONNX: {}",
-                    p.file_name().and_then(|n| n.to_str()).unwrap_or("model.onnx")
-                )
-            } else if s.stem_splitter.selected_model_idx == 0 {
-                "Built-in Local AI Hybrid (Instant, 100% Offline)".to_string()
-            } else if let Some(m) = s
-                .stem_splitter
-                .discovered_models
-                .get(s.stem_splitter.selected_model_idx - 1)
-            {
-                format!(
-                    "ONNX: {} ({:.1} MB)",
-                    m.name,
-                    m.size_bytes as f64 / 1_048_576.0
-                )
-            } else {
-                "Built-in Local AI Hybrid (Instant, 100% Offline)".to_string()
-            };
-
-            egui::ComboBox::from_id_salt("stem_model_combo")
-                .selected_text(model_label)
-                .width(390.0)
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(
-                            s.stem_splitter.custom_onnx_path.is_none()
-                                && s.stem_splitter.selected_model_idx == 0,
-                            "Built-in Local AI Hybrid (Instant, 100% Offline)",
-                        )
-                        .clicked()
-                    {
-                        s.stem_splitter.selected_model_idx = 0;
-                        s.stem_splitter.custom_onnx_path = None;
-                    }
-                    for (idx, m) in s.stem_splitter.discovered_models.iter().enumerate() {
-                        let label = format!(
-                            "ONNX: {} ({:.1} MB)",
-                            m.name,
-                            m.size_bytes as f64 / 1_048_576.0
+                let title_w = ui.available_width() - 34.0;
+                ui.allocate_ui_with_layout(
+                    vec2(title_w.max(80.0), 28.0),
+                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                    |ui| {
+                        ui.label(
+                            RichText::new("Stem Splitter")
+                                .size(14.0)
+                                .strong()
+                                .color(Color32::from_rgb(0xf2, 0xf2, 0xf7)),
                         );
-                        if ui
-                            .selectable_label(
-                                s.stem_splitter.custom_onnx_path.is_none()
-                                    && s.stem_splitter.selected_model_idx == idx + 1,
-                                label,
-                            )
-                            .clicked()
-                        {
-                            s.stem_splitter.selected_model_idx = idx + 1;
-                            s.stem_splitter.custom_onnx_path = None;
+                    },
+                );
+
+                let (ok_rect, ok_resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
+                let ok_fill = if !can_run {
+                    Color32::from_rgb(0x2c, 0x2c, 0x30)
+                } else if ok_resp.hovered() {
+                    Color32::from_rgb(0x1c, 0x7a, 0xe0)
+                } else {
+                    Color32::from_rgb(0x12, 0x69, 0xcc)
+                };
+                ui.painter().circle_filled(ok_rect.center(), 14.0, ok_fill);
+                ui.painter().text(
+                    ok_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    phosphor_egui::regular::CHECK,
+                    egui::FontId::proportional(14.0),
+                    if can_run {
+                        Color32::WHITE
+                    } else {
+                        Color32::from_rgb(0x70, 0x70, 0x78)
+                    },
+                );
+                if ok_resp.clicked() && can_run {
+                    trigger_run = true;
+                }
+            });
+
+            ui.add_space(10.0);
+
+            // Preset capsule pill
+            let preset_name = match s.stem_splitter.include_stems {
+                [true, true, true, true] => "Separate All Stems",
+                [true, false, false, false] => "Vocals Only",
+                [false, true, true, true] => "Instrumental (No Vocals)",
+                [false, true, true, false] => "Drums + Bass",
+                _ => "Custom Stems",
+            };
+            egui::Frame::new()
+                .fill(Color32::from_rgb(0x24, 0x24, 0x28))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x35, 0x35, 0x3a)))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("Preset")
+                                .size(12.5)
+                                .color(Color32::from_rgb(0xf2, 0xf2, 0xf7)),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            egui::ComboBox::from_id_salt("stem_preset_combo")
+                                .selected_text(preset_name)
+                                .show_ui(ui, |ui| {
+                                    if ui
+                                        .selectable_label(
+                                            s.stem_splitter.include_stems
+                                                == [true, true, true, true],
+                                            "Separate All Stems",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.stem_splitter.include_stems = [true, true, true, true];
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            s.stem_splitter.include_stems
+                                                == [false, true, true, true],
+                                            "Instrumental (No Vocals)",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.stem_splitter.include_stems = [false, true, true, true];
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            s.stem_splitter.include_stems
+                                                == [true, false, false, false],
+                                            "Vocals Only",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.stem_splitter.include_stems = [true, false, false, false];
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            s.stem_splitter.include_stems
+                                                == [false, true, true, false],
+                                            "Drums + Bass",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.stem_splitter.include_stems = [false, true, true, false];
+                                    }
+                                });
+                        });
+                    });
+                });
+
+            ui.add_space(10.0);
+
+            // Unified rounded stem rows card
+            let stem_specs: [(usize, &str, &str, Color32); 4] = [
+                (
+                    0,
+                    "Vocals",
+                    phosphor_egui::regular::MICROPHONE_STAGE,
+                    Color32::from_rgb(0x3f, 0x8a, 0x8c),
+                ),
+                (
+                    1,
+                    "Drums",
+                    phosphor_egui::regular::METRONOME,
+                    Color32::from_rgb(0x43, 0x7c, 0x98),
+                ),
+                (
+                    2,
+                    "Bass",
+                    phosphor_egui::regular::GUITAR,
+                    Color32::from_rgb(0x46, 0x6c, 0x8e),
+                ),
+                (
+                    3,
+                    "Other",
+                    phosphor_egui::regular::WAVEFORM,
+                    Color32::from_rgb(0x48, 0x4d, 0x90),
+                ),
+            ];
+
+            egui::Frame::new()
+                .fill(Color32::from_rgb(0x24, 0x24, 0x28))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x35, 0x35, 0x3a)))
+                .corner_radius(CornerRadius::same(12))
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    for (row_idx, (stem_i, name, icon, badge_col)) in stem_specs.iter().enumerate()
+                    {
+                        ui.horizontal(|ui| {
+                            let (badge_r, _) =
+                                ui.allocate_exact_size(vec2(38.0, 26.0), Sense::hover());
+                            ui.painter()
+                                .rect_filled(badge_r, CornerRadius::same(6), *badge_col);
+                            ui.painter().text(
+                                badge_r.center(),
+                                egui::Align2::CENTER_CENTER,
+                                *icon,
+                                egui::FontId::proportional(15.0),
+                                Color32::WHITE,
+                            );
+
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new(*name)
+                                    .size(13.0)
+                                    .color(Color32::from_rgb(0xf2, 0xf2, 0xf7)),
+                            );
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    // Circular blue checkmark button
+                                    let (chk_r, chk_resp) =
+                                        ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+                                    let on = s.stem_splitter.include_stems[*stem_i];
+                                    if on {
+                                        ui.painter().circle_filled(
+                                            chk_r.center(),
+                                            9.0,
+                                            Color32::from_rgb(0x12, 0x69, 0xcc),
+                                        );
+                                        ui.painter().text(
+                                            chk_r.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            phosphor_egui::regular::CHECK,
+                                            egui::FontId::proportional(11.0),
+                                            Color32::WHITE,
+                                        );
+                                    } else {
+                                        ui.painter().circle_stroke(
+                                            chk_r.center(),
+                                            8.5,
+                                            Stroke::new(1.2, Color32::from_rgb(0x52, 0x52, 0x5a)),
+                                        );
+                                    }
+                                    if chk_resp.clicked() {
+                                        s.stem_splitter.include_stems[*stem_i] = !on;
+                                    }
+
+                                    // Drums row: Individual Kit Pieces pill switch
+                                    if *stem_i == 1 {
+                                        ui.add_space(8.0);
+                                        let (sw_r, sw_resp) = ui
+                                            .allocate_exact_size(vec2(34.0, 18.0), Sense::click());
+                                        let kit_on = s.stem_splitter.individual_kit_pieces;
+                                        ui.painter().rect_filled(
+                                            sw_r,
+                                            CornerRadius::same(9),
+                                            if kit_on {
+                                                Color32::from_rgb(0x12, 0x69, 0xcc)
+                                            } else {
+                                                Color32::from_rgb(0x46, 0x46, 0x4c)
+                                            },
+                                        );
+                                        let knob_x = if kit_on {
+                                            sw_r.right() - 9.0
+                                        } else {
+                                            sw_r.left() + 9.0
+                                        };
+                                        ui.painter().circle_filled(
+                                            pos2(knob_x, sw_r.center().y),
+                                            7.0,
+                                            Color32::WHITE,
+                                        );
+                                        if sw_resp.clicked() {
+                                            s.stem_splitter.individual_kit_pieces = !kit_on;
+                                        }
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            RichText::new("Individual Kit Pieces")
+                                                .size(11.5)
+                                                .color(Color32::from_rgb(0xb8, 0xb8, 0xc0)),
+                                        );
+                                    }
+                                },
+                            );
+                        });
+                        if row_idx < 3 {
+                            ui.add_space(4.0);
+                            let r = ui.available_rect_before_wrap();
+                            ui.painter().line_segment(
+                                [pos2(r.left() + 44.0, r.top()), pos2(r.right(), r.top())],
+                                Stroke::new(1.0, Color32::from_rgb(0x30, 0x30, 0x36)),
+                            );
+                            ui.add_space(4.0);
                         }
                     }
                 });
 
+            ui.add_space(8.0);
+
+            // Target region & collapsible options
             ui.horizontal(|ui| {
-                if ui.button("Load Local .onnx…").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("ONNX Neural Model", &["onnx"])
-                        .pick_file()
-                    {
-                        s.stem_splitter.custom_onnx_path = Some(path);
+                if let Some((ti, ri)) = target {
+                    let track_name = &project.tracks[ti].name;
+                    let reg_name = &project.tracks[ti].regions[ri].name;
+                    ui.label(
+                        RichText::new(format!("Region: {track_name} › {reg_name}"))
+                            .size(11.0)
+                            .color(Color32::from_rgb(0x98, 0x98, 0xa2)),
+                    );
+                } else {
+                    ui.colored_label(
+                        Color32::from_rgb(0xff, 0x9b, 0x4a),
+                        "Select or import an audio region first.",
+                    );
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let label = if s.stem_splitter.show_advanced {
+                        "Hide Options"
+                    } else {
+                        "Options"
+                    };
+                    if ui.small_button(RichText::new(label).size(11.0)).clicked() {
+                        s.stem_splitter.show_advanced = !s.stem_splitter.show_advanced;
                     }
-                }
-                let has_htdemucs = s
-                    .stem_splitter
-                    .discovered_models
-                    .iter()
-                    .any(|m| m.name.to_ascii_lowercase().contains("htdemucs"));
-                if !has_htdemucs
-                    && ui
-                        .add_enabled(
-                            !s.stem_splitter.download_running,
-                            egui::Button::new(if s.stem_splitter.download_running {
-                                "Downloading HTDemucs ONNX…"
-                            } else {
-                                "Download HTDemucs v4 ONNX"
-                            }),
-                        )
-                        .on_hover_text(format!(
-                            "Downloads open-source HTDemucs v4 ONNX to {}",
-                            stems_model_dir().display()
-                        ))
-                        .clicked()
-                {
-                    start_htdemucs_download(ctx, s);
-                }
+                });
             });
 
-            ui.separator();
-            ui.label(RichText::new("Stems to Extract").strong());
-            ui.horizontal(|ui| {
-                for (i, kind) in StemKind::ALL.iter().enumerate() {
-                    ui.checkbox(&mut s.stem_splitter.include_stems[i], kind.name());
-                }
-            });
+            if s.stem_splitter.show_advanced {
+                ui.add_space(6.0);
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(0x24, 0x24, 0x28))
+                    .stroke(Stroke::new(1.0, Color32::from_rgb(0x35, 0x35, 0x3a)))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(egui::Margin::same(10))
+                    .show(ui, |ui| {
+                        let model_label = if let Some(ref p) = s.stem_splitter.custom_onnx_path {
+                            format!(
+                                "Custom: {}",
+                                p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("model.onnx")
+                            )
+                        } else if s.stem_splitter.selected_model_idx == 0 {
+                            "Built-in Hybrid (Offline)".to_string()
+                        } else if let Some(m) = s
+                            .stem_splitter
+                            .discovered_models
+                            .get(s.stem_splitter.selected_model_idx - 1)
+                        {
+                            format!("{} ({:.1} MB)", m.name, m.size_bytes as f64 / 1_048_576.0)
+                        } else {
+                            "Built-in Hybrid (Offline)".to_string()
+                        };
 
-            ui.add_space(4.0);
-            ui.add(
-                egui::Slider::new(&mut s.stem_splitter.debleed_pct, 0.0..=100.0)
-                    .text("De-Bleed / Spill Reducer (%)"),
-            );
-            ui.checkbox(
-                &mut s.stem_splitter.mute_source_region,
-                "Mute original region after splitting",
-            );
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Engine:").size(11.5));
+                            egui::ComboBox::from_id_salt("stem_model_combo")
+                                .selected_text(model_label)
+                                .width(270.0)
+                                .show_ui(ui, |ui| {
+                                    if ui
+                                        .selectable_label(
+                                            s.stem_splitter.custom_onnx_path.is_none()
+                                                && s.stem_splitter.selected_model_idx == 0,
+                                            "Built-in Hybrid (Offline)",
+                                        )
+                                        .clicked()
+                                    {
+                                        s.stem_splitter.selected_model_idx = 0;
+                                        s.stem_splitter.custom_onnx_path = None;
+                                    }
+                                    for (idx, m) in
+                                        s.stem_splitter.discovered_models.iter().enumerate()
+                                    {
+                                        let label = format!(
+                                            "{} ({:.1} MB)",
+                                            m.name,
+                                            m.size_bytes as f64 / 1_048_576.0
+                                        );
+                                        if ui
+                                            .selectable_label(
+                                                s.stem_splitter.custom_onnx_path.is_none()
+                                                    && s.stem_splitter.selected_model_idx
+                                                        == idx + 1,
+                                                label,
+                                            )
+                                            .clicked()
+                                        {
+                                            s.stem_splitter.selected_model_idx = idx + 1;
+                                            s.stem_splitter.custom_onnx_path = None;
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Load .onnx…").clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("ONNX Model", &["onnx"])
+                                    .pick_file()
+                                {
+                                    s.stem_splitter.custom_onnx_path = Some(path);
+                                }
+                            }
+                            let has_htdemucs = s
+                                .stem_splitter
+                                .discovered_models
+                                .iter()
+                                .any(|m| m.name.to_ascii_lowercase().contains("htdemucs"));
+                            if !has_htdemucs
+                                && ui
+                                    .add_enabled(
+                                        !s.stem_splitter.download_running,
+                                        egui::Button::new(if s.stem_splitter.download_running {
+                                            "Downloading HTDemucs…"
+                                        } else {
+                                            "Download HTDemucs"
+                                        })
+                                        .small(),
+                                    )
+                                    .on_hover_text(format!(
+                                        "Downloads HTDemucs ONNX to {}",
+                                        stems_model_dir().display()
+                                    ))
+                                    .clicked()
+                            {
+                                start_htdemucs_download(ctx, s);
+                            }
+                        });
+
+                        ui.add_space(4.0);
+                        ui.add(
+                            egui::Slider::new(&mut s.stem_splitter.debleed_pct, 0.0..=100.0)
+                                .text("De-Bleed (%)"),
+                        );
+                        ui.checkbox(
+                            &mut s.stem_splitter.mute_source_region,
+                            "Mute original region after splitting",
+                        );
+                    });
+            }
 
             if let Some(ref err) = s.stem_splitter.last_error {
+                ui.add_space(4.0);
                 ui.colored_label(Color32::from_rgb(0xff, 0x5c, 0x5c), err);
             }
 
             if s.stem_splitter.job_running {
+                ui.add_space(6.0);
                 let (prog, msg) = s
                     .stem_splitter
                     .progress
                     .lock()
                     .map(|g| g.clone())
-                    .unwrap_or((0.0, "Processing…".to_string()));
+                    .unwrap_or((0.0, "Separating stems…".to_string()));
                 ui.add(egui::ProgressBar::new(prog).text(msg).animate(true));
             }
-
-            ui.separator();
-            ui.horizontal(|ui| {
-                let can_run = target.is_some()
-                    && !s.stem_splitter.job_running
-                    && s.stem_splitter.include_stems.iter().any(|&b| b);
-                if ui
-                    .add_enabled(can_run, egui::Button::new("Split Stems into Tracks"))
-                    .clicked()
-                {
-                    if let Some((ti, ri)) = target {
-                        start_stem_split_job(ctx, project, s, ti, ri);
-                    }
-                }
-                if ui
-                    .add_enabled(
-                        target.is_some() && !s.stem_splitter.job_running,
-                        egui::Button::new("Extract Drum Kit & Groove"),
-                    )
-                    .clicked()
-                {
-                    if let Some((ti, ri)) = target {
-                        let region = project.tracks[ti].regions[ri].clone();
-                        match extract_kit_and_groove_to_project(project, &region) {
-                            Ok(msg) => s.status = Some(msg),
-                            Err(e) => s.stem_splitter.last_error = Some(e),
-                        }
-                    }
-                }
-            });
         });
 
-    s.stem_splitter.open = open;
+    if trigger_run {
+        if let Some((ti, ri)) = target {
+            if s.stem_splitter.include_stems.iter().any(|&b| b) {
+                start_stem_split_job(ctx, project, s, ti, ri);
+            }
+            if s.stem_splitter.individual_kit_pieces {
+                let region = project.tracks[ti].regions[ri].clone();
+                match extract_kit_and_groove_to_project(project, &region) {
+                    Ok(msg) => s.status = Some(msg),
+                    Err(e) => s.stem_splitter.last_error = Some(e),
+                }
+            }
+        }
+    }
+
+    s.stem_splitter.open = open && !dismiss;
 }
 
 fn start_htdemucs_download(ctx: &egui::Context, s: &mut UiState) {
