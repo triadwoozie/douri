@@ -1,5 +1,5 @@
-fc2a7a720eddd9490a891afd71c1f2ecd882b54f6fd2e409bf6d6e200c1d86f6  Dori-Setup-0.1.0-alpha.8-x86_64.exe
-282d208b5430f94b86454792a86825bcbffc5caf88ec4750ac611b25bfa4d417  Dori-0.1.0-alpha.8-win64-portable.zip
-b463d1119529f707624caa562e6468e1b99bba74bde998c10a8ad8fec921ec91  Dori-Setup-0.1.0-alpha.8-x86_64.AppImage
-9a00dde9b31d3d6f009c7b4c4bbe32a4d2b03d2dbdd72708b03ec6419af000fd  Dori-0.1.0-alpha.8-linux-x86_64-portable.tar.gz
-f8c3ffdd24b3c2b57d1879a77a4bb862a14414882c7f1ae57732337eb138d25c  dori-0.1.0-alpha.8-1.x86_64.rpm
+d189d8ef5afc7a7f49b9a6d960b952c193aacf73c60465543c78a42fd483955e  Dori-Setup-0.1.0-alpha.10-x86_64.exe
+8f4d6ebf5b51ebc4bdb4dd1c61725c3f3f1781f3e174495447a72adc2b6c7c8b  Dori-0.1.0-alpha.10-win64-portable.zip
+676f2d52b1aae4aa7847958cde66e1453021b99054b843cf297df8da579363d7  Dori-Setup-0.1.0-alpha.10-x86_64.AppImage
+aea5c3824f7b36da17ed45594e37ed116f6d25771c381a575c3a55a9e4c81b90  Dori-0.1.0-alpha.10-linux-x86_64-portable.tar.gz
+3697c6725ce1fcbcd9069f8036e1391cff2797fda9f528fc611fddfadc700130  dori-0.1.0-alpha.10-1.x86_64.rpm
