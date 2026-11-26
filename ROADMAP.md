@@ -10,7 +10,7 @@
 
 Build a fast, lightweight digital audio workstation in pure Rust—combining a lock-free real-time audio engine, 64-bit summing mixer, comprehensive MIDI/audio editing, native CLAP/VST3 plugin hosting, and a GPU-accelerated Liquid Glass interface without Electron or JUCE bloat.
 
-This document serves as the architectural source of truth for Dōri's shipped capabilities (`v0.1.0-alpha.1`) and upcoming development phases.
+This document serves as the architectural source of truth for Dōri's shipped capabilities (`v0.1.0-alpha.9`) and upcoming development phases.
 
 ---
 
@@ -149,7 +149,7 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 
 ### Phase 1: Stability, Hardware Audio & Core Workflow Polish (`v0.1.x`)
 
-* [ ] **Interactive Audio Device & Buffer Selector:** Live output/input device switching and buffer size configuration in `Project Settings > Audio` with seamless engine stream restart.
+* [x] **Interactive Audio Device & Buffer Selector:** Live output/input device switching and buffer size configuration in `Project Settings > Audio` with seamless engine stream restart.
 * [ ] **Audio & Pattern Split / Join:** Sample-accurate split, join, and trim tools for audio, Pattern, Drummer, and take-folder regions (matching MIDI region parity).
 * [x] **Native PipeWire & JACK Backends:** Direct low-latency PipeWire and JACK audio/MIDI clients on Linux alongside ALSA (`< 8 ms` round-trip target), with PipeWire loader auto-detection and quantum diagnostics.
 * [ ] **Complete Control Bar & Menu Parity:** Wire remaining grayed-out menu entries (`Save as Template`, `Project Alternatives`, `Show Chord / Arrangement Track`, `Pre-Fader Metering`, `Low Latency Mode` toggle) so zero visible controls are inert.
@@ -158,16 +158,16 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 ### Phase 2: Advanced Synthesis, Sampling & Effects (`v0.2.0`)
 
 * [x] **Visual Multisample Zone & Keymap Editor:** Three-tab Transient-Slicing Sampler (`Pads`, `Slices`, `Instrument`), drag-and-drop key/velocity zone mapping, and automatic transient loop slicing.
-* [ ] **Vector & Spectral/Granular Synth Engines:** Multi-oscillator vector synth with X/Y envelope morphing and dual-source granular/additive synth engine.
-* [ ] **Full Channel EQ & Compressor Circuit Models:** 8-band Channel EQ with integrated pre/post FFT curve overlay and selectable VCA/FET/Opto compressor topologies with external sidechain routing.
+* [x] **Vector & Spectral/Granular Synth Engines:** Multi-oscillator vector synth with X/Y envelope morphing and dual-source granular/additive synth engine.
+* [x] **Full Channel EQ & Compressor Circuit Models:** 8-band Channel EQ with integrated pre/post FFT curve overlay and selectable VCA/FET/Opto compressor topologies with external sidechain routing.
 * [ ] **Algorithmic Reverb & Tap Delay Designer:** Multi-model algorithmic reverb (Hall, Room, Plate) and visual multi-tap delay editor.
 * [ ] **Two-Handle Bezier Automation & Output Strip Lanes:** Full Bezier curve handles on automation segments and automation lanes for Stereo Out / Master strips.
 
 ### Phase 3: Live Performance, Smart Controls & Scoring (`v0.3.0`)
 
 * [ ] **Live Loops Performance Grid:** Clip/scene launching matrix with quantized triggers, one-shot/loop modes, performance recording into the linear arranger, and X/Y Remix FX.
-* [ ] **Smart Controls & Macro Mapping:** 8 auto-mapped macro knobs per patch with multi-parameter range scaling and MIDI Learn.
-* [ ] **Chord Track & Arrangement Sections:** Global Chord Track driving Session Players and scale-aware editors, plus Arrangement Track section reordering.
+* [x] **Smart Controls & Macro Mapping:** 8 auto-mapped macro knobs per patch with multi-parameter range scaling and MIDI Learn.
+* [x] **Chord Track & Arrangement Sections:** Global Chord Track driving Session Players and scale-aware editors, plus Arrangement Track section reordering.
 * [ ] **Score Engraving & Video Track:** Beamed notation, multi-voice staves, tablature, and floating Video Track with SMPTE sync and audio-to-movie export.
 
 ### Phase 4: WebAssembly, ML Assisted Tools & Spatial Audio (`v0.4.0+`)
