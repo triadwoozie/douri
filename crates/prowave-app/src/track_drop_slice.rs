@@ -55,18 +55,23 @@ pub enum DropAudioSource {
         start_frame: u64,
         len_frames: Option<u64>,
     },
+    Buffer {
+        name: String,
+        sample: Arc<SampleData>,
+    },
 }
 
 impl DropAudioSource {
     pub fn name(&self) -> &str {
         match self {
-            Self::File { name, .. } | Self::Region { name, .. } => name,
+            Self::File { name, .. } | Self::Region { name, .. } | Self::Buffer { name, .. } => name,
         }
     }
 
-    pub fn path(&self) -> &PathBuf {
+    pub fn path(&self) -> Option<&PathBuf> {
         match self {
-            Self::File { path, .. } | Self::Region { path, .. } => path,
+            Self::File { path, .. } | Self::Region { path, .. } => Some(path),
+            Self::Buffer { .. } => None,
         }
     }
 }
@@ -231,10 +236,17 @@ pub fn apply_create_mode(
 }
 
 fn load_sample_from_source(source: &DropAudioSource) -> Result<Arc<SampleData>, String> {
-    let raw = prowave_engine::sample_file::read_sample(source.path())
-        .map_err(|e| format!("Failed to read {}: {e}", source.path().display()))?;
+    if let DropAudioSource::Buffer { sample, .. } = source {
+        return Ok(Arc::clone(sample));
+    }
+    let Some(path) = source.path() else {
+        return Err("Missing audio path".into());
+    };
+    let raw = prowave_engine::sample_file::read_sample(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     match source {
         DropAudioSource::File { .. } => Ok(Arc::new(raw)),
+        DropAudioSource::Buffer { sample, .. } => Ok(Arc::clone(sample)),
         DropAudioSource::Region {
             start_frame,
             len_frames,
@@ -254,6 +266,104 @@ fn load_sample_from_source(source: &DropAudioSource) -> Result<Arc<SampleData>, 
                 sample_rate: raw.sample_rate,
             }))
         }
+    }
+}
+
+/// Synthesizes an in-memory stereo buffer from a Drummer or MIDI region so it can be
+/// sliced cleanly by `Drum Kit Designer`, `Quick Sampler`, or `Sampler (Zone Per Note)`.
+pub fn render_midi_region_to_sample(
+    p: &Project,
+    track_idx: usize,
+    region_idx: usize,
+) -> SampleData {
+    let sr = 44_100u32;
+    let bar_len = p.bar_len(0).max(1.0);
+    let region = p
+        .tracks
+        .get(track_idx)
+        .and_then(|t| t.regions.get(region_idx));
+    let len_beats = region.map_or(4.0, |r| (f64::from(r.len_bars) * bar_len).max(1.0));
+    let bpm = f64::from(p.tempo_at(0.0).max(20.0));
+    let sec_per_beat = 60.0 / bpm;
+    let total_frames = ((len_beats * sec_per_beat * f64::from(sr)) as usize)
+        .clamp(sr as usize / 2, sr as usize * 30);
+    let mut frames = vec![[0.0_f32, 0.0_f32]; total_frames];
+
+    let mut events: Vec<(f64, u8, u8)> = region
+        .map(|r| {
+            r.notes
+                .iter()
+                .map(|n| (f64::from(n.start), n.pitch, n.vel.max(40)))
+                .collect()
+        })
+        .unwrap_or_default();
+    if events.is_empty() {
+        // Fallback 4/4 groove hits for generated Drummer regions without cached notes.
+        let beats = len_beats.ceil() as usize;
+        for b in 0..beats {
+            let pitch = if b % 2 == 0 { 36 } else { 38 };
+            events.push((b as f64, pitch, 110));
+            events.push((b as f64 + 0.5, 42, 85));
+        }
+    }
+
+    for (beat, pitch, vel) in events {
+        let start_f = (beat * sec_per_beat * f64::from(sr)) as usize;
+        if start_f >= total_frames {
+            continue;
+        }
+        let amp = f32::from(vel) / 127.0 * 0.85;
+        let hit_len = (sr as usize / 6).min(total_frames - start_f);
+        let base_hz = 440.0 * 2.0_f32.powf((f32::from(pitch) - 69.0) / 12.0);
+        for j in 0..hit_len {
+            let t = j as f32 / sr as f32;
+            let env = (-t * 18.0).exp() * amp;
+            let sig = if pitch <= 37 {
+                // Kick-like pitch drop
+                let f = 140.0 * (-t * 24.0).exp() + 48.0;
+                (t * std::f32::consts::TAU * f).sin()
+            } else if pitch <= 41 {
+                // Snare-like body + transient
+                let body = (t * std::f32::consts::TAU * 190.0).sin() * 0.6;
+                let snap = ((j as f32 * 0.618_033_98).fract() * 2.0 - 1.0) * 0.4;
+                body + snap
+            } else {
+                (t * std::f32::consts::TAU * base_hz.clamp(80.0, 2400.0)).sin()
+            };
+            let s = sig * env;
+            frames[start_f + j][0] = (frames[start_f + j][0] + s).clamp(-1.0, 1.0);
+            frames[start_f + j][1] = (frames[start_f + j][1] + s).clamp(-1.0, 1.0);
+        }
+    }
+    SampleData {
+        frames,
+        sample_rate: sr,
+    }
+}
+
+/// Builds a `DropAudioSource` from any Audio, Drummer, or MIDI region in `p`.
+pub fn source_from_region(
+    p: &Project,
+    track_idx: usize,
+    region_idx: usize,
+) -> Option<DropAudioSource> {
+    let track = p.tracks.get(track_idx)?;
+    let reg = track.regions.get(region_idx)?;
+    let name = if reg.name.is_empty() {
+        track.name.clone()
+    } else {
+        reg.name.clone()
+    };
+    if let Some(audio) = reg.audio.as_ref() {
+        Some(DropAudioSource::Region {
+            name,
+            path: audio.file.path.clone(),
+            start_frame: audio.start_frame,
+            len_frames: audio.len_frames,
+        })
+    } else {
+        let sample = Arc::new(render_midi_region_to_sample(p, track_idx, region_idx));
+        Some(DropAudioSource::Buffer { name, sample })
     }
 }
 
@@ -295,7 +405,7 @@ fn create_quick_sampler_original(
 ) -> Result<usize, String> {
     let audio_path = match source {
         DropAudioSource::File { path, .. } => path.clone(),
-        DropAudioSource::Region { .. } => {
+        DropAudioSource::Region { .. } | DropAudioSource::Buffer { .. } => {
             let p_wav = slice_cache_dir(source.name()).join("original.wav");
             write_sample_wav(&p_wav, &sample)?;
             p_wav

@@ -618,7 +618,7 @@ fn list_row(
     chevron: bool,
     badge: Option<SoundBadge>,
 ) -> egui::Response {
-    let resp = ui.interact(r, id(key), Sense::click());
+    let resp = ui.interact(r, id(key), Sense::click_and_drag());
     if selected {
         g.rect_filled(r, 4.0, SEL_BG);
     } else if resp.hovered() {
@@ -676,6 +676,24 @@ fn column(
     chevrons: bool,
     badges: Option<&[SoundBadge]>,
 ) -> Option<usize> {
+    column_with_drag(
+        ui, g, rect, which, scroll, items, selected, chevrons, badges, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn column_with_drag(
+    ui: &Ui,
+    g: &Painter,
+    rect: Rect,
+    which: u8,
+    scroll: &mut f32,
+    items: &[String],
+    selected: Option<usize>,
+    chevrons: bool,
+    badges: Option<&[SoundBadge]>,
+    mut dragged_out: Option<&mut Option<usize>>,
+) -> Option<usize> {
     if ui
         .input(|i| i.pointer.hover_pos())
         .is_some_and(|pt| rect.contains(pt))
@@ -694,7 +712,7 @@ fn column(
         let r = Rect::from_min_size(pos2(rect.left() + 4.0, y), vec2(rect.width() - 8.0, ROW_H))
             .intersect(rect);
         let badge = badges.and_then(|b| b.get(i).copied());
-        if list_row(
+        let resp = list_row(
             ui,
             &gc,
             r,
@@ -703,10 +721,14 @@ fn column(
             selected == Some(i),
             chevrons,
             badge,
-        )
-        .clicked()
-        {
+        );
+        if resp.clicked() {
             clicked = Some(i);
+        }
+        if resp.drag_started() || resp.dragged() {
+            if let Some(slot) = dragged_out.as_deref_mut() {
+                *slot = Some(i);
+            }
         }
     }
     clicked
@@ -812,8 +834,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 })
             })
         });
-    let mut dropped_loop_region: Option<(usize, usize)> = None;
-    if let (Some(pos), Some(payload)) = (ptr_pos, drag_payload) {
+    if let (Some(pos), Some(_payload)) = (ptr_pos, drag_payload) {
         if panel.contains(pos) {
             g.rect_filled(
                 panel,
@@ -833,28 +854,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 FontId::proportional(11.0),
                 Color32::WHITE,
             );
-            if ui.input(|i| i.pointer.any_released()) {
-                dropped_loop_region = Some((payload.track_index, payload.region_index));
-            }
         }
-    }
-    if let Some((gt, gr)) = dropped_loop_region {
-        let restores: Vec<(usize, usize, f32)> = s
-            .tracks
-            .group_drag
-            .iter()
-            .map(|&(t_i, r_i, s0)| (t_i, r_i, crate::region_edit::landing_bar(p, s0, 0.0)))
-            .collect();
-        for (t_i, r_i, bar) in restores {
-            if let Some(reg) = p.tracks[t_i].regions.get_mut(r_i) {
-                reg.start_bar = bar;
-            }
-        }
-        s.tracks.group_drag.clear();
-        s.tracks.drag_by = (0.0, 0);
-        s.dragged_region = None;
-        egui::DragAndDrop::clear_payload(ui.ctx());
-        s.add_loop_modal.open_from_region(p, gt, gr);
     }
 
     let v = &mut s.library;
@@ -1352,6 +1352,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }
             let sel_patch = v.loaded.filter(|(c, _)| *c == sel_cat).map(|(_, pi)| pi);
 
+            let mut dragged_patch: Option<usize> = None;
             if patch_items.is_empty() {
                 g.text(
                     right_rect.center(),
@@ -1360,7 +1361,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     FontId::proportional(11.5),
                     TEXT_DIM,
                 );
-            } else if let Some(pi) = column(
+            } else if let Some(pi) = column_with_drag(
                 ui,
                 &g,
                 right_rect,
@@ -1370,6 +1371,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 sel_patch,
                 false,
                 Some(&patch_badges),
+                Some(&mut dragged_patch),
             ) {
                 if let Some((_, old_pitch)) = v.audition_off_at.take() {
                     s.audition
@@ -1401,6 +1403,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         pitch,
                     ));
                     ui.ctx().request_repaint();
+                }
+            }
+            if let Some(di) = dragged_patch {
+                if di >= base_count {
+                    if let Some(ul) = user_loops_snapshot.get(di - base_count) {
+                        s.dragged_user_loop = Some(ul.clone());
+                        egui::DragAndDrop::set_payload(ui.ctx(), ul.clone());
+                    }
                 }
             }
         }

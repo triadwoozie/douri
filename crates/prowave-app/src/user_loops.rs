@@ -210,6 +210,16 @@ pub fn load_all_user_loops() -> Vec<UserLoopEntry> {
 }
 
 pub fn instantiate_user_loop(p: &mut Project, entry: &UserLoopEntry) -> Result<usize, String> {
+    instantiate_user_loop_at_beat(p, entry, 0.0)
+}
+
+pub fn instantiate_user_loop_at_beat(
+    p: &mut Project,
+    entry: &UserLoopEntry,
+    start_beat: f64,
+) -> Result<usize, String> {
+    let bar_len = p.bar_len(0).max(1.0) as f32;
+    let start_bar = 1.0 + (start_beat.max(0.0) as f32) / bar_len;
     if let Some(audio_path) = &entry.source_audio {
         if audio_path.exists() {
             let sample =
@@ -220,7 +230,11 @@ pub fn instantiate_user_loop(p: &mut Project, entry: &UserLoopEntry) -> Result<u
             };
             let slice_ref =
                 (!entry.slice_frames.is_empty()).then_some(entry.slice_frames.as_slice());
-            return slice_sample_to_drum_kit_stack(p, &src, Arc::new(sample), slice_ref);
+            let idx = slice_sample_to_drum_kit_stack(p, &src, Arc::new(sample), slice_ref)?;
+            if let Some(reg) = p.tracks[idx].regions.last_mut() {
+                reg.start_bar = start_bar;
+            }
+            return Ok(idx);
         }
     }
     let notes: Vec<Note> = entry
@@ -236,9 +250,8 @@ pub fn instantiate_user_loop(p: &mut Project, entry: &UserLoopEntry) -> Result<u
         })
         .collect();
     let mut t = crate::model::Track::new(entry.name.clone(), crate::model::TrackKind::Instrument);
-    let bar_len = p.bar_len(0).max(1.0) as f32;
     let len_bars = (entry.length_beats.max(1.0) / bar_len).max(1.0 / 64.0);
-    let mut reg = Region::new_midi(&entry.name, 1.0, len_bars);
+    let mut reg = Region::new_midi(&entry.name, start_bar, len_bars);
     reg.notes = notes;
     t.regions.push(reg);
     let idx = p.tracks.len();

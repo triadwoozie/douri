@@ -394,10 +394,16 @@ pub struct UiState {
     pub user_loops: user_loops::UserLoopsCatalog,
     /// Last rendered Track Header gutter rect for drop detection.
     pub tracks_headers_rect: Option<egui::Rect>,
+    /// Last rendered Tracks Area timeline rect for User Loop drop detection.
+    pub tracks_timeline_rect: Option<egui::Rect>,
+    /// Beat position under the pointer in the Tracks Area timeline.
+    pub tracks_drop_beat: Option<f64>,
     /// Last rendered Sound Library / Loops panel rect for drop detection.
     pub library_panel_rect: Option<egui::Rect>,
     /// Active cross-panel region drag payload mirrored alongside egui DragAndDrop.
     pub dragged_region: Option<track_drop_slice::DraggedRegionPayload>,
+    /// Active User Loop drag payload when dragging a saved User Loop from the Library.
+    pub dragged_user_loop: Option<user_loops::UserLoopEntry>,
     /// Measured round-trip loopback latency calibration figure.
     pub measured_roundtrip: Option<prowave_engine::calibration::Measured>,
     /// URL to open in external browser.
@@ -478,8 +484,11 @@ impl UiState {
             add_loop_modal: user_loops::AddLoopModal::default(),
             user_loops: user_loops::UserLoopsCatalog::default(),
             tracks_headers_rect: None,
+            tracks_timeline_rect: None,
+            tracks_drop_beat: None,
             library_panel_rect: None,
             dragged_region: None,
+            dragged_user_loop: None,
             piano: piano_roll::PianoView::default(),
             steps: step_editor::StepView::default(),
             show_midi_fx: false,
@@ -2001,40 +2010,34 @@ impl eframe::App for App {
                 ui.set_min_width(420.0);
                 tracks_area::show(ui, p, s, &meters);
             });
-        // Floating top-layer drag badge for cross-panel region drags (never clipped by ScrollArea).
+        // Floating top-layer drag badge for cross-panel region / User Loop drags.
         let active_drag = s.dragged_region.clone().or_else(|| {
             egui::DragAndDrop::payload::<track_drop_slice::DraggedRegionPayload>(&ctx)
                 .map(|a| (*a).clone())
         });
-        if let Some(payload) = active_drag {
-            let ptr = ctx.input(|i| i.pointer.latest_pos().or(i.pointer.interact_pos()));
-            let target = ptr.and_then(|pos| {
-                track_drop_slice::cross_panel_drop_target(
+        let ptr = ctx.input(|i| i.pointer.latest_pos().or(i.pointer.interact_pos()));
+        if let Some(payload) = active_drag.as_ref() {
+            if let Some(pos) = ptr {
+                let target = track_drop_slice::cross_panel_drop_target(
                     pos,
                     s.tracks_headers_rect,
                     s.library_panel_rect,
-                )
-            });
-            if ctx.input(|i| i.pointer.any_released()) && target.is_none() {
-                s.dragged_region = None;
-                egui::DragAndDrop::clear_payload(&ctx);
-            } else if let Some(pos) = ptr {
+                );
                 let hint = match target {
-                    Some(track_drop_slice::CrossPanelDropTarget::TrackHeaders)
-                        if !payload.is_midi =>
-                    {
+                    Some(track_drop_slice::CrossPanelDropTarget::TrackHeaders) => {
                         Some(i18n::tr("Create Track / Drum Kit"))
                     }
                     Some(track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {
                         Some(i18n::tr("Add to Loops Library"))
                     }
-                    _ => None,
+                    None => None,
                 };
                 egui::Area::new(egui::Id::unique("region_drag_badge"))
                     .order(egui::Order::Tooltip)
                     .interactable(false)
                     .fixed_pos(pos + egui::vec2(12.0, 12.0))
                     .show(&ctx, |ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         egui::Frame::new()
                             .fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e))
                             .stroke(egui::Stroke::new(
@@ -2047,24 +2050,69 @@ impl eframe::App for App {
                                 },
                             ))
                             .corner_radius(6)
-                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .inner_margin(egui::Margin::symmetric(8, 4))
                             .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(&payload.region_name)
-                                        .size(11.5)
-                                        .strong()
-                                        .color(egui::Color32::WHITE),
-                                );
-                                if let Some(h) = hint {
-                                    ui.label(
-                                        egui::RichText::new(h)
-                                            .size(10.5)
-                                            .color(egui::Color32::from_rgb(0x51, 0xee, 0xfc)),
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&payload.region_name)
+                                                .size(11.5)
+                                                .strong()
+                                                .color(egui::Color32::WHITE),
+                                        )
+                                        .extend(),
                                     );
-                                }
+                                    if let Some(h) = hint {
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(format!("| {h}"))
+                                                    .size(11.0)
+                                                    .color(egui::Color32::from_rgb(
+                                                        0x51, 0xee, 0xfc,
+                                                    )),
+                                            )
+                                            .extend(),
+                                        );
+                                    }
+                                });
                             });
                     });
             }
+        } else if let Some(ul) = s.dragged_user_loop.as_ref() {
+            if let Some(pos) = ptr {
+                egui::Area::new(egui::Id::unique("user_loop_drag_badge"))
+                    .order(egui::Order::Tooltip)
+                    .interactable(false)
+                    .fixed_pos(pos + egui::vec2(12.0, 12.0))
+                    .show(&ctx, |ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgb(0x1c, 0x1c, 0x1e))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgb(0x51, 0xee, 0xfc),
+                            ))
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&ul.name)
+                                                .size(11.5)
+                                                .strong()
+                                                .color(egui::Color32::WHITE),
+                                        )
+                                        .extend(),
+                                    );
+                                });
+                            });
+                    });
+            }
+        }
+        // Single end-of-frame drop evaluator after all panels have recorded their outer rects.
+        if ctx.input(|i| i.pointer.any_released()) {
+            resolve_pending_drops(&ctx, p, s, ptr);
         }
         fx_ui::show(&ctx, p, s, &meters);
         plugin_manager::show(&ctx, p, s);
@@ -3370,6 +3418,60 @@ fn main() -> eframe::Result {
     result
 }
 
+fn resolve_pending_drops(
+    ctx: &egui::Context,
+    p: &mut model::Project,
+    s: &mut UiState,
+    release_pos: Option<egui::Pos2>,
+) {
+    if let Some(payload) = s.dragged_region.take() {
+        egui::DragAndDrop::clear_payload(ctx);
+        // Revert temporary timeline position back to pre-drag start_beat.
+        let orig_bar = region_edit::landing_bar(p, payload.original_start_beats, 0.0);
+        if let Some(reg) = p
+            .tracks
+            .get_mut(payload.track_index)
+            .and_then(|t| t.regions.get_mut(payload.region_index))
+        {
+            reg.start_bar = orig_bar;
+        }
+        s.tracks.group_drag.clear();
+        s.tracks.drag_by = (0.0, 0);
+
+        if let Some(pos) = release_pos {
+            match track_drop_slice::cross_panel_drop_target(
+                pos,
+                s.tracks_headers_rect,
+                s.library_panel_rect,
+            ) {
+                Some(track_drop_slice::CrossPanelDropTarget::TrackHeaders) => {
+                    if let Some(src) = track_drop_slice::source_from_region(
+                        p,
+                        payload.track_index,
+                        payload.region_index,
+                    ) {
+                        s.track_drop_slice.open(src);
+                    }
+                }
+                Some(track_drop_slice::CrossPanelDropTarget::SoundLibrary) => {
+                    s.add_loop_modal
+                        .open_from_region(p, payload.track_index, payload.region_index);
+                }
+                None => {}
+            }
+        }
+    }
+    if let Some(ul) = s.dragged_user_loop.take() {
+        egui::DragAndDrop::clear_payload(ctx);
+        if let Some(pos) = release_pos {
+            if s.tracks_timeline_rect.is_some_and(|r| r.contains(pos)) {
+                let beat = s.tracks_drop_beat.unwrap_or(0.0);
+                let _ = user_loops::instantiate_user_loop_at_beat(p, &ul, beat);
+            }
+        }
+    }
+}
+
 pub(crate) fn start_or_toggle_playback(p: &mut model::Project, s: &UiState) {
     let marquee_start = s
         .tracks
@@ -3469,5 +3571,96 @@ mod tests {
         super::toggle_playback_with_options(&mut p, None, false, None, false);
         assert!(p.playing);
         assert!((p.position_beats - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn releasing_pending_region_drag_in_headers_opens_create_track_modal_and_reverts_source() {
+        let mut p = super::model::Project::empty();
+        p.tracks[0]
+            .regions
+            .push(super::model::Region::new_midi("Drummer Groove", 1.0, 2.0));
+        let mut s = super::UiState::new();
+        s.tracks_headers_rect = Some(egui::Rect::from_min_max(
+            egui::pos2(0.0, 80.0),
+            egui::pos2(240.0, 800.0),
+        ));
+        s.library_panel_rect = Some(egui::Rect::from_min_max(
+            egui::pos2(1100.0, 80.0),
+            egui::pos2(1440.0, 800.0),
+        ));
+        // Simulate temporary timeline move during drag, then release over Track Headers.
+        p.tracks[0].regions[0].start_bar = 5.0;
+        s.dragged_region = Some(super::track_drop_slice::DraggedRegionPayload {
+            track_index: 0,
+            region_index: 0,
+            region_name: "Drummer Groove".into(),
+            is_midi: true,
+            original_start_beats: 0.0,
+        });
+        let ctx = egui::Context::default();
+        super::resolve_pending_drops(&ctx, &mut p, &mut s, Some(egui::pos2(120.0, 300.0)));
+        assert!(s.track_drop_slice.pending.is_some());
+        assert!((p.tracks[0].regions[0].start_bar - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn releasing_pending_region_drag_in_library_opens_add_loop_modal() {
+        let mut p = super::model::Project::empty();
+        p.tracks[0]
+            .regions
+            .push(super::model::Region::new_midi("Beat Loop", 1.0, 2.0));
+        let mut s = super::UiState::new();
+        s.library_panel_rect = Some(egui::Rect::from_min_max(
+            egui::pos2(1100.0, 80.0),
+            egui::pos2(1440.0, 800.0),
+        ));
+        s.dragged_region = Some(super::track_drop_slice::DraggedRegionPayload {
+            track_index: 0,
+            region_index: 0,
+            region_name: "Beat Loop".into(),
+            is_midi: true,
+            original_start_beats: 0.0,
+        });
+        let ctx = egui::Context::default();
+        super::resolve_pending_drops(&ctx, &mut p, &mut s, Some(egui::pos2(1250.0, 300.0)));
+        assert!(s.add_loop_modal.open);
+        assert_eq!(s.add_loop_modal.name, "Beat Loop");
+    }
+
+    #[test]
+    fn dropping_saved_user_loop_onto_timeline_spawns_track_and_midi_region() {
+        let mut p = super::model::Project::empty();
+        let mut s = super::UiState::new();
+        s.tracks_timeline_rect = Some(egui::Rect::from_min_max(
+            egui::pos2(240.0, 80.0),
+            egui::pos2(1100.0, 800.0),
+        ));
+        s.tracks_drop_beat = Some(8.0);
+        s.dragged_user_loop = Some(super::user_loops::UserLoopEntry {
+            id: "loop-user-kit".into(),
+            name: "User Kit".into(),
+            loop_type: super::user_loops::LoopKind::Loop,
+            scale: super::user_loops::ScaleKind::Any,
+            genre: "Electronic".into(),
+            key: "C".into(),
+            tempo: 120.0,
+            descriptors: vec!["All Drums".into()],
+            characters: vec!["Dry".into()],
+            length_beats: 4.0,
+            notes: vec![super::user_loops::SavedNote {
+                start: 0.0,
+                len: 0.5,
+                pitch: 36,
+                velocity: 100,
+            }],
+            source_audio: None,
+            slice_frames: Vec::new(),
+        });
+        let ctx = egui::Context::default();
+        super::resolve_pending_drops(&ctx, &mut p, &mut s, Some(egui::pos2(500.0, 300.0)));
+        let added = p.tracks.last().unwrap();
+        assert_eq!(added.name, "User Kit");
+        assert_eq!(added.regions.len(), 1);
+        assert!((added.regions[0].start_bar - 3.0).abs() < 1e-4);
     }
 }
