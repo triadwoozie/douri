@@ -259,6 +259,22 @@ fn render_window_chrome(ui: &mut Ui, s: &mut UiState) {
 
         ui.add_space(16.0);
         ui.checkbox(&mut s.collaborate_enabled, tr("Enable Collaborate"));
+        ui.add_space(8.0);
+        let ab_btn = ui.add(
+            egui::Button::new(RichText::new("A/B Diff").size(11.0).color(Color32::WHITE))
+                .fill(if s.git_ab_audition {
+                    Color32::from_rgb(0x2e, 0xa0, 0x43)
+                } else {
+                    Color32::from_rgb(0x28, 0x2a, 0x32)
+                })
+                .corner_radius(CornerRadius::same(4)),
+        );
+        if ab_btn
+            .on_hover_text("Audible git diff A/B Switcher")
+            .clicked()
+        {
+            s.git_ab_audition = !s.git_ab_audition;
+        }
 
         // Draggable window header region
         let drag_w = (ui.available_width() - 32.0).max(40.0);

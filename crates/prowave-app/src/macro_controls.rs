@@ -1096,6 +1096,22 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, floating: bool) {
     if util_btn.clicked() {
         s.macro_controls.show_utility = !s.macro_controls.show_utility;
     }
+    right_ui.add_space(4.0);
+    let mod_btn = right_ui.add(
+        egui::Button::new(RichText::new(tr("Modulation")).size(11.0).color(TEXT))
+            .fill(if s.modulation_drawer.open {
+                PILL_ACTIVE
+            } else {
+                PILL_INACTIVE
+            })
+            .corner_radius(CornerRadius::same(4)),
+    );
+    if mod_btn
+        .on_hover_text("Toggle Modulation Matrix & LFO/Env Drawer")
+        .clicked()
+    {
+        s.modulation_drawer.open = !s.modulation_drawer.open;
+    }
 
     // Main body below the 30px top bar
     let mut body = Rect::from_min_max(pos2(area.left(), bar.bottom()), area.max);

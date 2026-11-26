@@ -2018,6 +2018,15 @@ impl eframe::App for App {
                 s.show_bass808 = Some(i);
             }
         }
+        let sel_track = p.selected_track;
+        let mut mod_drawer = std::mem::take(&mut s.modulation_drawer);
+        let track_name = p
+            .tracks
+            .get(sel_track)
+            .map(|t| t.name.as_str())
+            .unwrap_or("Track");
+        modulation_drawer::show_drawer(ui, &mut mod_drawer, track_name);
+        s.modulation_drawer = mod_drawer;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::CANVAS_BG).corner_radius(0.0))
             .show(ui, |ui| {
@@ -2158,14 +2167,6 @@ impl eframe::App for App {
         let mut diag_win = std::mem::take(&mut s.diagnostics_window);
         diagnostics::show_diagnostics_window(&ctx, &mut diag_win, p, sel_track);
         s.diagnostics_window = diag_win;
-        let mut mod_drawer = std::mem::take(&mut s.modulation_drawer);
-        let track_name = p
-            .tracks
-            .get(sel_track)
-            .map(|t| t.name.as_str())
-            .unwrap_or("Track");
-        modulation_drawer::show_drawer(ui, &mut mod_drawer, track_name);
-        s.modulation_drawer = mod_drawer;
 
         quick_help::show_overlay(&ctx, &mut self.ui);
         quick_help::show_reference_window(&ctx, &mut self.ui);
