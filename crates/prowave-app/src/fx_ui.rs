@@ -671,27 +671,23 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
             eq_curve(ui, insert.kind, &params, accent)
         }
         FxKind::Compressor => compressor_panel(ui, &params, reduction, accent),
-        FxKind::Gate | FxKind::Limiter => {
-            transfer_curve(ui, insert.kind, &params, reduction, accent)
-        }
+        FxKind::Gate => gate_panel(ui, &params, reduction, accent),
+        FxKind::Limiter => transfer_curve(ui, insert.kind, &params, reduction, accent),
         FxKind::MultiComp => multicomp(ui, &params, reduction, accent),
-        FxKind::Delay => delay_panel(ui, &params, accent),
+        FxKind::Delay => tape_delay_panel(ui, &params, beat, accent),
         FxKind::Chorus => chorus_panel(ui, &params, accent),
         FxKind::Phaser => phaser_panel(ui, &params, beat, accent),
         FxKind::Overdrive => drive_panel(ui, &params, accent),
         FxKind::Filter => filter_panel(ui, &params, accent),
-        FxKind::LemonLimiter => transfer_curve(ui, FxKind::Limiter, &params, reduction, accent),
+        FxKind::LemonLimiter => lemon_limiter_panel(ui, &params, reduction, accent),
         FxKind::LemonDelay => delay_panel(ui, &params, accent),
         FxKind::LemonDist => drive_panel(ui, &params, accent),
-        FxKind::AutoPan => phaser_panel(ui, &params, beat, accent),
-        FxKind::PitchCorrection
-        | FxKind::LemonClip
-        | FxKind::LemonTransient
-        | FxKind::LemonReverb
-        | FxKind::FreqShifter
-        | FxKind::Amp
-        | FxKind::Reverb
-        | FxKind::Plugin => {}
+        FxKind::AutoPan => autopan_panel(ui, &params, beat, accent),
+        FxKind::FreqShifter => freq_shifter_panel(ui, &params, accent),
+        FxKind::LemonClip => lemon_clip_panel(ui, &params, accent),
+        FxKind::LemonTransient => lemon_transient_panel(ui, &params, accent),
+        FxKind::LemonReverb => lemon_reverb_panel(ui, &params, accent),
+        FxKind::PitchCorrection | FxKind::Amp | FxKind::Reverb | FxKind::Plugin => {}
     }
 }
 
@@ -976,7 +972,21 @@ fn param_knob(
     } else {
         crate::daw_knob::DawKnobStyle::Continuous
     };
-    let res = crate::daw_knob::draw(
+    let finish = match kind {
+        FxKind::PultEq | FxKind::Reverb | FxKind::LemonReverb => {
+            crate::daw_knob::DawKnobFinish::VintageFluted
+        }
+        FxKind::Overdrive | FxKind::Amp | FxKind::Filter => {
+            crate::daw_knob::DawKnobFinish::MiniMoog
+        }
+        FxKind::LemonDist
+        | FxKind::LemonClip
+        | FxKind::LemonTransient
+        | FxKind::LemonLimiter
+        | FxKind::LemonDelay => crate::daw_knob::DawKnobFinish::Jp8000,
+        _ => crate::daw_knob::DawKnobFinish::StudioMatte,
+    };
+    let res = crate::daw_knob::draw_with_finish(
         ui,
         &g,
         cell,
@@ -996,6 +1006,7 @@ fn param_knob(
         },
         value,
         None,
+        finish,
     );
     let stopped = res.response.drag_stopped();
     let dragged = res.response.dragged();
@@ -2921,6 +2932,475 @@ fn multicomp(
             ),
             CornerRadius::same(2),
             accent,
+        );
+    });
+}
+
+/// Noise Gate: Open/Close LEDs + threshold transfer curve (from `noise_gate-106.png`).
+fn gate_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    reduction: f32,
+    accent: Color32,
+) {
+    ui.horizontal(|ui| {
+        let open = reduction < 1.0;
+        for (lbl, lit, col) in [
+            ("OPEN", open, Color32::from_rgb(0x4a, 0xd8, 0x70)),
+            ("CLOSE", !open, Color32::from_rgb(0xe8, 0x90, 0x38)),
+        ] {
+            let (lr, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+            ui.painter().circle_filled(
+                lr.center(),
+                4.0,
+                if lit { col } else { Color32::from_gray(0x2e) },
+            );
+            ui.label(
+                RichText::new(lbl)
+                    .size(9.0)
+                    .color(if lit { col } else { DIM }),
+            );
+            ui.add_space(6.0);
+        }
+    });
+    ui.add_space(4.0);
+    transfer_curve(ui, FxKind::Gate, params, reduction, accent);
+}
+
+/// Lemon Limiter: Input / Reduction / Output vertical meters + brickwall ceiling curve (from `limiter-088.png`).
+fn lemon_limiter_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    reduction: f32,
+    accent: Color32,
+) {
+    inset(ui, 150.0, |g, rect| {
+        let plot = Rect::from_min_max(
+            pos2(rect.left() + 86.0, rect.top() + 14.0),
+            pos2(rect.right() - 14.0, rect.bottom() - 20.0),
+        );
+        // Left triple meters: IN, GR, OUT
+        let gr = reduction.clamp(0.0, 24.0);
+        let in_lvl = ((params[0] + 24.0) / 48.0).clamp(0.15, 0.95);
+        let out_lvl = ((params[1] + 24.0) / 24.0).clamp(0.1, 1.0);
+        for (idx, (lbl, frac, col)) in [
+            ("IN", in_lvl, Color32::from_rgb(0x4a, 0xd8, 0x70)),
+            (
+                "GR",
+                (gr / 24.0).clamp(0.0, 1.0),
+                Color32::from_rgb(0xe8, 0x90, 0x38),
+            ),
+            ("OUT", out_lvl, Color32::from_rgb(0x51, 0xee, 0xfc)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let x = rect.left() + 14.0 + idx as f32 * 22.0;
+            let bar = Rect::from_min_max(pos2(x, plot.top()), pos2(x + 12.0, plot.bottom()));
+            g.rect_filled(bar, CornerRadius::same(2), Color32::from_gray(0x0c));
+            let fill = if idx == 1 {
+                Rect::from_min_max(bar.min, pos2(bar.right(), bar.top() + bar.height() * *frac))
+            } else {
+                Rect::from_min_max(
+                    pos2(bar.left(), bar.bottom() - bar.height() * *frac),
+                    bar.max,
+                )
+            };
+            g.rect_filled(fill, CornerRadius::same(2), *col);
+            g.text(
+                pos2(bar.center().x, bar.bottom() + 4.0),
+                Align2::CENTER_TOP,
+                *lbl,
+                FontId::monospace(8.0),
+                DIM,
+            );
+        }
+
+        graph_grid(
+            g,
+            plot,
+            &[0.0, 0.25, 0.5, 0.75, 1.0],
+            &[0.0, 0.25, 0.5, 0.75, 1.0],
+            Color32::from_gray(0x25),
+        );
+        let span = 48.0;
+        let db_x = |x: f32| plot.left() + ((x.clamp(-span, 0.0) + span) / span) * plot.width();
+        let db_y = |y: f32| plot.bottom() - ((y.clamp(-span, 0.0) + span) / span) * plot.height();
+        let gain = params[0];
+        let ceil = params[1];
+        let thr = params[2];
+        let ratio = params[3].max(1.0);
+        let pts: Vec<Pos2> = (0..=100)
+            .map(|i| {
+                let x = -span + span * i as f32 / 100.0;
+                let comp = if x <= thr { x } else { thr + (x - thr) / ratio };
+                let y = (comp + gain).min(ceil);
+                pos2(db_x(x), db_y(y))
+            })
+            .collect();
+        g.add(Shape::line(pts, Stroke::new(2.0, accent)));
+        let cy = db_y(ceil);
+        g.line_segment(
+            [pos2(plot.left(), cy), pos2(plot.right(), cy)],
+            Stroke::new(1.0, Color32::from_rgb(0x51, 0xee, 0xfc).gamma_multiply(0.5)),
+        );
+        g.text(
+            pos2(plot.right() - 4.0, rect.bottom() - 5.0),
+            Align2::RIGHT_BOTTOM,
+            format!(
+                "Gain {:+.1} dB · Ceiling {:.1} dB · GR {:.1} dB",
+                gain, ceil, gr
+            ),
+            FontId::monospace(8.5),
+            accent,
+        );
+    });
+}
+
+/// Tape Delay: dual spinning tape reels + feedback filter readout (from `tape_delay-076.png`).
+fn tape_delay_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    beat: f64,
+    accent: Color32,
+) {
+    inset(ui, 136.0, |g, rect| {
+        let time = params[0].max(1.0);
+        let fb = params[1].clamp(0.0, 0.95);
+        let tone = params[2];
+        let mix = params[4].clamp(0.0, 1.0);
+        let angle = (beat as f32 * std::f32::consts::TAU * (250.0 / time).clamp(0.2, 4.0))
+            .rem_euclid(std::f32::consts::TAU);
+        let cy = rect.center().y - 6.0;
+        let r = 34.0;
+        let left_c = pos2(rect.center().x - 86.0, cy);
+        let right_c = pos2(rect.center().x + 86.0, cy);
+        // Tape path between reels
+        g.line_segment(
+            [pos2(left_c.x, cy + r), pos2(right_c.x, cy + r)],
+            Stroke::new(1.5, accent.gamma_multiply(0.55)),
+        );
+        for c in [left_c, right_c] {
+            g.circle_filled(c, r, Color32::from_rgb(0x16, 0x17, 0x1a));
+            g.circle_stroke(c, r, Stroke::new(1.4, Color32::from_gray(0x46)));
+            g.circle_filled(c, 8.0, Color32::from_gray(0x2c));
+            for spoke in 0..3 {
+                let a = angle + spoke as f32 * (std::f32::consts::TAU / 3.0);
+                let d = vec2(a.cos(), a.sin());
+                g.line_segment(
+                    [c + d * 9.0, c + d * (r - 5.0)],
+                    Stroke::new(2.0, accent.gamma_multiply(0.75)),
+                );
+            }
+        }
+        // Tape head block at center
+        let head = Rect::from_center_size(pos2(rect.center().x, cy + r - 4.0), vec2(32.0, 16.0));
+        g.rect_filled(head, CornerRadius::same(3), Color32::from_gray(0x28));
+        g.rect_stroke(
+            head,
+            CornerRadius::same(3),
+            Stroke::new(1.0, accent),
+            egui::StrokeKind::Inside,
+        );
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "{:.0} ms · FB {:.0}% · Cut {:.0} Hz · Mix {:.0}%",
+                time,
+                fb * 100.0,
+                tone,
+                mix * 100.0
+            ),
+            FontId::monospace(8.5),
+            DIM,
+        );
+    });
+}
+
+/// Auto-Pan: dual L/R stereo modulation LFO scope (from `tremolo-260.png`).
+fn autopan_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    beat: f64,
+    accent: Color32,
+) {
+    inset(ui, 124.0, |g, rect| {
+        let rate = params[0].max(0.1);
+        let width = params[1].clamp(0.0, 1.0);
+        let wave = params[2].round().clamp(0.0, 4.0) as usize;
+        let out_db = params[3];
+        let phase = ((beat * f64::from(rate)) as f32).fract() * std::f32::consts::TAU;
+        let l_rect = Rect::from_min_max(
+            pos2(rect.left() + 26.0, rect.top() + 10.0),
+            pos2(rect.right() - 12.0, rect.center().y - 4.0),
+        );
+        let r_rect = Rect::from_min_max(
+            pos2(rect.left() + 26.0, rect.center().y + 2.0),
+            pos2(rect.right() - 12.0, rect.bottom() - 22.0),
+        );
+        let eval_wave = |a: f32| -> f32 {
+            let t = (a / std::f32::consts::TAU).rem_euclid(1.0);
+            match wave {
+                0 => a.sin(),
+                1 => 1.0 - 4.0 * (t - 0.5).abs(),
+                2 => {
+                    if t < 0.5 {
+                        1.0
+                    } else {
+                        -1.0
+                    }
+                }
+                3 => 2.0 * t - 1.0,
+                _ => {
+                    if (t * 4.0) as i32 % 2 == 0 {
+                        0.8
+                    } else {
+                        -0.8
+                    }
+                }
+            }
+        };
+        for (ch_rect, lbl, offset, col) in [
+            (l_rect, "L", 0.0f32, Color32::from_rgb(0x4a, 0xd8, 0x70)),
+            (r_rect, "R", std::f32::consts::PI, accent),
+        ] {
+            g.rect_filled(ch_rect, CornerRadius::same(3), Color32::from_gray(0x0c));
+            g.text(
+                pos2(ch_rect.left() - 8.0, ch_rect.center().y),
+                Align2::RIGHT_CENTER,
+                lbl,
+                FontId::monospace(9.0),
+                col,
+            );
+            let pts: Vec<Pos2> = (0..=80)
+                .map(|i| {
+                    let frac = i as f32 / 80.0;
+                    let yv = eval_wave(phase + offset + frac * std::f32::consts::TAU * 2.0) * width;
+                    pos2(
+                        ch_rect.left() + frac * ch_rect.width(),
+                        ch_rect.center().y - yv * (ch_rect.height() * 0.4),
+                    )
+                })
+                .collect();
+            g.add(Shape::line(pts, Stroke::new(1.8, col)));
+        }
+        let wname = ["Sine", "Triangle", "Square", "Saw", "S&H"][wave];
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "{:.2} Hz · {} · Width {:.0}% · Out {:+.1} dB",
+                rate,
+                wname,
+                width * 100.0,
+                out_db
+            ),
+            FontId::monospace(8.5),
+            DIM,
+        );
+    });
+}
+
+/// Frequency Shifter: bipolar frequency spectrum shift & feedback indicator.
+fn freq_shifter_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accent: Color32) {
+    inset(ui, 118.0, |g, rect| {
+        let shift = params[0];
+        let mode = params[1].round().clamp(0.0, 3.0) as usize;
+        let fb = params[2];
+        let mix = params[3];
+        let plot = Rect::from_min_max(
+            pos2(rect.left() + 14.0, rect.top() + 14.0),
+            pos2(rect.right() - 14.0, rect.bottom() - 24.0),
+        );
+        g.rect_filled(plot, CornerRadius::same(4), Color32::from_gray(0x0c));
+        let cx = plot.center().x;
+        g.line_segment(
+            [pos2(cx, plot.top()), pos2(cx, plot.bottom())],
+            Stroke::new(1.0, Color32::from_gray(0x3a)),
+        );
+        let norm = (shift / 5000.0).clamp(-1.0, 1.0);
+        let sx = cx + norm * (plot.width() * 0.44);
+        for k in 1..=5 {
+            let bx = cx + norm * (plot.width() * 0.44) * (k as f32 / 5.0);
+            let h = plot.height() * (0.75 - k as f32 * 0.1) * (0.4 + 0.6 * mix);
+            g.line_segment(
+                [
+                    pos2(bx, plot.bottom() - 4.0),
+                    pos2(bx, plot.bottom() - 4.0 - h),
+                ],
+                Stroke::new(2.5, accent.gamma_multiply(0.35 + k as f32 * 0.12)),
+            );
+        }
+        g.circle_filled(pos2(sx, plot.center().y), 5.0, accent);
+        let mode_name = ["Up", "Down", "Ring", "Stereo"][mode];
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "{:+.0} Hz · {} · FB {:.0}% · Mix {:.0}%",
+                shift,
+                mode_name,
+                fb,
+                mix * 100.0
+            ),
+            FontId::monospace(8.5),
+            accent,
+        );
+    });
+}
+
+/// Lemon Soft Clipper: soft-clipping knee transfer curve + clipped sine scope.
+fn lemon_clip_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accent: Color32) {
+    inset(ui, 130.0, |g, rect| {
+        let thr = (params[0] / 127.0).clamp(0.05, 1.0);
+        let post = (params[1] / 128.0).clamp(0.0, 1.25);
+        let plot = Rect::from_min_max(
+            pos2(rect.left() + 16.0, rect.top() + 12.0),
+            pos2(rect.center().x - 10.0, rect.bottom() - 22.0),
+        );
+        let scope = Rect::from_min_max(
+            pos2(rect.center().x + 10.0, rect.top() + 12.0),
+            pos2(rect.right() - 16.0, rect.bottom() - 22.0),
+        );
+        graph_grid(
+            g,
+            plot,
+            &[0.0, 0.5, 1.0],
+            &[0.0, 0.5, 1.0],
+            Color32::from_gray(0x25),
+        );
+        let pts: Vec<Pos2> = (0..=80)
+            .map(|i| {
+                let x = -1.0 + 2.0 * i as f32 / 80.0;
+                let y = ((x / thr).tanh() * thr * post).clamp(-1.0, 1.0);
+                pos2(
+                    plot.center().x + x * plot.width() * 0.48,
+                    plot.center().y - y * plot.height() * 0.48,
+                )
+            })
+            .collect();
+        g.add(Shape::line(pts, Stroke::new(2.0, accent)));
+        let samples: Vec<f32> = (0..64)
+            .map(|i| {
+                let ph = i as f32 / 63.0 * std::f32::consts::TAU * 2.0;
+                ((ph.sin() / thr).tanh() * thr * post).clamp(-1.0, 1.0)
+            })
+            .collect();
+        crate::widgets::daw_phosphor_scope(g, scope, &samples);
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "Threshold {:.0}% · Post Gain {:.0}%",
+                thr * 100.0,
+                post * 100.0
+            ),
+            FontId::monospace(8.5),
+            DIM,
+        );
+    });
+}
+
+/// Lemon Transient: transient attack/sustain envelope shaper display.
+fn lemon_transient_panel(
+    ui: &mut Ui,
+    params: &[f32; prowave_engine::MAX_FX_PARAMS],
+    accent: Color32,
+) {
+    inset(ui, 128.0, |g, rect| {
+        let plot = Rect::from_min_max(
+            pos2(rect.left() + 14.0, rect.top() + 12.0),
+            pos2(rect.right() - 14.0, rect.bottom() - 22.0),
+        );
+        g.rect_filled(plot, CornerRadius::same(4), Color32::from_gray(0x0c));
+        let att = params[0] / 160.0;
+        let rel = params[2] / 160.0;
+        let dry_pts: Vec<Pos2> = (0..=90)
+            .map(|i| {
+                let t = i as f32 / 90.0;
+                let env = (-t * 6.0).exp();
+                pos2(
+                    plot.left() + t * plot.width(),
+                    plot.bottom() - 4.0 - env * (plot.height() * 0.6),
+                )
+            })
+            .collect();
+        g.add(Shape::line(
+            dry_pts,
+            Stroke::new(1.2, Color32::from_gray(0x4a)),
+        ));
+        let shaped_pts: Vec<Pos2> = (0..=90)
+            .map(|i| {
+                let t = i as f32 / 90.0;
+                let attack_boost = (0.5 + att) * (-t * 18.0).exp();
+                let sustain_boost = (0.5 + rel) * (-t * 3.5).exp() * 0.5;
+                let env = (attack_boost + sustain_boost).clamp(0.0, 1.0);
+                pos2(
+                    plot.left() + t * plot.width(),
+                    plot.bottom() - 4.0 - env * (plot.height() * 0.85),
+                )
+            })
+            .collect();
+        g.add(Shape::line(shaped_pts, Stroke::new(2.0, accent)));
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "Attack {:.0} · Drive {:.0} · Release {:.0}",
+                params[0], params[1], params[2]
+            ),
+            FontId::monospace(8.5),
+            DIM,
+        );
+    });
+}
+
+/// Lemon Reverb: predelay gap + exponential room decay & damping envelope.
+fn lemon_reverb_panel(ui: &mut Ui, params: &[f32; prowave_engine::MAX_FX_PARAMS], accent: Color32) {
+    inset(ui, 128.0, |g, rect| {
+        let decay = params[0].clamp(0.1, 10.0);
+        let damp = params[1];
+        let width = params[2];
+        let predelay = params[3].clamp(0.0, 200.0);
+        let mix = params[4];
+        let plot = Rect::from_min_max(
+            pos2(rect.left() + 14.0, rect.top() + 12.0),
+            pos2(rect.right() - 14.0, rect.bottom() - 22.0),
+        );
+        g.rect_filled(plot, CornerRadius::same(4), Color32::from_gray(0x0c));
+        let pre_frac = (predelay / 200.0) * 0.25;
+        let pre_x = plot.left() + pre_frac * plot.width();
+        g.line_segment(
+            [
+                pos2(plot.left() + 2.0, plot.top() + 6.0),
+                pos2(plot.left() + 2.0, plot.bottom() - 4.0),
+            ],
+            Stroke::new(2.0, Color32::WHITE),
+        );
+        let pts: Vec<Pos2> = (0..=80)
+            .map(|i| {
+                let t = i as f32 / 80.0;
+                let env = (-t * (4.5 / (decay * 0.4 + 0.4))).exp();
+                pos2(
+                    pre_x + t * (plot.right() - pre_x),
+                    plot.bottom() - 4.0 - env * (plot.height() * 0.8),
+                )
+            })
+            .collect();
+        g.add(Shape::line(pts, Stroke::new(2.0, accent)));
+        g.text(
+            pos2(rect.left() + 12.0, rect.bottom() - 6.0),
+            Align2::LEFT_BOTTOM,
+            format!(
+                "Decay {:.1} s · Damp {:.0} Hz · Width {:.0}% · Mix {:.0}%",
+                decay,
+                damp,
+                width * 100.0,
+                mix * 100.0
+            ),
+            FontId::monospace(8.5),
+            DIM,
         );
     });
 }

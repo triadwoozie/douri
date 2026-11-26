@@ -14,6 +14,16 @@ pub enum DawKnobStyle {
     Stepped { steps: usize },
 }
 
+/// Hardware knob surface finish inspired by `webaudio-controls` (`Vintage_Knob`, `MiniMoog_Main`, `JP8000`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DawKnobFinish {
+    #[default]
+    StudioMatte,
+    VintageFluted,
+    MiniMoog,
+    Jp8000,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct DawKnobConfig<'a> {
     pub id: Id,
@@ -128,6 +138,27 @@ pub fn draw(
     current_val: f32,
     midi_cc: Option<u8>,
 ) -> DawKnobResult {
+    draw_with_finish(
+        ui,
+        g,
+        cell,
+        cfg,
+        current_val,
+        midi_cc,
+        DawKnobFinish::StudioMatte,
+    )
+}
+
+/// Draws a rotary knob with a specific hardware finish (`VintageFluted`, `MiniMoog`, `Jp8000`, `StudioMatte`).
+pub fn draw_with_finish(
+    ui: &mut Ui,
+    g: &Painter,
+    cell: Rect,
+    cfg: DawKnobConfig<'_>,
+    current_val: f32,
+    midi_cc: Option<u8>,
+    finish: DawKnobFinish,
+) -> DawKnobResult {
     let radius = (cfg.diameter * 0.5).clamp(18.0, 28.0);
     let center = pos2(cell.center().x, cell.center().y + 2.0);
     let hit_rect = Rect::from_center_size(center, vec2(radius * 2.4, radius * 2.4));
@@ -241,6 +272,7 @@ pub fn draw(
         cfg.bipolar,
         cfg.accent,
         resp.hovered() || resp.dragged(),
+        finish,
     );
 
     // Interactive value readout below the knob (click/double-click for inline text edit)
@@ -283,6 +315,7 @@ fn paint_daw_knob(
     bipolar: bool,
     accent: bool,
     active: bool,
+    finish: DawKnobFinish,
 ) {
     let arc_col = if accent {
         Color32::from_rgb(0x51, 0xee, 0xfc)
@@ -367,26 +400,64 @@ fn paint_daw_knob(
     let cap_r = (r - 1.0).max(10.0);
     g.circle_filled(c + vec2(0.0, 2.0), cap_r, Color32::from_black_alpha(110));
 
-    // Matte dark dial cap (#26262a fill, #3a3a40 rim highlight)
-    g.circle_filled(c, cap_r, Color32::from_rgb(0x26, 0x26, 0x2a));
-    g.circle_stroke(
-        c,
-        cap_r,
-        Stroke::new(
-            1.0,
-            if active {
-                Color32::from_rgb(0x52, 0x54, 0x5c)
-            } else {
-                Color32::from_rgb(0x3a, 0x3a, 0x40)
-            },
-        ),
-    );
-
-    // Crisp white radial pointer bar (2.0px wide)
     let angle = -PI * 0.5 + (norm - 0.5) * (270.0_f32.to_radians());
     let dir = vec2(angle.cos(), angle.sin());
-    g.line_segment(
-        [c + dir * (cap_r * 0.28), c + dir * (cap_r - 2.0)],
-        Stroke::new(2.0, Color32::WHITE),
-    );
+    let rim_stroke = if active {
+        Color32::from_rgb(0x5a, 0x5d, 0x68)
+    } else {
+        Color32::from_rgb(0x3a, 0x3a, 0x40)
+    };
+
+    match finish {
+        DawKnobFinish::StudioMatte => {
+            g.circle_filled(c, cap_r, Color32::from_rgb(0x26, 0x26, 0x2a));
+            g.circle_stroke(c, cap_r, Stroke::new(1.0, rim_stroke));
+            g.line_segment(
+                [c + dir * (cap_r * 0.28), c + dir * (cap_r - 2.0)],
+                Stroke::new(2.0, Color32::WHITE),
+            );
+        }
+        DawKnobFinish::VintageFluted => {
+            // Fluted metallic skirt + brushed silver center cap (inspired by Vintage_Knob.png)
+            g.circle_filled(c, cap_r, Color32::from_rgb(0x1f, 0x20, 0x24));
+            for i in 0..10 {
+                let a = angle + i as f32 * (std::f32::consts::TAU / 10.0);
+                let fd = vec2(a.cos(), a.sin());
+                g.circle_filled(
+                    c + fd * (cap_r - 2.2),
+                    1.6,
+                    Color32::from_rgb(0x35, 0x37, 0x3e),
+                );
+            }
+            g.circle_filled(c, cap_r * 0.68, Color32::from_rgb(0x46, 0x48, 0x52));
+            g.circle_stroke(c, cap_r, Stroke::new(1.0, rim_stroke));
+            g.line_segment(
+                [c + dir * (cap_r * 0.15), c + dir * (cap_r - 1.5)],
+                Stroke::new(2.0, Color32::from_rgb(0xf4, 0xec, 0xd8)),
+            );
+        }
+        DawKnobFinish::MiniMoog => {
+            // Black scalloped body with brushed aluminum top insert (inspired by MiniMoog_Main.png)
+            g.circle_filled(c, cap_r, Color32::from_rgb(0x18, 0x18, 0x1b));
+            g.circle_stroke(c, cap_r, Stroke::new(1.2, rim_stroke));
+            g.circle_filled(c, cap_r * 0.62, Color32::from_rgb(0x3b, 0x3d, 0x45));
+            g.circle_stroke(
+                c,
+                cap_r * 0.62,
+                Stroke::new(0.8, Color32::from_rgb(0x60, 0x63, 0x6e)),
+            );
+            g.line_segment(
+                [c + dir * (cap_r * 0.12), c + dir * (cap_r - 1.5)],
+                Stroke::new(2.2, Color32::WHITE),
+            );
+        }
+        DawKnobFinish::Jp8000 => {
+            // Dark notched cap with glowing LED dot pointer (inspired by JP8000.png)
+            g.circle_filled(c, cap_r, Color32::from_rgb(0x21, 0x22, 0x27));
+            g.circle_stroke(c, cap_r, Stroke::new(1.2, rim_stroke));
+            g.circle_filled(c, cap_r * 0.72, Color32::from_rgb(0x2c, 0x2e, 0x35));
+            let led_pos = c + dir * (cap_r * 0.62);
+            g.circle_filled(led_pos, 2.6, arc_col);
+        }
+    }
 }
