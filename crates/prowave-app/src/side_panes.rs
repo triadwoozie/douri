@@ -11,15 +11,19 @@ pub const TOOLBAR_HEIGHT: f32 = 30.0;
 pub const MAX_NOTES: usize = 100_000;
 
 /// What the Toolbar offers: Logic Pro quick-action buttons wired to real menu commands.
-const TOOLBAR: &[(&str, &str)] = &[
-    ("Split at Playhead", "Split at Playhead"),
-    ("Join Regions", "Join"),
-    ("Mute Region", "Mute On/Off"),
-    ("Loop Region", "Loop On/Off"),
-    ("Color", "Show Colors"),
-    ("Bounce", "Project or Section…"),
-    ("Set Locators by Selection", "Set Locators by Regions"),
-    ("Zoom to Fit", "Zoom to Fit"),
+const TOOLBAR: &[(&str, &str, &str)] = &[
+    ("Split at Playhead", "Split at Playhead", "tb_split"),
+    ("Join Regions", "Join", "tb_join"),
+    ("Mute Region", "Mute On/Off", "tb_mute"),
+    ("Loop Region", "Loop On/Off", "tb_loop"),
+    ("Color", "Show Colors", "tb_color"),
+    ("Bounce", "Project or Section…", "tb_bounce"),
+    (
+        "Set Locators by Selection",
+        "Set Locators by Regions",
+        "tb_locators",
+    ),
+    ("Zoom to Fit", "Zoom to Fit", "tb_zoom_fit"),
 ];
 
 /// The Toolbar under the control bar (Logic: View > Show Toolbar).
@@ -27,12 +31,13 @@ pub fn toolbar(ui: &mut egui::Ui, p: &mut Project, s: &mut crate::UiState) {
     ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
     ui.horizontal_centered(|ui| {
         ui.add_space(8.0);
-        for (i, &(label, cmd)) in TOOLBAR.iter().enumerate() {
+        for (i, &(label, cmd, help_id)) in TOOLBAR.iter().enumerate() {
             if i == 4 || i == 6 {
                 ui.separator();
             }
             let on = crate::menus::enabled(cmd, p, s);
             let resp = ui.add_enabled(on, egui::Button::new(tr(label)));
+            crate::quick_help::hover(ui.ctx(), &resp, help_id);
             if resp.clicked() {
                 crate::menus::apply(cmd, p, s);
             }

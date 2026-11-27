@@ -705,6 +705,110 @@ pub const REGISTRY: &[HelpEntry] = &[
         summary: "Frames the active audio region horizontally and centers detected notes vertically.",
         tip: "Use Ctrl+Scroll to zoom horizontally around the cursor or Alt+Scroll vertically.",
     },
+    HelpEntry {
+        id: "flex_tool_pointer",
+        category: "Flex Pitch",
+        title: "Pointer Tool",
+        shortcut: None,
+        summary: "Selects, moves, resizes, and transposes Flex Pitch notes and hotspot nodes.",
+        tip: "Hold Shift while dragging vertically to fine-tune pitch in cents.",
+    },
+    HelpEntry {
+        id: "flex_tool_scissors",
+        category: "Flex Pitch",
+        title: "Scissors Tool",
+        shortcut: None,
+        summary: "Splits a Flex Pitch note segment into two independent notes at the click position.",
+        tip: "Use Join to merge adjacent split notes back together.",
+    },
+    HelpEntry {
+        id: "flex_tool_join",
+        category: "Flex Pitch",
+        title: "Join Tool",
+        shortcut: Some("Cmd+J"),
+        summary: "Merges selected or clicked adjacent Flex Pitch note segments into one note.",
+        tip: "Useful for smoothing over brief pitch detection splits.",
+    },
+    HelpEntry {
+        id: "flex_tool_vibrato",
+        category: "Flex Pitch",
+        title: "Vibrato Tool",
+        shortcut: None,
+        summary: "Adjusts pitch modulation / vibrato depth directly by dragging a note up or down.",
+        tip: "100% keeps natural vibrato; 0% flattens pitch modulation.",
+    },
+    HelpEntry {
+        id: "flex_tool_volume",
+        category: "Flex Pitch",
+        title: "Volume Tool",
+        shortcut: None,
+        summary: "Adjusts individual note gain (-24 dB to +24 dB) directly on the note beam.",
+        tip: "Balance quiet syllables without automating the entire track.",
+    },
+    HelpEntry {
+        id: "tb_split",
+        category: "Toolbar",
+        title: "Split at Playhead",
+        shortcut: Some("Cmd+T"),
+        summary: "Splits the selected region(s) cleanly at the current playhead position.",
+        tip: "Audio splits apply short crossfades automatically to prevent clicks.",
+    },
+    HelpEntry {
+        id: "tb_join",
+        category: "Toolbar",
+        title: "Join Regions",
+        shortcut: Some("Cmd+J"),
+        summary: "Joins selected adjacent regions on the same track into a single region.",
+        tip: "Select two or more regions on a track first.",
+    },
+    HelpEntry {
+        id: "tb_mute",
+        category: "Toolbar",
+        title: "Mute Region",
+        shortcut: Some("Ctrl+M"),
+        summary: "Mutes or unmutes the selected region(s) without muting the whole track.",
+        tip: "Muted regions appear dimmed on the timeline.",
+    },
+    HelpEntry {
+        id: "tb_loop",
+        category: "Toolbar",
+        title: "Loop Region",
+        shortcut: Some("L"),
+        summary: "Toggles continuous looping for the selected region(s).",
+        tip: "Drag the upper-right corner of a region to adjust loop length.",
+    },
+    HelpEntry {
+        id: "tb_color",
+        category: "Toolbar",
+        title: "Show Colors",
+        shortcut: Some("Opt+C"),
+        summary: "Opens the color palette to assign custom colors to tracks or regions.",
+        tip: "Helps visually organize drums, bass, vocals, and synths.",
+    },
+    HelpEntry {
+        id: "tb_bounce",
+        category: "Toolbar",
+        title: "Bounce Project or Section",
+        shortcut: Some("Cmd+B"),
+        summary: "Exports the project or Cycle range offline to WAV, AIFF, or FLAC.",
+        tip: "Includes all track effects, automation, and master processing.",
+    },
+    HelpEntry {
+        id: "tb_locators",
+        category: "Toolbar",
+        title: "Set Locators by Selection",
+        shortcut: Some("U"),
+        summary: "Sets the Cycle / Locator range to match the currently selected region(s).",
+        tip: "Press C to toggle Cycle playback over the new range.",
+    },
+    HelpEntry {
+        id: "tb_zoom_fit",
+        category: "Toolbar",
+        title: "Zoom to Fit",
+        shortcut: Some("Z"),
+        summary: "Zooms the Tracks Area to fit the selection or the entire arrangement.",
+        tip: "Press Z again to restore your previous zoom level.",
+    },
 ];
 
 pub fn lookup(id: &str) -> Option<&'static HelpEntry> {
@@ -732,7 +836,7 @@ pub fn begin_frame(ctx: &Context) {
 
 /// Registers a hovered response with the Quick Help registry.
 pub fn hover(ctx: &Context, resp: &Response, id: &'static str) {
-    if resp.hovered() {
+    if resp.hovered() || resp.contains_pointer() {
         ctx.data_mut(|d| {
             let mut st = d.get_temp::<HoverHelpState>(state_id()).unwrap_or_default();
             st.active_id = Some(id);

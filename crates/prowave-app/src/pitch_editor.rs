@@ -1389,6 +1389,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             Color32::TRANSPARENT
                         }),
                     );
+                    let help_id = match tool {
+                        Tool::Pointer => "flex_tool_pointer",
+                        Tool::Scissors => "flex_tool_scissors",
+                        Tool::Join => "flex_tool_join",
+                        Tool::Vibrato => "flex_tool_vibrato",
+                        Tool::Volume => "flex_tool_volume",
+                    };
+                    crate::quick_help::hover(ui.ctx(), &btn, help_id);
                     if btn.clicked() {
                         v.tool = tool;
                     }
@@ -1407,15 +1415,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             .show_value(false),
                     )
                     .on_hover_text(tr("Horizontal Zoom"));
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new(tr("Fit")).size(11.0).color(TEXT),
-                            )
+                    let fit_btn = ui.add(
+                        egui::Button::new(egui::RichText::new(tr("Fit")).size(11.0).color(TEXT))
                             .fill(Color32::from_rgb(0x2c, 0x2e, 0x34)),
-                        )
-                        .clicked()
-                    {
+                    );
+                    crate::quick_help::hover(ui.ctx(), &fit_btn, "flex_fit");
+                    if fit_btn.clicked() {
                         v.fitted = None;
                     }
                 });
