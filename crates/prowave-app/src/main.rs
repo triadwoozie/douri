@@ -65,6 +65,7 @@ mod logicx_import;
 pub mod lyrics;
 pub mod lyrics_ui;
 mod macro_controls;
+mod marbble_panel_host;
 pub mod marker_edit;
 pub mod marker_number;
 mod marker_track;
