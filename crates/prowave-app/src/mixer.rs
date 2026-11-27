@@ -1626,16 +1626,35 @@ pub fn channel_strip(
             TEXT_DIM,
         );
     }
+    let strip_latency_samples: usize = match key {
+        StripKey::Track(i) => p.tracks[i]
+            .inserts
+            .iter()
+            .filter(|x| !x.bypass)
+            .map(|x| x.kind.latency_samples(48_000.0))
+            .sum(),
+        StripKey::StereoOut => p
+            .master_inserts
+            .iter()
+            .filter(|x| !x.bypass)
+            .map(|x| x.kind.latency_samples(48_000.0))
+            .sum(),
+        _ => 0,
+    };
     if !vca_strip && r.show_slots {
-        slot(g, row(r.setting, 16.0), tr("Setting"), SLOT_GRAY, TEXT);
-        setting_menu(
-            ui,
-            row(r.setting, 16.0),
-            p,
-            v,
-            key,
-            id(ns, (key, "setting")),
-        );
+        let setting_rect = row(r.setting, 16.0);
+        slot(g, setting_rect, tr("Setting"), SLOT_GRAY, TEXT);
+        if strip_latency_samples > 0 {
+            let ms = strip_latency_samples as f32 / 48.0;
+            g.text(
+                pos2(setting_rect.right() - 4.0, setting_rect.center().y),
+                Align2::RIGHT_CENTER,
+                format!("{ms:.1}ms"),
+                FontId::proportional(9.0),
+                Color32::from_rgb(0x4c, 0xc9, 0xf0),
+            );
+        }
+        setting_menu(ui, setting_rect, p, v, key, id(ns, (key, "setting")));
         let gr_bar = row(r.gain_red + 1.0, 6.0);
         g.rect_filled(gr_bar, 1.0, SLOT_EMPTY);
         if reduction > 0.05 {
