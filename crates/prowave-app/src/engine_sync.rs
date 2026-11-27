@@ -37,6 +37,7 @@ struct Mix {
 pub struct EngineSync {
     pub engine: Engine,
     playing: bool,
+    playhead_dragging: bool,
     /// The tracks that hear their input, as last sent.
     monitors: Vec<MonitorTrack>,
     /// Tempo, tempo changes and signature last sent.
@@ -787,6 +788,7 @@ impl EngineSync {
         let mut sync = Self {
             engine,
             playing: false,
+            playhead_dragging: false,
             monitors: Vec::new(),
             tempo: None,
             metronome: false,
@@ -845,8 +847,9 @@ impl EngineSync {
             }
         }
         // Engine owns time while playing, unless a seek is still waiting to be accepted
-        // (then the UI keeps the requested position and `push` retries it).
-        if seek_done {
+        // (then the UI keeps the requested position and `push` retries it) or the user is
+        // holding the playhead.
+        if seek_done && !p.is_playhead_dragging {
             if p.playing {
                 p.position_beats = self.engine.state().position_beats;
             }
@@ -885,6 +888,11 @@ impl EngineSync {
             && self.send(Command::set_controls(controls.clone()))
         {
             self.controls = controls;
+        }
+        if p.is_playhead_dragging != self.playhead_dragging
+            && self.send(Command::SetPlayheadDragging(p.is_playhead_dragging))
+        {
+            self.playhead_dragging = p.is_playhead_dragging;
         }
         // The user moved the playhead (ruler drag, rewind buttons, menu).
         let seek_done = match self.position {

@@ -1226,6 +1226,10 @@ pub struct Project {
     pub cycle_start: f64,
     pub cycle_end: f64,
     pub position_beats: f64, // 0-based
+    /// True while the user is dragging a ruler/playhead. Not saved.
+    pub is_playhead_dragging: bool,
+    /// Whether transport was playing when the playhead drag began. Not saved.
+    pub playhead_drag_was_playing: bool,
     pub selected_track: usize,
     pub master_vol: f32,
     /// The effects on the Stereo Out strip, in order (they process the whole mix).
@@ -1554,6 +1558,8 @@ impl Project {
             cycle_start: 8.0,
             cycle_end: 88.0,
             position_beats: 0.0,
+            is_playhead_dragging: false,
+            playhead_drag_was_playing: false,
             selected_track: 0,
             master_vol: 1.0,
             master_inserts: Vec::new(),

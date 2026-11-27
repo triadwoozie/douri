@@ -636,6 +636,35 @@ fn playhead_beat(x: f32, lanes_left: f32, scroll_x: f32, beat_px: f32) -> f64 {
     ((x - lanes_left + scroll_x) / beat_px.max(1e-3)).max(0.0) as f64
 }
 
+/// Suspends transport advancement and remembers playback state when a ruler/playhead drag begins.
+pub(crate) fn begin_playhead_drag(p: &mut Project) {
+    if !p.is_playhead_dragging {
+        p.playhead_drag_was_playing = p.playing;
+        p.is_playhead_dragging = true;
+    }
+}
+
+/// Updates the playhead position during an active drag only when the beat actually changes.
+pub(crate) fn update_playhead_drag(p: &mut Project, beat: f64) {
+    if beat.is_finite() {
+        let clamped = beat.max(0.0);
+        if (clamped - p.position_beats).abs() > 1e-9 {
+            p.position_beats = clamped;
+        }
+    }
+}
+
+/// Clears playhead-drag state on release so playback resumes from the new position if it was playing.
+pub(crate) fn end_playhead_drag(p: &mut Project) {
+    if p.is_playhead_dragging {
+        p.is_playhead_dragging = false;
+        if p.playhead_drag_was_playing {
+            p.playing = true;
+        }
+        p.playhead_drag_was_playing = false;
+    }
+}
+
 /// Half the height of the grab zone on a track's lower edge.
 const RESIZE_GRIP: f32 = 3.0;
 
@@ -4895,10 +4924,18 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     let lower = Rect::from_min_max(pos2(ruler.left(), ruler.center().y), ruler.max);
     crate::cycle_area::interact(ui, p, upper, &x_of, &beat_of, &snap_pos);
     let low = ui.interact(lower, id("ruler_locate"), Sense::click_and_drag());
+    if low.drag_started() {
+        begin_playhead_drag(p);
+    }
     if let Some(pt) = low.interact_pointer_pos() {
-        if low.clicked() || low.dragged() {
+        if low.dragged() {
+            update_playhead_drag(p, beat_of(pt.x));
+        } else if low.clicked() {
             p.position_beats = beat_of(pt.x);
         }
+    }
+    if low.drag_stopped() {
+        end_playhead_drag(p);
     }
 
     // ---- playhead
@@ -4916,10 +4953,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         let resp = ui
             .interact(grab, head_id, Sense::drag())
             .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        if resp.drag_started() {
+            begin_playhead_drag(p);
+        }
         if resp.dragged() {
             if let Some(pt) = resp.interact_pointer_pos() {
-                p.position_beats = playhead_beat(pt.x, lanes.left(), scroll_x, beat_px);
+                update_playhead_drag(p, playhead_beat(pt.x, lanes.left(), scroll_x, beat_px));
             }
+        }
+        if resp.drag_stopped() {
+            end_playhead_drag(p);
         }
     }
     if visible {
@@ -5669,5 +5712,28 @@ mod waveform_scale_tests {
         assert_eq!(display_amp(f32::NAN), 0.0);
         assert_eq!(display_amp(f32::INFINITY), 0.0);
         assert!(display_amp(100.0).is_finite() && display_amp(100.0) > 1.0);
+    }
+
+    #[test]
+    fn playhead_drag_helpers_preserve_playing_state_and_ignore_stationary_updates() {
+        let mut p = crate::model::Project::empty();
+        p.playing = true;
+        p.position_beats = 2.0;
+
+        super::begin_playhead_drag(&mut p);
+        assert!(p.is_playhead_dragging);
+        assert!(p.playhead_drag_was_playing);
+
+        super::update_playhead_drag(&mut p, 2.0);
+        assert_eq!(p.position_beats, 2.0);
+
+        super::update_playhead_drag(&mut p, 4.5);
+        assert_eq!(p.position_beats, 4.5);
+
+        super::end_playhead_drag(&mut p);
+        assert!(!p.is_playhead_dragging);
+        assert!(!p.playhead_drag_was_playing);
+        assert!(p.playing);
+        assert_eq!(p.position_beats, 4.5);
     }
 }

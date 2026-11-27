@@ -868,12 +868,23 @@ fn draw_bar_ruler_and_strip(
         egui::Id::unique("sp_ruler_scrub"),
         Sense::click_and_drag(),
     );
+    if ruler_resp.drag_started() {
+        crate::tracks_area::begin_playhead_drag(p);
+    }
     if (ruler_resp.clicked() || ruler_resp.dragged()) && ruler_resp.interact_pointer_pos().is_some()
     {
         if let Some(pt) = ruler_resp.interact_pointer_pos() {
             let rel_b = ((pt.x - ruler.left()) / ruler.width()).clamp(0.0, 1.0) * total_beats;
-            p.position_beats = reg_start_beats + f64::from(quantize(rel_b));
+            let target = reg_start_beats + f64::from(quantize(rel_b));
+            if ruler_resp.dragged() {
+                crate::tracks_area::update_playhead_drag(p, target);
+            } else {
+                p.position_beats = target;
+            }
         }
+    }
+    if ruler_resp.drag_stopped() {
+        crate::tracks_area::end_playhead_drag(p);
     }
 
     // Header interaction: click framed play button to jump playhead to region start

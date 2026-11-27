@@ -438,6 +438,8 @@ pub enum Command {
     Pause,
     /// Stop and return to the position the transport started from.
     Stop,
+    /// Suspends transport advancement and flushes active voices while the user drags the playhead.
+    SetPlayheadDragging(bool),
     SetPosition {
         beat: f64,
     },
@@ -1015,6 +1017,7 @@ pub struct EngineCore {
     beat: f64,
     start_beat: f64,
     playing: bool,
+    is_playhead_dragging: bool,
     tempo_map: Box<TempoMap>,
     metronome: bool,
     cycle: Option<(f64, f64)>,
@@ -1193,6 +1196,7 @@ impl EngineCore {
             beat: 0.0,
             start_beat: 0.0,
             playing: false,
+            is_playhead_dragging: false,
             tempo_map: Box::default(),
             metronome: false,
             cycle: None,
@@ -1504,8 +1508,10 @@ impl EngineCore {
 
     fn seek(&mut self, beat: f64) {
         self.beat = if beat.is_finite() { beat.max(0.0) } else { 0.0 };
-        self.kill_voices();
-        if self.playing {
+        if !self.is_playhead_dragging {
+            self.kill_voices();
+        }
+        if self.playing && !self.is_playhead_dragging {
             self.clock_resync();
         }
         self.next_note = self
@@ -1912,6 +1918,14 @@ impl EngineCore {
                     self.playing = false;
                     let b = self.start_beat;
                     self.seek(b);
+                }
+                Command::SetPlayheadDragging(dragging) => {
+                    self.is_playhead_dragging = dragging;
+                    if dragging {
+                        self.all_notes_off(None);
+                    } else if self.playing {
+                        self.clock_resync();
+                    }
                 }
                 Command::SetPosition { beat } => self.seek(beat),
                 Command::SetTempoMap(map) => {
@@ -2618,7 +2632,7 @@ impl EngineCore {
                 }
             }
             let (mut l, mut r) = (0f64, 0f64);
-            if self.playing {
+            if self.playing && !self.is_playhead_dragging {
                 while let Some(n) = self.song.notes.get(self.next_note).copied() {
                     if n.start_beat > self.beat {
                         break;
@@ -2805,7 +2819,11 @@ impl EngineCore {
                     }
                 }
             }
-            let transport_beat = if self.playing { self.beat } else { f64::NAN };
+            let transport_beat = if self.playing && !self.is_playhead_dragging {
+                self.beat
+            } else {
+                f64::NAN
+            };
             for &track in &self.plugin_tracks {
                 let t = track as usize;
                 if !self.track_audible[t] {
@@ -2877,7 +2895,7 @@ impl EngineCore {
                 }
             }
             // Render events at the current sample position, then advance to the next one.
-            if self.playing {
+            if self.playing && !self.is_playhead_dragging {
                 let prev = self.beat;
                 self.beat = self.tempo_map.advance(prev, frame_secs);
                 if self.mtc.is_on() {
@@ -5265,6 +5283,65 @@ mod tests {
             "moving {} still {}",
             swing(&moving),
             swing(&still)
+        );
+    }
+
+    #[test]
+    fn holding_playhead_drag_suspends_beat_advancement_and_flushes_voices() {
+        let (mut core, mut tx, mut state) = rig();
+        let song = Song::new(
+            vec![
+                NoteEvent {
+                    track: 0,
+                    pitch: 60,
+                    vel: 100,
+                    start_beat: 0.0,
+                    end_beat: 4.0,
+                },
+                NoteEvent {
+                    track: 0,
+                    pitch: 64,
+                    vel: 100,
+                    start_beat: 1.0,
+                    end_beat: 2.0,
+                },
+            ],
+            vec![TrackMix::default()],
+        );
+        assert!(tx.push(Command::SetSong(Box::new(song))).is_ok());
+        assert!(tx.push(Command::Play).is_ok());
+        let mut buf = vec![0.0f32; 512];
+        assert_no_alloc::assert_no_alloc(|| core.process(&mut buf));
+        let active_before = core.voices.iter().filter(|v| v.active).count();
+        assert!(active_before > 0, "note at beat 0 should be sounding");
+
+        assert!(tx.push(Command::SetPlayheadDragging(true)).is_ok());
+        assert!(tx.push(Command::SetPosition { beat: 1.0 }).is_ok());
+        for _ in 0..8 {
+            assert_no_alloc::assert_no_alloc(|| core.process(&mut buf));
+        }
+        assert!(
+            core.voices.iter().filter(|v| v.active).all(|v| v.releasing),
+            "held voices must be releasing and no new note should trigger while dragging"
+        );
+        let held_beat = state.read().position_beats;
+        assert!(
+            (held_beat - 1.0).abs() < 1e-9,
+            "beat must not advance while playhead drag is held: {held_beat}"
+        );
+
+        assert!(tx.push(Command::SetPlayheadDragging(false)).is_ok());
+        assert_no_alloc::assert_no_alloc(|| core.process(&mut buf));
+        let resumed = state.read();
+        assert!(resumed.playing);
+        assert!(
+            resumed.position_beats > 1.0,
+            "playback must resume from 1.0 on release: {}",
+            resumed.position_beats
+        );
+        assert!(
+            core.voices.iter().any(|v| v.active && !v.releasing),
+            "note at beat 1.0 should trigger once drag is released"
         );
     }
 }

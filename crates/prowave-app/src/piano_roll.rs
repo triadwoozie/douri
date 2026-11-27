@@ -906,6 +906,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     if ruler_resp.hovered() || ruler_resp.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
+    if ruler_resp.drag_started() {
+        crate::tracks_area::begin_playhead_drag(p);
+    }
     if ruler_resp.clicked() || ruler_resp.dragged() {
         if let Some(pt) = ruler_resp.interact_pointer_pos() {
             let raw_beat = (origin as f32 + beat_at(pt.x)).max(0.0);
@@ -915,9 +918,16 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             } else {
                 snap_to(raw_beat as f64, step as f64) as f32
             };
-            p.position_beats = scrub_beat as f64;
+            if ruler_resp.dragged() {
+                crate::tracks_area::update_playhead_drag(p, scrub_beat as f64);
+            } else {
+                p.position_beats = scrub_beat as f64;
+            }
             v.dirty = true;
         }
+    }
+    if ruler_resp.drag_stopped() {
+        crate::tracks_area::end_playhead_drag(p);
     }
 
     // ---- Grid background
