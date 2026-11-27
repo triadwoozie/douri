@@ -1321,7 +1321,10 @@ pub fn control_bar(
     // Macro Controls / Mixer / Editors (Pill 2)
     let macro_on = s.bottom == Bottom::MacroControls;
     let mixer_on = s.show_mixer && s.bottom == Bottom::Mixer;
-    let editors_on = matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor);
+    let editors_on = matches!(
+        s.bottom,
+        Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SessionPlayer
+    );
     let mid = [
         (icon_smart_controls as IconFn, macro_on),
         (icon_mixer, mixer_on),

@@ -372,15 +372,19 @@ pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
     let is_session = match first {
         Some((t, r)) => matches!(
             p.tracks[t].regions[r].generated.as_ref().map(|g| &g.source),
-            Some(crate::model::Generator::Session(_))
+            Some(crate::model::Generator::Session(_) | crate::model::Generator::Drummer(_))
         ),
         None => p.tracks.get(p.selected_track).is_some_and(|t| {
-            t.regions.iter().any(|r| {
-                matches!(
-                    r.generated.as_ref().map(|g| &g.source),
-                    Some(crate::model::Generator::Session(_))
-                )
-            })
+            t.kind == TrackKind::Drummer
+                || t.regions.iter().any(|r| {
+                    matches!(
+                        r.generated.as_ref().map(|g| &g.source),
+                        Some(
+                            crate::model::Generator::Session(_)
+                                | crate::model::Generator::Drummer(_)
+                        )
+                    )
+                })
         }),
     };
     if is_session {

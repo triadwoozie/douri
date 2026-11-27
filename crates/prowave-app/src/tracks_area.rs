@@ -3498,6 +3498,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     if let Some(ri) = p.add_generated_region(row, true, bar) {
                         p.selected_track = row;
                         v.select_only(row, ri);
+                        s.bottom = Bottom::SessionPlayer;
                     }
                 } else if p.tracks[row].kind.has_regions() && p.tracks[row].kind != TrackKind::Audio
                 {
@@ -3686,7 +3687,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             }
             if resp.double_clicked() {
                 if p.tracks[ti].kind != TrackKind::Audio {
-                    s.bottom = Bottom::PianoRoll;
+                    let is_session = matches!(
+                        p.tracks[ti].regions[ri]
+                            .generated
+                            .as_ref()
+                            .map(|g| &g.source),
+                        Some(
+                            crate::model::Generator::Session(_)
+                                | crate::model::Generator::Drummer(_)
+                        )
+                    );
+                    s.bottom = if is_session {
+                        Bottom::SessionPlayer
+                    } else {
+                        Bottom::PianoRoll
+                    };
                 } else if v.tool != TrackTool::Fade {
                     if let Some(pt) = resp.interact_pointer_pos() {
                         if let Some(message) = flex_double_click(p, ti, ri, full, pt.x) {

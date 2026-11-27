@@ -1303,7 +1303,10 @@ pub(crate) fn checked(label: &str, p: &Project, s: &crate::UiState) -> bool {
         return on;
     }
     match label {
-        "Show Editor" => matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor),
+        "Show Editor" => matches!(
+            s.bottom,
+            Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SessionPlayer
+        ),
         "Show Piano Roll" => s.bottom == Bottom::PianoRoll,
         "Pitch Editor" | "Show Pitch Editor" => s.bottom == Bottom::PitchEditor,
         "Show Mixer" => s.show_mixer && s.bottom == Bottom::Mixer,

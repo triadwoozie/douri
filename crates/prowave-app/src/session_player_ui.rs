@@ -1,12 +1,14 @@
 //! Bottom Session Player Editor (`session1.png` & `session2.png` layout).
 //!
-//! Features a top preview header (`Chords`, `Preset`, tools, `Snap`), a live zoomed yellow
-//! Region Strip showing notes & pitch-slide curves, a left column (Player graphic, `Regenerate`,
-//! vertical `Complexity` & `Intensity` sliders), a 5-tab central panel (`Main`, `Details`,
-//! `Slides`/`Envelope`, `LFO`, `Manual`), and a right-hand timing/fills/feel column.
+//! Replicates the Logic Pro Session Player Editor: top preview header (`Chords`, `Preset`,
+//! Pointer/Pencil tools, `Snap`, zoom), bar ruler + zoomed Region Strip with note stems &
+//! pitch-bend glide arrows, left column (detailed circular instrument graphic, `Regenerate`,
+//! vertical yellow `Complexity` & `Intensity` sliders), 5-tab central card (`Main`, `Details`,
+//! `Slides`/`Envelope`, `LFO`, `Manual`), and right-hand `daw_knob` timing/fills/feel controls.
 
+use crate::daw_knob::{self, DawKnobConfig, DawKnobStyle};
 use crate::model::{Generator, Project, PITCH_BEND};
-use crate::pattern::DrumStyle;
+use crate::pattern::{DrumStyle, DrummerParams};
 use crate::session_player::{
     default_chords, detect_chords_from_notes, eval_lfo, AddNotesMode, BassStyle, FollowRhythmMode,
     HandMovement, HandStyle, KeyboardStyle, LfoWave, PhraseLength, SessionPlayerKind,
@@ -19,10 +21,11 @@ use egui::{
 };
 
 const BG_DARK: Color32 = Color32::from_rgb(0x1b, 0x1c, 0x20);
-const CARD_BG: Color32 = Color32::from_rgb(0x23, 0x24, 0x29);
-const WELL_BG: Color32 = Color32::from_rgb(0x16, 0x17, 0x1b);
-const BORDER: Color32 = Color32::from_rgb(0x36, 0x38, 0x40);
+const CARD_BG: Color32 = Color32::from_rgb(0x21, 0x22, 0x27);
+const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
+const BORDER: Color32 = Color32::from_rgb(0x34, 0x36, 0x3e);
 const ACCENT_YELLOW: Color32 = Color32::from_rgb(0xea, 0xc3, 0x2a);
+const BLUE_ACTIVE: Color32 = Color32::from_rgb(0x12, 0x69, 0xcc);
 const TEXT_MAIN: Color32 = Color32::from_rgb(0xea, 0xec, 0xf0);
 const TEXT_DIM: Color32 = Color32::from_rgb(0x8e, 0x93, 0x9e);
 
@@ -41,10 +44,32 @@ enum PreviewTool {
     Pencil,
 }
 
-/// Renders the bottom Session Player Editor for the active Session Player region.
+fn midi_note_name(midi: u8) -> String {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    let oct = i32::from(midi / 12) - 1;
+    format!("{}{}", NAMES[usize::from(midi % 12)], oct)
+}
+
+fn from_drummer_params(d: &DrummerParams) -> SessionPlayerParams {
+    SessionPlayerParams {
+        kind: SessionPlayerKind::Drummer,
+        preset_name: "Neon Pulse".to_string(),
+        drum_style: d.style,
+        complexity: f32::from(d.complexity) / 100.0,
+        intensity: f32::from(d.loudness) / 100.0,
+        swing: f32::from(d.swing) / 100.0,
+        fill_amount: f32::from(d.fills) / 100.0,
+        seed: d.seed,
+        ..Default::default()
+    }
+}
+
+/// Renders the bottom Session Player Editor for the active Session Player or Drummer region.
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
-    let target = find_session_region(p, s);
-    let Some((ti, ri)) = target else {
+    let target = find_session_or_drummer_region(p, s);
+    let Some((ti, ri, was_legacy_drummer)) = target else {
         ui.centered_and_justified(|ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(24.0);
@@ -68,23 +93,29 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
     let tab_id = egui::Id::unique("session_player_tab");
     let tool_id = egui::Id::unique("session_player_tool");
+    let snap_id = egui::Id::unique("session_player_snap_on");
+    let zoom_id = egui::Id::unique("session_player_zoom");
     let mut tab: EditorTab = ui
         .ctx()
         .data(|d| d.get_temp(tab_id).unwrap_or(EditorTab::Main));
     let mut tool: PreviewTool = ui
         .ctx()
         .data(|d| d.get_temp(tool_id).unwrap_or(PreviewTool::Pointer));
+    let mut snap_on: bool = ui.ctx().data(|d| d.get_temp(snap_id).unwrap_or(true));
+    let mut zoom: f32 = ui.ctx().data(|d| d.get_temp(zoom_id).unwrap_or(1.0));
 
-    let Some(Generator::Session(orig)) = p.tracks[ti].regions[ri]
+    let orig = match p.tracks[ti].regions[ri]
         .generated
         .as_ref()
-        .map(|g| g.source.clone())
-    else {
-        return;
+        .map(|g| &g.source)
+    {
+        Some(Generator::Session(sp)) => sp.clone(),
+        Some(Generator::Drummer(d)) => from_drummer_params(d),
+        _ => return,
     };
     let mut sp = orig.clone();
 
-    // 1. Top Preview Header Bar
+    // 1. Top Preview Header Bar (matching session1.png & session2.png)
     egui::Frame::new()
         .fill(BG_DARK)
         .inner_margin(egui::Margin::symmetric(10, 4))
@@ -113,9 +144,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     }
                 });
 
+                ui.add_space(6.0);
                 ui.label(RichText::new("Preset:").size(11.0).color(TEXT_DIM));
                 egui::ComboBox::from_id_salt("sp_preset_combo")
-                    .width(150.0)
+                    .width(165.0)
                     .selected_text(&sp.preset_name)
                     .show_ui(ui, |ui| {
                         for name in SESSION_PRESETS {
@@ -125,23 +157,46 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         }
                     });
 
-                ui.add_space(12.0);
+                ui.add_space(ui.available_width() * 0.14);
+                let ptr_lbl = format!("{} ", phosphor_egui::regular::CURSOR);
+                let pen_lbl = format!("{} ", phosphor_egui::regular::PENCIL_SIMPLE);
                 if ui
-                    .selectable_label(tool == PreviewTool::Pointer, "Pointer")
+                    .selectable_label(tool == PreviewTool::Pointer, ptr_lbl)
+                    .on_hover_text("Pointer Tool")
                     .clicked()
                 {
                     tool = PreviewTool::Pointer;
                 }
                 if ui
-                    .selectable_label(tool == PreviewTool::Pencil, "Pencil")
+                    .selectable_label(tool == PreviewTool::Pencil, pen_lbl)
+                    .on_hover_text("Pencil Tool")
                     .clicked()
                 {
                     tool = PreviewTool::Pencil;
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.scope(|ui| {
+                        ui.spacing_mut().slider_width = 48.0;
+                        ui.add(egui::Slider::new(&mut zoom, 0.5..=2.0).show_value(false));
+                    });
+                    ui.label(
+                        RichText::new(phosphor_egui::regular::ARROWS_LEFT_RIGHT)
+                            .size(11.0)
+                            .color(TEXT_DIM),
+                    );
+                    let snap_btn = egui::Button::new(
+                        RichText::new(phosphor_egui::regular::POWER)
+                            .size(11.0)
+                            .color(Color32::WHITE),
+                    )
+                    .fill(if snap_on { BLUE_ACTIVE } else { CARD_BG })
+                    .corner_radius(CornerRadius::same(4));
+                    if ui.add(snap_btn).on_hover_text("Toggle Snap").clicked() {
+                        snap_on = !snap_on;
+                    }
                     ui.label(RichText::new("Snap: Beat").size(11.0).color(TEXT_DIM));
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
                     egui::ComboBox::from_id_salt("sp_kind_combo")
                         .width(120.0)
                         .selected_text(sp.kind.label())
@@ -154,51 +209,28 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             });
         });
 
-    // 2. Zoomed Yellow Region Strip
-    let (strip_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
-    draw_region_strip(ui, strip_rect, &p.tracks[ti].regions[ri], &sp);
+    // 2. Bar Ruler + Zoomed Region Strip
+    let (strip_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 68.0), Sense::hover());
+    draw_bar_ruler_and_strip(ui, strip_rect, &p.tracks[ti].regions[ri], &sp, zoom);
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
-    // 3. Tab Bar (Main | Details | Slides/Envelope | LFO | Manual)
-    ui.horizontal(|ui| {
-        ui.add_space((ui.available_width() * 0.42).max(160.0));
-        let third_label = if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
-            "Envelope"
-        } else {
-            "Slides"
-        };
-        for (t, lbl) in [
-            (EditorTab::Main, "Main"),
-            (EditorTab::Details, "Details"),
-            (EditorTab::SlidesOrEnv, third_label),
-            (EditorTab::Lfo, "LFO"),
-            (EditorTab::Manual, "Manual"),
-        ] {
-            let active = tab == t;
-            let btn = egui::Button::new(RichText::new(lbl).size(11.5).strong().color(if active {
-                Color32::BLACK
-            } else {
-                TEXT_DIM
-            }))
-            .fill(if active { ACCENT_YELLOW } else { CARD_BG })
-            .corner_radius(CornerRadius::same(4));
-            if ui.add(btn).clicked() {
-                tab = t;
-            }
-        }
-    });
+    // 3. Main Body: Left Column + Central 5-Tab Card (with aligned Tab Bar above it)
+    let left_col_w = 222.0;
+    let third_label = if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
+        "Envelope"
+    } else {
+        "Slides"
+    };
 
-    ui.add_space(6.0);
-
-    // 4. Body: Left Column + Central Tab Panel + Right Column
     ui.horizontal_top(|ui| {
         // Left Column: Player Graphic + Regenerate + Vertical Complexity/Intensity Sliders
         ui.vertical(|ui| {
-            ui.set_width(210.0);
+            ui.set_width(left_col_w);
+            ui.add_space(18.0);
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_width(116.0);
+                    ui.set_width(122.0);
                     let style_name = match sp.kind {
                         SessionPlayerKind::Keyboard => sp.keyboard_style.label(),
                         SessionPlayerKind::Bass => sp.bass_style.label(),
@@ -212,15 +244,19 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                                 .strong()
                                 .color(ACCENT_YELLOW),
                         );
-                        let (disc_rect, _) =
-                            ui.allocate_exact_size(vec2(84.0, 84.0), Sense::hover());
-                        draw_player_disc(ui, disc_rect, sp.kind);
                         ui.add_space(4.0);
+                        let (disc_rect, _) =
+                            ui.allocate_exact_size(vec2(94.0, 94.0), Sense::hover());
+                        draw_player_disc(ui, disc_rect, sp.kind);
+                        ui.add_space(6.0);
                         if ui
                             .add(
-                                egui::Button::new(RichText::new("Regenerate").size(11.0))
-                                    .fill(Color32::from_rgb(0x3a, 0x3c, 0x42))
-                                    .corner_radius(CornerRadius::same(4)),
+                                egui::Button::new(
+                                    RichText::new("Regenerate").size(11.0).color(TEXT_MAIN),
+                                )
+                                .fill(Color32::from_rgb(0x3a, 0x3c, 0x42))
+                                .corner_radius(CornerRadius::same(4))
+                                .min_size(vec2(84.0, 22.0)),
                             )
                             .clicked()
                         {
@@ -237,80 +273,85 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
         ui.add_space(8.0);
 
-        // Central Panel + Right Column inside dark rounded card
-        egui::Frame::new()
-            .fill(CARD_BG)
-            .stroke(Stroke::new(1.0, BORDER))
-            .corner_radius(CornerRadius::same(8))
-            .inner_margin(egui::Margin::symmetric(12, 10))
-            .show(ui, |ui| {
-                ui.horizontal_top(|ui| {
-                    // Central tab area
-                    ui.vertical(|ui| {
-                        ui.set_width((ui.available_width() - 185.0).max(260.0));
-                        match tab {
-                            EditorTab::Main => draw_main_tab(ui, &mut sp),
-                            EditorTab::Details => draw_details_tab(ui, &mut sp),
-                            EditorTab::SlidesOrEnv => draw_slides_or_env_tab(ui, &mut sp),
-                            EditorTab::Lfo => draw_lfo_tab(ui, &mut sp),
-                            EditorTab::Manual => draw_manual_tab(ui, &mut sp),
+        // Right Area: Centered Tab Strip + Dark Rounded Card (Central Panel + Right Timing Column)
+        ui.vertical(|ui| {
+            // Tab Bar centered above the central card
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() * 0.22).max(20.0));
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(0x16, 0x17, 0x1b))
+                    .corner_radius(CornerRadius::same(5))
+                    .inner_margin(egui::Margin::symmetric(3, 2))
+                    .show(ui, |ui| {
+                        for (t, lbl) in [
+                            (EditorTab::Main, "Main"),
+                            (EditorTab::Details, "Details"),
+                            (EditorTab::SlidesOrEnv, third_label),
+                            (EditorTab::Lfo, "LFO"),
+                            (EditorTab::Manual, "Manual"),
+                        ] {
+                            let active = tab == t;
+                            let btn = egui::Button::new(
+                                RichText::new(lbl).size(11.5).strong().color(if active {
+                                    Color32::BLACK
+                                } else {
+                                    TEXT_DIM
+                                }),
+                            )
+                            .fill(if active {
+                                ACCENT_YELLOW
+                            } else {
+                                Color32::TRANSPARENT
+                            })
+                            .corner_radius(CornerRadius::same(4));
+                            if ui.add(btn).clicked() {
+                                tab = t;
+                            }
                         }
                     });
+            });
 
-                    ui.separator();
+            ui.add_space(6.0);
 
-                    // Right Column: Timing, Fills & Feel
-                    ui.vertical(|ui| {
-                        ui.set_width(168.0);
-                        if tab == EditorTab::Details {
-                            ui.label(RichText::new("Phrase Length").size(10.5).color(TEXT_DIM));
-                            egui::ComboBox::from_id_salt("sp_phrase_len")
-                                .selected_text(sp.phrase_length.label())
-                                .show_ui(ui, |ui| {
-                                    for pl in PhraseLength::ALL {
-                                        ui.selectable_value(&mut sp.phrase_length, pl, pl.label());
-                                    }
-                                });
-                            ui.add(
-                                egui::Slider::new(&mut sp.chord_response, 0.0..=1.0)
-                                    .text("Chord Resp."),
-                            );
-                            ui.label(RichText::new("Tempo: Automatic").size(10.5).color(TEXT_DIM));
-                            ui.add(egui::Slider::new(&mut sp.feel, -1.0..=1.0).text("Feel"));
-                            ui.add(egui::Slider::new(&mut sp.humanize, 0.0..=1.0).text("Humanize"));
-                        } else {
-                            ui.horizontal(|ui| {
-                                yellow_arc_knob(ui, "Fill Amount", &mut sp.fill_amount);
-                                ui.add_space(6.0);
-                                yellow_arc_knob(ui, "Swing", &mut sp.swing);
-                            });
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                yellow_arc_knob(ui, "Fill Comp.", &mut sp.fill_complexity);
-                                ui.add_space(10.0);
-                                let sub_lbl = match sp.swing_subdiv {
-                                    SwingSubdiv::Eighth => "8th",
-                                    SwingSubdiv::Sixteenth => "16th",
-                                };
-                                if ui.button(sub_lbl).clicked() {
-                                    sp.swing_subdiv = match sp.swing_subdiv {
-                                        SwingSubdiv::Eighth => SwingSubdiv::Sixteenth,
-                                        SwingSubdiv::Sixteenth => SwingSubdiv::Eighth,
-                                    };
-                                }
-                            });
-                        }
+            egui::Frame::new()
+                .fill(CARD_BG)
+                .stroke(Stroke::new(1.0, BORDER))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(egui::Margin::symmetric(14, 12))
+                .show(ui, |ui| {
+                    ui.horizontal_top(|ui| {
+                        // Central Tab Area
+                        ui.vertical(|ui| {
+                            ui.set_width((ui.available_width() - 188.0).max(280.0));
+                            match tab {
+                                EditorTab::Main => draw_main_tab(ui, &mut sp),
+                                EditorTab::Details => draw_details_tab(ui, &mut sp),
+                                EditorTab::SlidesOrEnv => draw_slides_or_env_tab(ui, &mut sp),
+                                EditorTab::Lfo => draw_lfo_tab(ui, &mut sp),
+                                EditorTab::Manual => draw_manual_tab(ui, &mut sp),
+                            }
+                        });
+
+                        ui.separator();
+
+                        // Right Column: daw_knob Timing, Fills & Feel
+                        ui.vertical(|ui| {
+                            ui.set_width(172.0);
+                            draw_right_column(ui, &mut sp, tab);
+                        });
                     });
                 });
-            });
+        });
     });
 
     ui.ctx().data_mut(|d| {
         d.insert_temp(tab_id, tab);
         d.insert_temp(tool_id, tool);
+        d.insert_temp(snap_id, snap_on);
+        d.insert_temp(zoom_id, zoom);
     });
 
-    if sp != orig {
+    if sp != orig || was_legacy_drummer {
         if let Some(g) = p.tracks[ti].regions[ri].generated.as_mut() {
             g.source = Generator::Session(sp);
         }
@@ -318,37 +359,71 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     }
 }
 
-fn find_session_region(p: &Project, s: &UiState) -> Option<(usize, usize)> {
+fn find_session_or_drummer_region(p: &Project, s: &UiState) -> Option<(usize, usize, bool)> {
     for (ti, ri) in s.tracks.selection() {
         if let Some(r) = p.tracks.get(ti).and_then(|t| t.regions.get(ri)) {
-            if matches!(
-                r.generated.as_ref().map(|g| &g.source),
-                Some(Generator::Session(_))
-            ) {
-                return Some((ti, ri));
+            match r.generated.as_ref().map(|g| &g.source) {
+                Some(Generator::Session(_)) => return Some((ti, ri, false)),
+                Some(Generator::Drummer(_)) => return Some((ti, ri, true)),
+                _ => {}
             }
         }
     }
     let ti = p.selected_track;
     if let Some(t) = p.tracks.get(ti) {
-        if let Some(ri) = t.regions.iter().position(|r| {
-            matches!(
-                r.generated.as_ref().map(|g| &g.source),
-                Some(Generator::Session(_))
-            )
-        }) {
-            return Some((ti, ri));
+        for (ri, r) in t.regions.iter().enumerate() {
+            match r.generated.as_ref().map(|g| &g.source) {
+                Some(Generator::Session(_)) => return Some((ti, ri, false)),
+                Some(Generator::Drummer(_)) => return Some((ti, ri, true)),
+                _ => {}
+            }
         }
     }
     None
 }
 
-fn draw_region_strip(ui: &Ui, rect: Rect, region: &crate::model::Region, sp: &SessionPlayerParams) {
+fn draw_bar_ruler_and_strip(
+    ui: &Ui,
+    rect: Rect,
+    region: &crate::model::Region,
+    sp: &SessionPlayerParams,
+    zoom: f32,
+) {
     let g = ui.painter_at(rect);
-    g.rect_filled(rect, 3.0, Color32::from_rgb(0x4b, 0x45, 0x2c));
-    let header_h = 16.0;
-    let header = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + header_h));
-    g.rect_filled(header, 0.0, Color32::from_rgb(0xe8, 0xe2, 0xc4));
+    let ruler_h = 15.0;
+    let header_h = 15.0;
+    let ruler = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + ruler_h));
+    let header = Rect::from_min_max(
+        pos2(rect.left(), ruler.bottom()),
+        pos2(rect.right(), ruler.bottom() + header_h),
+    );
+    let body = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
+
+    g.rect_filled(ruler, 0.0, Color32::from_rgb(0x16, 0x17, 0x1b));
+    g.rect_filled(header, 0.0, Color32::from_rgb(0xe6, 0xdf, 0xbe));
+    let body_bg = if sp.kind == SessionPlayerKind::Bass && sp.bass_style == BassStyle::Bass808 {
+        Color32::from_rgb(0x3c, 0x3d, 0x41)
+    } else {
+        Color32::from_rgb(0xa8, 0x8f, 0x2d)
+    };
+    g.rect_filled(body, 0.0, body_bg);
+
+    let total_beats = ((region.len_bars * 4.0) / zoom.max(0.5)).max(4.0);
+    let num_bars = (total_beats / 4.0).ceil() as usize;
+    for bar in 1..=num_bars {
+        let x = rect.left() + ((bar - 1) as f32 * 4.0 / total_beats) * rect.width();
+        g.line_segment(
+            [pos2(x, ruler.top()), pos2(x, body.bottom())],
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 45)),
+        );
+        g.text(
+            pos2(x + 4.0, ruler.center().y),
+            Align2::LEFT_CENTER,
+            format!("{bar}"),
+            FontId::proportional(9.5),
+            TEXT_DIM,
+        );
+    }
 
     let style_lbl = match sp.kind {
         SessionPlayerKind::Keyboard => sp.keyboard_style.label(),
@@ -358,44 +433,42 @@ fn draw_region_strip(ui: &Ui, rect: Rect, region: &crate::model::Region, sp: &Se
     g.text(
         pos2(header.left() + 8.0, header.center().y),
         Align2::LEFT_CENTER,
-        format!("{} - {style_lbl}", sp.kind.label()),
+        format!("▸ {} - {style_lbl}", sp.kind.label()),
         FontId::proportional(10.0),
         Color32::from_rgb(0x28, 0x25, 0x1a),
     );
 
-    let body = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
-    let total_beats = (region.len_bars * 4.0).max(4.0);
-    for bar in 1..=(region.len_bars.ceil() as usize) {
-        let x = body.left() + ((bar - 1) as f32 * 4.0 / total_beats) * body.width();
+    // Note stems with notehead + tail
+    for n in &region.notes {
+        let x0 = body.left() + (n.start / total_beats) * body.width();
+        let x1 = (x0 + (n.len / total_beats) * body.width()).max(x0 + 4.0);
+        if x0 > body.right() {
+            continue;
+        }
+        let pitch_norm = ((f32::from(n.pitch) - 28.0) / 60.0).clamp(0.08, 0.92);
+        let y = body.bottom() - pitch_norm * body.height();
+        let col = Color32::from_rgba_unmultiplied(255, 252, 232, (150 + n.vel / 2).min(255));
+        g.circle_filled(pos2(x0, y), 2.2, col);
         g.line_segment(
-            [pos2(x, body.top()), pos2(x, body.bottom())],
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 35)),
+            [pos2(x0, y), pos2(x1.min(body.right()), y)],
+            Stroke::new(1.6, col),
         );
     }
 
-    for n in &region.notes {
-        let x0 = body.left() + (n.start / total_beats) * body.width();
-        let x1 = (x0 + (n.len / total_beats) * body.width()).max(x0 + 3.0);
-        let pitch_norm = ((f32::from(n.pitch) - 28.0) / 60.0).clamp(0.05, 0.95);
-        let y = body.bottom() - pitch_norm * body.height();
-        let col = Color32::from_rgba_unmultiplied(255, 250, 225, (120 + n.vel / 2).min(255));
-        g.line_segment([pos2(x0, y), pos2(x1, y)], Stroke::new(2.0, col));
-    }
-
-    // Draw Pitch-Bend slide curve overlay if present
+    // Smooth white pitch-bend glide curve overlay
     let mut bend_pts: Vec<Pos2> = region
         .controls
         .iter()
         .filter(|c| c.num == PITCH_BEND)
         .map(|c| {
             let x = body.left() + (c.start / total_beats) * body.width();
-            let y = body.bottom() - (f32::from(c.val) / 16383.0).clamp(0.0, 1.0) * body.height();
+            let y = body.bottom() - (f32::from(c.val) / 16383.0).clamp(0.05, 0.95) * body.height();
             pos2(x, y)
         })
         .collect();
     if bend_pts.len() >= 2 {
         bend_pts.sort_by(|a, b| a.x.total_cmp(&b.x));
-        g.add(Shape::line(bend_pts, Stroke::new(1.2, Color32::WHITE)));
+        g.add(Shape::line(bend_pts, Stroke::new(1.3, Color32::WHITE)));
     }
 }
 
@@ -403,47 +476,84 @@ fn draw_player_disc(ui: &Ui, rect: Rect, kind: SessionPlayerKind) {
     let g = ui.painter_at(rect);
     let c = rect.center();
     let r = rect.width().min(rect.height()) * 0.48;
-    g.circle_filled(c, r, Color32::from_rgb(0x16, 0x17, 0x1b));
+    g.circle_filled(c, r, Color32::from_rgb(0x14, 0x15, 0x18));
     g.circle_stroke(c, r, Stroke::new(1.0, BORDER));
-    let stroke = Stroke::new(1.4, ACCENT_YELLOW);
+    let st = Stroke::new(1.3, ACCENT_YELLOW);
+    let dim_st = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0xea, 0xc3, 0x2a, 140));
     match kind {
         SessionPlayerKind::Keyboard => {
-            g.rect_stroke(
-                Rect::from_center_size(c + vec2(0.0, 2.0), vec2(44.0, 22.0)),
-                2.0,
-                stroke,
-                StrokeKind::Inside,
+            // Grand piano silhouette (matching session1.png)
+            let body = Rect::from_center_size(c + vec2(0.0, -3.0), vec2(52.0, 20.0));
+            g.rect_stroke(body, 3.0, st, StrokeKind::Inside);
+            g.line_segment(
+                [
+                    pos2(body.left() + 4.0, body.bottom()),
+                    pos2(body.left() + 4.0, c.y + 24.0),
+                ],
+                st,
             );
-            for i in -3..=3 {
-                let x = c.x + i as f32 * 5.5;
-                g.line_segment([pos2(x, c.y - 9.0), pos2(x, c.y + 4.0)], stroke);
+            g.line_segment(
+                [
+                    pos2(body.right() - 4.0, body.bottom()),
+                    pos2(body.right() - 4.0, c.y + 24.0),
+                ],
+                st,
+            );
+            g.line_segment(
+                [
+                    pos2(body.left() + 6.0, body.top() - 8.0),
+                    pos2(body.right() - 6.0, body.top() - 2.0),
+                ],
+                dim_st,
+            );
+            for i in 0..8 {
+                let x = body.left() + 6.0 + i as f32 * 5.7;
+                g.line_segment(
+                    [pos2(x, body.top() + 8.0), pos2(x, body.bottom() - 2.0)],
+                    dim_st,
+                );
             }
         }
         SessionPlayerKind::Bass => {
-            g.rect_stroke(
-                Rect::from_center_size(c, vec2(44.0, 26.0)),
-                2.0,
-                stroke,
-                StrokeKind::Inside,
+            // Hardware synth panel + 1-octave keyboard (matching session2.png)
+            let chassis = Rect::from_center_size(c, vec2(52.0, 38.0));
+            g.rect_stroke(chassis, 3.0, st, StrokeKind::Inside);
+            for row in 0..2 {
+                for col in 0..4 {
+                    let kc = pos2(
+                        chassis.left() + 10.0 + col as f32 * 10.5,
+                        chassis.top() + 9.0 + row as f32 * 9.0,
+                    );
+                    g.circle_stroke(kc, 2.5, dim_st);
+                }
+            }
+            let keys_y = chassis.bottom() - 12.0;
+            g.line_segment(
+                [
+                    pos2(chassis.left() + 3.0, keys_y),
+                    pos2(chassis.right() - 3.0, keys_y),
+                ],
+                st,
             );
-            g.circle_stroke(c + vec2(-12.0, -5.0), 3.0, stroke);
-            g.circle_stroke(c + vec2(0.0, -5.0), 3.0, stroke);
-            g.circle_stroke(c + vec2(12.0, -5.0), 3.0, stroke);
-            g.line_segment([c + vec2(-18.0, 6.0), c + vec2(18.0, 6.0)], stroke);
+            for i in 1..8 {
+                let x = chassis.left() + 4.0 + i as f32 * 5.8;
+                g.line_segment([pos2(x, keys_y), pos2(x, chassis.bottom() - 2.0)], dim_st);
+            }
         }
         SessionPlayerKind::Drummer => {
-            g.circle_stroke(c + vec2(0.0, 6.0), 14.0, stroke);
-            g.circle_stroke(c + vec2(-15.0, -8.0), 8.0, stroke);
-            g.circle_stroke(c + vec2(15.0, -8.0), 8.0, stroke);
+            g.circle_stroke(c + vec2(0.0, 6.0), 16.0, st);
+            g.circle_stroke(c + vec2(-18.0, -10.0), 9.0, st);
+            g.circle_stroke(c + vec2(18.0, -10.0), 9.0, st);
+            g.circle_stroke(c + vec2(-12.0, 14.0), 7.0, dim_st);
         }
     }
 }
 
 fn vertical_yellow_slider(ui: &mut Ui, label: &str, val: &mut f32) {
     ui.vertical(|ui| {
-        ui.set_width(40.0);
+        ui.set_width(42.0);
         ui.label(RichText::new(label).size(9.5).color(TEXT_DIM));
-        let (rect, resp) = ui.allocate_exact_size(vec2(26.0, 108.0), Sense::click_and_drag());
+        let (rect, resp) = ui.allocate_exact_size(vec2(26.0, 118.0), Sense::click_and_drag());
         if (resp.dragged() || resp.clicked()) && resp.interact_pointer_pos().is_some() {
             if let Some(pos) = resp.interact_pointer_pos() {
                 *val = (1.0 - (pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
@@ -452,72 +562,189 @@ fn vertical_yellow_slider(ui: &mut Ui, label: &str, val: &mut f32) {
         let g = ui.painter_at(rect);
         let x = rect.center().x;
         g.line_segment(
-            [pos2(x, rect.top() + 4.0), pos2(x, rect.bottom() - 4.0)],
+            [pos2(x, rect.top() + 5.0), pos2(x, rect.bottom() - 5.0)],
             Stroke::new(3.0, WELL_BG),
         );
-        let thumb_y = rect.bottom() - 4.0 - *val * (rect.height() - 8.0);
+        let thumb_y = rect.bottom() - 5.0 - *val * (rect.height() - 10.0);
         g.line_segment(
-            [pos2(x, rect.bottom() - 4.0), pos2(x, thumb_y)],
+            [pos2(x, rect.bottom() - 5.0), pos2(x, thumb_y)],
             Stroke::new(3.0, ACCENT_YELLOW),
         );
-        g.rect_filled(
-            Rect::from_center_size(pos2(x, thumb_y), vec2(16.0, 7.0)),
-            3.0,
-            Color32::from_rgb(0x6e, 0x72, 0x7c),
-        );
-    });
-}
-
-fn yellow_arc_knob(ui: &mut Ui, label: &str, val: &mut f32) {
-    ui.vertical(|ui| {
-        ui.set_width(70.0);
-        ui.label(RichText::new(label).size(10.0).color(TEXT_DIM));
-        let (rect, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::drag());
-        if resp.dragged() {
-            *val = (*val - resp.drag_delta().y * 0.008).clamp(0.0, 1.0);
-        }
-        let g = ui.painter_at(rect);
-        let c = rect.center();
-        let r = 15.0;
-        g.circle_filled(c, r, Color32::from_rgb(0x2f, 0x31, 0x38));
-        let a0 = std::f32::consts::PI * 0.75;
-        let sweep = *val * std::f32::consts::PI * 1.5;
-        let segs = 16;
-        let pts: Vec<Pos2> = (0..=segs)
-            .map(|i| {
-                let a = a0 + sweep * (i as f32 / segs as f32);
-                pos2(c.x + (r + 3.0) * a.cos(), c.y + (r + 3.0) * a.sin())
-            })
-            .collect();
-        g.add(Shape::line(pts, Stroke::new(2.2, ACCENT_YELLOW)));
-        let end_a = a0 + sweep;
+        let thumb = Rect::from_center_size(pos2(x, thumb_y), vec2(18.0, 8.0));
+        g.rect_filled(thumb, 4.0, Color32::from_rgb(0x6e, 0x72, 0x7c));
         g.line_segment(
             [
-                c,
-                pos2(c.x + r * 0.8 * end_a.cos(), c.y + r * 0.8 * end_a.sin()),
+                pos2(thumb.left() + 4.0, thumb.center().y),
+                pos2(thumb.right() - 4.0, thumb.center().y),
             ],
-            Stroke::new(1.8, ACCENT_YELLOW),
+            Stroke::new(1.5, ACCENT_YELLOW),
         );
     });
 }
 
-fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
-    // Pattern strip (1..8) + Follow Rhythm
-    ui.horizontal(|ui| {
-        for i in 0..8 {
-            let active = sp.pattern_idx == i;
+fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) {
+    if tab == EditorTab::Details {
+        ui.label(RichText::new("Phrase Length").size(10.5).color(TEXT_DIM));
+        egui::ComboBox::from_id_salt("sp_phrase_len")
+            .selected_text(sp.phrase_length.label())
+            .show_ui(ui, |ui| {
+                for pl in PhraseLength::ALL {
+                    ui.selectable_value(&mut sp.phrase_length, pl, pl.label());
+                }
+            });
+        ui.add(egui::Slider::new(&mut sp.chord_response, 0.0..=1.0).text("Chord Resp."));
+        ui.label(RichText::new("Tempo: Automatic").size(10.5).color(TEXT_DIM));
+        let feel_res = draw_session_knob(
+            ui,
+            DawKnobConfig {
+                id: egui::Id::unique("sp_feel_knob"),
+                label: "Feel",
+                help_id: "session_feel",
+                style: DawKnobStyle::Continuous,
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                log: false,
+                bipolar: true,
+                accent: true,
+                unit: "",
+                diameter: 34.0,
+            },
+            sp.feel,
+        );
+        if feel_res.changed {
+            sp.feel = feel_res.value;
+        }
+        ui.add(egui::Slider::new(&mut sp.humanize, 0.0..=1.0).text("Humanize"));
+    } else {
+        ui.horizontal(|ui| {
+            let fill_res = draw_session_knob(
+                ui,
+                DawKnobConfig {
+                    id: egui::Id::unique("sp_fill_amount"),
+                    label: "Fill Amount",
+                    help_id: "session_fill_amount",
+                    style: DawKnobStyle::Continuous,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.35,
+                    log: false,
+                    bipolar: false,
+                    accent: true,
+                    unit: "",
+                    diameter: 38.0,
+                },
+                sp.fill_amount,
+            );
+            if fill_res.changed {
+                sp.fill_amount = fill_res.value;
+            }
+            ui.add_space(6.0);
+            let swing_res = draw_session_knob(
+                ui,
+                DawKnobConfig {
+                    id: egui::Id::unique("sp_swing_knob"),
+                    label: "Swing",
+                    help_id: "session_swing",
+                    style: DawKnobStyle::Continuous,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.08,
+                    log: false,
+                    bipolar: false,
+                    accent: true,
+                    unit: "",
+                    diameter: 38.0,
+                },
+                sp.swing,
+            );
+            if swing_res.changed {
+                sp.swing = swing_res.value;
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let fc_res = draw_session_knob(
+                ui,
+                DawKnobConfig {
+                    id: egui::Id::unique("sp_fill_complexity"),
+                    label: "Fill Comp.",
+                    help_id: "session_fill_complexity",
+                    style: DawKnobStyle::Continuous,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.30,
+                    log: false,
+                    bipolar: false,
+                    accent: true,
+                    unit: "",
+                    diameter: 38.0,
+                },
+                sp.fill_complexity,
+            );
+            if fc_res.changed {
+                sp.fill_complexity = fc_res.value;
+            }
+            ui.add_space(12.0);
+            let sub_lbl = match sp.swing_subdiv {
+                SwingSubdiv::Eighth => "8th",
+                SwingSubdiv::Sixteenth => "16th",
+            };
             if ui
-                .selectable_label(
-                    active,
-                    RichText::new(format!("{}", i + 1))
-                        .size(10.5)
-                        .color(if active { ACCENT_YELLOW } else { TEXT_DIM }),
+                .add(
+                    egui::Button::new(RichText::new(sub_lbl).size(10.5).color(TEXT_MAIN))
+                        .fill(Color32::from_rgb(0x30, 0x32, 0x3a))
+                        .corner_radius(CornerRadius::same(4)),
                 )
                 .clicked()
             {
-                sp.pattern_idx = i;
+                sp.swing_subdiv = match sp.swing_subdiv {
+                    SwingSubdiv::Eighth => SwingSubdiv::Sixteenth,
+                    SwingSubdiv::Sixteenth => SwingSubdiv::Eighth,
+                };
+            }
+        });
+    }
+}
+
+fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
+    // Pattern dot matrix strip (1..8) + Follow Rhythm (matching session1.png & session2.png)
+    ui.horizontal(|ui| {
+        let badge = egui::Button::new(
+            RichText::new(format!("{}", sp.pattern_idx + 1))
+                .size(10.0)
+                .strong()
+                .color(Color32::BLACK),
+        )
+        .fill(ACCENT_YELLOW)
+        .corner_radius(CornerRadius::same(9))
+        .min_size(vec2(18.0, 18.0));
+        if ui.add(badge).clicked() {
+            sp.pattern_idx = (sp.pattern_idx + 1) % 8;
+        }
+        ui.add_space(6.0);
+        let (dot_rect, dot_resp) = ui.allocate_exact_size(vec2(180.0, 18.0), Sense::click());
+        if dot_resp.clicked() {
+            if let Some(pos) = dot_resp.interact_pointer_pos() {
+                let idx = (((pos.x - dot_rect.left()) / dot_rect.width()) * 8.0).floor() as usize;
+                sp.pattern_idx = idx.min(7);
             }
         }
+        let g = ui.painter_at(dot_rect);
+        for i in 0..8 {
+            let cx = dot_rect.left() + (i as f32 + 0.5) * (dot_rect.width() / 8.0);
+            let active = i == sp.pattern_idx || (i % 2 == 0 && sp.complexity > 0.35);
+            g.circle_filled(
+                pos2(cx, dot_rect.center().y),
+                if i == sp.pattern_idx { 3.8 } else { 2.4 },
+                if active {
+                    ACCENT_YELLOW
+                } else {
+                    Color32::from_rgb(0x4a, 0x4d, 0x56)
+                },
+            );
+        }
+
         ui.add_space(8.0);
         ui.label(RichText::new("Follow:").size(10.0).color(TEXT_DIM));
         let f_lbl = match sp.follow_rhythm {
@@ -540,14 +767,14 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         });
     });
 
-    ui.separator();
+    ui.add_space(4.0);
 
     match sp.kind {
         SessionPlayerKind::Bass => {
             ui.horizontal_top(|ui| {
-                // Square XY Pad (Y: Octave, X: Melody)
+                // Square XY Pad (Y: Octave, X: Melody) matching session2.png
                 let (xy_rect, xy_resp) =
-                    ui.allocate_exact_size(vec2(130.0, 108.0), Sense::click_and_drag());
+                    ui.allocate_exact_size(vec2(138.0, 118.0), Sense::click_and_drag());
                 if (xy_resp.dragged() || xy_resp.clicked())
                     && xy_resp.interact_pointer_pos().is_some()
                 {
@@ -573,39 +800,156 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                     FontId::proportional(9.5),
                     TEXT_DIM,
                 );
-                let px = xy_rect.left() + sp.xy_melody * xy_rect.width();
-                let py = xy_rect.bottom() - sp.xy_octave * xy_rect.height();
-                g.circle_filled(pos2(px, py), 10.0, ACCENT_YELLOW);
+                let px = xy_rect.left() + 14.0 + sp.xy_melody * (xy_rect.width() - 28.0);
+                let py = xy_rect.bottom() - 14.0 - sp.xy_octave * (xy_rect.height() - 28.0);
+                g.circle_filled(pos2(px, py), 11.0, ACCENT_YELLOW);
 
-                ui.add_space(12.0);
+                ui.add_space(16.0);
                 ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(format!(
-                            "Note Range: MIDI {} - {}",
-                            sp.note_range_lo, sp.note_range_hi
-                        ))
-                        .size(10.5)
-                        .color(ACCENT_YELLOW),
+                    // Dual-handle Note Range bar matching session2.png
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Note Range").size(10.5).color(TEXT_DIM));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} - {}",
+                                    midi_note_name(sp.note_range_lo),
+                                    midi_note_name(sp.note_range_hi)
+                                ))
+                                .size(10.5)
+                                .strong()
+                                .color(ACCENT_YELLOW),
+                            );
+                        });
+                    });
+                    let (rng_rect, rng_resp) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), 22.0),
+                        Sense::click_and_drag(),
                     );
-                    ui.add(egui::Slider::new(&mut sp.note_range_lo, 24..=60).text("Low"));
-                    ui.add(egui::Slider::new(&mut sp.note_range_hi, 36..=84).text("High"));
-                    ui.add(egui::Slider::new(&mut sp.note_length, 1..=100).text("Note Length"));
+                    if rng_resp.dragged() || rng_resp.clicked() {
+                        if let Some(pos) = rng_resp.interact_pointer_pos() {
+                            let frac =
+                                ((pos.x - rng_rect.left()) / rng_rect.width()).clamp(0.0, 1.0);
+                            let midi = (24.0 + frac * 60.0).round() as u8;
+                            if midi.abs_diff(sp.note_range_lo) <= midi.abs_diff(sp.note_range_hi) {
+                                sp.note_range_lo = midi.min(sp.note_range_hi.saturating_sub(4));
+                            } else {
+                                sp.note_range_hi = midi.max(sp.note_range_lo + 4);
+                            }
+                        }
+                    }
+                    let gr = ui.painter_at(rng_rect);
+                    gr.rect_filled(rng_rect, 4.0, WELL_BG);
+                    let x_lo = rng_rect.left()
+                        + ((f32::from(sp.note_range_lo) - 24.0) / 60.0) * rng_rect.width();
+                    let x_hi = rng_rect.left()
+                        + ((f32::from(sp.note_range_hi) - 24.0) / 60.0) * rng_rect.width();
+                    gr.rect_filled(
+                        Rect::from_min_max(
+                            pos2(x_lo, rng_rect.top()),
+                            pos2(x_hi, rng_rect.bottom()),
+                        ),
+                        2.0,
+                        Color32::from_rgb(0x2b, 0x2d, 0x34),
+                    );
+                    gr.line_segment(
+                        [
+                            pos2(x_lo, rng_rect.top() + 2.0),
+                            pos2(x_lo, rng_rect.bottom() - 2.0),
+                        ],
+                        Stroke::new(3.0, ACCENT_YELLOW),
+                    );
+                    gr.line_segment(
+                        [
+                            pos2(x_hi, rng_rect.top() + 2.0),
+                            pos2(x_hi, rng_rect.bottom() - 2.0),
+                        ],
+                        Stroke::new(3.0, ACCENT_YELLOW),
+                    );
+
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Note Length").size(10.5).color(TEXT_DIM));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(format!("{}", sp.note_length))
+                                    .size(10.5)
+                                    .strong()
+                                    .color(ACCENT_YELLOW),
+                            );
+                        });
+                    });
+                    let mut nl = f32::from(sp.note_length) / 100.0;
+                    let (nl_rect, nl_resp) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), 18.0),
+                        Sense::click_and_drag(),
+                    );
+                    if nl_resp.dragged() || nl_resp.clicked() {
+                        if let Some(pos) = nl_resp.interact_pointer_pos() {
+                            nl = ((pos.x - nl_rect.left()) / nl_rect.width()).clamp(0.01, 1.0);
+                            sp.note_length = (nl * 100.0).round() as u8;
+                        }
+                    }
+                    let gnl = ui.painter_at(nl_rect);
+                    let cy = nl_rect.center().y;
+                    let tx = nl_rect.left() + nl * nl_rect.width();
+                    gnl.line_segment(
+                        [pos2(nl_rect.left(), cy), pos2(nl_rect.right(), cy)],
+                        Stroke::new(3.0, WELL_BG),
+                    );
+                    gnl.line_segment(
+                        [pos2(nl_rect.left(), cy), pos2(tx, cy)],
+                        Stroke::new(3.0, ACCENT_YELLOW),
+                    );
+                    gnl.rect_filled(
+                        Rect::from_center_size(pos2(tx, cy), vec2(8.0, 14.0)),
+                        3.0,
+                        Color32::from_rgb(0x6e, 0x72, 0x7c),
+                    );
                 });
             });
         }
         SessionPlayerKind::Keyboard => {
+            // Left/Right Hand icons + Key-Range bar matching session1.png
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Style:").size(10.5).color(TEXT_DIM));
-                egui::ComboBox::from_id_salt("sp_main_kb_style")
-                    .selected_text(sp.keyboard_style.label())
-                    .show_ui(ui, |ui| {
-                        for st in KeyboardStyle::ALL {
-                            ui.selectable_value(&mut sp.keyboard_style, st, st.label());
-                        }
-                    });
-                ui.checkbox(&mut sp.tie_notes, "Tie Notes");
+                ui.add_space(ui.available_width() * 0.30);
+                ui.label(
+                    RichText::new(phosphor_egui::regular::HAND_PALM)
+                        .size(22.0)
+                        .color(ACCENT_YELLOW),
+                );
+                ui.add_space(18.0);
+                ui.label(
+                    RichText::new(phosphor_egui::regular::HAND_PALM)
+                        .size(22.0)
+                        .color(ACCENT_YELLOW),
+                );
             });
-            ui.add_space(4.0);
+            let (kr_rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+            let gk = ui.painter_at(kr_rect);
+            gk.rect_filled(kr_rect, 3.0, WELL_BG);
+            let x_l = kr_rect.left() + kr_rect.width() * 0.33;
+            let x_r = kr_rect.left() + kr_rect.width() * 0.62;
+            gk.rect_filled(
+                Rect::from_min_max(pos2(x_l, kr_rect.top()), pos2(x_r, kr_rect.bottom())),
+                2.0,
+                Color32::from_rgb(0x28, 0x2a, 0x31),
+            );
+            gk.rect_stroke(
+                Rect::from_center_size(pos2(x_l, kr_rect.center().y), vec2(12.0, 14.0)),
+                2.0,
+                Stroke::new(1.0, ACCENT_YELLOW),
+                StrokeKind::Inside,
+            );
+            gk.rect_stroke(
+                Rect::from_center_size(pos2(x_r, kr_rect.center().y), vec2(12.0, 14.0)),
+                2.0,
+                Stroke::new(1.0, ACCENT_YELLOW),
+                StrokeKind::Inside,
+            );
+
+            ui.add_space(6.0);
             ui.columns(2, |cols| {
                 cols[0].label(
                     RichText::new("Left Hand")
@@ -613,20 +957,26 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                         .strong()
                         .color(TEXT_MAIN),
                 );
-                egui::ComboBox::from_id_salt("sp_lh_voicing")
-                    .selected_text(sp.lh_voicing.label())
-                    .show_ui(&mut cols[0], |ui| {
-                        for v in VoicingMode::ALL {
-                            ui.selectable_value(&mut sp.lh_voicing, v, v.label());
-                        }
-                    });
-                egui::ComboBox::from_id_salt("sp_lh_style")
-                    .selected_text(sp.lh_style.label())
-                    .show_ui(&mut cols[0], |ui| {
-                        for st in HandStyle::ALL {
-                            ui.selectable_value(&mut sp.lh_style, st, st.label());
-                        }
-                    });
+                cols[0].horizontal(|ui| {
+                    ui.label(RichText::new("Voicing").size(10.0).color(TEXT_DIM));
+                    egui::ComboBox::from_id_salt("sp_lh_voicing")
+                        .selected_text(RichText::new(sp.lh_voicing.label()).color(ACCENT_YELLOW))
+                        .show_ui(ui, |ui| {
+                            for v in VoicingMode::ALL {
+                                ui.selectable_value(&mut sp.lh_voicing, v, v.label());
+                            }
+                        });
+                });
+                cols[0].horizontal(|ui| {
+                    ui.label(RichText::new("Style").size(10.0).color(TEXT_DIM));
+                    egui::ComboBox::from_id_salt("sp_lh_style")
+                        .selected_text(RichText::new(sp.lh_style.label()).color(ACCENT_YELLOW))
+                        .show_ui(ui, |ui| {
+                            for st in HandStyle::ALL {
+                                ui.selectable_value(&mut sp.lh_style, st, st.label());
+                            }
+                        });
+                });
 
                 cols[1].label(
                     RichText::new("Right Hand")
@@ -634,20 +984,26 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                         .strong()
                         .color(TEXT_MAIN),
                 );
-                egui::ComboBox::from_id_salt("sp_rh_voicing")
-                    .selected_text(sp.rh_voicing.label())
-                    .show_ui(&mut cols[1], |ui| {
-                        for v in VoicingMode::ALL {
-                            ui.selectable_value(&mut sp.rh_voicing, v, v.label());
-                        }
-                    });
-                egui::ComboBox::from_id_salt("sp_rh_movement")
-                    .selected_text(sp.rh_movement.label())
-                    .show_ui(&mut cols[1], |ui| {
-                        for mv in HandMovement::ALL {
-                            ui.selectable_value(&mut sp.rh_movement, mv, mv.label());
-                        }
-                    });
+                cols[1].horizontal(|ui| {
+                    ui.label(RichText::new("Voicing").size(10.0).color(TEXT_DIM));
+                    egui::ComboBox::from_id_salt("sp_rh_voicing")
+                        .selected_text(RichText::new(sp.rh_voicing.label()).color(ACCENT_YELLOW))
+                        .show_ui(ui, |ui| {
+                            for v in VoicingMode::ALL {
+                                ui.selectable_value(&mut sp.rh_voicing, v, v.label());
+                            }
+                        });
+                });
+                cols[1].horizontal(|ui| {
+                    ui.label(RichText::new("Movement").size(10.0).color(TEXT_DIM));
+                    egui::ComboBox::from_id_salt("sp_rh_movement")
+                        .selected_text(RichText::new(sp.rh_movement.label()).color(ACCENT_YELLOW))
+                        .show_ui(ui, |ui| {
+                            for mv in HandMovement::ALL {
+                                ui.selectable_value(&mut sp.rh_movement, mv, mv.label());
+                            }
+                        });
+                });
             });
         }
         SessionPlayerKind::Drummer => {
@@ -719,10 +1075,24 @@ fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
             ui.checkbox(&mut sp.env_align_peak, "Align: Peak");
             ui.checkbox(&mut sp.env_invert, "Invert");
         });
-        ui.add(egui::Slider::new(&mut sp.env_attack, 0.01..=1.0).text("Attack"));
-        ui.add(egui::Slider::new(&mut sp.env_hold, 0.0..=1.0).text("Hold"));
-        ui.add(egui::Slider::new(&mut sp.env_decay, 0.01..=1.0).text("Decay"));
-        ui.add(egui::Slider::new(&mut sp.env_shift_start, -0.5..=0.5).text("Shift Start"));
+        let (env_rect, _) =
+            ui.allocate_exact_size(vec2(ui.available_width().max(220.0), 86.0), Sense::hover());
+        let mut sustain = sp.env_hold;
+        let mut rel = sp.env_decay;
+        crate::widgets::daw_adsr_envelope(
+            ui,
+            egui::Id::unique("session_pad_env"),
+            env_rect,
+            &mut sp.env_attack,
+            &mut sp.env_decay,
+            &mut sustain,
+            &mut rel,
+            1.0,
+            1.0,
+            1.0,
+        );
+        sp.env_hold = sustain;
+        sp.env_decay = rel;
     } else {
         ui.horizontal_top(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(140.0, 96.0), Sense::hover());
@@ -843,4 +1213,15 @@ fn draw_manual_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
             }
         }
     });
+}
+
+fn draw_session_knob(
+    ui: &mut Ui,
+    cfg: DawKnobConfig<'_>,
+    current_val: f32,
+) -> daw_knob::DawKnobResult {
+    let side = cfg.diameter.max(36.0);
+    let (cell, _) = ui.allocate_exact_size(vec2(side + 26.0, side + 34.0), Sense::hover());
+    let g = ui.painter().clone();
+    daw_knob::draw(ui, &g, cell, cfg, current_val, None)
 }
