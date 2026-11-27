@@ -42,6 +42,13 @@ cargo xtask check # runs:
 # - cargo test -p prowave-dsp --test preset_compat -- --nocapture (compare vs Logic presets)
 ```
 
+### UI Reference & Screenshot Verification Rules
+When designing, refactoring, or modifying any UI view or widget:
+1. **Extract & Inspect Official PDF References First:** Before designing or modifying any UI view, extract the relevant reference pages from `/home/triadwoozie/Documents/Douri/references/docs/*.pdf` (e.g., `logic-pro-mac-user-guide.pdf`) as PNGs into `.local/verify/pdf_refs/` using `pdftoppm -png` and thoroughly inspect both the extracted images and `/home/triadwoozie/Documents/Douri/references/` assets. Do not invent ad-hoc layouts or approximate guesswork.
+2. **Reuse Hardware Widgets:** Reuse existing hardware widgets from `crates/prowave-app/src/daw_knob.rs` and `crates/prowave-app/src/widgets.rs` (`daw_xy_pad`, `daw_envelope_editor`, `daw_phosphor_scope`, `daw_radial_selector`, etc.) rather than raw gray boxes or unstyled buttons.
+3. **Targeted Live Screenshot Verification:** Capture and visually inspect screenshots in `.local/verify/` of the **exact views modified** (e.g., `session_player`, `step_sequencer`), never just the default startup or mixer scene. Visually verify zero text overlap, correct alignment, no clipping, and no dead empty gutters before committing.
+4. **Localization & Safety Rules:** Keep `.local/` gitignored. Strictly preserve `#![forbid(alloc)]` on the real-time audio thread. If any new `tr(...)` keys are added, add them to all 18 `crates/prowave-app/locales/*.txt` files. Do not use emojis anywhere in the UI.
+
 ### Coding Standards for Agents
 
 1.  **Audio Thread Rules (engine, dsp, instruments):**

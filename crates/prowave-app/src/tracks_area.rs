@@ -2983,6 +2983,64 @@ fn stack_band(p: &Project, i: usize) -> Option<(f64, f64)> {
     span
 }
 
+/// Synchronizes the bottom editor panel to match the clicked track's type:
+/// Session Player (Drummer, Keyboard, Bass), Piano Roll, or Step Sequencer.
+pub(crate) fn sync_bottom_editor_to_track(
+    p: &crate::model::Project,
+    bottom: &mut crate::Bottom,
+    score_tab: &mut bool,
+    ti: usize,
+) {
+    if ti >= p.tracks.len() {
+        return;
+    }
+    let track = &p.tracks[ti];
+    let mut has_drummer = track.kind == TrackKind::Drummer;
+    let mut has_keyboard = false;
+    let mut has_bass = false;
+    let mut has_step_seq = false;
+    let mut has_midi = false;
+
+    for r in &track.regions {
+        if let Some(g) = &r.generated {
+            match &g.source {
+                crate::model::Generator::Drummer(_) => has_drummer = true,
+                crate::model::Generator::Session(sp) => match sp.kind {
+                    crate::session_player::SessionPlayerKind::Drummer => has_drummer = true,
+                    crate::session_player::SessionPlayerKind::Keyboard => has_keyboard = true,
+                    crate::session_player::SessionPlayerKind::Bass => has_bass = true,
+                },
+                crate::model::Generator::Pattern(_) => has_step_seq = true,
+            }
+        } else if track.kind.has_regions() && track.kind != TrackKind::Audio {
+            has_midi = true;
+        }
+    }
+
+    let name_lower = track.name.to_lowercase();
+    if !has_drummer && !has_keyboard && !has_bass && !has_step_seq {
+        if name_lower.contains("drum") || track.kind == TrackKind::Drummer {
+            has_drummer = true;
+        } else if name_lower.contains("bass") {
+            has_bass = true;
+        } else if name_lower.contains("piano") || name_lower.contains("key") {
+            has_keyboard = true;
+        } else if name_lower.contains("pattern") || name_lower.contains("step") {
+            has_step_seq = true;
+        }
+    }
+
+    if has_drummer || has_keyboard || has_bass {
+        *bottom = crate::Bottom::SessionPlayer;
+    } else if has_step_seq {
+        *bottom = crate::Bottom::PianoRoll;
+        *score_tab = true;
+    } else if has_midi || track.kind == TrackKind::Instrument {
+        *bottom = crate::Bottom::PianoRoll;
+        *score_tab = false;
+    }
+}
+
 /// What a track header shows besides the project: the level meters, whether solo silences the
 /// track, and whether the track is among the selected ones (Shift- or Command-click).
 #[derive(Clone, Copy)]
@@ -3477,6 +3535,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         if let Some(pt) = lane_resp.interact_pointer_pos() {
             if let Some(row) = row_at(&rows, pt.y - lanes.top() + scroll_y) {
                 p.selected_track = row;
+                sync_bottom_editor_to_track(p, &mut s.bottom, &mut s.score_tab, row);
                 if context_click(&lane_resp) {
                     v.lane_menu = Some((
                         row,
@@ -3673,6 +3732,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
             if selects && resp.clicked() && ui.input(|i| i.modifiers.shift || i.modifiers.command) {
                 v.toggle(ti, ri);
                 p.selected_track = ti;
+                sync_bottom_editor_to_track(p, &mut s.bottom, &mut s.score_tab, ti);
             } else if (selects && resp.clicked())
                 || (resp.drag_started_by(egui::PointerButton::Primary)
                     && !matches!(tool, TrackTool::Marquee | TrackTool::Solo))
@@ -3684,6 +3744,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                     v.make_primary(ti, ri);
                 }
                 p.selected_track = ti;
+                sync_bottom_editor_to_track(p, &mut s.bottom, &mut s.score_tab, ti);
             }
             if resp.double_clicked() {
                 if p.tracks[ti].kind != TrackKind::Audio {
@@ -4619,6 +4680,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         } else if resp.clicked() {
             let how = crate::track_selection::Click::from_mods(ui.input(|i| i.modifiers));
             crate::track_selection::click(p, v, i, how, v.show_hidden);
+            if how == crate::track_selection::Click::Plain {
+                sync_bottom_editor_to_track(p, &mut s.bottom, &mut s.score_tab, i);
+            }
         }
         let stackable = v.selected_tracks(p).len() >= 2;
         let t = &p.tracks[i];

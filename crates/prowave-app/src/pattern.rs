@@ -506,10 +506,10 @@ pub struct BarSpec {
 }
 
 /// A small random number generator that gives the same numbers for the same seed everywhere.
-struct Rng(u32);
+pub(crate) struct Rng(u32);
 
 impl Rng {
-    fn new(seed: u32) -> Self {
+    pub(crate) fn new(seed: u32) -> Self {
         // Close seeds must give unrelated numbers: mix the bits first.
         let mut s = seed;
         s ^= s >> 16;
@@ -522,7 +522,7 @@ impl Rng {
         r
     }
 
-    fn next(&mut self) -> u32 {
+    pub(crate) fn next(&mut self) -> u32 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 17;
@@ -532,11 +532,11 @@ impl Rng {
     }
 
     /// A number from 0 up to (not including) 1.
-    fn unit(&mut self) -> f32 {
+    pub(crate) fn unit(&mut self) -> f32 {
         (self.next() >> 8) as f32 / 16_777_216.0
     }
 
-    fn chance(&mut self, p: f32) -> bool {
+    pub(crate) fn chance(&mut self, p: f32) -> bool {
         self.unit() < p
     }
 }

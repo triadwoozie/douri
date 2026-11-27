@@ -21,18 +21,49 @@ use crate::piano_roll::{velocity_color, Audition};
 use crate::widgets::{context_menu, BLUE, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{
-    pos2, vec2, Align, Align2, Color32, FontId, Layout, Rect, RichText, Sense, Stroke, StrokeKind,
-    Ui, UiBuilder,
+    pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Sense,
+    Stroke, StrokeKind, Ui, UiBuilder,
 };
 
 const BG: Color32 = crate::theme::CANVAS_BG;
 const STRIP_BG: Color32 = crate::theme::CARD_BG;
-const STRIP_H: f32 = 34.0;
-const ROW_H: f32 = 25.0;
-const LABEL_W: f32 = 196.0;
+const STRIP_H1: f32 = 28.0;
+const STRIP_H2: f32 = 26.0;
+const STRIP_H: f32 = STRIP_H1 + STRIP_H2;
+const ROW_H: f32 = 40.0;
+const LABEL_W: f32 = 215.0;
 const INSPECTOR_W: f32 = 224.0;
 /// Width of the Drummer's controls.
 const PANEL_W: f32 = 330.0;
+
+/// Returns distinct color family for row `r`: Magenta, Amber, Cyan, Green.
+pub fn row_color_family(r: usize) -> Color32 {
+    match r % 4 {
+        0 => Color32::from_rgb(0xe1, 0x1d, 0x8a), // Magenta
+        1 => Color32::from_rgb(0xd9, 0x77, 0x06), // Amber / Orange
+        2 => Color32::from_rgb(0x06, 0xb6, 0xd4), // Cyan
+        _ => Color32::from_rgb(0x22, 0xc5, 0x5e), // Green
+    }
+}
+
+/// Returns instrument silhouette/vector icon for row `pitch`.
+pub fn row_icon(pitch: u8, drums: bool) -> &'static str {
+    if !drums {
+        return phosphor_egui::regular::PIANO_KEYS;
+    }
+    use drums::*;
+    match pitch {
+        KICK => phosphor_egui::regular::RECORD,
+        SNARE | ELECTRIC_SNARE | CLAP => phosphor_egui::regular::APERTURE,
+        CLOSED_HAT | PEDAL_HAT | OPEN_HAT => phosphor_egui::regular::DISC,
+        CRASH | RIDE => phosphor_egui::regular::SUN,
+        TAMBOURINE | COWBELL => phosphor_egui::regular::BELL,
+        TOM_HIGH | TOM_MID_HIGH | TOM_MID | TOM_LOW | TOM_FLOOR | TOM_FLOOR_LOW => {
+            phosphor_egui::regular::CYLINDER
+        }
+        _ => phosphor_egui::regular::MUSIC_NOTE,
+    }
+}
 
 /// What a click or drag in the pattern grid sets on a step.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,6 +71,10 @@ enum EditMode {
     /// Whether the step is on, and how hard (1-127).
     #[default]
     Velocity,
+    /// Note offset / pitch.
+    Note,
+    /// Gate duration.
+    Gate,
     /// The chance (percent) it plays.
     Chance,
     /// How many times it repeats within its time (click to count up, right-click to reset).
@@ -49,11 +84,20 @@ enum EditMode {
 }
 
 impl EditMode {
-    const ALL: [EditMode; 4] = [Self::Velocity, Self::Chance, Self::Repeat, Self::Tie];
+    const ALL: [EditMode; 6] = [
+        Self::Velocity,
+        Self::Note,
+        Self::Gate,
+        Self::Chance,
+        Self::Repeat,
+        Self::Tie,
+    ];
 
     fn name(self) -> &'static str {
         match self {
-            Self::Velocity => tr("Velocity"),
+            Self::Velocity => "Velocity / Value",
+            Self::Note => "Note",
+            Self::Gate => "Gate",
             Self::Chance => tr("Chance"),
             Self::Repeat => tr("Repeat"),
             Self::Tie => tr("Tie"),
@@ -421,7 +465,6 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     else {
         return;
     };
-    let strip = strip(ui, body);
     let (origin, len_beats) = {
         let r = &p.tracks[ti].regions[ri];
         (p.region_start_beats(r), p.region_len_beats(r))
@@ -432,12 +475,63 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let mut changed = false;
     let mut convert = false;
     let mut mode = s.steps.mode;
-
-    // ---- Step Sequencer Menu Bar (Logic Pro p. 724)
     let mut show_insp = s.steps.show_inspector;
     let mut insp_tab = s.steps.inspector_tab;
-    row_ui(ui, strip.shrink2(vec2(8.0, 4.0)), |ui| {
+
+    let top_strip = Rect::from_min_size(body.min, vec2(body.width(), STRIP_H1));
+    let sub_strip = Rect::from_min_size(
+        pos2(body.left(), body.top() + STRIP_H1),
+        vec2(body.width(), STRIP_H2),
+    );
+    let g_top = ui.painter_at(top_strip);
+    g_top.rect_filled(top_strip, 0.0, Color32::from_rgb(0x1f, 0x20, 0x25));
+    g_top.line_segment(
+        [top_strip.left_bottom(), top_strip.right_bottom()],
+        Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2f, 0x37)),
+    );
+    let g_sub = ui.painter_at(sub_strip);
+    g_sub.rect_filled(sub_strip, 0.0, Color32::from_rgb(0x18, 0x19, 0x1d));
+    g_sub.line_segment(
+        [sub_strip.left_bottom(), sub_strip.right_bottom()],
+        Stroke::new(1.0, Color32::from_rgb(0x26, 0x28, 0x30)),
+    );
+
+    // Top Bar (Edit Mode, Overview Mini-Map, Steps, Convert)
+    row_ui(ui, top_strip.shrink2(vec2(8.0, 3.0)), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
+
+        ui.menu_button("Edit", |ui| {
+            if ui.button("Select All Steps").clicked() {
+                for row in &mut pat.rows {
+                    let len = pat.steps.min(row.steps.len());
+                    for v in &mut row.steps[..len] {
+                        if *v == 0 {
+                            *v = DEFAULT_VELOCITY;
+                        }
+                    }
+                }
+                changed = true;
+                ui.close();
+            }
+            if ui.button("Deselect All").clicked() {
+                for row in &mut pat.rows {
+                    row.steps.fill(0);
+                }
+                changed = true;
+                ui.close();
+            }
+            if ui.button("Invert Selection").clicked() {
+                for row in &mut pat.rows {
+                    let len = pat.steps.min(row.steps.len());
+                    for v in &mut row.steps[..len] {
+                        *v = if *v > 0 { 0 } else { DEFAULT_VELOCITY };
+                    }
+                }
+                changed = true;
+                ui.close();
+            }
+        });
+
         ui.menu_button("Functions", |ui| {
             if ui.button("Rotate Left").clicked() {
                 for row in &mut pat.rows {
@@ -495,29 +589,65 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             }
         });
 
+        ui.menu_button("View", |ui| {
+            if ui
+                .checkbox(&mut show_insp, "Step Sequencer Inspector")
+                .clicked()
+            {
+                ui.close();
+            }
+        });
+
         let insp_btn = egui::Button::new(
             RichText::new(phosphor_egui::regular::INFO)
-                .size(13.0)
+                .size(12.0)
                 .color(if show_insp { Color32::WHITE } else { TEXT_DIM }),
         )
         .fill(if show_insp {
-            BLUE
+            Color32::from_rgb(0x12, 0x69, 0xcc)
         } else {
             Color32::from_rgb(0x28, 0x2a, 0x31)
         })
-        .min_size(vec2(24.0, 22.0));
+        .corner_radius(CornerRadius::same(4))
+        .min_size(vec2(22.0, 20.0));
         if ui
             .add(insp_btn)
-            .on_hover_text("Show Step Sequencer Inspector")
+            .on_hover_text("Step Sequencer Inspector")
             .clicked()
         {
             show_insp = !show_insp;
         }
 
-        ui.label(tr("Edit:"));
+        let pat_on = !pat.rows.iter().all(|r| r.mute);
+        let on_btn = egui::Button::new(
+            RichText::new("On/Off")
+                .size(10.5)
+                .strong()
+                .color(if pat_on { Color32::WHITE } else { TEXT_DIM }),
+        )
+        .fill(if pat_on {
+            Color32::from_rgb(0x12, 0x69, 0xcc)
+        } else {
+            Color32::from_rgb(0x28, 0x2a, 0x31)
+        })
+        .corner_radius(CornerRadius::same(4))
+        .min_size(vec2(44.0, 20.0));
+        if ui
+            .add(on_btn)
+            .on_hover_text("Toggle Pattern Playback")
+            .clicked()
+        {
+            let turn_on = !pat_on;
+            for r in &mut pat.rows {
+                r.mute = !turn_on;
+            }
+            changed = true;
+        }
+
+        ui.label(RichText::new(tr("Edit:")).size(11.0).color(TEXT_DIM));
         egui::ComboBox::from_id_salt("pattern_mode")
             .selected_text(mode.name())
-            .width(76.0)
+            .width(105.0)
             .show_ui(ui, |ui| {
                 for m in EditMode::ALL {
                     if ui.selectable_label(mode == m, m.name()).clicked() {
@@ -526,47 +656,90 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                 }
             });
 
-        ui.label(tr("Steps:"));
-        for n in [16, 32, 64] {
-            if ui
-                .selectable_label(pat.steps == n, format!("{n}"))
-                .clicked()
-            {
-                pat.steps = n;
-                changed = true;
+        // Center Live Pattern Overview Mini-Map
+        let map_w = (ui.available_width() - 210.0).clamp(90.0, 180.0);
+        let (map_rect, map_resp) =
+            ui.allocate_exact_size(vec2(map_w, 18.0), Sense::click_and_drag());
+        let mg = ui.painter_at(map_rect);
+        mg.rect_filled(map_rect, 3.0, Color32::from_rgb(0x13, 0x14, 0x18));
+        mg.rect_stroke(
+            map_rect,
+            3.0,
+            Stroke::new(1.0, Color32::from_rgb(0x28, 0x2a, 0x31)),
+            egui::StrokeKind::Inside,
+        );
+        let n_rows = pat.rows.len().max(1);
+        let rmh = (map_rect.height() - 2.0) / n_rows as f32;
+        let smw = (map_rect.width() - 2.0) / pat.steps.max(1) as f32;
+        for (r_idx, r_item) in pat.rows.iter().enumerate() {
+            let r_col = row_color_family(r_idx);
+            let ry = map_rect.top() + 1.0 + r_idx as f32 * rmh;
+            for s_idx in 0..pat.steps.min(r_item.steps.len()) {
+                if r_item.steps[s_idx] > 0 {
+                    let rx = map_rect.left() + 1.0 + s_idx as f32 * smw;
+                    mg.rect_filled(
+                        Rect::from_min_size(pos2(rx, ry), vec2(smw.max(1.0), rmh.max(1.0))),
+                        0.5,
+                        r_col,
+                    );
+                }
             }
         }
-        ui.label(tr("Rate:"));
-        egui::ComboBox::from_id_salt("pattern_rate")
-            .selected_text(pat.rate.name())
-            .width(56.0)
-            .show_ui(ui, |ui| {
-                for r in StepRate::ALL {
-                    if ui.selectable_label(pat.rate == r, r.name()).clicked() {
-                        pat.rate = r;
-                        changed = true;
+        let now = p.position_beats - origin;
+        if now >= 0.0 && now < len_beats {
+            let frac = (now / len_beats).clamp(0.0, 1.0) as f32;
+            let px = map_rect.left() + 1.0 + frac * (map_rect.width() - 2.0);
+            mg.line_segment(
+                [pos2(px, map_rect.top()), pos2(px, map_rect.bottom())],
+                Stroke::new(1.5, Color32::WHITE),
+            );
+        }
+        if map_resp.dragged() || map_resp.clicked() {
+            if let Some(pos) = map_resp.interact_pointer_pos() {
+                let frac = ((pos.x - map_rect.left()) / map_rect.width()).clamp(0.0, 1.0);
+                p.position_beats = (origin + frac as f64 * len_beats).max(0.0);
+            }
+        }
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui.button(tr("Convert to MIDI Region")).clicked() {
+                convert = true;
+            }
+
+            egui::ComboBox::from_id_salt("pattern_steps_select")
+                .selected_text(format!("{} Steps", pat.steps))
+                .width(82.0)
+                .show_ui(ui, |ui| {
+                    for n in [16, 32, 64] {
+                        if ui
+                            .selectable_label(pat.steps == n, format!("{n} Steps"))
+                            .clicked()
+                        {
+                            pat.steps = n;
+                            changed = true;
+                        }
                     }
-                }
-            });
-        ui.label(tr("Direction:"));
-        egui::ComboBox::from_id_salt("pattern_direction")
-            .selected_text(direction_name(pat.direction))
-            .width(78.0)
-            .show_ui(ui, |ui| {
-                for d in Direction::ALL {
-                    if ui
-                        .selectable_label(pat.direction == d, direction_name(d))
-                        .clicked()
-                    {
-                        pat.direction = d;
-                        changed = true;
-                    }
-                }
-            });
+                });
+            ui.label(RichText::new(tr("Steps:")).size(11.0).color(TEXT_DIM));
+        });
+    });
+
+    // Sub-bar (Add Row, Rate, Direction, Pattern Randomize/Clear)
+    row_ui(ui, sub_strip.shrink2(vec2(8.0, 3.0)), |ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
 
         let room = pat.rows.len() < MAX_ROWS;
+        let add_btn = egui::Button::new(
+            RichText::new(phosphor_egui::regular::PLUS)
+                .size(11.0)
+                .color(Color32::WHITE),
+        )
+        .fill(Color32::from_rgb(0x32, 0x34, 0x3c))
+        .corner_radius(CornerRadius::same(4))
+        .min_size(vec2(22.0, 18.0));
         if ui
-            .add_enabled(room, egui::Button::new(tr("Add Row")))
+            .add_enabled(room, add_btn)
+            .on_hover_text(tr("Add Row"))
             .clicked()
         {
             let pitch = next_row_pitch(&pat, drums);
@@ -574,10 +747,77 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             changed = true;
         }
 
+        ui.label(RichText::new("Pattern").size(11.0).color(TEXT_DIM));
+
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button(tr("Convert to MIDI Region")).clicked() {
-                convert = true;
+            let clr_btn = egui::Button::new(
+                RichText::new(phosphor_egui::regular::TRASH)
+                    .size(11.0)
+                    .color(TEXT),
+            )
+            .fill(Color32::from_rgb(0x28, 0x2a, 0x31))
+            .corner_radius(CornerRadius::same(4))
+            .min_size(vec2(22.0, 18.0));
+            if ui.add(clr_btn).on_hover_text("Clear Pattern").clicked() {
+                for row in &mut pat.rows {
+                    row.steps.fill(0);
+                    row.chance.fill(100);
+                    row.tie.fill(false);
+                    row.repeat.fill(1);
+                }
+                changed = true;
             }
+
+            let rnd_btn = egui::Button::new(
+                RichText::new(phosphor_egui::regular::DICE_FIVE)
+                    .size(11.0)
+                    .color(TEXT),
+            )
+            .fill(Color32::from_rgb(0x28, 0x2a, 0x31))
+            .corner_radius(CornerRadius::same(4))
+            .min_size(vec2(22.0, 18.0));
+            if ui.add(rnd_btn).on_hover_text("Randomize Pattern").clicked() {
+                let mut rng = crate::pattern::Rng::new(p.song_rev as u32 ^ 0xa8f5_1029);
+                for row in &mut pat.rows {
+                    let len = pat.steps.min(row.steps.len());
+                    for v in &mut row.steps[..len] {
+                        *v = if rng.unit() > 0.45 {
+                            (60.0f32 + rng.unit() * 67.0f32).round() as u8
+                        } else {
+                            0
+                        };
+                    }
+                }
+                changed = true;
+            }
+
+            egui::ComboBox::from_id_salt("pattern_direction")
+                .selected_text(direction_name(pat.direction))
+                .width(76.0)
+                .show_ui(ui, |ui| {
+                    for d in Direction::ALL {
+                        if ui
+                            .selectable_label(pat.direction == d, direction_name(d))
+                            .clicked()
+                        {
+                            pat.direction = d;
+                            changed = true;
+                        }
+                    }
+                });
+            ui.label(RichText::new(tr("Direction:")).size(11.0).color(TEXT_DIM));
+
+            egui::ComboBox::from_id_salt("pattern_rate")
+                .selected_text(pat.rate.name())
+                .width(54.0)
+                .show_ui(ui, |ui| {
+                    for r in StepRate::ALL {
+                        if ui.selectable_label(pat.rate == r, r.name()).clicked() {
+                            pat.rate = r;
+                            changed = true;
+                        }
+                    }
+                });
         });
     });
 
@@ -591,12 +831,12 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         body.right()
     };
     let area = Rect::from_min_max(
-        pos2(body.left(), strip.bottom()),
+        pos2(body.left(), sub_strip.bottom()),
         pos2(main_right, body.bottom()),
     );
     let grid = Rect::from_min_max(pos2(area.left() + LABEL_W, area.top()), area.max);
     let steps = pat.steps.clamp(1, crate::pattern::MAX_STEPS);
-    let cw = ((grid.width() - 12.0) / steps as f32).clamp(10.0, 64.0);
+    let cw = ((grid.width() - 4.0) / steps as f32).max(12.0);
     let per_beat = pat.rate.per_beat().max(1);
     let step_len = pat.rate.beats();
     let v = &mut s.steps;
@@ -689,47 +929,59 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         let row_bg = if v.selected_row == r {
             Color32::from_rgb(0x2a, 0x2d, 0x36)
         } else {
-            crate::theme::CARD_BG
+            Color32::from_rgb(0x1e, 0x20, 0x25)
         };
-        g.rect_filled(label, 3.0, row_bg);
+        g.rect_filled(label, 4.0, row_bg);
+        let row_color = row_color_family(r);
         g.rect_filled(
-            Rect::from_min_size(label.min, vec2(3.0, label.height())),
-            1.0,
-            if row.mute {
-                Color32::from_rgb(0x50, 0x54, 0x5e)
-            } else {
-                BLUE
-            },
+            Rect::from_min_size(label.min, vec2(4.0, label.height())),
+            2.0,
+            row_color,
+        );
+
+        // Top line: Chevron + Icon + Name
+        g.text(
+            pos2(label.left() + 10.0, label.top() + 11.0),
+            Align2::LEFT_CENTER,
+            phosphor_egui::regular::CARET_DOWN,
+            FontId::proportional(10.0),
+            TEXT_DIM,
         );
         g.text(
-            label.left_center() + vec2(44.0, 0.0),
+            pos2(label.left() + 23.0, label.top() + 11.0),
+            Align2::LEFT_CENTER,
+            row_icon(row.pitch, drums),
+            FontId::proportional(12.0),
+            row_color,
+        );
+        g.text(
+            pos2(label.left() + 38.0, label.top() + 11.0),
             Align2::LEFT_CENTER,
             row_label(row.pitch, drums, kit.as_ref()),
             FontId::proportional(11.5),
             if row.mute { TEXT_DIM } else { TEXT },
         );
+
+        // Steps grid
         for k in 0..steps {
             let c = cell(r, k).shrink(1.0);
-            let shade = if (k / per_beat) % 2 == 0 {
-                Color32::from_rgb(0x25, 0x25, 0x29)
-            } else {
-                Color32::from_rgb(0x1d, 0x1d, 0x20)
-            };
-            g.rect_filled(c, 2.0, shade);
             let vel = row.steps[k];
             if vel > 0 {
-                let (level, color) = match mode {
-                    EditMode::Chance => (
-                        row.chance[k] as f32 / 100.0,
-                        Color32::from_rgb(0x3c, 0xa8, 0xd8),
-                    ),
-                    _ => (vel as f32 / 127.0, velocity_color(vel)),
+                // Saturated active step
+                let level = match mode {
+                    EditMode::Chance => row.chance[k] as f32 / 100.0,
+                    _ => vel as f32 / 127.0,
                 };
-                let h = (c.height() * level).max(3.0);
+                let bg_tint = Color32::from_rgba_unmultiplied(
+                    row_color.r(),
+                    row_color.g(),
+                    row_color.b(),
+                    65,
+                );
+                g.rect_filled(c, 2.0, bg_tint);
+                let h = (c.height() * level).max(4.0);
                 let bar = Rect::from_min_max(pos2(c.left(), c.bottom() - h), c.max);
-                g.rect_filled(bar, 2.0, color);
-                // What the step also does, in every mode: a bar at the left for a tie, the
-                // repeat count, a stripe on top when it does not always play.
+                g.rect_filled(bar, 2.0, row_color);
                 if row.tie[k] {
                     let join = Rect::from_min_max(
                         pos2(c.left() - 2.0, c.top() + 3.0),
@@ -749,33 +1001,62 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                 if row.chance[k] < 100 {
                     let w = c.width() * row.chance[k] as f32 / 100.0;
                     g.rect_filled(
-                        Rect::from_min_size(c.min, vec2(w, 3.0)),
+                        Rect::from_min_size(c.min, vec2(w, 2.5)),
                         0.0,
-                        Color32::from_rgb(0x3c, 0xd8, 0xe8),
+                        Color32::WHITE,
                     );
                 }
+            } else {
+                // Subtle 14% tint inactive step
+                g.rect_filled(c, 2.0, Color32::from_rgb(0x16, 0x17, 0x1a));
+                let tint = Color32::from_rgba_unmultiplied(
+                    row_color.r(),
+                    row_color.g(),
+                    row_color.b(),
+                    36,
+                );
+                g.rect_filled(c, 2.0, tint);
+                g.rect_stroke(
+                    c,
+                    2.0,
+                    Stroke::new(
+                        1.0,
+                        Color32::from_rgba_unmultiplied(
+                            row_color.r(),
+                            row_color.g(),
+                            row_color.b(),
+                            40,
+                        ),
+                    ),
+                    egui::StrokeKind::Inside,
+                );
             }
         }
     }
-    // Beat lines, stronger at the bars.
+    // Beat lines, stronger at 4-beat bar boundaries
     for k in 0..=steps {
         let x = grid.left() + k as f32 * cw;
-        let at = k as f64 * step_len / bar_len.max(1e-9);
-        let bar_line = (at - at.round()).abs() < 1e-6;
-        if bar_line || k % per_beat == 0 {
-            let (a, b) = if bar_line { (0xa0, 1.5) } else { (0x58, 1.0) };
+        let is_bar = k % (per_beat * 4) == 0;
+        let is_beat = k % per_beat == 0;
+        if is_bar || is_beat {
+            let (col, stroke_w) = if is_bar {
+                (Color32::from_rgb(0x45, 0x48, 0x54), 1.5)
+            } else {
+                (Color32::from_rgb(0x28, 0x2a, 0x31), 1.0)
+            };
             g.line_segment(
                 [pos2(x, area.top()), pos2(x, area.bottom())],
-                Stroke::new(b, Color32::from_gray(a)),
+                Stroke::new(stroke_w, col),
             );
         }
     }
     if let Some(k) = current {
         let x = grid.left() + k as f32 * cw;
+        // Subtle top beat-header highlight in ruler only
         g.rect_filled(
-            Rect::from_min_max(pos2(x, area.top()), pos2(x + cw, area.bottom())),
+            Rect::from_min_max(pos2(x, ruler_rect.top()), pos2(x + cw, ruler_rect.bottom())),
             0.0,
-            Color32::from_rgba_premultiplied(0x3a, 0x7b, 0xd5, 45),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 28),
         );
     }
     if now >= 0.0 && now < len_beats {
@@ -783,7 +1064,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         let px = grid.left() + frac_step as f32 * cw;
         g.line_segment(
             [pos2(px, area.top()), pos2(px, area.bottom())],
-            Stroke::new(1.5, Color32::WHITE),
+            Stroke::new(2.0, Color32::WHITE),
         );
     }
 
@@ -923,7 +1204,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         v.gesture = None;
     }
 
-    // ---- Row headers: Mute (M), Solo (S), Name/Pitch Drag, Rotate (< / >)
+    // ---- Row headers: Mute (M), Solo (S), Name/Pitch Drag, Rotate (< / >), Power, Random, Clear
     let mut sounding = None;
     let mut delete = None;
     for r in 0..pat.rows.len() {
@@ -933,56 +1214,122 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         }
         let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0))
             .intersect(area);
+
+        // Top line: Name and Power toggle
+        let name_rect = Rect::from_min_max(
+            pos2(label.left() + 34.0, label.top()),
+            pos2(label.right() - 28.0, label.top() + 20.0),
+        );
+        let pwr_rect = Rect::from_center_size(
+            pos2(label.right() - 14.0, label.top() + 10.0),
+            vec2(16.0, 15.0),
+        );
+
+        // Bottom line: M, S, Rotate < >, Randomize, Clear
         let m_rect = Rect::from_center_size(
-            pos2(label.left() + 14.0, label.center().y),
-            vec2(15.0, 16.0),
+            pos2(label.left() + 18.0, label.top() + 28.0),
+            vec2(16.0, 15.0),
         );
         let s_rect = Rect::from_center_size(
-            pos2(label.left() + 31.0, label.center().y),
-            vec2(15.0, 16.0),
+            pos2(label.left() + 37.0, label.top() + 28.0),
+            vec2(16.0, 15.0),
         );
         let rot_l_rect = Rect::from_center_size(
-            pos2(label.right() - 26.0, label.center().y),
-            vec2(15.0, 16.0),
+            pos2(label.right() - 62.0, label.top() + 28.0),
+            vec2(15.0, 15.0),
         );
         let rot_r_rect = Rect::from_center_size(
-            pos2(label.right() - 10.0, label.center().y),
-            vec2(15.0, 16.0),
+            pos2(label.right() - 44.0, label.top() + 28.0),
+            vec2(15.0, 15.0),
         );
-        let name_rect = Rect::from_min_max(
-            pos2(label.left() + 41.0, label.top()),
-            pos2(label.right() - 36.0, label.bottom()),
+        let rand_rect = Rect::from_center_size(
+            pos2(label.right() - 26.0, label.top() + 28.0),
+            vec2(15.0, 15.0),
+        );
+        let clr_rect = Rect::from_center_size(
+            pos2(label.right() - 8.0, label.top() + 28.0),
+            vec2(15.0, 15.0),
         );
 
-        let m_resp = ui.interact(
-            m_rect,
-            egui::Id::unique(("pat_mute", ti, ri, r)),
-            Sense::click(),
-        );
-        let s_resp = ui.interact(
-            s_rect,
-            egui::Id::unique(("pat_solo", ti, ri, r)),
-            Sense::click(),
-        );
-        let rl_resp = ui.interact(
-            rot_l_rect,
-            egui::Id::unique(("pat_rot_l", ti, ri, r)),
-            Sense::click(),
-        );
-        let rr_resp = ui.interact(
-            rot_r_rect,
-            egui::Id::unique(("pat_rot_r", ti, ri, r)),
-            Sense::click(),
-        );
+        let pwr_resp = ui
+            .interact(
+                pwr_rect,
+                egui::Id::unique(("pat_pwr", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Row On/Off");
+        let m_resp = ui
+            .interact(
+                m_rect,
+                egui::Id::unique(("pat_mute", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Mute Row");
+        let s_resp = ui
+            .interact(
+                s_rect,
+                egui::Id::unique(("pat_solo", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Solo Row");
+        let rl_resp = ui
+            .interact(
+                rot_l_rect,
+                egui::Id::unique(("pat_rot_l", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Shift Row Left");
+        let rr_resp = ui
+            .interact(
+                rot_r_rect,
+                egui::Id::unique(("pat_rot_r", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Shift Row Right");
+        let rand_resp = ui
+            .interact(
+                rand_rect,
+                egui::Id::unique(("pat_rand", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Randomize Row");
+        let clr_resp = ui
+            .interact(
+                clr_rect,
+                egui::Id::unique(("pat_clr", ti, ri, r)),
+                Sense::click(),
+            )
+            .on_hover_text("Clear Row");
 
         let gm = ui.painter_at(label);
+
+        // Power toggle on top line
+        let pwr_on = !pat.rows[r].mute;
+        gm.rect_filled(
+            pwr_rect,
+            3.0,
+            if pwr_on {
+                Color32::from_rgb(0x1d, 0x4e, 0xd8)
+            } else {
+                Color32::from_rgb(0x28, 0x2a, 0x31)
+            },
+        );
+        gm.text(
+            pwr_rect.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::POWER,
+            FontId::proportional(10.0),
+            if pwr_on { Color32::WHITE } else { TEXT_DIM },
+        );
+
+        // Bottom line: M & S
         gm.rect_filled(
             m_rect,
             3.0,
             if pat.rows[r].mute {
                 Color32::from_rgb(0x28, 0x64, 0xb8)
             } else {
-                Color32::from_rgb(0x2d, 0x2f, 0x36)
+                Color32::from_rgb(0x28, 0x2a, 0x31)
             },
         );
         gm.text(
@@ -1002,7 +1349,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             if pat.rows[r].solo {
                 Color32::from_rgb(0xd4, 0xa8, 0x24)
             } else {
-                Color32::from_rgb(0x2d, 0x2f, 0x36)
+                Color32::from_rgb(0x28, 0x2a, 0x31)
             },
         );
         gm.text(
@@ -1016,21 +1363,49 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                 TEXT_DIM
             },
         );
+
+        // Shift / Rotate buttons
+        gm.rect_filled(rot_l_rect, 2.0, Color32::from_rgb(0x24, 0x26, 0x2c));
         gm.text(
             rot_l_rect.center(),
             Align2::CENTER_CENTER,
             phosphor_egui::regular::CARET_LEFT,
-            FontId::proportional(10.0),
+            FontId::proportional(9.0),
             TEXT_DIM,
         );
+        gm.rect_filled(rot_r_rect, 2.0, Color32::from_rgb(0x24, 0x26, 0x2c));
         gm.text(
             rot_r_rect.center(),
             Align2::CENTER_CENTER,
             phosphor_egui::regular::CARET_RIGHT,
-            FontId::proportional(10.0),
+            FontId::proportional(9.0),
             TEXT_DIM,
         );
 
+        // Randomize row
+        gm.rect_filled(rand_rect, 2.0, Color32::from_rgb(0x24, 0x26, 0x2c));
+        gm.text(
+            rand_rect.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::DICE_FIVE,
+            FontId::proportional(9.0),
+            TEXT_DIM,
+        );
+
+        // Clear row
+        gm.rect_filled(clr_rect, 2.0, Color32::from_rgb(0x24, 0x26, 0x2c));
+        gm.text(
+            clr_rect.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::X,
+            FontId::proportional(9.0),
+            TEXT_DIM,
+        );
+
+        if pwr_resp.clicked() {
+            pat.rows[r].mute = !pat.rows[r].mute;
+            changed = true;
+        }
         if m_resp.clicked() {
             pat.rows[r].mute = !pat.rows[r].mute;
             changed = true;
@@ -1045,6 +1420,27 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         }
         if rr_resp.clicked() {
             rotate_row(&mut pat.rows[r], pat.steps, true);
+            changed = true;
+        }
+        if rand_resp.clicked() {
+            let mut rng = crate::pattern::Rng::new(
+                (p.song_rev as u32 ^ (r as u32 * 0x1f1f_1f1f)).wrapping_add(1),
+            );
+            let len = pat.steps.min(pat.rows[r].steps.len());
+            for v in &mut pat.rows[r].steps[..len] {
+                *v = if rng.unit() > 0.45 {
+                    (60.0f32 + rng.unit() * 67.0f32).round() as u8
+                } else {
+                    0
+                };
+            }
+            changed = true;
+        }
+        if clr_resp.clicked() {
+            pat.rows[r].steps.fill(0);
+            pat.rows[r].chance.fill(100);
+            pat.rows[r].tie.fill(false);
+            pat.rows[r].repeat.fill(1);
             changed = true;
         }
 
@@ -1117,7 +1513,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
 
     // ---- Collapsible Step Sequencer Inspector (pp. 753-755)
     if show_insp && body.width() > 560.0 {
-        let insp_rect = Rect::from_min_max(pos2(main_right, strip.bottom()), body.max);
+        let insp_rect = Rect::from_min_max(pos2(main_right, sub_strip.bottom()), body.max);
         let gi = ui.painter_at(insp_rect);
         gi.rect_filled(insp_rect, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
         gi.line_segment(

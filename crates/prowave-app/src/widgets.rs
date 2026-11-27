@@ -711,6 +711,127 @@ pub fn daw_xyz_sliders(
     changed
 }
 
+/// Hardware-style 2D XY Pad with recessed well, crosshairs, axis labels, and glowing puck.
+pub fn daw_xy_pad(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    x_val: &mut f32,
+    y_val: &mut f32,
+    x_label: &str,
+    y_label: &str,
+    accent: Color32,
+) -> bool {
+    let g = ui.painter();
+    g.rect_filled(rect, 4.0, Color32::from_rgb(0x13, 0x14, 0x18));
+    g.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, Color32::from_rgb(0x28, 0x2a, 0x30)),
+        egui::StrokeKind::Inside,
+    );
+
+    let inner = rect.shrink2(vec2(16.0, 14.0));
+    let grid_color = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 35);
+    // Center crosshairs
+    g.line_segment(
+        [
+            pos2(inner.left(), inner.center().y),
+            pos2(inner.right(), inner.center().y),
+        ],
+        Stroke::new(1.0, grid_color),
+    );
+    g.line_segment(
+        [
+            pos2(inner.center().x, inner.top()),
+            pos2(inner.center().x, inner.bottom()),
+        ],
+        Stroke::new(1.0, grid_color),
+    );
+
+    // Axis labels
+    if !y_label.is_empty() {
+        g.text(
+            pos2(rect.left() + 6.0, inner.top() + 4.0),
+            Align2::LEFT_TOP,
+            y_label,
+            FontId::proportional(9.5),
+            TEXT_DIM,
+        );
+    }
+    if !x_label.is_empty() {
+        g.text(
+            pos2(inner.center().x, rect.bottom() - 3.0),
+            Align2::CENTER_BOTTOM,
+            x_label,
+            FontId::proportional(9.5),
+            TEXT_DIM,
+        );
+    }
+
+    let resp = ui.interact(rect, id, Sense::click_and_drag());
+    if resp.hovered() || resp.dragged() {
+        ui.ctx().set_cursor_icon(if resp.dragged() {
+            egui::CursorIcon::Grabbing
+        } else {
+            egui::CursorIcon::Grab
+        });
+    }
+
+    let mut changed = false;
+    *x_val = x_val.clamp(0.0, 1.0);
+    *y_val = y_val.clamp(0.0, 1.0);
+
+    if resp.dragged() || resp.clicked() {
+        let fine = if ui.input(|i| i.modifiers.shift) {
+            0.2
+        } else {
+            1.0
+        };
+        if let Some(ptr) = resp.interact_pointer_pos() {
+            let target_x = ((ptr.x - inner.left()) / inner.width().max(1.0)).clamp(0.0, 1.0);
+            let target_y = (1.0 - (ptr.y - inner.top()) / inner.height().max(1.0)).clamp(0.0, 1.0);
+            if resp.clicked() {
+                *x_val = target_x;
+                *y_val = target_y;
+            } else {
+                let dx = resp.drag_delta().x / inner.width().max(1.0) * fine;
+                let dy = -resp.drag_delta().y / inner.height().max(1.0) * fine;
+                *x_val = (*x_val + dx).clamp(0.0, 1.0);
+                *y_val = (*y_val + dy).clamp(0.0, 1.0);
+            }
+            changed = true;
+        }
+    }
+
+    let puck_pos = pos2(
+        inner.left() + inner.width() * *x_val,
+        inner.bottom() - inner.height() * *y_val,
+    );
+
+    // Glowing puck
+    let glow_color = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 45);
+    g.circle_filled(puck_pos, 11.0, glow_color);
+    g.circle_stroke(puck_pos, 7.5, Stroke::new(1.5, accent));
+    g.circle_filled(puck_pos, 5.0, accent);
+    g.circle_filled(puck_pos, 2.0, Color32::WHITE);
+
+    changed
+}
+
+/// Alias for daw_adsr_envelope editor widget.
+pub fn daw_envelope_editor(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    a: &mut f32,
+    d: &mut f32,
+    s: &mut f32,
+    r: &mut f32,
+) -> bool {
+    daw_adsr_envelope(ui, id, rect, a, d, s, r, 1.0, 1.0, 1.0)
+}
+
 /// Dark emerald/cyan phosphor waveform/LFO scope (`#0c1f1d` screen, `#38d9a9` trace).
 pub fn daw_phosphor_scope(g: &Painter, rect: Rect, samples: &[f32]) {
     g.rect_filled(rect, 6.0, Color32::from_rgb(0x0c, 0x1f, 0x1d));

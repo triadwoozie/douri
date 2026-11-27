@@ -2006,16 +2006,25 @@ impl eframe::App for App {
                 mixer::min_panel_height(p, &s.mixer).clamp(180.0, room * 0.9)
             } else if s.bottom == Bottom::MacroControls {
                 200.0
+            } else if s.bottom == Bottom::SessionPlayer {
+                420.0
             } else {
-                140.0
+                160.0
             };
-            let panel = egui::Panel::bottom("bottom")
+            let panel_id = match s.bottom {
+                Bottom::Mixer => "bottom_mixer",
+                Bottom::PianoRoll => "bottom_piano_roll",
+                Bottom::PitchEditor => "bottom_pitch_editor",
+                Bottom::MacroControls => "bottom_macro_controls",
+                Bottom::SessionPlayer => "bottom_session_player",
+            };
+            let panel = egui::Panel::bottom(panel_id)
                 .resizable(true)
                 .min_size(min_h)
-                .max_size((room * 0.85).max(520.0))
+                .max_size((room * 0.85).max(540.0))
                 .default_size(match s.bottom {
                     Bottom::MacroControls => 260.0,
-                    Bottom::SessionPlayer => 350.0,
+                    Bottom::SessionPlayer => 460.0,
                     _ => 240.0,
                 })
                 .frame(opaque_panel_frame);
@@ -3290,13 +3299,60 @@ fn main() -> eframe::Result {
                 if let Some(kind) = scene.strip_prefix("mix") {
                     shot_mixer_scene(&mut app, kind);
                 }
-                if scene == "pattern" || scene == "drummer" {
+                if scene.starts_with("session-") {
+                    let pr = &mut app.project;
+                    let mut sp = crate::session_player::SessionPlayerParams::default();
+                    let (kind, tab) = match scene.as_str() {
+                        "session-drummer" => (
+                            crate::session_player::SessionPlayerKind::Drummer,
+                            crate::session_player_ui::EditorTab::Main,
+                        ),
+                        "session-drummer-details" => (
+                            crate::session_player::SessionPlayerKind::Drummer,
+                            crate::session_player_ui::EditorTab::Details,
+                        ),
+                        "session-drummer-manual" => (
+                            crate::session_player::SessionPlayerKind::Drummer,
+                            crate::session_player_ui::EditorTab::Manual,
+                        ),
+                        "session-keyboard" => (
+                            crate::session_player::SessionPlayerKind::Keyboard,
+                            crate::session_player_ui::EditorTab::Main,
+                        ),
+                        "session-bass" => (
+                            crate::session_player::SessionPlayerKind::Bass,
+                            crate::session_player_ui::EditorTab::Main,
+                        ),
+                        _ => (
+                            crate::session_player::SessionPlayerKind::Drummer,
+                            crate::session_player_ui::EditorTab::Main,
+                        ),
+                    };
+                    sp.kind = kind;
+                    if let Some(t) = pr
+                        .tracks
+                        .iter()
+                        .position(|t| t.kind == model::TrackKind::Drummer)
+                    {
+                        pr.tracks[t].regions.clear();
+                        if let Some(ri) = pr.add_session_region(t, sp, 1.0) {
+                            pr.selected_track = t;
+                            app.ui.tracks.select_only(t, ri);
+                            app.ui.bottom = Bottom::SessionPlayer;
+                            cc.egui_ctx.data_mut(|d| {
+                                d.insert_temp(egui::Id::unique("session_player_tab"), tab);
+                            });
+                        }
+                    }
+                }
+                if scene == "pattern" || scene == "step-sequencer" || scene == "drummer" {
                     let pr = &mut app.project;
                     if let Some(t) = pr
                         .tracks
                         .iter()
                         .position(|t| t.kind == model::TrackKind::Drummer)
                     {
+                        pr.tracks[t].regions.clear();
                         if let Some(ri) = pr.add_generated_region(t, scene == "drummer", 40.0) {
                             pr.selected_track = t;
                             app.ui.tracks.select_only(t, ri);
@@ -3339,6 +3395,67 @@ fn main() -> eframe::Result {
                 _ => None,
             } {
                 app.ui.settings_tab = Some(tab);
+            }
+            if scene.starts_with("session-") {
+                let pr = &mut app.project;
+                let mut sp = crate::session_player::SessionPlayerParams::default();
+                let (kind, tab) = match scene.as_str() {
+                    "session-drummer" => (
+                        crate::session_player::SessionPlayerKind::Drummer,
+                        crate::session_player_ui::EditorTab::Main,
+                    ),
+                    "session-drummer-details" => (
+                        crate::session_player::SessionPlayerKind::Drummer,
+                        crate::session_player_ui::EditorTab::Details,
+                    ),
+                    "session-drummer-manual" => (
+                        crate::session_player::SessionPlayerKind::Drummer,
+                        crate::session_player_ui::EditorTab::Manual,
+                    ),
+                    "session-keyboard" => (
+                        crate::session_player::SessionPlayerKind::Keyboard,
+                        crate::session_player_ui::EditorTab::Main,
+                    ),
+                    "session-bass" => (
+                        crate::session_player::SessionPlayerKind::Bass,
+                        crate::session_player_ui::EditorTab::Main,
+                    ),
+                    _ => (
+                        crate::session_player::SessionPlayerKind::Drummer,
+                        crate::session_player_ui::EditorTab::Main,
+                    ),
+                };
+                sp.kind = kind;
+                if let Some(t) = pr
+                    .tracks
+                    .iter()
+                    .position(|t| t.kind == model::TrackKind::Drummer)
+                {
+                    pr.tracks[t].regions.clear();
+                    if let Some(ri) = pr.add_session_region(t, sp, 1.0) {
+                        pr.selected_track = t;
+                        app.ui.tracks.select_only(t, ri);
+                        app.ui.bottom = Bottom::SessionPlayer;
+                        cc.egui_ctx.data_mut(|d| {
+                            d.insert_temp(egui::Id::unique("session_player_tab"), tab);
+                        });
+                    }
+                }
+            }
+            if scene == "pattern" || scene == "step-sequencer" {
+                let pr = &mut app.project;
+                if let Some(t) = pr
+                    .tracks
+                    .iter()
+                    .position(|t| t.kind == model::TrackKind::Drummer)
+                {
+                    pr.tracks[t].regions.clear();
+                    if let Some(ri) = pr.add_generated_region(t, false, 40.0) {
+                        pr.selected_track = t;
+                        app.ui.tracks.select_only(t, ri);
+                        app.ui.bottom = Bottom::PianoRoll;
+                    }
+                }
             }
             let is_project = |a: &std::ffi::OsString| is_project_path(a.as_os_str());
             let args: Vec<std::ffi::OsString> = if measuring {
