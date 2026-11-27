@@ -2546,6 +2546,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
+name = "marbble-dsp"
+version = "0.1.0"
+dependencies = [
+ "realfft",
+ "rtrb",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3678,6 +3689,7 @@ dependencies = [
  "chip-dsp",
  "circuit-dsp",
  "cpal",
+ "marbble-dsp",
  "memmap2",
  "mi-dsp",
  "mi-plaits-dsp",

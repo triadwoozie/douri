@@ -35,7 +35,9 @@ pub mod ir_file;
 pub mod kestrel_eq;
 #[cfg(not(target_arch = "wasm32"))]
 mod mapped;
+pub mod marbble_fx;
 pub mod melody;
+pub use marbble_dsp;
 pub mod meter;
 pub mod modal_voice;
 pub mod modulators;

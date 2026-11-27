@@ -1,0 +1,15 @@
+[package]
+name = "marbble-dsp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Built-in effects, plug-in delay compensation, and instrument DSP ported from Marbble (Copyright (c) 2026 Jack Mechem, MIT License)"
+
+[dependencies]
+realfft = "3.5"
+rtrb = "0.4.0"
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+serde_json = "1"

@@ -16,6 +16,7 @@ This product includes software developed by:
 - google/eclipsa-studio (https://github.com/google/eclipsa-studio, Apache-2.0) by Google LLC — Eclipsa Audio / IAMF spatial rendering architecture
 - joshband/GenerativeMIDI (https://github.com/joshband/GenerativeMIDI, MIT) — Session Player Euclidean, swing, ratchet, and LFO engines
 - billyblu2000/accomontage2 (https://github.com/billyblu2000/accomontage2, MIT) by Billy Yi — Keyboard Session Player chord voicing taxonomy
+- JackMechem/marbble (https://github.com/JackMechem/marbble, MIT) by Jack Mechem — 17 built-in effects, plug-in delay compensation (PDC), vintage/modern synth DSP, sampler, and instrument/effect UI panels
 
 All original copyright notices and licenses are retained.
 See THIRD_PARTY_LICENSES.md and LICENSE for details.
