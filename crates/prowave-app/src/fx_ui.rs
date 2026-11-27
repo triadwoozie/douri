@@ -80,6 +80,23 @@ fn family(kind: FxKind) -> (Family, &'static str, Color32) {
         FxKind::Overdrive | FxKind::Amp | FxKind::LemonDist | FxKind::Decimator | FxKind::LoFi => {
             (Family::Drive, "Drive", DRIVE_RUST)
         }
+        FxKind::MarbbleChannelEq | FxKind::MarbbleLinearPhaseEq => (Family::Eq, "EQ", EQ_BLUE),
+        FxKind::MarbbleCompressor
+        | FxKind::MarbbleLimiter
+        | FxKind::MarbbleGate
+        | FxKind::MarbbleDeEsser => (Family::Dynamics, "Dynamics", DYN_AMBER),
+        FxKind::MarbbleReverb => (Family::Space, "Space", SPACE_VIOLET),
+        FxKind::MarbbleDelay
+        | FxKind::MarbbleChorus
+        | FxKind::MarbbleFlanger
+        | FxKind::MarbblePhaser
+        | FxKind::MarbbleTremolo => (Family::Time, "Time", TIME_BLUE),
+        FxKind::MarbbleOverdrive | FxKind::MarbbleDistortion => {
+            (Family::Drive, "Drive", DRIVE_RUST)
+        }
+        FxKind::MarbbleGain | FxKind::MarbbleTuner | FxKind::MarbbleLoudness => {
+            (Family::Filter, "Marbble", FILTER_TEAL)
+        }
         FxKind::Filter | FxKind::FreqShifter | FxKind::AutoPan | FxKind::PitchCorrection => {
             (Family::Filter, "Pitch / Mod", FILTER_TEAL)
         }
@@ -696,7 +713,24 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         | FxKind::Reverb
         | FxKind::Plugin
         | FxKind::Decimator
-        | FxKind::LoFi => {}
+        | FxKind::LoFi
+        | FxKind::MarbbleChannelEq
+        | FxKind::MarbbleLinearPhaseEq
+        | FxKind::MarbbleCompressor
+        | FxKind::MarbbleLimiter
+        | FxKind::MarbbleGate
+        | FxKind::MarbbleDeEsser
+        | FxKind::MarbbleReverb
+        | FxKind::MarbbleDelay
+        | FxKind::MarbbleChorus
+        | FxKind::MarbbleFlanger
+        | FxKind::MarbblePhaser
+        | FxKind::MarbbleTremolo
+        | FxKind::MarbbleOverdrive
+        | FxKind::MarbbleDistortion
+        | FxKind::MarbbleGain
+        | FxKind::MarbbleTuner
+        | FxKind::MarbbleLoudness => {}
     }
 }
 

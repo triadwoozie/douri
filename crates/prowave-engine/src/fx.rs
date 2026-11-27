@@ -66,6 +66,40 @@ pub enum FxKind {
     AutoPan,
     /// Real-time Pitch Correction (PSOLA pitch tracking + scale quantization).
     PitchCorrection,
+    /// Marbble 8-band Channel EQ (MIT, ported from JackMechem/marbble).
+    MarbbleChannelEq,
+    /// Marbble Linear Phase EQ (MIT, ported from JackMechem/marbble).
+    MarbbleLinearPhaseEq,
+    /// Marbble 5-circuit Compressor (MIT, ported from JackMechem/marbble).
+    MarbbleCompressor,
+    /// Marbble Lookahead Limiter (MIT, ported from JackMechem/marbble).
+    MarbbleLimiter,
+    /// Marbble Noise Gate (MIT, ported from JackMechem/marbble).
+    MarbbleGate,
+    /// Marbble De-Esser (MIT, ported from JackMechem/marbble).
+    MarbbleDeEsser,
+    /// Marbble FDN/Plate Reverb (MIT, ported from JackMechem/marbble).
+    MarbbleReverb,
+    /// Marbble Stereo/Ping-Pong Delay (MIT, ported from JackMechem/marbble).
+    MarbbleDelay,
+    /// Marbble Chorus (MIT, ported from JackMechem/marbble).
+    MarbbleChorus,
+    /// Marbble Flanger (MIT, ported from JackMechem/marbble).
+    MarbbleFlanger,
+    /// Marbble Phaser (MIT, ported from JackMechem/marbble).
+    MarbblePhaser,
+    /// Marbble Tremolo (MIT, ported from JackMechem/marbble).
+    MarbbleTremolo,
+    /// Marbble Overdrive (MIT, ported from JackMechem/marbble).
+    MarbbleOverdrive,
+    /// Marbble Distortion (MIT, ported from JackMechem/marbble).
+    MarbbleDistortion,
+    /// Marbble Gain & Balance (MIT, ported from JackMechem/marbble).
+    MarbbleGain,
+    /// Marbble Tuner (MIT, ported from JackMechem/marbble).
+    MarbbleTuner,
+    /// Marbble ITU-R BS.1770 Loudness Meter (MIT, ported from JackMechem/marbble).
+    MarbbleLoudness,
 }
 
 /// One parameter of an effect.
@@ -711,7 +745,7 @@ fn limiter_len(sr: f32) -> usize {
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 26] = [
+    pub const ALL: [FxKind; 43] = [
         FxKind::ChannelEq,
         FxKind::Compressor,
         FxKind::MultiComp,
@@ -738,7 +772,48 @@ impl FxKind {
         FxKind::FreqShifter,
         FxKind::AutoPan,
         FxKind::PitchCorrection,
+        FxKind::MarbbleChannelEq,
+        FxKind::MarbbleLinearPhaseEq,
+        FxKind::MarbbleCompressor,
+        FxKind::MarbbleLimiter,
+        FxKind::MarbbleGate,
+        FxKind::MarbbleDeEsser,
+        FxKind::MarbbleReverb,
+        FxKind::MarbbleDelay,
+        FxKind::MarbbleChorus,
+        FxKind::MarbbleFlanger,
+        FxKind::MarbblePhaser,
+        FxKind::MarbbleTremolo,
+        FxKind::MarbbleOverdrive,
+        FxKind::MarbbleDistortion,
+        FxKind::MarbbleGain,
+        FxKind::MarbbleTuner,
+        FxKind::MarbbleLoudness,
     ];
+
+    /// If this is one of the 17 built-in effects ported from Marbble, returns its `"builtin:*"` id.
+    pub const fn marbble_id(self) -> Option<&'static str> {
+        match self {
+            FxKind::MarbbleChannelEq => Some("builtin:channel-eq"),
+            FxKind::MarbbleLinearPhaseEq => Some("builtin:linear-phase-eq"),
+            FxKind::MarbbleCompressor => Some("builtin:compressor"),
+            FxKind::MarbbleLimiter => Some("builtin:limiter"),
+            FxKind::MarbbleGate => Some("builtin:noise-gate"),
+            FxKind::MarbbleDeEsser => Some("builtin:deesser"),
+            FxKind::MarbbleReverb => Some("builtin:reverb"),
+            FxKind::MarbbleDelay => Some("builtin:delay"),
+            FxKind::MarbbleChorus => Some("builtin:chorus"),
+            FxKind::MarbbleFlanger => Some("builtin:flanger"),
+            FxKind::MarbblePhaser => Some("builtin:phaser"),
+            FxKind::MarbbleTremolo => Some("builtin:tremolo"),
+            FxKind::MarbbleOverdrive => Some("builtin:overdrive"),
+            FxKind::MarbbleDistortion => Some("builtin:distortion"),
+            FxKind::MarbbleGain => Some("builtin:gain"),
+            FxKind::MarbbleTuner => Some("builtin:tuner"),
+            FxKind::MarbbleLoudness => Some("builtin:loudness"),
+            _ => None,
+        }
+    }
 
     /// The name the mixer shows in the slot.
     pub fn name(self) -> &'static str {
@@ -770,6 +845,23 @@ impl FxKind {
             FxKind::FreqShifter => "Frequency Shifter",
             FxKind::AutoPan => "Auto-Pan",
             FxKind::PitchCorrection => "Pitch Correction",
+            FxKind::MarbbleChannelEq => "Marbble Channel EQ",
+            FxKind::MarbbleLinearPhaseEq => "Marbble Linear Phase EQ",
+            FxKind::MarbbleCompressor => "Marbble Compressor",
+            FxKind::MarbbleLimiter => "Marbble Limiter",
+            FxKind::MarbbleGate => "Marbble Noise Gate",
+            FxKind::MarbbleDeEsser => "Marbble De-Esser",
+            FxKind::MarbbleReverb => "Marbble Reverb",
+            FxKind::MarbbleDelay => "Marbble Delay",
+            FxKind::MarbbleChorus => "Marbble Chorus",
+            FxKind::MarbbleFlanger => "Marbble Flanger",
+            FxKind::MarbblePhaser => "Marbble Phaser",
+            FxKind::MarbbleTremolo => "Marbble Tremolo",
+            FxKind::MarbbleOverdrive => "Marbble Overdrive",
+            FxKind::MarbbleDistortion => "Marbble Distortion",
+            FxKind::MarbbleGain => "Marbble Gain",
+            FxKind::MarbbleTuner => "Marbble Tuner",
+            FxKind::MarbbleLoudness => "Marbble Loudness",
         }
     }
 
@@ -787,6 +879,7 @@ impl FxKind {
             FxKind::Amp => AMP_LATENCY,
             FxKind::Plugin => PLUGIN_BLOCK,
             FxKind::Reverb => crate::convolver::BLOCK,
+            _ if self.marbble_id().is_some() => PLUGIN_BLOCK,
             _ => 0,
         }
     }
@@ -833,6 +926,23 @@ impl FxKind {
             }
             "auto-pan" | "autopan" | "auto pan" => FxKind::AutoPan,
             "pitch correction" | "tune" | "dori tune" | "auto tune" => FxKind::PitchCorrection,
+            "marbble channel eq" => FxKind::MarbbleChannelEq,
+            "marbble linear phase eq" => FxKind::MarbbleLinearPhaseEq,
+            "marbble compressor" => FxKind::MarbbleCompressor,
+            "marbble limiter" => FxKind::MarbbleLimiter,
+            "marbble noise gate" | "marbble gate" => FxKind::MarbbleGate,
+            "marbble de-esser" | "marbble deesser" => FxKind::MarbbleDeEsser,
+            "marbble reverb" => FxKind::MarbbleReverb,
+            "marbble delay" => FxKind::MarbbleDelay,
+            "marbble chorus" => FxKind::MarbbleChorus,
+            "marbble flanger" => FxKind::MarbbleFlanger,
+            "marbble phaser" => FxKind::MarbblePhaser,
+            "marbble tremolo" => FxKind::MarbbleTremolo,
+            "marbble overdrive" => FxKind::MarbbleOverdrive,
+            "marbble distortion" => FxKind::MarbbleDistortion,
+            "marbble gain" => FxKind::MarbbleGain,
+            "marbble tuner" => FxKind::MarbbleTuner,
+            "marbble loudness" | "marbble loudness meter" => FxKind::MarbbleLoudness,
             _ => return None,
         })
     }
@@ -867,6 +977,10 @@ impl FxKind {
             FxKind::FreqShifter => &FREQ_SHIFTER_PARAMS,
             FxKind::AutoPan => &AUTOPAN_PARAMS,
             FxKind::PitchCorrection => &PITCH_CORRECTION_PARAMS,
+            _ if self.marbble_id().is_some() => {
+                marbble_params_for(self.marbble_id().unwrap_or_default())
+            }
+            _ => &[],
         }
     }
 
@@ -1928,6 +2042,134 @@ enum State {
     FreqShifter(Box<crate::freq_shifter::FreqShifterNode>),
     AutoPan(Box<crate::auto_pan::AutoPanNode>),
     PitchCorrection(Box<PitchCorrectionState>),
+    Marbble(Box<MarbbleState>),
+}
+
+fn marbble_params_for(id: &str) -> &'static [ParamInfo] {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Vec<(&'static str, &'static [ParamInfo])>> = OnceLock::new();
+    let table = CACHE.get_or_init(|| {
+        marbble_dsp::fx::registry()
+            .into_iter()
+            .map(|info| {
+                let items: Vec<ParamInfo> = info
+                    .params
+                    .iter()
+                    .map(|spec| {
+                        let unit = match spec.unit {
+                            marbble_dsp::fx::Unit::Db => "dB",
+                            marbble_dsp::fx::Unit::Ms => "ms",
+                            marbble_dsp::fx::Unit::Hz => "Hz",
+                            marbble_dsp::fx::Unit::Ratio => ":1",
+                            marbble_dsp::fx::Unit::Percent => "%",
+                            marbble_dsp::fx::Unit::Semitones => "st",
+                            marbble_dsp::fx::Unit::Degrees => "deg",
+                            marbble_dsp::fx::Unit::None | marbble_dsp::fx::Unit::Note => "",
+                        };
+                        ParamInfo {
+                            name: spec.name,
+                            min: spec.min,
+                            max: spec.max,
+                            default: spec.default,
+                            unit,
+                            log: spec.log && spec.min > 0.0,
+                        }
+                    })
+                    .collect();
+                let leaked: &'static [ParamInfo] = Box::leak(items.into_boxed_slice());
+                (info.id, leaked)
+            })
+            .collect()
+    });
+    table
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map_or(&[], |(_, v)| *v)
+}
+
+struct MarbbleState {
+    id: &'static str,
+    sr: f32,
+    node: crate::marbble_fx::MarbbleFxNode,
+    in_l: [f32; PLUGIN_BLOCK],
+    in_r: [f32; PLUGIN_BLOCK],
+    out_l: [f32; PLUGIN_BLOCK],
+    out_r: [f32; PLUGIN_BLOCK],
+    pos: usize,
+    last: [f32; MAX_FX_PARAMS],
+}
+
+impl std::fmt::Debug for MarbbleState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MarbbleState")
+            .field("id", &self.id)
+            .field("sr", &self.sr)
+            .finish()
+    }
+}
+
+impl Clone for MarbbleState {
+    fn clone(&self) -> Self {
+        let mut s = Self::new(self.id, self.sr, &self.last);
+        s.last = self.last;
+        s
+    }
+}
+
+impl MarbbleState {
+    fn new(id: &'static str, sr: f32, params: &[f32; MAX_FX_PARAMS]) -> Self {
+        use crate::plugin_track::BlockProcessor;
+        let mut node = crate::marbble_fx::MarbbleFxNode::open(id, sr).unwrap_or_else(|| {
+            // Fallback to gain if an unknown id is passed (unreachable for FxKind::marbble_id).
+            #[allow(clippy::expect_used)]
+            crate::marbble_fx::MarbbleFxNode::open("builtin:gain", sr).expect("builtin:gain")
+        });
+        for (idx, &v) in params.iter().enumerate() {
+            node.set_parameter(idx, v);
+        }
+        Self {
+            id,
+            sr,
+            node,
+            in_l: [0.0; PLUGIN_BLOCK],
+            in_r: [0.0; PLUGIN_BLOCK],
+            out_l: [0.0; PLUGIN_BLOCK],
+            out_r: [0.0; PLUGIN_BLOCK],
+            pos: 0,
+            last: *params,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, pr: &[f32; MAX_FX_PARAMS], l: f32, r: f32) -> (f32, f32) {
+        use crate::plugin_track::BlockProcessor;
+        for (idx, (&v, prev)) in pr.iter().zip(self.last.iter_mut()).enumerate() {
+            if (v - *prev).abs() > 1e-6 {
+                *prev = v;
+                self.node.set_parameter(idx, v);
+            }
+        }
+        let i = self.pos;
+        self.in_l[i] = l;
+        self.in_r[i] = r;
+        let out = (self.out_l[i], self.out_r[i]);
+        self.pos += 1;
+        if self.pos >= PLUGIN_BLOCK {
+            self.pos = 0;
+            self.node
+                .process((&self.in_l, &self.in_r), (&mut self.out_l, &mut self.out_r));
+        }
+        out
+    }
+
+    fn reset(&mut self) {
+        self.node.reset();
+        self.in_l.fill(0.0);
+        self.in_r.fill(0.0);
+        self.out_l.fill(0.0);
+        self.out_r.fill(0.0);
+        self.pos = 0;
+    }
 }
 
 /// One effect with its state. Make it with [`Fx::new`] off the audio thread.
@@ -2023,6 +2265,13 @@ impl Fx {
             FxKind::AutoPan => State::AutoPan(Box::new(crate::auto_pan::AutoPanNode::new(sr))),
             FxKind::PitchCorrection => {
                 State::PitchCorrection(Box::new(PitchCorrectionState::new(sr, &params)))
+            }
+            _ => {
+                if let Some(id) = kind.marbble_id() {
+                    State::Marbble(Box::new(MarbbleState::new(id, sr, &params)))
+                } else {
+                    State::Plugin(Box::new(PluginSlot::empty()))
+                }
             }
         };
         let mut fx = Self {
@@ -2334,6 +2583,7 @@ impl Fx {
             State::Gate(g) if !self.bypass => db(g.gain),
             State::Limiter(l) if !self.bypass => db(l.gain),
             State::LemonLimiter(l) if !self.bypass => l.reduction,
+            State::Marbble(m) if !self.bypass => m.node.meters()[0].max(0.0),
             _ => 0.0,
         }
     }
@@ -2656,6 +2906,7 @@ impl Fx {
             }
             State::AutoPan(s) => s.process_frame(l, r, pr[0], pr[1], pr[2].round() as usize, pr[3]),
             State::PitchCorrection(s) => s.process(l, r),
+            State::Marbble(s) => s.process(&pr, l, r),
         };
         // A bad sample (NaN, infinity) never travels on: it becomes silence and the
         // effect's memory is dropped by the caller's next reset.
@@ -2723,6 +2974,7 @@ impl Fx {
                 s.dc_out = [0.0; 2];
             }
             State::Plugin(s) => s.reset(),
+            State::Marbble(s) => s.reset(),
             State::PultEq(s) => s.reset(),
             State::KestrelEq(s) => s.reset(),
             State::Mosaic(s) => s.reset(),

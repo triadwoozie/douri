@@ -60,8 +60,21 @@ pub fn category(kind: FxKind) -> &'static str {
         FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter => "Modulation",
         FxKind::AutoPan => "Imaging",
         FxKind::PitchCorrection => "Pitch",
-        FxKind::Reverb | FxKind::LemonReverb => "Reverb",
+        FxKind::Reverb | FxKind::LemonReverb | FxKind::MarbbleReverb => "Reverb",
         FxKind::Plugin => "Specialized",
+        FxKind::MarbbleChannelEq | FxKind::MarbbleLinearPhaseEq => "EQ",
+        FxKind::MarbbleCompressor
+        | FxKind::MarbbleLimiter
+        | FxKind::MarbbleGate
+        | FxKind::MarbbleDeEsser => "Dynamics",
+        FxKind::MarbbleDelay => "Delay",
+        FxKind::MarbbleChorus
+        | FxKind::MarbbleFlanger
+        | FxKind::MarbblePhaser
+        | FxKind::MarbbleTremolo => "Modulation",
+        FxKind::MarbbleOverdrive | FxKind::MarbbleDistortion => "Distortion",
+        FxKind::MarbbleGain => "Utility",
+        FxKind::MarbbleTuner | FxKind::MarbbleLoudness => "Metering",
     }
 }
 

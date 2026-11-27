@@ -1957,12 +1957,15 @@ impl eframe::App for App {
                 .show(ui, |ui| library::show(ui, p, s));
         }
         if s.show_inspector {
+            let inspector_frame = egui::Frame::new()
+                .fill(egui::Color32::from_rgb(28, 28, 30))
+                .inner_margin(egui::Margin::ZERO);
             egui::Panel::left("inspector")
                 .resizable(true)
                 .default_size(276.0)
                 .min_size(240.0)
                 .max_size(440.0)
-                .frame(opaque_panel_frame)
+                .frame(inspector_frame)
                 .show(ui, |ui| inspector::show(ui, p, s, &meters));
         }
         if s.show_toolbar {
