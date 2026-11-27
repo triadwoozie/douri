@@ -799,24 +799,40 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
     // Wheel: vertical scroll; Shift = horizontal; Ctrl/Cmd = horizontal zoom; Alt/Ctrl+Shift = vertical zoom
     if hover.is_some_and(|pt| editor.contains(pt)) {
-        let (delta, mods) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers));
+        let (delta, zoom_delta, mods) =
+            ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers));
         let is_ctrl = mods.ctrl || mods.command;
         let is_alt = mods.alt;
-        if (is_alt && delta.y != 0.0) || (is_ctrl && mods.shift && delta.y != 0.0) {
+        let z_factor = crate::widgets::wheel_zoom_factor(delta.y, zoom_delta);
+        if (is_alt || (is_ctrl && mods.shift)) && (z_factor - 1.0).abs() > 1e-4 {
             // Vertical pitch height zoom anchored at pointer Y
             let pointer_y = hover.map_or(grid.center().y, |p| p.y);
-            let pitch_at_ptr =
-                (127.0 - (pointer_y - grid.top() + v.scroll_y) / v.key_h).clamp(0.0, 127.0);
-            v.key_h = (v.key_h * (1.0 + delta.y * 0.003)).clamp(6.0, 48.0);
-            v.scroll_y = ((127.0 - pitch_at_ptr) * v.key_h - (pointer_y - grid.top()))
-                .clamp(0.0, (128.0 * v.key_h - grid.height()).max(0.0));
-        } else if is_ctrl && delta.y != 0.0 {
+            let (new_scroll_y, new_key_h) = crate::widgets::cursor_anchored_zoom(
+                grid.top(),
+                pointer_y,
+                v.scroll_y,
+                v.key_h,
+                z_factor,
+                6.0,
+                48.0,
+            );
+            v.key_h = new_key_h;
+            v.scroll_y = new_scroll_y.clamp(0.0, (128.0 * v.key_h - grid.height()).max(0.0));
+        } else if (is_ctrl || (zoom_delta - 1.0).abs() > 1e-4) && (z_factor - 1.0).abs() > 1e-4 {
             // Horizontal beat_px zoom anchored at pointer X
             let pointer_x = hover.map_or(grid.left(), |p| p.x);
-            let beat_at_ptr = (pointer_x - grid.left() + v.scroll_x) / v.beat_px;
-            v.beat_px = (v.beat_px * (1.0 + delta.y * 0.003)).clamp(12.0, 400.0);
-            v.scroll_x = (beat_at_ptr * v.beat_px - (pointer_x - grid.left()))
-                .clamp(0.0, (content_w - grid.width()).max(0.0));
+            let (new_scroll_x, new_beat_px) = crate::widgets::cursor_anchored_zoom(
+                grid.left(),
+                pointer_x,
+                v.scroll_x,
+                v.beat_px,
+                z_factor,
+                12.0,
+                400.0,
+            );
+            v.beat_px = new_beat_px;
+            let new_content_w = ((len_beats + 2.0) * v.beat_px).max(grid.width());
+            v.scroll_x = new_scroll_x.clamp(0.0, (new_content_w - grid.width()).max(0.0));
         } else if mods.shift || delta.x != 0.0 {
             let dx = if mods.shift && delta.x == 0.0 {
                 delta.y

@@ -345,8 +345,11 @@ pub(crate) fn wheel_zoom(
     // egui turns Command-scroll (and on some systems Control-scroll) into `zoom`;
     // Option-scroll stays a (vertical) scroll.
     let scrolled = (delta.y / 200.0).exp();
-    let (h, vert) = if mods.alt && mods.ctrl && (zoom != 1.0 || delta.y != 0.0) {
-        let f = if zoom != 1.0 { zoom } else { scrolled };
+    let (h, vert) = if (mods.ctrl || mods.command) && mods.shift && (zoom != 1.0 || delta.y != 0.0)
+    {
+        (1.0, crate::widgets::wheel_zoom_factor(delta.y, zoom))
+    } else if mods.alt && mods.ctrl && (zoom != 1.0 || delta.y != 0.0) {
+        let f = crate::widgets::wheel_zoom_factor(delta.y, zoom);
         (f, f)
     } else if zoom != 1.0 {
         (zoom, 1.0)
@@ -360,16 +363,30 @@ pub(crate) fn wheel_zoom(
         return false;
     };
     if h != 1.0 {
-        let x = (pointer.x - lanes.left()).max(0.0);
-        let beat = (x + v.scroll_x) / beat_px(p, v.bar_w);
-        v.bar_w = (v.bar_w * h).clamp(BAR_W.0, BAR_W.1);
-        v.scroll_x = (beat * beat_px(p, v.bar_w) - x).max(0.0);
+        let (new_scroll_x, new_bar_w) = crate::widgets::cursor_anchored_zoom(
+            lanes.left(),
+            pointer.x,
+            v.scroll_x,
+            v.bar_w,
+            h,
+            BAR_W.0,
+            BAR_W.1,
+        );
+        v.bar_w = new_bar_w;
+        v.scroll_x = new_scroll_x;
     }
     if vert != 1.0 {
-        let y = (pointer.y - lanes.top()).max(0.0);
-        let old = v.row_h;
-        v.row_h = (v.row_h * vert).clamp(ROW_H.0, ROW_H.1);
-        v.scroll_y = ((y + v.scroll_y) * v.row_h / old - y).max(0.0);
+        let (new_scroll_y, new_row_h) = crate::widgets::cursor_anchored_zoom(
+            lanes.top(),
+            pointer.y,
+            v.scroll_y,
+            v.row_h,
+            vert,
+            ROW_H.0,
+            ROW_H.1,
+        );
+        v.row_h = new_row_h;
+        v.scroll_y = new_scroll_y;
     }
     true
 }

@@ -1093,3 +1093,4 @@ Varispeed (-50% to +100%) = Varispeed (-50% to +100%)
 Varispeed Mode = Varispeed Mode
 Drag vertically or double-click to adjust Varispeed; click to choose unit = Drag vertically or double-click to adjust Varispeed; click to choose unit
 Reset Varispeed (0.00%) = Reset Varispeed (0.00%)
+Fit = Anpassen

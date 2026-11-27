@@ -14,6 +14,37 @@ pub fn stroke(c: Color32) -> Stroke {
     Stroke::new(1.3, c)
 }
 
+/// Returns the zoom multiplier from either `egui::InputState::zoom_delta()` (Ctrl+Scroll /
+/// pinch) or `smooth_scroll_delta.y` (Alt+Scroll). Returns `1.0` when no zoom occurred.
+pub fn wheel_zoom_factor(delta_y: f32, zoom_delta: f32) -> f32 {
+    if (zoom_delta - 1.0).abs() > 1e-4 {
+        zoom_delta
+    } else if delta_y.abs() > 1e-4 {
+        (delta_y / 200.0).exp()
+    } else {
+        1.0
+    }
+}
+
+/// Adjusts `(scroll, scale)` around `cursor` along an axis starting at `origin` so the
+/// content position under `cursor` stays pinned when multiplying `scale` by `factor`.
+pub fn cursor_anchored_zoom(
+    origin: f32,
+    cursor: f32,
+    scroll: f32,
+    scale: f32,
+    factor: f32,
+    min_scale: f32,
+    max_scale: f32,
+) -> (f32, f32) {
+    let old_scale = scale.max(1e-4);
+    let new_scale = (old_scale * factor).clamp(min_scale, max_scale);
+    let offset = (cursor - origin).max(0.0);
+    let content_pos = (offset + scroll) / old_scale;
+    let new_scroll = (content_pos * new_scale - offset).max(0.0);
+    (new_scroll, new_scale)
+}
+
 /// Whether `resp` asks for its right-click menu this frame: a right-click (or long touch), and
 /// on macOS also a Control-click, as with a one-button mouse or a trackpad.
 pub fn context_click(resp: &Response) -> bool {
@@ -1336,6 +1367,23 @@ mod tests {
         assert!(
             (drop - 10.0).abs() < 0.5,
             "expected ~10 dB drop, got {drop}"
+        );
+    }
+
+    #[test]
+    fn cursor_anchored_zoom_keeps_point_under_cursor_pinned() {
+        let origin = 100.0;
+        let cursor = 340.0;
+        let scroll = 120.0;
+        let scale = 60.0;
+        let point_before = (scroll + (cursor - origin)) / scale;
+        let (new_scroll, new_scale) =
+            cursor_anchored_zoom(origin, cursor, scroll, scale, 1.5, 10.0, 2000.0);
+        assert!((new_scale - 90.0).abs() < 1e-4);
+        let point_after = (new_scroll + (cursor - origin)) / new_scale;
+        assert!(
+            (point_after - point_before).abs() < 1e-4,
+            "expected {point_before}, got {point_after}"
         );
     }
 }

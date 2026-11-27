@@ -1217,12 +1217,15 @@ const ROW_IN: Color32 = Color32::from_rgb(0x28, 0x2a, 0x30);
 const ROW_OUT: Color32 = Color32::from_rgb(0x20, 0x22, 0x27);
 const TEXT: Color32 = Color32::from_rgb(0xe8, 0xe8, 0xed);
 const DIM: Color32 = Color32::from_rgb(0x98, 0x98, 0xa2);
-const BLOB: Color32 = Color32::from_rgb(0x3a, 0x76, 0xc4);
-const BLOB_SEL: Color32 = Color32::from_rgb(0x56, 0x9d, 0xf7);
-const CURVE: Color32 = Color32::from_rgb(0xe6, 0xf2, 0xff);
+const BLOB: Color32 = Color32::from_rgb(0x4c, 0xc9, 0xf0);
+const BLOB_SEL: Color32 = Color32::from_rgb(0x6e, 0xe0, 0xff);
+const BLOB_BORDER: Color32 = Color32::from_rgb(0x1b, 0x4d, 0x63);
+const CURVE: Color32 = Color32::from_rgb(0xea, 0xfb, 0xff);
 const INSPECTOR_W: f32 = 236.0;
-const RULER_W: f32 = 46.0;
-const TIME_H: f32 = 20.0;
+const RULER_W: f32 = 48.0;
+const RULER_H: f32 = 22.0;
+const REGION_STRIP_H: f32 = 16.0;
+const TIME_H: f32 = RULER_H + REGION_STRIP_H;
 const STATUS_H: f32 = 20.0;
 
 fn note_name(m: f32) -> String {
@@ -1265,6 +1268,18 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         .map_or(s.pitch_ed.algorithm, |m| m.algorithm);
     let fifths = crate::score::fifths(p.key);
     let duration = file.duration_secs();
+    let region_key = (t, r, file.path.clone());
+    let region_name = p.tracks[t].regions[r].name.clone();
+    let region_start_beats = p.region_start_beats(&p.tracks[t].regions[r]);
+    let region_end_beats = p.region_end_beats(&p.tracks[t].regions[r]);
+
+    // Auto-enable Flex Pitch when opening an audio region that has Flex Off.
+    if s.pitch_ed.fitted.as_ref() != Some(&region_key) && p.tracks[t].params.flex_mode.is_none() {
+        p.tracks[t].params.flex_enabled = true;
+        p.tracks[t].params.flex_mode = Some(FlexMode::FlexPitch);
+        p.tracks[t].params.freeze_mode = crate::model::FreezeMode::SourceOnly;
+        s.pitch_ed.show_flex = true;
+    }
 
     // ---- Top Audio Track Editor Menu Bar (Logic Pro manual pp. 484-492)
     let mut create_midi_cmd = false;
@@ -1314,6 +1329,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     .on_hover_text(tr("Show/Hide Flex Pitch"));
                 if flex_btn.clicked() {
                     v.show_flex = !v.show_flex;
+                    if v.show_flex && p.tracks[t].params.flex_mode.is_none() {
+                        p.tracks[t].params.flex_enabled = true;
+                        p.tracks[t].params.flex_mode = Some(FlexMode::FlexPitch);
+                        p.tracks[t].params.freeze_mode = crate::model::FreezeMode::SourceOnly;
+                    }
                 }
 
                 let mode_label = match p.tracks[t].params.flex_mode {
@@ -1376,16 +1396,27 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_sized(
                         [64.0, 18.0],
-                        egui::Slider::new(&mut v.row_h, 6.0..=32.0).show_value(false),
+                        egui::Slider::new(&mut v.row_h, 6.0..=36.0).show_value(false),
                     )
                     .on_hover_text(tr("Vertical Zoom"));
                     ui.add_sized(
                         [72.0, 18.0],
-                        egui::Slider::new(&mut v.zoom, 20.0..=800.0)
+                        egui::Slider::new(&mut v.zoom, 10.0..=2000.0)
                             .logarithmic(true)
                             .show_value(false),
                     )
                     .on_hover_text(tr("Horizontal Zoom"));
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new(tr("Fit")).size(11.0).color(TEXT),
+                            )
+                            .fill(Color32::from_rgb(0x2c, 0x2e, 0x34)),
+                        )
+                        .clicked()
+                    {
+                        v.fitted = None;
+                    }
                 });
             });
         });
@@ -1428,171 +1459,192 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     egui::Frame::new()
         .fill(Color32::from_rgb(0x21, 0x22, 0x26))
         .stroke(Stroke::new(1.0, Color32::from_rgb(0x14, 0x15, 0x18)))
-        .inner_margin(egui::Margin::same(10))
+        .inner_margin(egui::Margin::same(8))
         .show(&mut insp_ui, |ui| {
-            ui.set_width(INSPECTOR_W - 24.0);
-            ui.label(
-                egui::RichText::new(&p.tracks[t].name)
-                    .strong()
-                    .size(12.5)
-                    .color(TEXT),
-            );
-            let sel_txt = match sel_count {
-                0 => tr("All regions selected").to_string(),
-                1 => tr("One note selected").to_string(),
-                n => trf("{} notes selected", &[&n]),
-            };
-            ui.label(egui::RichText::new(sel_txt).size(10.5).color(DIM));
-            ui.add_space(8.0);
-
-            // Time Quantize
-            ui.label(
-                egui::RichText::new(tr("Time Quantize"))
-                    .size(11.0)
-                    .color(DIM),
-            );
-            ui.horizontal(|ui| {
-                let grid_name = if v.grid <= 0.0 {
-                    "off"
-                } else {
-                    crate::note_edit::GRIDS
-                        .iter()
-                        .find(|(_, g)| (f64::from(*g) - v.grid).abs() < 1e-6)
-                        .map_or("1/16 Note", |(n, _)| n)
-                };
-                egui::ComboBox::from_id_salt("flex-time-quantize")
-                    .selected_text(tr(grid_name))
-                    .width(126.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut v.grid, 0.0, tr("off"));
-                        for (name, g) in crate::note_edit::GRIDS {
-                            ui.selectable_value(&mut v.grid, f64::from(g), tr(name));
-                        }
-                    });
-                if ui
-                    .button("Q")
-                    .on_hover_text(tr("Apply Time Quantize"))
-                    .clicked()
-                    && v.grid > 0.0
-                {
-                    quantize = true;
-                }
-            });
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tr("Strength")).size(11.0).color(DIM));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_width(INSPECTOR_W - 20.0);
+                    ui.spacing_mut().item_spacing.y = 3.0;
                     ui.label(
-                        egui::RichText::new(format!("{:.0}", v.strength * 100.0))
-                            .size(11.0)
+                        egui::RichText::new(&p.tracks[t].name)
+                            .strong()
+                            .size(12.5)
                             .color(TEXT),
                     );
-                });
-            });
-            ui.add(
-                egui::Slider::new(&mut v.strength, 0.0..=1.0)
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            ui.add_space(10.0);
+                    let sel_txt = match sel_count {
+                        0 => tr("All regions selected").to_string(),
+                        1 => tr("One note selected").to_string(),
+                        n => trf("{} notes selected", &[&n]),
+                    };
+                    ui.label(egui::RichText::new(sel_txt).size(10.5).color(DIM));
+                    ui.add_space(4.0);
 
-            // Scale Quantize
-            ui.label(
-                egui::RichText::new(tr("Scale Quantize"))
-                    .size(11.0)
-                    .color(DIM),
-            );
-            ui.horizontal(|ui| {
-                let root_txt = match v.scale_root {
-                    None => tr("Off").to_string(),
-                    Some(r) => crate::note_edit::ROOT_SHORTS[r.min(11) as usize].to_string(),
-                };
-                egui::ComboBox::from_id_salt("flex-scale-root")
-                    .selected_text(root_txt)
-                    .width(52.0)
-                    .show_ui(ui, |ui| {
+                    // Time Quantize
+                    ui.label(
+                        egui::RichText::new(tr("Time Quantize"))
+                            .size(11.0)
+                            .color(DIM),
+                    );
+                    ui.horizontal(|ui| {
+                        let grid_name = if v.grid <= 0.0 {
+                            "off"
+                        } else {
+                            crate::note_edit::GRIDS
+                                .iter()
+                                .find(|(_, g)| (f64::from(*g) - v.grid).abs() < 1e-6)
+                                .map_or("1/16 Note", |(n, _)| n)
+                        };
+                        egui::ComboBox::from_id_salt("flex-time-quantize")
+                            .selected_text(tr(grid_name))
+                            .width(126.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut v.grid, 0.0, tr("off"));
+                                for (name, g) in crate::note_edit::GRIDS {
+                                    ui.selectable_value(&mut v.grid, f64::from(g), tr(name));
+                                }
+                            });
                         if ui
-                            .selectable_label(v.scale_root.is_none(), tr("Off"))
+                            .button("Q")
+                            .on_hover_text(tr("Apply Time Quantize"))
+                            .clicked()
+                            && v.grid > 0.0
+                        {
+                            quantize = true;
+                        }
+                    });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(tr("Strength")).size(11.0).color(DIM));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{:.0}", v.strength * 100.0))
+                                    .size(11.0)
+                                    .color(TEXT),
+                            );
+                        });
+                    });
+                    ui.add(
+                        egui::Slider::new(&mut v.strength, 0.0..=1.0)
+                            .show_value(false)
+                            .trailing_fill(true),
+                    );
+                    ui.add_space(10.0);
+
+                    // Scale Quantize
+                    ui.label(
+                        egui::RichText::new(tr("Scale Quantize"))
+                            .size(11.0)
+                            .color(DIM),
+                    );
+                    ui.horizontal(|ui| {
+                        let root_txt = match v.scale_root {
+                            None => tr("Off").to_string(),
+                            Some(r) => {
+                                crate::note_edit::ROOT_SHORTS[r.min(11) as usize].to_string()
+                            }
+                        };
+                        egui::ComboBox::from_id_salt("flex-scale-root")
+                            .selected_text(root_txt)
+                            .width(52.0)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(v.scale_root.is_none(), tr("Off"))
+                                    .clicked()
+                                {
+                                    v.scale_root = None;
+                                }
+                                for (idx, rname) in crate::note_edit::ROOT_SHORTS.iter().enumerate()
+                                {
+                                    if ui
+                                        .selectable_label(v.scale_root == Some(idx as u8), *rname)
+                                        .clicked()
+                                    {
+                                        v.scale_root = Some(idx as u8);
+                                    }
+                                }
+                            });
+                        let scale_name = FLEX_SCALES[v.scale_idx.min(FLEX_SCALES.len() - 1)].0;
+                        egui::ComboBox::from_id_salt("flex-scale-type")
+                            .selected_text(scale_name)
+                            .width(84.0)
+                            .show_ui(ui, |ui| {
+                                for (idx, (sname, _)) in FLEX_SCALES.iter().enumerate() {
+                                    ui.selectable_value(&mut v.scale_idx, idx, *sname);
+                                }
+                            });
+                        if ui
+                            .button("Q")
+                            .on_hover_text(tr("Quantize to Scale"))
                             .clicked()
                         {
-                            v.scale_root = None;
-                        }
-                        for (idx, rname) in crate::note_edit::ROOT_SHORTS.iter().enumerate() {
-                            if ui
-                                .selectable_label(v.scale_root == Some(idx as u8), *rname)
-                                .clicked()
-                            {
-                                v.scale_root = Some(idx as u8);
-                            }
+                            correct = true;
                         }
                     });
-                let scale_name = FLEX_SCALES[v.scale_idx.min(FLEX_SCALES.len() - 1)].0;
-                egui::ComboBox::from_id_salt("flex-scale-type")
-                    .selected_text(scale_name)
-                    .width(84.0)
-                    .show_ui(ui, |ui| {
-                        for (idx, (sname, _)) in FLEX_SCALES.iter().enumerate() {
-                            ui.selectable_value(&mut v.scale_idx, idx, *sname);
-                        }
+                    ui.add_space(6.0);
+
+                    // Pitch Correction
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(tr("Pitch Correction"))
+                                .size(11.0)
+                                .color(DIM),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{:.0}", v.centre * 100.0))
+                                    .size(11.0)
+                                    .color(TEXT),
+                            );
+                        });
                     });
-                if ui
-                    .button("Q")
-                    .on_hover_text(tr("Quantize to Scale"))
-                    .clicked()
-                {
-                    correct = true;
-                }
-            });
-            ui.add_space(6.0);
-
-            // Pitch Correction
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(tr("Pitch Correction"))
-                        .size(11.0)
-                        .color(DIM),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{:.0}", v.centre * 100.0))
-                            .size(11.0)
-                            .color(TEXT),
+                    let pc_resp = ui.add(
+                        egui::Slider::new(&mut v.centre, 0.0..=1.0)
+                            .show_value(false)
+                            .trailing_fill(true),
                     );
-                });
-            });
-            let pc_resp = ui.add(
-                egui::Slider::new(&mut v.centre, 0.0..=1.0)
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            if pc_resp.drag_stopped() || pc_resp.changed() {
-                correct = true;
-            }
-            ui.add_space(10.0);
+                    if pc_resp.drag_stopped() || pc_resp.changed() {
+                        correct = true;
+                    }
+                    ui.add_space(10.0);
 
-            // Gain (-24 to +24 dB)
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tr("Gain")).size(11.0).color(DIM));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{:+.0} dB", gain_ui))
-                            .size(11.0)
-                            .color(TEXT),
+                    // Gain (-24 to +24 dB)
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(tr("Gain")).size(11.0).color(DIM));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{:+.0} dB", gain_ui))
+                                    .size(11.0)
+                                    .color(TEXT),
+                            );
+                        });
+                    });
+                    let g_resp = ui.add(
+                        egui::Slider::new(&mut gain_ui, -24.0..=24.0)
+                            .show_value(false)
+                            .trailing_fill(true),
                     );
+                    if g_resp.changed() {
+                        apply_gain_db = Some(gain_ui);
+                    }
                 });
-            });
-            let g_resp = ui.add(
-                egui::Slider::new(&mut gain_ui, -24.0..=24.0)
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            if g_resp.changed() {
-                apply_gain_db = Some(gain_ui);
-            }
         });
 
     let canvas = editor_rect;
-    let resp = ui.allocate_rect(canvas, Sense::click_and_drag());
+    let time_ruler_rect = Rect::from_min_max(
+        pos2(canvas.left() + RULER_W, canvas.top()),
+        pos2(canvas.right(), canvas.top() + RULER_H),
+    );
+    let region_strip_rect = Rect::from_min_max(
+        pos2(canvas.left() + RULER_W, canvas.top() + RULER_H),
+        pos2(canvas.right(), canvas.top() + TIME_H),
+    );
+    let plot = Rect::from_min_max(
+        pos2(canvas.left() + RULER_W, canvas.top() + TIME_H),
+        pos2(canvas.right(), canvas.bottom() - STATUS_H),
+    );
+    let time_resp = ui.allocate_rect(time_ruler_rect, Sense::click_and_drag());
+    let resp = ui.allocate_rect(plot, Sense::click_and_drag());
     let g = ui.painter_at(canvas);
     g.rect_filled(canvas, 0.0, BG);
 
@@ -1630,19 +1682,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     };
     let region_secs = clock.map.seconds_at(p.region_end_beats(region)) - clock.s0;
     let v = &mut s.pitch_ed;
-    let plot = Rect::from_min_max(
-        pos2(canvas.left() + RULER_W, canvas.top() + TIME_H),
-        pos2(canvas.right(), canvas.bottom() - STATUS_H),
-    );
     v.plot = plot;
 
-    // Fit the view to the region the first time it is shown.
-    let key = (t, r, file.path.clone());
-    if v.fitted.as_ref() != Some(&key) && plot.width() > 10.0 {
-        v.fitted = Some(key);
+    // Fit the view to the region on open or when Fit is clicked.
+    if v.fitted.as_ref() != Some(&region_key) && plot.width() > 10.0 {
+        v.fitted = Some(region_key.clone());
         let len = region_secs.clamp(0.5, duration.max(0.5));
-        v.scroll = clock.offset;
-        v.zoom = (plot.width() / len as f32).max(1.0);
+        let target_w = (plot.width() * 0.85).max(40.0);
+        v.zoom = (target_w / len as f32).clamp(10.0, 2000.0);
+        v.scroll = (clock.offset - len * 0.05).max(0.0);
         let (a, b) = (clock.offset, clock.offset + len);
         let pitched: Vec<f32> = notes
             .iter()
@@ -1657,17 +1705,47 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 pitched.iter().copied().fold(f32::MIN, f32::max),
             )
         };
-        let span = (hi - lo + 6.0).max(12.0);
-        v.row_h = (plot.height() / span).clamp(8.0, 28.0);
-        v.top = (hi + lo) / 2.0 + plot.height() / v.row_h / 2.0;
+        let span = ((hi + 4.0) - (lo - 4.0)).max(10.0);
+        v.row_h = (plot.height() / span).clamp(18.0, 24.0);
+        v.top = (hi + lo) * 0.5 + plot.height() / v.row_h * 0.5;
     }
 
-    // Scrolling and zooming
-    if resp.hovered() {
-        let (scroll_delta, zoom_key) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers.command));
-        if zoom_key && scroll_delta.y != 0.0 {
-            v.zoom = (v.zoom * (1.0 + scroll_delta.y * 0.003)).clamp(2.0, 4000.0);
-        } else {
+    // Scrolling and cursor-anchored Ctrl+Scroll zooming
+    if ui.rect_contains_pointer(canvas) {
+        let (scroll_delta, zoom_delta, modifiers, pointer_pos) = ui.input(|i| {
+            (
+                i.smooth_scroll_delta,
+                i.zoom_delta(),
+                i.modifiers,
+                i.pointer.hover_pos(),
+            )
+        });
+        let ctrl = modifiers.command || modifiers.ctrl;
+        if modifiers.alt || (ctrl && modifiers.shift) {
+            let factor = crate::widgets::wheel_zoom_factor(scroll_delta.y, zoom_delta);
+            if (factor - 1.0).abs() > 1e-4 {
+                let py = pointer_pos.map_or(plot.center().y, |pt| pt.y);
+                let pitch_at_cursor = v.top - (py - plot.top()) / v.row_h;
+                v.row_h = (v.row_h * factor).clamp(6.0, 36.0);
+                v.top = (pitch_at_cursor + (py - plot.top()) / v.row_h).clamp(24.0, 108.0);
+            }
+        } else if ctrl || (zoom_delta - 1.0).abs() > 1e-4 {
+            let factor = crate::widgets::wheel_zoom_factor(scroll_delta.y, zoom_delta);
+            if (factor - 1.0).abs() > 1e-4 {
+                let px = pointer_pos.map_or(plot.center().x, |pt| pt.x);
+                let (new_scroll_px, new_zoom) = crate::widgets::cursor_anchored_zoom(
+                    plot.left(),
+                    px,
+                    v.scroll as f32 * v.zoom,
+                    v.zoom,
+                    factor,
+                    10.0,
+                    2000.0,
+                );
+                v.zoom = new_zoom;
+                v.scroll = f64::from(new_scroll_px / new_zoom).max(0.0);
+            }
+        } else if scroll_delta.x != 0.0 || scroll_delta.y != 0.0 {
             v.scroll = (v.scroll - f64::from(scroll_delta.x / v.zoom)).max(0.0);
             v.top = (v.top + scroll_delta.y / v.row_h).clamp(24.0, 108.0);
         }
@@ -1730,7 +1808,27 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
     }
 
-    // Time ruler & beat grid
+    // Time ruler, Region Title Strip & beat grid
+    g.rect_filled(time_ruler_rect, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
+    g.rect_filled(region_strip_rect, 0.0, Color32::from_rgb(0x28, 0x35, 0x48));
+    let reg_x0 = x_of(clock.offset).max(region_strip_rect.left());
+    let reg_x1 = x_of(clock.offset + region_secs).min(region_strip_rect.right());
+    if reg_x1 > reg_x0 + 2.0 {
+        let reg_bar = Rect::from_min_max(
+            pos2(reg_x0, region_strip_rect.top() + 1.0),
+            pos2(reg_x1, region_strip_rect.bottom() - 1.0),
+        );
+        g.rect_filled(reg_bar, 2.0, Color32::from_rgb(0x36, 0x52, 0x76));
+        let bar_start = p.beats_to_bar(region_start_beats).floor() as i64 + 1;
+        let bar_end = p.beats_to_bar(region_end_beats).ceil() as i64 + 1;
+        g.text(
+            pos2(reg_bar.left() + 6.0, reg_bar.center().y),
+            egui::Align2::LEFT_CENTER,
+            format!("{region_name}  ({bar_start} - {bar_end})"),
+            FontId::proportional(10.0),
+            Color32::from_rgb(0xe2, 0xea, 0xf4),
+        );
+    }
     let (b0, b1) = (
         clock.beat(sec_of(plot.left())).floor(),
         clock.beat(sec_of(plot.right())).ceil(),
@@ -1746,8 +1844,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 Stroke::new(1.0, Color32::from_gray(if bar { 0x4c } else { 0x32 })),
             );
             if bar {
+                g.line_segment(
+                    [
+                        pos2(x, time_ruler_rect.top() + 4.0),
+                        pos2(x, time_ruler_rect.bottom()),
+                    ],
+                    Stroke::new(1.0, Color32::from_gray(0x52)),
+                );
                 g.text(
-                    pos2(x + 3.0, canvas.top() + TIME_H / 2.0),
+                    pos2(x + 3.0, time_ruler_rect.center().y),
                     egui::Align2::LEFT_CENTER,
                     format!("{}", bar_no.round() as i64 + 1),
                     FontId::proportional(11.0),
@@ -2100,9 +2205,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let curve = note_render::targets_with(track, &changes, pitched);
 
     if v.show_flex || flex_mode == FlexMode::FlexPitch {
+        let mut prev_tail: Option<(f64, Pos2)> = None;
         for (i, n) in shown.iter().enumerate() {
             let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
             if x1 < plot.left() || x0 > plot.right() {
+                prev_tail = None;
                 continue;
             }
             let sel = v.selected.contains(&i);
@@ -2117,11 +2224,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 3.0,
                 Stroke::new(
                     if sel { 1.5 } else { 1.0 },
-                    if sel {
-                        Color32::WHITE
-                    } else {
-                        Color32::from_rgb(0x22, 0x4b, 0x82)
-                    },
+                    if sel { Color32::WHITE } else { BLOB_BORDER },
                 ),
                 egui::StrokeKind::Inside,
             );
@@ -2140,11 +2243,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         Some(pos2(x_of(n.place(PitchTrack::time_of(f))), y_of(m)))
                     })
                     .collect();
+                if let (Some((prev_end, prev_pt)), Some(&first_pt)) = (prev_tail, line_pts.first())
+                {
+                    if (n.new_start - prev_end).abs() < 0.15 {
+                        gp.line_segment(
+                            [prev_pt, first_pt],
+                            Stroke::new(1.2, CURVE.gamma_multiply(0.7)),
+                        );
+                    }
+                }
                 for w in line_pts.windows(2) {
                     if (w[1].x - w[0].x).abs() < 12.0 {
                         gp.line_segment([w[0], w[1]], Stroke::new(1.5, CURVE));
                     }
                 }
+                prev_tail = line_pts.last().map(|&pt| (n.new_end, pt));
             }
 
             // 6 interactive hotspots on selected or hovered note (manual p. 487)
@@ -2219,14 +2332,45 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
     }
 
-    // Playhead
+    // Playhead & interactive ruler scrubbing
+    if time_resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
+    if time_resp.drag_started() {
+        crate::tracks_area::begin_playhead_drag(p);
+    }
+    if time_resp.clicked() || time_resp.dragged() {
+        if let Some(pt) = time_resp.interact_pointer_pos() {
+            let beat = clock.beat(sec_of(pt.x)).max(0.0);
+            crate::tracks_area::update_playhead_drag(p, beat);
+        }
+    }
+    if time_resp.drag_stopped() {
+        crate::tracks_area::end_playhead_drag(p);
+    }
     let ph = clock.secs(p.position_beats);
     if ph >= scroll {
         let x = x_of(ph);
-        g.line_segment(
-            [pos2(x, plot.top()), pos2(x, plot.bottom())],
-            Stroke::new(1.0, Color32::WHITE),
-        );
+        if x >= plot.left() && x <= plot.right() {
+            let (ph_line, ph_fill, ph_edge) = crate::tracks_area::playhead_colors(p.recording);
+            g.line_segment(
+                [pos2(x, time_ruler_rect.top()), pos2(x, plot.bottom())],
+                Stroke::new(1.2, ph_line),
+            );
+            let cap_y = time_ruler_rect.top();
+            let cap = vec![
+                pos2(x - 6.0, cap_y + 1.0),
+                pos2(x + 6.0, cap_y + 1.0),
+                pos2(x + 6.0, cap_y + 8.0),
+                pos2(x, cap_y + 15.0),
+                pos2(x - 6.0, cap_y + 8.0),
+            ];
+            g.add(egui::Shape::convex_polygon(
+                cap,
+                ph_fill,
+                Stroke::new(1.0, ph_edge),
+            ));
+        }
     }
 
     // Status line
