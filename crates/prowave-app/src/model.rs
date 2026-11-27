@@ -992,6 +992,8 @@ pub struct Track {
     pub bass808: Option<prowave_engine::Bass808Spec>,
     /// A Marbble synthesizer or sampler (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`, `Sampler`).
     pub marbble_inst: Option<MarbbleInstUse>,
+    /// Whether the track's Software Instrument slot is bypassed without unloading it.
+    pub instrument_bypass: bool,
     /// A hosted CLAP, VST3 or Audio Unit instrument plug-in: its slot in `hosted_plugins`, or 0.
     pub hosted_instrument: u32,
     /// Software instrument / MIDI input port filter (`None` = All).
@@ -1105,6 +1107,7 @@ impl Track {
             drums: None,
             bass808: None,
             marbble_inst: None,
+            instrument_bypass: false,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,
@@ -1431,6 +1434,7 @@ impl Project {
             drums: None,
             bass808: None,
             marbble_inst: None,
+            instrument_bypass: false,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,
@@ -1508,6 +1512,7 @@ impl Project {
             drums: None,
             bass808: None,
             marbble_inst: None,
+            instrument_bypass: false,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,

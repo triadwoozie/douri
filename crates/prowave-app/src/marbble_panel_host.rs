@@ -667,6 +667,7 @@ pub fn show_track_instrument_window(
     let meters = [0.0; MAX_METERS];
     egui::Window::new(format!("{} - {}", track.name, info.name))
         .open(&mut open)
+        .default_pos([640.0, 48.0])
         .default_size([460.0, 440.0])
         .resizable(true)
         .show(ctx, |ui| {

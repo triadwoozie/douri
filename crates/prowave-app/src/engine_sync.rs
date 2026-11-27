@@ -1017,7 +1017,11 @@ impl EngineSync {
                 }
                 continue;
             }
-            if let Some(m) = t.marbble_inst.as_ref().filter(|_| !external) {
+            if let Some(m) = t
+                .marbble_inst
+                .as_ref()
+                .filter(|_| !external && !t.instrument_bypass)
+            {
                 if !self.sync_marbble_inst(i, m, sample_rate) {
                     break;
                 }
@@ -1922,6 +1926,7 @@ mod tests {
             drums: None,
             bass808: None,
             marbble_inst: None,
+            instrument_bypass: false,
             hosted_instrument: 0,
             summing_stack: false,
             midi_channel: 1,

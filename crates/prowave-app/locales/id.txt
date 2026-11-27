@@ -1097,3 +1097,5 @@ Fit = Paskan
 Marbble Synths & Sampler = Synth & Sampler Marbble
 Open Marbble Instrument… = Buka Instrumen Marbble…
 Remove Marbble Instrument = Hapus Instrumen Marbble
+Instrument = Instrumen
+No Plug-in = Tanpa Plug-in

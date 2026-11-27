@@ -144,6 +144,7 @@ Dōri is free software licensed under the **GNU General Public License v3.0 or l
 - **[billyblu2000/accomontage2](https://github.com/billyblu2000/accomontage2)** (MIT License, Billy Yi): Chord voicing and accompaniment taxonomy for Keyboard Session Players.
 - **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 - **[JackMechem/marbble](https://github.com/JackMechem/marbble)** (MIT License, Copyright (c) 2026 Jack Mechem): 17 built-in DSP effects, plug-in delay compensation (PDC), six vintage/modern synthesizers (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`), Marbble Sampler, denormal/NaN audio guards, and floating panel bridge.
+- **[facebookresearch/demucs](https://github.com/facebookresearch/demucs)** (MIT License, Meta Platforms, Inc.): HTDemucs neural stem separation integration and ONNX stem model compatibility.
 
 See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for full attributions and [`LICENSE`](LICENSE) for complete license terms.
 

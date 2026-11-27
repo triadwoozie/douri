@@ -1097,3 +1097,5 @@ Fit = Вмістити
 Marbble Synths & Sampler = Синтезатори та семплер Marbble
 Open Marbble Instrument… = Відкрити інструмент Marbble…
 Remove Marbble Instrument = Вилучити інструмент Marbble
+Instrument = Інструмент
+No Plug-in = Без плагіна

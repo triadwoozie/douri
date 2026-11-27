@@ -1097,3 +1097,5 @@ Fit = Tilpass
 Marbble Synths & Sampler = Marbble-synther og sampler
 Open Marbble Instrument… = Åpne Marbble-instrument…
 Remove Marbble Instrument = Fjern Marbble-instrument
+Instrument = Instrument
+No Plug-in = Ingen plug-in

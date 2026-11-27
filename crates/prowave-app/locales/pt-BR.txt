@@ -1097,3 +1097,5 @@ Fit = Ajustar
 Marbble Synths & Sampler = Sintetizadores e Sampler Marbble
 Open Marbble Instrument… = Abrir instrumento Marbble…
 Remove Marbble Instrument = Remover instrumento Marbble
+Instrument = Instrumento
+No Plug-in = Sem plug-in

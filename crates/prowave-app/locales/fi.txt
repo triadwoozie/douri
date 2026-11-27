@@ -1097,3 +1097,5 @@ Fit = Sovita
 Marbble Synths & Sampler = Marbble-syntetisaattorit ja sampleri
 Open Marbble Instrument… = Avaa Marbble-instrumentti…
 Remove Marbble Instrument = Poista Marbble-instrumentti
+Instrument = Instrumentti
+No Plug-in = Ei liitännäistä

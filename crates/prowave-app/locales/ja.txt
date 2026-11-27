@@ -1097,3 +1097,5 @@ Fit = 全体表示
 Marbble Synths & Sampler = Marbble シンセ＆サンプラー
 Open Marbble Instrument… = Marbble インストゥルメントを開く…
 Remove Marbble Instrument = Marbble インストゥルメントを削除
+Instrument = インストゥルメント
+No Plug-in = プラグインなし

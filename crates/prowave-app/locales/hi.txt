@@ -1097,3 +1097,5 @@ Fit = फिट
 Marbble Synths & Sampler = Marbble सिंथ और सैंपलर
 Open Marbble Instrument… = Marbble इंस्ट्रूमेंट खोलें…
 Remove Marbble Instrument = Marbble इंस्ट्रूमेंट हटाएं
+Instrument = इंस्ट्रूमेंट
+No Plug-in = कोई प्लग-इन नहीं

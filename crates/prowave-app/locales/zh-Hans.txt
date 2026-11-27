@@ -1097,3 +1097,5 @@ Fit = 适配
 Marbble Synths & Sampler = Marbble 合成器与采样器
 Open Marbble Instrument… = 打开 Marbble 乐器…
 Remove Marbble Instrument = 移除 Marbble 乐器
+Instrument = 乐器
+No Plug-in = 无插件

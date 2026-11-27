@@ -1095,3 +1095,5 @@ Fit = Sığdır
 Marbble Synths & Sampler = Marbble Synthler ve Sampler
 Open Marbble Instrument… = Marbble Enstrümanını Aç…
 Remove Marbble Instrument = Marbble Enstrümanını Kaldır
+Instrument = Enstrüman
+No Plug-in = Eklenti Yok

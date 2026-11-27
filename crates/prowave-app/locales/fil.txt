@@ -1097,3 +1097,5 @@ Fit = Iakma
 Marbble Synths & Sampler = Marbble Synths at Sampler
 Open Marbble Instrument… = Buksan ang Marbble Instrument…
 Remove Marbble Instrument = Alisin ang Marbble Instrument
+Instrument = Instrumento
+No Plug-in = Walang Plug-in

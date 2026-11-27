@@ -1564,6 +1564,14 @@ pub fn channel_strip(
                 Some(crate::hosted_plugins::name(t.hosted_instrument))
             } else if let Some(m) = t.marbble_inst.as_ref() {
                 prowave_engine::marbble_dsp::instrument::find(&m.id).map(|inf| inf.name)
+            } else if t.drums.is_some() {
+                Some("Drum Machine")
+            } else if t.bass808.is_some() {
+                Some("808 Bass")
+            } else if t.sampler.is_some() {
+                Some("Sampler")
+            } else if t.epiano.is_some() {
+                Some("Electric Piano")
             } else {
                 t.instrument
             };
@@ -1660,82 +1668,204 @@ pub fn channel_strip(
             );
         }
         setting_menu(ui, setting_rect, p, v, key, id(ns, (key, "setting")));
-        let gr_bar = row(r.gain_red + 1.0, 6.0);
-        g.rect_filled(gr_bar, 1.0, SLOT_EMPTY);
-        if reduction > 0.05 {
-            // Gain reduction grows from the right, in orange.
-            let w = gr_bar.width() * (reduction / 24.0).min(1.0);
-            g.rect_filled(
-                Rect::from_min_max(pos2(gr_bar.right() - w, gr_bar.top()), gr_bar.max),
-                1.0,
-                if inactive {
-                    METER_OFF
-                } else {
-                    Color32::from_rgb(0xe6, 0xa0, 0x2a)
-                },
-            );
-        }
-        let eq_r = row(r.eq, 24.0);
-        let eq_resp = ui.interact(eq_r, id(ns, (key, "eq_thumb")), Sense::click());
-        crate::quick_help::hover(ui.ctx(), &eq_resp, "eq_thumb");
-        if eq_resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        eq_thumb(g, eq_r, eq_params, eq_resp.hovered());
-        if eq_resp.clicked() {
-            let ti = match key {
-                StripKey::Track(i) => i,
-                StripKey::StereoOut => MASTER_STRIP,
-                _ => usize::MAX - 1,
-            };
-            if ti != usize::MAX - 1 {
-                let ins = strip_inserts(p, ti);
-                if let Some(pos) = ins.iter().position(|x| {
-                    matches!(
-                        x.kind,
-                        prowave_engine::FxKind::ChannelEq | prowave_engine::FxKind::MultiEq
-                    )
-                }) {
-                    if v.fx_window == Some((ti, pos)) {
-                        v.fx_window = None;
+        let is_inst_track = matches!(kind, Some(TrackKind::Instrument | TrackKind::Drummer));
+        let compact_inst_top = is_inst_track && eq_params.is_none() && reduction <= 0.05;
+        if !compact_inst_top {
+            let gr_bar = row(r.gain_red + 1.0, 6.0);
+            g.rect_filled(gr_bar, 1.0, SLOT_EMPTY);
+            if reduction > 0.05 {
+                // Gain reduction grows from the right, in orange.
+                let w = gr_bar.width() * (reduction / 24.0).min(1.0);
+                g.rect_filled(
+                    Rect::from_min_max(pos2(gr_bar.right() - w, gr_bar.top()), gr_bar.max),
+                    1.0,
+                    if inactive {
+                        METER_OFF
                     } else {
-                        v.fx_window = Some((ti, pos));
-                        v.inst_window = None;
-                        v.plugin_controls = false;
-                    }
-                } else {
-                    let inserts = if ti == MASTER_STRIP {
-                        &mut p.master_inserts
-                    } else if let Some(t) = p.tracks.get_mut(ti) {
-                        &mut t.inserts
-                    } else {
-                        &mut p.master_inserts
-                    };
-                    if inserts.len() < prowave_engine::MAX_INSERTS {
-                        inserts.insert(0, Insert::new(prowave_engine::FxKind::ChannelEq));
-                        if let Some((t, s)) = v.fx_window {
-                            if t == ti {
-                                v.fx_window = Some((t, s + 1));
-                            }
+                        Color32::from_rgb(0xe6, 0xa0, 0x2a)
+                    },
+                );
+            }
+            let eq_r = row(r.eq, 24.0);
+            let eq_resp = ui.interact(eq_r, id(ns, (key, "eq_thumb")), Sense::click());
+            crate::quick_help::hover(ui.ctx(), &eq_resp, "eq_thumb");
+            if eq_resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            eq_thumb(g, eq_r, eq_params, eq_resp.hovered());
+            if eq_resp.clicked() {
+                let ti = match key {
+                    StripKey::Track(i) => i,
+                    StripKey::StereoOut => MASTER_STRIP,
+                    _ => usize::MAX - 1,
+                };
+                if ti != usize::MAX - 1 {
+                    let ins = strip_inserts(p, ti);
+                    if let Some(pos) = ins.iter().position(|x| {
+                        matches!(
+                            x.kind,
+                            prowave_engine::FxKind::ChannelEq | prowave_engine::FxKind::MultiEq
+                        )
+                    }) {
+                        if v.fx_window == Some((ti, pos)) {
+                            v.fx_window = None;
+                        } else {
+                            v.fx_window = Some((ti, pos));
+                            v.inst_window = None;
+                            v.plugin_controls = false;
                         }
-                        v.fx_window = Some((ti, 0));
-                        v.inst_window = None;
-                        v.plugin_controls = false;
+                    } else {
+                        let inserts = if ti == MASTER_STRIP {
+                            &mut p.master_inserts
+                        } else if let Some(t) = p.tracks.get_mut(ti) {
+                            &mut t.inserts
+                        } else {
+                            &mut p.master_inserts
+                        };
+                        if inserts.len() < prowave_engine::MAX_INSERTS {
+                            inserts.insert(0, Insert::new(prowave_engine::FxKind::ChannelEq));
+                            if let Some((t, s)) = v.fx_window {
+                                if t == ti {
+                                    v.fx_window = Some((t, s + 1));
+                                }
+                            }
+                            v.fx_window = Some((ti, 0));
+                            v.inst_window = None;
+                            v.plugin_controls = false;
+                        }
                     }
                 }
             }
         }
-        let input_r = row(r.input, 16.0);
+        let input_r = if compact_inst_top {
+            row(r.gain_red + 2.0, 18.0)
+        } else {
+            row(r.input, 16.0)
+        };
+        if compact_inst_top {
+            let div_y = (r.fx - 4.0).max(input_r.bottom() + 4.0);
+            g.line_segment(
+                [pos2(input_r.left(), div_y), pos2(input_r.right(), div_y)],
+                Stroke::new(1.0, Color32::from_rgb(0x2b, 0x2b, 0x2f)),
+            );
+        }
         match (kind, instrument) {
             (Some(TrackKind::Instrument | TrackKind::Drummer), inst_opt) => {
-                let (label, bg, fg) = if let Some(inst) = inst_opt {
-                    (inst, plug, plug_text)
-                } else {
-                    ("Instrument", SLOT_EMPTY, TEXT_DIM)
+                let is_populated = inst_opt.is_some();
+                let bypassed = match key {
+                    StripKey::Track(i) => p.tracks[i].instrument_bypass,
+                    _ => false,
                 };
-                slot(g, input_r, label, bg, fg);
+                let (label, bg, border, fg) = if let Some(inst) = inst_opt {
+                    (
+                        inst,
+                        if bypassed || inactive {
+                            PLUGIN_OFF
+                        } else {
+                            Color32::from_rgb(0x14, 0x4d, 0x5c)
+                        },
+                        if bypassed || inactive {
+                            Color32::from_rgb(0x3a, 0x3a, 0x40)
+                        } else {
+                            Color32::from_rgb(0x3a, 0x9b, 0xb5)
+                        },
+                        if bypassed || inactive {
+                            TEXT_DIM
+                        } else {
+                            Color32::WHITE
+                        },
+                    )
+                } else {
+                    (
+                        tr("Instrument"),
+                        Color32::from_rgb(0x20, 0x26, 0x2b),
+                        Color32::from_rgb(0x2f, 0x45, 0x4f),
+                        TEXT_DIM,
+                    )
+                };
+                g.rect_filled(input_r, CornerRadius::same(3), bg);
+                g.rect_stroke(
+                    input_r,
+                    CornerRadius::same(3),
+                    Stroke::new(1.0, border),
+                    StrokeKind::Inside,
+                );
                 let inst_resp = ui.interact(input_r, id(ns, (key, "inst_slot")), Sense::click());
-                if inst_resp.double_clicked() {
+                let hov = inst_resp.hovered();
+                let left_zone = Rect::from_min_max(
+                    input_r.min,
+                    pos2(
+                        (input_r.left() + 14.0).min(input_r.right()),
+                        input_r.bottom(),
+                    ),
+                );
+                let right_zone = Rect::from_min_max(
+                    pos2((input_r.right() - 16.0).max(input_r.left()), input_r.top()),
+                    input_r.max,
+                );
+                g.text(
+                    input_r.center(),
+                    Align2::CENTER_CENTER,
+                    label,
+                    FontId::proportional(10.5),
+                    fg,
+                );
+                if is_populated && (hov || bypassed) {
+                    g.circle_stroke(
+                        left_zone.center(),
+                        3.5,
+                        Stroke::new(
+                            1.2,
+                            if bypassed {
+                                Color32::from_rgb(0x88, 0x88, 0x90)
+                            } else {
+                                Color32::from_rgb(0x70, 0xe0, 0xf8)
+                            },
+                        ),
+                    );
+                }
+                if is_populated && hov {
+                    g.text(
+                        right_zone.center(),
+                        Align2::CENTER_CENTER,
+                        "▾",
+                        FontId::proportional(9.5),
+                        Color32::from_rgb(0xd0, 0xe8, 0xf0),
+                    );
+                }
+                if hov {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let popup_id = id(ns, (key, "inst_menu"));
+                let mut open_menu = inst_resp.secondary_clicked();
+                if inst_resp.clicked() {
+                    let pt = inst_resp.interact_pointer_pos();
+                    if !is_populated {
+                        open_menu = true;
+                    } else if let Some(pt) = pt {
+                        if left_zone.contains(pt) {
+                            if let StripKey::Track(i) = key {
+                                p.tracks[i].instrument_bypass = !p.tracks[i].instrument_bypass;
+                            }
+                        } else if right_zone.contains(pt) {
+                            open_menu = true;
+                        } else if let StripKey::Track(i) = key {
+                            let t = &p.tracks[i];
+                            if t.hosted_instrument != 0 {
+                                v.inst_window = Some(i);
+                                v.fx_window = None;
+                                v.plugin_controls = false;
+                            } else if t.marbble_inst.is_some() {
+                                v.show_marbble_inst = Some(i);
+                            } else if t.drums.is_some() {
+                                v.show_drum_machine = Some(i);
+                            } else if t.bass808.is_some() {
+                                v.show_bass808 = Some(i);
+                            }
+                        }
+                    }
+                }
+                if inst_resp.double_clicked() && is_populated {
                     if let StripKey::Track(i) = key {
                         let t = &p.tracks[i];
                         if t.hosted_instrument != 0 {
@@ -1751,9 +1881,28 @@ pub fn channel_strip(
                         }
                     }
                 }
+                if open_menu {
+                    egui::Popup::open_id(ui.ctx(), popup_id);
+                }
                 if let StripKey::Track(i) = key {
-                    egui::Popup::menu(&inst_resp).show(|ui| {
-                        ui.menu_button(tr("Marbble Synths & Sampler"), |ui| {
+                    egui::Popup::from_toggle_button_response(&inst_resp)
+                        .id(popup_id)
+                        .open_memory(None)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            if ui.button(tr("No Plug-in")).clicked() {
+                                p.tracks[i].marbble_inst = None;
+                                p.tracks[i].soundfont = None;
+                                p.tracks[i].sampler = None;
+                                p.tracks[i].epiano = None;
+                                p.tracks[i].drums = None;
+                                p.tracks[i].bass808 = None;
+                                p.tracks[i].hosted_instrument = 0;
+                                p.tracks[i].instrument = None;
+                                p.tracks[i].instrument_bypass = false;
+                                ui.close();
+                            }
+                            ui.separator();
                             for info in prowave_engine::marbble_dsp::instrument::registry() {
                                 let active = p.tracks[i]
                                     .marbble_inst
@@ -1768,23 +1917,48 @@ pub fn channel_strip(
                                     p.tracks[i].drums = None;
                                     p.tracks[i].bass808 = None;
                                     p.tracks[i].hosted_instrument = 0;
+                                    p.tracks[i].instrument_bypass = false;
                                     v.show_marbble_inst = Some(i);
                                     ui.close();
                                 }
                             }
-                            if p.tracks[i].marbble_inst.is_some() {
-                                ui.separator();
-                                if ui.button(tr("Open Marbble Instrument…")).clicked() {
-                                    v.show_marbble_inst = Some(i);
-                                    ui.close();
-                                }
-                                if ui.button(tr("Remove Marbble Instrument")).clicked() {
-                                    p.tracks[i].marbble_inst = None;
-                                    ui.close();
-                                }
+                            ui.separator();
+                            if ui.button(tr("Electric Piano")).clicked() {
+                                p.tracks[i].epiano = Some(crate::model::EPianoUse::default());
+                                p.tracks[i].marbble_inst = None;
+                                p.tracks[i].soundfont = None;
+                                p.tracks[i].sampler = None;
+                                p.tracks[i].drums = None;
+                                p.tracks[i].bass808 = None;
+                                p.tracks[i].hosted_instrument = 0;
+                                p.tracks[i].instrument_bypass = false;
+                                ui.close();
+                            }
+                            if ui.button("808 Bass").clicked() {
+                                p.tracks[i].bass808 = Some(prowave_engine::Bass808Spec::default());
+                                p.tracks[i].marbble_inst = None;
+                                p.tracks[i].soundfont = None;
+                                p.tracks[i].sampler = None;
+                                p.tracks[i].epiano = None;
+                                p.tracks[i].drums = None;
+                                p.tracks[i].hosted_instrument = 0;
+                                p.tracks[i].instrument_bypass = false;
+                                v.show_bass808 = Some(i);
+                                ui.close();
+                            }
+                            if ui.button(tr("Drum Machine")).clicked() {
+                                p.tracks[i].drums = Some(crate::drum_kit::DrumsUse::new());
+                                p.tracks[i].marbble_inst = None;
+                                p.tracks[i].sampler = None;
+                                p.tracks[i].epiano = None;
+                                p.tracks[i].soundfont = None;
+                                p.tracks[i].bass808 = None;
+                                p.tracks[i].hosted_instrument = 0;
+                                p.tracks[i].instrument_bypass = false;
+                                v.show_drum_machine = Some(i);
+                                ui.close();
                             }
                         });
-                    });
                 }
             }
             // An aux strip's input is the bus it listens to: Aux 1 takes Bus 1, and so on.
@@ -3618,5 +3792,57 @@ mod tests {
         assert_eq!(p.tracks[1].inserts.len(), 1);
         assert_eq!(p.tracks[1].inserts[0], p.tracks[0].inserts[0]);
         assert!(p.tracks[1].inserts[0].bypass);
+    }
+
+    #[test]
+    fn instrument_slot_renders_cleanly_with_marbble_synth() {
+        let mut p = Project::empty();
+        let mut t1 = crate::model::Track::new("Lead Synth", TrackKind::Instrument);
+        t1.marbble_inst = Some(crate::model::MarbbleInstUse::new("builtin:tre"));
+        t1.inserts
+            .push(Insert::new(prowave_engine::FxKind::MarbbleCompressor));
+        let t2 = crate::model::Track::new("Empty Inst", TrackKind::Instrument);
+        p.tracks.push(t1);
+        p.tracks.push(t2);
+        let mut s = UiState::new();
+        s.show_mixer = true;
+        s.mixer.show_slots = true;
+        p.selected_track = 1; // "Lead Synth" (Track 0 is default Inst 1)
+        s.show_marbble_inst = Some(1);
+        let out = std::env::var_os("PROWAVE_UI_PNG_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("shot_instrument_slot.png");
+        crate::ui_test::render_png(
+            1160.0,
+            720.0,
+            1.0,
+            MIXER_BG,
+            |ui| {
+                let h = ui.available_height();
+                ui.scope_builder(
+                    egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(
+                        egui::pos2(0.0, 0.0),
+                        egui::pos2(236.0, h),
+                    )),
+                    |ui| {
+                        crate::inspector::show(ui, &mut p, &mut s, &Meters::default());
+                    },
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(
+                        egui::pos2(244.0, 0.0),
+                        egui::pos2(624.0, h),
+                    )),
+                    |ui| {
+                        show(ui, &mut p, &mut s, &Meters::default());
+                    },
+                );
+                crate::marbble_panel_host::show_track_instrument_window(ui.ctx(), &mut p, &mut s);
+            },
+            &out,
+        )
+        .unwrap();
+        assert!(std::fs::metadata(&out).unwrap().len() > 5_000);
     }
 }

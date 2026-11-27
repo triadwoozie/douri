@@ -132,6 +132,7 @@ pub fn import_audio_at(
         drums: None,
         bass808: None,
         marbble_inst: None,
+        instrument_bypass: false,
         hosted_instrument: 0,
         icon: None,
         midi_in_port: None,

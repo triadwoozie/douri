@@ -69,6 +69,11 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: MIT License
 - **Description**: Real-time built-in effects (`crates/marbble-dsp`), plug-in delay compensation (PDC), vintage/modern synthesizers, sampler DSP, and instrument/effect UI panels.
 
+- **Project**: Demucs / HTDemucs ([facebookresearch/demucs](https://github.com/facebookresearch/demucs))
+- **Copyright**: (c) Meta Platforms, Inc. and affiliates
+- **License**: MIT License
+- **Description**: Hybrid Transformer Demucs (HTDemucs) neural stem separation and ONNX model compatibility for Dōri's Stem Splitter (`stems.rs`).
+
 - **Artwork**: Dōri 3D Studio App Icon & Custom Artwork
 - **Creator**: triadwoozie
 - **Description**: Blender-rendered high-resolution application icon and 3D studio visual assets.
