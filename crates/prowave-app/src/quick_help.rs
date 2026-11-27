@@ -884,11 +884,9 @@ pub fn show_overlay(ctx: &Context, s: &mut UiState) {
     let pointer = ctx.input(|i| i.pointer.hover_pos());
     let Some(id) = active_id else {
         // Show a subtle top-center status pill so the user knows Quick Help mode is active.
-        let screen = ctx.content_rect();
-        let pill_pos = pos2(screen.center().x - 165.0, screen.top() + 92.0);
         egui::Area::new(egui::Id::unique("quick_help_active_banner"))
             .order(Order::Tooltip)
-            .fixed_pos(pill_pos)
+            .anchor(Align2::CENTER_TOP, vec2(0.0, 92.0))
             .interactable(false)
             .show(ctx, |ui| {
                 Frame::new()

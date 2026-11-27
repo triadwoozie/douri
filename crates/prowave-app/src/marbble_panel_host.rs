@@ -139,7 +139,7 @@ fn handle_client(
     let first_line = req.lines().next().unwrap_or("");
     let mut parts = first_line.split_whitespace();
     let method = parts.next().unwrap_or("GET");
-    let path = parts.next().unwrap_or("/");
+    let path = parts.next().unwrap_or("/").split('?').next().unwrap_or("/");
 
     if method == "GET" && path == "/api/state" {
         let body = state_json(state);
@@ -263,6 +263,7 @@ fn state_json(state: &Arc<Mutex<PanelBridgeState>>) -> String {
 }
 
 fn panel_html(state: &Arc<Mutex<PanelBridgeState>>) -> String {
+    let initial = state_json(state);
     let name = state
         .lock()
         .map(|g| g.plugin_name.clone())
@@ -294,6 +295,7 @@ button.tgl.on{{background:#2b6cb0;border-color:#2b6cb0;color:#fff}}
 <div id="presets" class="presets"></div>
 <div id="sections" class="sections"></div>
 <script>
+window.__INITIAL_STATE__={initial};
 async function post(url, body){{await fetch(url,{{method:'POST',body:JSON.stringify(body)}});}}
 function renderParam(p){{
   const d=document.createElement('div');d.className='row';
@@ -316,8 +318,7 @@ function renderParam(p){{
   inp.oninput=()=>{{document.getElementById('v'+p.id).textContent=Number(inp.value).toFixed(2);post('/api/param',{{id:p.id,value:Number(inp.value)}});}};
   return d;
 }}
-async function load(){{
-  const r=await fetch('/api/state');const s=await r.json();
+function renderState(s){{
   document.getElementById('cat').textContent=s.category||'';
   const pb=document.getElementById('presets');pb.innerHTML='';
   (s.presets||[]).forEach(n=>{{const b=document.createElement('button');b.textContent=n;b.onclick=async()=>{{await post('/api/preset',{{name:n}});load();}};pb.appendChild(b);}});
@@ -331,7 +332,11 @@ async function load(){{
     sc.appendChild(box);
   }}
 }}
-load();
+async function load(){{
+  const r=await fetch('/api/state');const s=await r.json();
+  renderState(s);
+}}
+renderState(window.__INITIAL_STATE__);
 </script></body></html>"#
     )
 }
@@ -605,6 +610,8 @@ Gtk.main()
         .arg(py)
         .arg(url)
         .arg(title)
+        .env("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+        .env("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
