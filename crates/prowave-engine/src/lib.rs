@@ -26,6 +26,7 @@ pub mod eclipsa;
 pub mod epiano;
 mod flac;
 mod flex;
+pub mod flex_pitch_dsp;
 pub mod freq_shifter;
 mod fx;
 mod gain_smoothing;
@@ -103,6 +104,10 @@ pub use crate::flac::{encode_flac, write_flac};
 pub use crate::flex::{
     detect_notes, hz_to_midi, pitch_track, shift_pitch, warp, write_wav, DetectedNote, FlexMode,
     PitchShift, WarpPoint, MAX_POINTS as MAX_FLEX_POINTS,
+};
+pub use crate::flex_pitch_dsp::{
+    apply_note_gain_and_envelope, rate_to_semitones, varispeed_rate, FlexPitchNoteParams,
+    FlexPitchTrackParams, FormantMode, VarispeedMode, VarispeedShifter, VarispeedUnit,
 };
 pub use crate::freq_shifter::FreqShifterNode;
 pub use crate::fx::{

@@ -843,12 +843,58 @@ pub fn quantize_time(
     }
 }
 
+/// The 6 interactive hotspots on a selected/hovered Flex Pitch note (Logic Pro manual p. 487).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hotspot {
+    DriftStart,
+    Vibrato,
+    DriftEnd,
+    Gain,
+    FinePitch,
+    FormantShift,
+}
+
+impl Hotspot {
+    const ALL: [Self; 6] = [
+        Self::DriftStart,
+        Self::Vibrato,
+        Self::DriftEnd,
+        Self::Gain,
+        Self::FinePitch,
+        Self::FormantShift,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::DriftStart => "Pitch Drift (Start)",
+            Self::Vibrato => "Vibrato",
+            Self::DriftEnd => "Pitch Drift (End)",
+            Self::Gain => "Gain",
+            Self::FinePitch => "Fine Pitch",
+            Self::FormantShift => "Formant Shift",
+        }
+    }
+}
+
 /// Changes a value of notes `idx` from `before` by a drag of `dy` points up.
-fn drag_value(
+fn drag_value(notes: &mut [NoteEdit], before: &[NoteEdit], idx: &[usize], tool: Tool, dy: f32) {
+    for &i in idx {
+        let (Some(n), Some(b)) = (notes.get_mut(i), before.get(i)) else {
+            continue;
+        };
+        match tool {
+            Tool::Vibrato => n.modulation = (b.modulation + dy / 100.0).clamp(0.0, 2.0),
+            Tool::Volume => n.gain_db = (b.gain_db + dy / 4.0).clamp(-24.0, 24.0),
+            _ => {}
+        }
+    }
+}
+
+fn drag_hotspot(
     notes: &mut [NoteEdit],
     before: &[NoteEdit],
     idx: &[usize],
-    tool: Tool,
+    spot: Hotspot,
     dy: f32,
     row_h: f32,
 ) {
@@ -856,74 +902,68 @@ fn drag_value(
         let (Some(n), Some(b)) = (notes.get_mut(i), before.get(i)) else {
             continue;
         };
-        match tool {
-            Tool::Modulation => n.modulation = (b.modulation + dy / 100.0).clamp(0.0, 2.0),
-            Tool::Drift => n.drift = (b.drift + dy / 100.0).clamp(0.0, 2.0),
-            Tool::Formant => n.formant = (b.formant + dy / row_h.max(1.0)).clamp(-12.0, 12.0),
-            Tool::Amplitude => n.gain_db = (b.gain_db + dy / 4.0).clamp(-60.0, 12.0),
-            _ => {}
+        match spot {
+            Hotspot::DriftStart | Hotspot::DriftEnd => {
+                n.drift = (b.drift + dy / 100.0).clamp(0.0, 2.0);
+            }
+            Hotspot::Vibrato => {
+                n.modulation = (b.modulation + dy / 100.0).clamp(0.0, 2.0);
+            }
+            Hotspot::Gain => {
+                n.gain_db = (b.gain_db + dy / 4.0).clamp(-24.0, 24.0);
+            }
+            Hotspot::FinePitch => {
+                let st = b.shift + dy / (row_h.max(8.0) * 2.0);
+                n.shift = st.clamp(-24.0, 24.0);
+            }
+            Hotspot::FormantShift => {
+                n.formant = (b.formant + dy / row_h.max(8.0)).clamp(-12.0, 12.0);
+            }
         }
     }
 }
 
 // ------------------------------------------------------------------ the view
 
-/// The Pitch Editor's tools (Melodyne's toolbar).
+/// Logic Pro Audio Track Editor tools for Flex Pitch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Tool {
     #[default]
-    Main,
-    Pitch,
-    Modulation,
-    Drift,
-    Formant,
-    Amplitude,
-    Timing,
-    Separation,
+    Pointer,
+    Scissors,
+    Join,
+    Vibrato,
+    Volume,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 8] = [
-        Tool::Main,
-        Tool::Pitch,
-        Tool::Modulation,
-        Tool::Drift,
-        Tool::Formant,
-        Tool::Amplitude,
-        Tool::Timing,
-        Tool::Separation,
+    pub const ALL: [Tool; 5] = [
+        Tool::Pointer,
+        Tool::Scissors,
+        Tool::Join,
+        Tool::Vibrato,
+        Tool::Volume,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
-            Tool::Main => tr("Main"),
-            Tool::Pitch => tr("Pitch"),
-            Tool::Modulation => tr("Modulation"),
-            Tool::Drift => tr("Drift"),
-            Tool::Formant => tr("Formant"),
-            Tool::Amplitude => tr("Amplitude"),
-            Tool::Timing => tr("Timing"),
-            Tool::Separation => tr("Separation"),
+            Tool::Pointer => tr("Pointer"),
+            Tool::Scissors => tr("Scissors"),
+            Tool::Join => tr("Join"),
+            Tool::Vibrato => tr("Vibrato"),
+            Tool::Volume => tr("Volume"),
         }
-    }
-}
-
-fn algorithm_label(a: Algorithm) -> &'static str {
-    match a {
-        Algorithm::Melodic => tr("Melodic"),
-        Algorithm::Percussive => tr("Percussive"),
-        Algorithm::Universal => tr("Universal"),
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum DragKind {
-    /// The Main Tool's middle: the axis is decided by the first movement.
-    Main,
+    Pointer,
     Pitch,
     Time,
     Edge(Edge),
     Value(Tool),
+    Hotspot(Hotspot),
 }
 
 #[derive(Clone, Debug)]
@@ -932,6 +972,93 @@ struct Drag {
     from: Pos2,
     before: Vec<NoteEdit>,
     note: usize,
+}
+
+const FLEX_SCALES: [(&str, [u8; 12]); 6] = [
+    ("Chromatic", [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+    ("Major (Ionian)", [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]),
+    ("Natural Minor", [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0]),
+    ("Harmonic Minor", [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1]),
+    ("Dorian", [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0]),
+    ("Mixolydian", [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0]),
+];
+
+fn quantize_to_scale(midi: f32, root: Option<u8>, scale_idx: usize) -> f32 {
+    let Some(r) = root else {
+        return midi.round();
+    };
+    let mask = FLEX_SCALES[scale_idx.min(FLEX_SCALES.len() - 1)].1;
+    let base = midi.round() as i32;
+    let mut best = base;
+    let mut best_dist = f32::MAX;
+    for d in -6..=6 {
+        let cand = base + d;
+        let pc = (cand - i32::from(r)).rem_euclid(12) as usize;
+        if mask[pc] != 0 {
+            let dist = (cand as f32 - midi).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best = cand;
+            }
+        }
+    }
+    best as f32
+}
+
+/// Creates a Software Instrument MIDI track directly below `t` populated from Flex Pitch notes.
+pub fn create_midi_track_from_flex_pitch(p: &mut Project, t: usize, r: usize, notes: &[NoteEdit]) {
+    if t >= p.tracks.len() || r >= p.tracks[t].regions.len() {
+        return;
+    }
+    let src_reg = &p.tracks[t].regions[r];
+    let reg_start_beats = p.region_start_beats(src_reg);
+    let audio_offset_sec = src_reg.audio.as_ref().map_or(0.0, |a| {
+        a.start_frame as f64 / f64::from(a.file.sample_rate.max(1))
+    });
+    let map = p.tempo_map();
+    let s0 = map.seconds_at(reg_start_beats);
+
+    let mut midi_notes = Vec::new();
+    for n in notes {
+        if n.pitch <= 0.0 {
+            continue;
+        }
+        let b0 = map.beat_at(s0 + n.new_start - audio_offset_sec) - reg_start_beats;
+        let b1 = map.beat_at(s0 + n.new_end - audio_offset_sec) - reg_start_beats;
+        let dur = (b1 - b0).max(0.0625) as f32;
+        if b0 + f64::from(dur) <= 0.0 {
+            continue;
+        }
+        let pitch = n.heard().round().clamp(0.0, 127.0) as u8;
+        let vel = (90.0 + n.gain_db * 2.0).round().clamp(16.0, 127.0) as u8;
+        midi_notes.push(crate::model::Note {
+            start: b0.max(0.0) as f32,
+            len: dur,
+            pitch,
+            vel,
+            mute: false,
+            lyric: crate::lyrics::Lyric::default(),
+        });
+    }
+
+    let mut midi_track =
+        crate::model::Track::new(format!("{} MIDI", p.tracks[t].name), TrackKind::Instrument);
+    midi_track.color = Color32::from_rgb(0x28, 0xa8, 0x62);
+    midi_track.regions.push(crate::model::Region {
+        name: src_reg.name.clone(),
+        start_bar: src_reg.start_bar,
+        len_bars: src_reg.len_bars,
+        notes: midi_notes,
+        controls: Vec::new(),
+        folder: None,
+        generated: None,
+        audio: None,
+        missing: None,
+        params: crate::model::RegionParams::default(),
+    });
+    p.tracks.insert(t + 1, midi_track);
+    p.selected_track = t + 1;
+    p.song_rev += 1;
 }
 
 /// What the Pitch Editor shows and how.
@@ -946,9 +1073,14 @@ pub struct PitchView {
     /// Correct Pitch: centre and drift, 0–1.
     pub centre: f32,
     pub drift: f32,
+    /// Scale Quantize: root note (`None` = Off, `Some(0..11)` = C..B) and scale index.
+    pub scale_root: Option<u8>,
+    pub scale_idx: usize,
     /// Quantize Time: the grid (beats) and the strength, 0–1.
     pub grid: f64,
     pub strength: f32,
+    /// Show/Hide Flex toggle in the Audio Track Editor toolbar.
+    pub show_flex: bool,
     /// Points per second, the recording's time at the left edge, points per semitone, the
     /// pitch at the top edge.
     pub zoom: f32,
@@ -969,17 +1101,20 @@ impl Default for PitchView {
     fn default() -> Self {
         Self {
             region: None,
-            tool: Tool::Main,
+            tool: Tool::Pointer,
             snap: Snap::Chromatic,
             algorithm: Algorithm::Melodic,
             selected: Vec::new(),
-            centre: 1.0,
+            centre: 0.0,
             drift: 0.5,
-            grid: 0.25,
+            scale_root: None,
+            scale_idx: 1,
+            grid: 0.0,
             strength: 1.0,
+            show_flex: true,
             zoom: 120.0,
             scroll: 0.0,
-            row_h: 12.0,
+            row_h: 16.0,
             top: 76.0,
             preview: None,
             drag: None,
@@ -1077,16 +1212,17 @@ impl Clock {
     }
 }
 
-const BG: Color32 = Color32::from_gray(0x24);
-const ROW_IN: Color32 = Color32::from_gray(0x2e);
-const ROW_OUT: Color32 = Color32::from_gray(0x27);
-const TEXT: Color32 = Color32::from_gray(0xdd);
-const DIM: Color32 = Color32::from_gray(0x9a);
-const BLOB: Color32 = Color32::from_rgb(0xd8, 0x8f, 0x32);
-const BLOB_SEL: Color32 = Color32::from_rgb(0xff, 0xc4, 0x5c);
-const CURVE: Color32 = Color32::from_rgb(0x3a, 0x22, 0x08);
+const BG: Color32 = Color32::from_rgb(0x1b, 0x1c, 0x20);
+const ROW_IN: Color32 = Color32::from_rgb(0x28, 0x2a, 0x30);
+const ROW_OUT: Color32 = Color32::from_rgb(0x20, 0x22, 0x27);
+const TEXT: Color32 = Color32::from_rgb(0xe8, 0xe8, 0xed);
+const DIM: Color32 = Color32::from_rgb(0x98, 0x98, 0xa2);
+const BLOB: Color32 = Color32::from_rgb(0x3a, 0x76, 0xc4);
+const BLOB_SEL: Color32 = Color32::from_rgb(0x56, 0x9d, 0xf7);
+const CURVE: Color32 = Color32::from_rgb(0xe6, 0xf2, 0xff);
+const INSPECTOR_W: f32 = 236.0;
 const RULER_W: f32 = 46.0;
-const TIME_H: f32 = 18.0;
+const TIME_H: f32 = 20.0;
 const STATUS_H: f32 = 20.0;
 
 fn note_name(m: f32) -> String {
@@ -1120,6 +1256,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         return;
     };
     let file = crate::flex_edit::recording_of(audio);
+    let audio_offset = audio.start_frame as f64 / f64::from(file.sample_rate.max(1));
+    let audio_peaks = audio.peaks.clone();
     let algorithm = audio
         .flex
         .as_ref()
@@ -1128,104 +1266,337 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let fifths = crate::score::fifths(p.key);
     let duration = file.duration_secs();
 
-    // Row 1: name, algorithm, tools, pitch grid.
-    let mut new_algorithm = algorithm;
-    let v = &mut s.pitch_ed;
-    ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        ui.label(egui::RichText::new(tr("Pitch Editor")).strong().color(TEXT));
-        ui.label(egui::RichText::new(&p.tracks[t].regions[r].name).color(DIM));
-        ui.separator();
-        egui::ComboBox::from_id_salt("pitch-algorithm")
-            .selected_text(algorithm_label(algorithm))
-            .show_ui(ui, |ui| {
-                for a in Algorithm::ALL {
-                    ui.selectable_value(&mut new_algorithm, a, algorithm_label(a));
-                }
-                ui.add_enabled(false, egui::Button::new(tr("Polyphonic (not available)")));
-            });
-        ui.separator();
-        for tool in Tool::ALL {
-            if ui.selectable_label(v.tool == tool, tool.label()).clicked() {
-                v.tool = tool;
-            }
-        }
-        ui.separator();
-        ui.label(egui::RichText::new(tr("Pitch Grid")).color(DIM));
-        egui::ComboBox::from_id_salt("pitch-snap")
-            .selected_text(v.snap.label())
-            .show_ui(ui, |ui| {
-                for sn in Snap::ALL {
-                    ui.selectable_value(&mut v.snap, sn, sn.label());
-                }
-            });
-    });
-    // Row 2: the macros.
+    // ---- Top Audio Track Editor Menu Bar (Logic Pro manual pp. 484-492)
+    let mut create_midi_cmd = false;
+    let mut join_cmd = false;
     let mut correct = false;
     let mut quantize = false;
-    ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new(tr("Correct Pitch"))
-                .strong()
-                .color(TEXT),
-        );
-        ui.label(egui::RichText::new(tr("Centre")).color(DIM));
-        ui.add(
-            egui::Slider::new(&mut v.centre, 0.0..=1.0)
-                .custom_formatter(|x, _| format!("{:.0} %", x * 100.0)),
-        );
-        ui.label(egui::RichText::new(tr("Drift")).color(DIM));
-        ui.add(
-            egui::Slider::new(&mut v.drift, 0.0..=1.0)
-                .custom_formatter(|x, _| format!("{:.0} %", x * 100.0)),
-        );
-        correct = ui.button(tr("Apply")).clicked();
-        ui.separator();
-        ui.label(
-            egui::RichText::new(tr("Quantize Time"))
-                .strong()
-                .color(TEXT),
-        );
-        let grid_name = crate::note_edit::GRIDS
+    let mut apply_gain_db: Option<f32> = None;
+
+    let v = &mut s.pitch_ed;
+    let flex_mode = p.tracks[t].params.flex_mode.unwrap_or(FlexMode::FlexPitch);
+
+    egui::Frame::new()
+        .fill(Color32::from_rgb(0x23, 0x24, 0x29))
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.menu_button(tr("Edit"), |ui| {
+                    if ui
+                        .button(tr("Create MIDI Track from Flex Pitch Data"))
+                        .clicked()
+                    {
+                        create_midi_cmd = true;
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button(tr("Join Selected Notes (Cmd+J)")).clicked() {
+                        join_cmd = true;
+                        ui.close();
+                    }
+                });
+
+                ui.separator();
+                let flex_on = v.show_flex;
+                let flex_btn = ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new(tr("Flex"))
+                                .size(11.5)
+                                .color(if flex_on { Color32::WHITE } else { DIM }),
+                        )
+                        .fill(if flex_on {
+                            Color32::from_rgb(0x12, 0x69, 0xcc)
+                        } else {
+                            Color32::from_rgb(0x2c, 0x2e, 0x34)
+                        }),
+                    )
+                    .on_hover_text(tr("Show/Hide Flex Pitch"));
+                if flex_btn.clicked() {
+                    v.show_flex = !v.show_flex;
+                }
+
+                let mode_label = match p.tracks[t].params.flex_mode {
+                    None => tr("Off"),
+                    Some(FlexMode::FlexPitch) => tr("Flex Pitch"),
+                    Some(FlexMode::Monophonic) => tr("Flex Time - Monophonic"),
+                    Some(FlexMode::Rhythmic) => tr("Flex Time - Rhythmic"),
+                    Some(FlexMode::Polyphonic) => tr("Flex Time - Polyphonic"),
+                    Some(m) => m.name(),
+                };
+                egui::ComboBox::from_id_salt("flex-pitch-mode")
+                    .selected_text(mode_label)
+                    .width(160.0)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(p.tracks[t].params.flex_mode.is_none(), tr("Off"))
+                            .clicked()
+                        {
+                            p.tracks[t].params.flex_enabled = false;
+                            p.tracks[t].params.flex_mode = None;
+                        }
+                        for (m, lbl) in [
+                            (FlexMode::FlexPitch, tr("Flex Pitch")),
+                            (FlexMode::Monophonic, tr("Flex Time - Monophonic")),
+                            (FlexMode::Rhythmic, tr("Flex Time - Rhythmic")),
+                            (FlexMode::Polyphonic, tr("Flex Time - Polyphonic")),
+                        ] {
+                            if ui
+                                .selectable_label(p.tracks[t].params.flex_mode == Some(m), lbl)
+                                .clicked()
+                            {
+                                p.tracks[t].params.flex_enabled = true;
+                                p.tracks[t].params.flex_mode = Some(m);
+                                p.tracks[t].params.freeze_mode =
+                                    crate::model::FreezeMode::SourceOnly;
+                            }
+                        }
+                    });
+
+                ui.separator();
+                for tool in Tool::ALL {
+                    let active = v.tool == tool;
+                    let btn = ui.add(
+                        egui::Button::new(
+                            egui::RichText::new(tool.label())
+                                .size(11.5)
+                                .color(if active { Color32::WHITE } else { DIM }),
+                        )
+                        .fill(if active {
+                            Color32::from_rgb(0x3a, 0x76, 0xc4)
+                        } else {
+                            Color32::TRANSPARENT
+                        }),
+                    );
+                    if btn.clicked() {
+                        v.tool = tool;
+                    }
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_sized(
+                        [64.0, 18.0],
+                        egui::Slider::new(&mut v.row_h, 6.0..=32.0).show_value(false),
+                    )
+                    .on_hover_text(tr("Vertical Zoom"));
+                    ui.add_sized(
+                        [72.0, 18.0],
+                        egui::Slider::new(&mut v.zoom, 20.0..=800.0)
+                            .logarithmic(true)
+                            .show_value(false),
+                    )
+                    .on_hover_text(tr("Horizontal Zoom"));
+                });
+            });
+        });
+
+    let body_rect = ui.available_rect_before_wrap();
+    let insp_rect = Rect::from_min_max(
+        body_rect.min,
+        pos2(
+            (body_rect.left() + INSPECTOR_W).min(body_rect.right()),
+            body_rect.bottom(),
+        ),
+    );
+    let editor_rect = Rect::from_min_max(pos2(insp_rect.right(), body_rect.top()), body_rect.max);
+
+    // ---- Analysis Check
+    let analysis = analysis_ready(&file, algorithm, ui.ctx(), &s.pitch_ed.error);
+    let notes = analysis
+        .as_ref()
+        .map(|found| notes_of(p, t, r, algorithm, found))
+        .unwrap_or_default();
+
+    // ---- Left Audio Track Editor Inspector (Logic Pro manual pp. 490-492)
+    let v = &mut s.pitch_ed;
+    let sel_count = v.selected.len();
+    let sel_gain = if sel_count == 1 {
+        notes.get(v.selected[0]).map_or(0.0, |n| n.gain_db)
+    } else if sel_count > 1 {
+        let sum: f32 = v
+            .selected
             .iter()
-            .find(|(_, g)| (f64::from(*g) - v.grid).abs() < 1e-6)
-            .map_or("1/16 Note", |(n, _)| n);
-        egui::ComboBox::from_id_salt("pitch-grid")
-            .selected_text(tr(grid_name))
-            .show_ui(ui, |ui| {
-                for (name, g) in crate::note_edit::GRIDS {
-                    ui.selectable_value(&mut v.grid, f64::from(g), tr(name));
+            .filter_map(|&idx| notes.get(idx).map(|n| n.gain_db))
+            .sum();
+        sum / sel_count as f32
+    } else {
+        0.0
+    };
+    let mut gain_ui = sel_gain;
+
+    let mut insp_ui = ui.new_child(egui::UiBuilder::new().max_rect(insp_rect));
+    egui::Frame::new()
+        .fill(Color32::from_rgb(0x21, 0x22, 0x26))
+        .stroke(Stroke::new(1.0, Color32::from_rgb(0x14, 0x15, 0x18)))
+        .inner_margin(egui::Margin::same(10))
+        .show(&mut insp_ui, |ui| {
+            ui.set_width(INSPECTOR_W - 24.0);
+            ui.label(
+                egui::RichText::new(&p.tracks[t].name)
+                    .strong()
+                    .size(12.5)
+                    .color(TEXT),
+            );
+            let sel_txt = match sel_count {
+                0 => tr("All regions selected").to_string(),
+                1 => tr("One note selected").to_string(),
+                n => trf("{} notes selected", &[&n]),
+            };
+            ui.label(egui::RichText::new(sel_txt).size(10.5).color(DIM));
+            ui.add_space(8.0);
+
+            // Time Quantize
+            ui.label(
+                egui::RichText::new(tr("Time Quantize"))
+                    .size(11.0)
+                    .color(DIM),
+            );
+            ui.horizontal(|ui| {
+                let grid_name = if v.grid <= 0.0 {
+                    "off"
+                } else {
+                    crate::note_edit::GRIDS
+                        .iter()
+                        .find(|(_, g)| (f64::from(*g) - v.grid).abs() < 1e-6)
+                        .map_or("1/16 Note", |(n, _)| n)
+                };
+                egui::ComboBox::from_id_salt("flex-time-quantize")
+                    .selected_text(tr(grid_name))
+                    .width(126.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut v.grid, 0.0, tr("off"));
+                        for (name, g) in crate::note_edit::GRIDS {
+                            ui.selectable_value(&mut v.grid, f64::from(g), tr(name));
+                        }
+                    });
+                if ui
+                    .button("Q")
+                    .on_hover_text(tr("Apply Time Quantize"))
+                    .clicked()
+                    && v.grid > 0.0
+                {
+                    quantize = true;
                 }
             });
-        ui.label(egui::RichText::new(tr("Strength")).color(DIM));
-        ui.add(
-            egui::Slider::new(&mut v.strength, 0.0..=1.0)
-                .custom_formatter(|x, _| format!("{:.0} %", x * 100.0)),
-        );
-        quantize = ui.button(tr("Apply")).clicked();
-    });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tr("Strength")).size(11.0).color(DIM));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:.0}", v.strength * 100.0))
+                            .size(11.0)
+                            .color(TEXT),
+                    );
+                });
+            });
+            ui.add(
+                egui::Slider::new(&mut v.strength, 0.0..=1.0)
+                    .show_value(false)
+                    .trailing_fill(true),
+            );
+            ui.add_space(10.0);
 
-    if new_algorithm != algorithm {
-        v.algorithm = new_algorithm;
-        v.selected.clear();
-        // Notes found another way are other notes: the edit starts again.
-        if let Some(f) = p.tracks[t].regions[r]
-            .audio
-            .as_mut()
-            .and_then(|a| a.flex.as_mut())
-        {
-            if f.melody.take().is_some() {
-                p.song_rev += 1;
+            // Scale Quantize
+            ui.label(
+                egui::RichText::new(tr("Scale Quantize"))
+                    .size(11.0)
+                    .color(DIM),
+            );
+            ui.horizontal(|ui| {
+                let root_txt = match v.scale_root {
+                    None => tr("Off").to_string(),
+                    Some(r) => crate::note_edit::ROOT_SHORTS[r.min(11) as usize].to_string(),
+                };
+                egui::ComboBox::from_id_salt("flex-scale-root")
+                    .selected_text(root_txt)
+                    .width(52.0)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(v.scale_root.is_none(), tr("Off"))
+                            .clicked()
+                        {
+                            v.scale_root = None;
+                        }
+                        for (idx, rname) in crate::note_edit::ROOT_SHORTS.iter().enumerate() {
+                            if ui
+                                .selectable_label(v.scale_root == Some(idx as u8), *rname)
+                                .clicked()
+                            {
+                                v.scale_root = Some(idx as u8);
+                            }
+                        }
+                    });
+                let scale_name = FLEX_SCALES[v.scale_idx.min(FLEX_SCALES.len() - 1)].0;
+                egui::ComboBox::from_id_salt("flex-scale-type")
+                    .selected_text(scale_name)
+                    .width(84.0)
+                    .show_ui(ui, |ui| {
+                        for (idx, (sname, _)) in FLEX_SCALES.iter().enumerate() {
+                            ui.selectable_value(&mut v.scale_idx, idx, *sname);
+                        }
+                    });
+                if ui
+                    .button("Q")
+                    .on_hover_text(tr("Quantize to Scale"))
+                    .clicked()
+                {
+                    correct = true;
+                }
+            });
+            ui.add_space(6.0);
+
+            // Pitch Correction
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(tr("Pitch Correction"))
+                        .size(11.0)
+                        .color(DIM),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:.0}", v.centre * 100.0))
+                            .size(11.0)
+                            .color(TEXT),
+                    );
+                });
+            });
+            let pc_resp = ui.add(
+                egui::Slider::new(&mut v.centre, 0.0..=1.0)
+                    .show_value(false)
+                    .trailing_fill(true),
+            );
+            if pc_resp.drag_stopped() || pc_resp.changed() {
+                correct = true;
             }
-        }
-        return;
-    }
+            ui.add_space(10.0);
 
-    let canvas = ui.available_rect_before_wrap();
+            // Gain (-24 to +24 dB)
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tr("Gain")).size(11.0).color(DIM));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:+.0} dB", gain_ui))
+                            .size(11.0)
+                            .color(TEXT),
+                    );
+                });
+            });
+            let g_resp = ui.add(
+                egui::Slider::new(&mut gain_ui, -24.0..=24.0)
+                    .show_value(false)
+                    .trailing_fill(true),
+            );
+            if g_resp.changed() {
+                apply_gain_db = Some(gain_ui);
+            }
+        });
+
+    let canvas = editor_rect;
     let resp = ui.allocate_rect(canvas, Sense::click_and_drag());
     let g = ui.painter_at(canvas);
-    let Some(found) = analysis_ready(&file, algorithm, ui.ctx(), &s.pitch_ed.error) else {
+    g.rect_filled(canvas, 0.0, BG);
+
+    let Some(found) = analysis else {
         let msg = s
             .pitch_ed
             .error
@@ -1234,7 +1605,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             .and_then(|e| e.clone())
             .map_or_else(
                 || tr("Analysing…").to_string(),
-                |e| trf("Pitch Editor: {}", &[&e]),
+                |e| trf("Flex Pitch: {}", &[&e]),
             );
         g.text(
             canvas.center(),
@@ -1245,12 +1616,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
         return;
     };
-    let notes = notes_of(p, t, r, algorithm, &found);
+
+    if create_midi_cmd {
+        create_midi_track_from_flex_pitch(p, t, r, &notes);
+        return;
+    }
+
     let region = &p.tracks[t].regions[r];
     let clock = Clock {
         map: p.tempo_map(),
         s0: p.tempo_map().seconds_at(p.region_start_beats(region)),
-        offset: audio.start_frame as f64 / f64::from(file.sample_rate.max(1)),
+        offset: audio_offset,
     };
     let region_secs = clock.map.seconds_at(p.region_end_beats(region)) - clock.s0;
     let v = &mut s.pitch_ed;
@@ -1259,6 +1635,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         pos2(canvas.right(), canvas.bottom() - STATUS_H),
     );
     v.plot = plot;
+
     // Fit the view to the region the first time it is shown.
     let key = (t, r, file.path.clone());
     if v.fitted.as_ref() != Some(&key) && plot.width() > 10.0 {
@@ -1266,7 +1643,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let len = region_secs.clamp(0.5, duration.max(0.5));
         v.scroll = clock.offset;
         v.zoom = (plot.width() / len as f32).max(1.0);
-        // The notes the region shows set the pitch range.
         let (a, b) = (clock.offset, clock.offset + len);
         let pitched: Vec<f32> = notes
             .iter()
@@ -1282,17 +1658,18 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             )
         };
         let span = (hi - lo + 6.0).max(12.0);
-        v.row_h = (plot.height() / span).clamp(4.0, 28.0);
+        v.row_h = (plot.height() / span).clamp(8.0, 28.0);
         v.top = (hi + lo) / 2.0 + plot.height() / v.row_h / 2.0;
     }
-    // Scrolling and zooming: the wheel moves, Command and the wheel zoom the time.
+
+    // Scrolling and zooming
     if resp.hovered() {
-        let (scroll, zoom_key) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers.command));
-        if zoom_key && scroll.y != 0.0 {
-            v.zoom = (v.zoom * (1.0 + scroll.y * 0.003)).clamp(2.0, 4000.0);
+        let (scroll_delta, zoom_key) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers.command));
+        if zoom_key && scroll_delta.y != 0.0 {
+            v.zoom = (v.zoom * (1.0 + scroll_delta.y * 0.003)).clamp(2.0, 4000.0);
         } else {
-            v.scroll = (v.scroll - f64::from(scroll.x / v.zoom)).max(0.0);
-            v.top = (v.top + scroll.y / v.row_h).clamp(12.0, 127.0);
+            v.scroll = (v.scroll - f64::from(scroll_delta.x / v.zoom)).max(0.0);
+            v.top = (v.top + scroll_delta.y / v.row_h).clamp(24.0, 108.0);
         }
     }
     let (scroll, zoom) = (v.scroll, v.zoom);
@@ -1302,33 +1679,38 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let y_of = |m: f32| plot.top() + (top - m) * row_h;
     let m_of = |y: f32| top - (y - plot.top()) / row_h;
     let pitched = algorithm.pitched();
-    // Unpitched notes sit on one line, moved up and down from it.
     let line = (top - (plot.height() / row_h) / 2.0).round();
     let row_of = |n: &NoteEdit| if pitched { n.heard() } else { line + n.shift };
 
-    // The pitch grid: a row per semitone, the key's notes lighter.
-    let alt = crate::score::alterations(fifths);
-    const NATURAL: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
-    let pcs: Vec<i32> = (0..7)
-        .map(|l| (NATURAL[l] + i32::from(alt[l])).rem_euclid(12))
-        .collect();
-    let lo_m = m_of(plot.bottom()).floor() as i32;
-    let hi_m = top.ceil() as i32;
+    // Piano-key pitch ruler + horizontal semitone lanes (C1..C7)
+    let lo_m = (m_of(plot.bottom()).floor() as i32).max(24);
+    let hi_m = (top.ceil() as i32).min(108);
+    let ruler_rect = Rect::from_min_max(
+        pos2(canvas.left(), plot.top()),
+        pos2(plot.left(), plot.bottom()),
+    );
+    g.rect_filled(ruler_rect, 0.0, Color32::from_rgb(0x16, 0x17, 0x1a));
     for m in lo_m..=hi_m {
         let y0 = y_of(m as f32 + 0.5);
         let row = Rect::from_min_max(pos2(plot.left(), y0), pos2(plot.right(), y0 + row_h));
-        // Out of the key (Scale), or a black key (otherwise), a little darker.
         const WHITE: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
-        let in_key = !pitched
-            || if v.snap == Snap::Scale {
-                pcs.contains(&m.rem_euclid(12))
-            } else {
-                WHITE.contains(&m.rem_euclid(12))
-            };
+        let is_white = WHITE.contains(&m.rem_euclid(12));
         g.rect_filled(
             row.intersect(plot),
             0.0,
-            if in_key { ROW_IN } else { ROW_OUT },
+            if is_white { ROW_IN } else { ROW_OUT },
+        );
+        // Piano key in ruler
+        let key_r =
+            Rect::from_min_max(pos2(canvas.left(), y0), pos2(plot.left() - 1.0, y0 + row_h));
+        g.rect_filled(
+            key_r.intersect(ruler_rect),
+            0.0,
+            if is_white {
+                Color32::from_rgb(0xd4, 0xd6, 0xdc)
+            } else {
+                Color32::from_rgb(0x28, 0x2a, 0x30)
+            },
         );
         if m.rem_euclid(12) == 0 && pitched {
             g.line_segment(
@@ -1336,32 +1718,19 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     pos2(plot.left(), y0 + row_h),
                     pos2(plot.right(), y0 + row_h),
                 ],
-                Stroke::new(1.0, Color32::from_gray(0x44)),
+                Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3d, 0x46)),
             );
-        }
-        let label = if pitched {
-            note_name(m as f32)
-        } else {
-            format!("{:+}", m - line as i32)
-        };
-        if row_h >= 9.0
-            && y_of(m as f32) > plot.top() + 4.0
-            && (pitched || (m - line as i32) % 2 == 0)
-        {
             g.text(
                 pos2(canvas.left() + 4.0, y_of(m as f32)),
                 egui::Align2::LEFT_CENTER,
-                label,
-                FontId::proportional((row_h * 0.75).min(11.0)),
-                if m.rem_euclid(12) == 0 || !pitched {
-                    TEXT
-                } else {
-                    DIM
-                },
+                note_name(m as f32),
+                FontId::proportional((row_h * 0.72).clamp(8.5, 11.0)),
+                Color32::from_rgb(0x20, 0x20, 0x24),
             );
         }
     }
-    // The beats and bars of the project.
+
+    // Time ruler & beat grid
     let (b0, b1) = (
         clock.beat(sec_of(plot.left())).floor(),
         clock.beat(sec_of(plot.right())).ceil(),
@@ -1374,7 +1743,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             let bar = (bar_no - bar_no.round()).abs() < 1e-6;
             g.line_segment(
                 [pos2(x, plot.top()), pos2(x, plot.bottom())],
-                Stroke::new(1.0, Color32::from_gray(if bar { 0x50 } else { 0x36 })),
+                Stroke::new(1.0, Color32::from_gray(if bar { 0x4c } else { 0x32 })),
             );
             if bar {
                 g.text(
@@ -1388,7 +1757,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             b += 1.0;
         }
     }
-    // The region's edges.
+
+    // Faint background waveform from audio peaks
+    if let Some(peaks) = audio_peaks.get() {
+        if !peaks.is_empty() && duration > 0.0 {
+            let gp = ui.painter_at(plot);
+            let mid_y = plot.center().y;
+            let amp_h = plot.height() * 0.38;
+            let px_step = 2.0f32;
+            let mut x = plot.left();
+            while x < plot.right() {
+                let sec = sec_of(x);
+                if sec >= 0.0 && sec <= duration {
+                    let idx = ((sec / duration) * peaks.len() as f64) as usize;
+                    if let Some(&(mn, mx)) = peaks.get(idx.min(peaks.len() - 1)) {
+                        let y_top = mid_y - mx.abs().min(1.0) * amp_h;
+                        let y_bot = mid_y + mn.abs().min(1.0) * amp_h;
+                        gp.line_segment(
+                            [pos2(x, y_top), pos2(x, y_bot)],
+                            Stroke::new(1.5, Color32::from_rgba_unmultiplied(0x9a, 0xb8, 0xdc, 34)),
+                        );
+                    }
+                }
+                x += px_step;
+            }
+        }
+    }
+
+    // Region boundaries
     for sec in [clock.offset, clock.offset + region_secs] {
         let x = x_of(sec);
         g.line_segment(
@@ -1397,15 +1793,55 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
     }
 
-    // The interaction.
+    // Helper for the 6 hotspots around a note rect
+    let hotspot_positions = |n: &NoteEdit| -> [(Hotspot, Pos2); 6] {
+        let x0 = x_of(n.new_start);
+        let x1 = x_of(n.new_end).max(x0 + 18.0);
+        let yc = y_of(row_of(n));
+        let hh = (row_h * 0.44).clamp(6.0, 12.0);
+        let xm = (x0 + x1) * 0.5;
+        let xl = x0 + ((x1 - x0) * 0.16).clamp(5.0, 14.0);
+        let xr = x1 - ((x1 - x0) * 0.16).clamp(5.0, 14.0);
+        let yt = yc - hh - 7.0;
+        let yb = yc + hh + 7.0;
+        [
+            (Hotspot::DriftStart, pos2(xl, yt)),
+            (Hotspot::Vibrato, pos2(xm, yt)),
+            (Hotspot::DriftEnd, pos2(xr, yt)),
+            (Hotspot::Gain, pos2(xl, yb)),
+            (Hotspot::FinePitch, pos2(xm, yb)),
+            (Hotspot::FormantShift, pos2(xr, yb)),
+        ]
+    };
+
+    // Interaction
     let shown: Vec<NoteEdit> = v.preview.clone().unwrap_or_else(|| notes.clone());
     let hit = |pt: Pos2, list: &[NoteEdit]| -> Option<usize> {
         list.iter().position(|n| {
             let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
             let y = y_of(row_of(n));
-            pt.x >= x0 && pt.x <= x1 && (pt.y - y).abs() <= row_h.max(8.0) * 0.8
+            pt.x >= x0 && pt.x <= x1 && (pt.y - y).abs() <= row_h.max(10.0) * 0.75
         })
     };
+    let hit_hotspot =
+        |pt: Pos2, list: &[NoteEdit], selected: &[usize]| -> Option<(usize, Hotspot)> {
+            for &i in selected {
+                if let Some(n) = list.get(i) {
+                    let yc = y_of(row_of(n));
+                    let hh = (row_h * 0.44).clamp(5.0, 12.0);
+                    if (pt.y - yc).abs() <= hh * 0.7 {
+                        continue;
+                    }
+                    for (hs, pos) in hotspot_positions(n) {
+                        if pt.distance(pos) <= 5.5 {
+                            return Some((i, hs));
+                        }
+                    }
+                }
+            }
+            None
+        };
+
     let modifiers = ui.input(|i| i.modifiers);
     let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
     let mut commit_notes: Option<Vec<NoteEdit>> = None;
@@ -1420,79 +1856,78 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             None
         }
     };
+
+    let hovered_note = pointer.and_then(|pt| hit(pt, &shown));
+    let hovered_hotspot = pointer.and_then(|pt| hit_hotspot(pt, &shown, &v.selected));
+
     if let (Some(pt), true) = (pointer, resp.hovered() && v.drag.is_none()) {
-        if let Some(i) = hit(pt, &shown) {
-            let edgeable = matches!(v.tool, Tool::Main | Tool::Timing);
-            ui.ctx()
-                .set_cursor_icon(match (edgeable, zone(&shown[i], pt.x)) {
-                    (true, Some(_)) => egui::CursorIcon::ResizeHorizontal,
-                    _ if v.tool == Tool::Separation => egui::CursorIcon::Crosshair,
-                    _ => egui::CursorIcon::Grab,
-                });
+        if hovered_hotspot.is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        } else if let Some(i) = hovered_note {
+            ui.ctx().set_cursor_icon(match v.tool {
+                Tool::Pointer => match zone(&shown[i], pt.x) {
+                    Some(_) => egui::CursorIcon::ResizeHorizontal,
+                    None => egui::CursorIcon::Grab,
+                },
+                Tool::Scissors => egui::CursorIcon::Crosshair,
+                Tool::Join => egui::CursorIcon::PointingHand,
+                Tool::Vibrato | Tool::Volume => egui::CursorIcon::ResizeVertical,
+            });
         }
     }
+
+    // Cmd+J or Edit > Join Selected Notes
+    if join_cmd || (modifiers.command && ui.input(|i| i.key_pressed(egui::Key::J))) {
+        if v.selected.len() >= 2 {
+            let mut list = notes.clone();
+            let mut sorted = v.selected.clone();
+            sorted.sort_unstable();
+            let first = sorted[0];
+            let count = sorted.len().saturating_sub(1);
+            let mut joined = false;
+            for _ in 0..count {
+                if join(&mut list, first, Some(&found.track)) {
+                    joined = true;
+                }
+            }
+            if joined {
+                v.selected = vec![first];
+                commit_notes = Some(list);
+            }
+        }
+    }
+
     if resp.double_clicked() {
         if let Some(pt) = pointer {
             let mut list = notes.clone();
-            match (v.tool, hit(pt, &list)) {
-                (Tool::Main | Tool::Pitch, Some(i)) => {
-                    let n = &mut list[i];
-                    if n.pitch > 0.0 {
-                        let snap = if v.snap == Snap::Off {
-                            Snap::Chromatic
-                        } else {
-                            v.snap
-                        };
-                        n.shift = snap_pitch(n.heard(), snap, fifths) - n.pitch;
-                    } else {
-                        n.shift = n.shift.round();
-                    }
-                    commit_notes = Some(list);
+            if let Some(i) = hit(pt, &list) {
+                let n = &mut list[i];
+                if n.pitch > 0.0 {
+                    n.shift = n.heard().round() - n.pitch;
+                } else {
+                    n.shift = 0.0;
                 }
-                (Tool::Modulation, Some(i)) => {
-                    list[i].modulation = if list[i].modulation == 0.0 { 1.0 } else { 0.0 };
-                    commit_notes = Some(list);
-                }
-                (Tool::Drift, Some(i)) => {
-                    list[i].drift = if list[i].drift == 0.0 { 1.0 } else { 0.0 };
-                    commit_notes = Some(list);
-                }
-                (Tool::Formant, Some(i)) => {
-                    list[i].formant = 0.0;
-                    commit_notes = Some(list);
-                }
-                (Tool::Amplitude, Some(i)) => {
-                    list[i].gain_db = 0.0;
-                    commit_notes = Some(list);
-                }
-                (Tool::Separation, _) => {
-                    // On the separation between two notes: they become one.
-                    let near = (0..list.len().saturating_sub(1)).find(|k| {
-                        (x_of(list[*k].new_end) - pt.x).abs() < 5.0
-                            && (x_of(list[k + 1].new_start) - pt.x).abs() < 5.0
-                    });
-                    if let Some(k) = near {
-                        if join(&mut list, k, Some(&found.track)) {
-                            v.selected.clear();
-                            commit_notes = Some(list);
-                        }
-                    }
-                }
-                _ => {}
+                commit_notes = Some(list);
             }
         }
     } else if resp.clicked() {
         if let Some(pt) = pointer {
             match hit(pt, &notes) {
-                Some(i) if v.tool == Tool::Separation => {
+                Some(i) if v.tool == Tool::Scissors => {
                     let mut list = notes.clone();
                     let n = list[i];
-                    // The moment of the recording under the pointer.
                     let at = n.start
                         + (sec_of(pt.x) - n.new_start) * (n.end - n.start)
                             / (n.new_end - n.new_start).max(1e-9);
                     if split(&mut list, i, at, Some(&found.track)) {
                         v.selected = vec![i + 1];
+                        commit_notes = Some(list);
+                    }
+                }
+                Some(i) if v.tool == Tool::Join => {
+                    let mut list = notes.clone();
+                    if join(&mut list, i, Some(&found.track)) {
+                        v.selected = vec![i];
                         commit_notes = Some(list);
                     }
                 }
@@ -1511,17 +1946,26 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }
         }
     }
+
     if resp.drag_started() {
         if let Some(pt) = resp.interact_pointer_pos() {
-            if let Some(i) = hit(pt, &notes) {
+            if let Some((i, hs)) = hit_hotspot(pt, &notes, &v.selected) {
+                v.drag = Some(Drag {
+                    kind: DragKind::Hotspot(hs),
+                    from: pt,
+                    before: notes.clone(),
+                    note: i,
+                });
+            } else if let Some(i) = hit(pt, &notes) {
                 if !v.selected.contains(&i) {
                     v.selected = vec![i];
                 }
                 let kind = match v.tool {
-                    Tool::Main => zone(&notes[i], pt.x).map_or(DragKind::Main, DragKind::Edge),
-                    Tool::Timing => zone(&notes[i], pt.x).map_or(DragKind::Time, DragKind::Edge),
-                    Tool::Pitch => DragKind::Pitch,
-                    Tool::Separation => DragKind::Value(Tool::Separation),
+                    Tool::Pointer => {
+                        zone(&notes[i], pt.x).map_or(DragKind::Pointer, DragKind::Edge)
+                    }
+                    Tool::Vibrato => DragKind::Value(Tool::Vibrato),
+                    Tool::Volume => DragKind::Value(Tool::Volume),
                     other => DragKind::Value(other),
                 };
                 v.drag = Some(Drag {
@@ -1533,9 +1977,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }
         }
     }
+
     if let (Some(d), Some(pt)) = (v.drag.as_mut(), resp.interact_pointer_pos()) {
         let delta = pt - d.from;
-        if d.kind == DragKind::Main && delta.length() > 4.0 {
+        if d.kind == DragKind::Pointer && delta.length() > 4.0 {
             d.kind = if delta.y.abs() > delta.x.abs() {
                 DragKind::Pitch
             } else {
@@ -1543,11 +1988,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             };
         }
         let mut list = d.before.clone();
-        let free = modifiers.alt;
-        let grid = v.grid;
+        let free = modifiers.shift || modifiers.alt;
+        let grid = if v.grid > 0.0 { v.grid } else { 0.25 };
         let snap_time = |sec: f64| clock.secs((clock.beat(sec) / grid).round() * grid);
         match d.kind {
-            DragKind::Main | DragKind::Value(Tool::Separation) => {}
+            DragKind::Pointer | DragKind::Value(Tool::Scissors) | DragKind::Value(Tool::Join) => {}
             DragKind::Pitch => {
                 move_pitch(
                     &mut list,
@@ -1560,7 +2005,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 );
             }
             DragKind::Time => {
-                let snap: Option<&dyn Fn(f64) -> f64> = if free { None } else { Some(&snap_time) };
+                let snap: Option<&dyn Fn(f64) -> f64> = if free || v.grid <= 0.0 {
+                    None
+                } else {
+                    Some(&snap_time)
+                };
                 move_time(
                     &mut list,
                     &d.before,
@@ -1576,15 +2025,23 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     Edge::Start => n.new_start,
                     Edge::End => n.new_end,
                 } + f64::from(delta.x / zoom);
-                let at = if free { at } else { snap_time(at) };
+                let at = if free || v.grid <= 0.0 {
+                    at
+                } else {
+                    snap_time(at)
+                };
                 stretch(&mut list, &d.before, d.note, edge, at, duration);
             }
             DragKind::Value(tool) => {
-                drag_value(&mut list, &d.before, &v.selected, tool, -delta.y, row_h);
+                drag_value(&mut list, &d.before, &v.selected, tool, -delta.y);
+            }
+            DragKind::Hotspot(spot) => {
+                drag_hotspot(&mut list, &d.before, &v.selected, spot, -delta.y, row_h);
             }
         }
         v.preview = Some(list);
     }
+
     if resp.drag_stopped() {
         if let Some(list) = v.preview.take() {
             if list != notes {
@@ -1593,6 +2050,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         }
         v.drag = None;
     }
+
     let target_notes: Vec<usize> = if v.selected.is_empty() {
         (0..notes.len()).collect()
     } else {
@@ -1600,10 +2058,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     };
     if correct && pitched {
         let mut list = notes.clone();
-        correct_pitch(&mut list, &target_notes, v.centre, v.drift, v.snap, fifths);
+        for &i in &target_notes {
+            if let Some(n) = list.get_mut(i) {
+                if n.pitch > 0.0 {
+                    let target = quantize_to_scale(n.heard(), v.scale_root, v.scale_idx);
+                    n.shift += (target - n.heard()) * v.centre;
+                }
+            }
+        }
         commit_notes = Some(list);
     }
-    if quantize {
+    if quantize && v.grid > 0.0 {
         let mut list = notes.clone();
         let grid = v.grid;
         let to_grid = |sec: f64| clock.secs((clock.beat(sec) / grid).round() * grid);
@@ -1616,100 +2081,145 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
         commit_notes = Some(list);
     }
+    if let Some(new_db) = apply_gain_db {
+        let mut list = notes.clone();
+        for &i in &target_notes {
+            if let Some(n) = list.get_mut(i) {
+                n.gain_db = new_db.clamp(-24.0, 24.0);
+            }
+        }
+        commit_notes = Some(list);
+    }
     v.selected.retain(|i| *i < notes.len() + 1);
 
-    // The notes.
+    // ---- Draw Flex Pitch Note Beams, Continuous Pitch Curve & 6 Hotspots
+    let gp = ui.painter_at(plot);
     let shown: Vec<NoteEdit> = v.preview.clone().unwrap_or(notes);
     let track = &found.track;
     let changes: Vec<NoteChange> = shown.iter().map(NoteEdit::change).collect();
     let curve = note_render::targets_with(track, &changes, pitched);
-    for (i, n) in shown.iter().enumerate() {
-        let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
-        if x1 < plot.left() || x0 > plot.right() {
-            continue;
-        }
-        let sel = v.selected.contains(&i);
-        let yc = y_of(row_of(n));
-        let (fa, fb) = (
-            PitchTrack::frame_at(n.start),
-            PitchTrack::frame_at(n.end).min(track.len()),
-        );
-        // The blob: as thick as the note is loud (Melodyne's amplitude envelope).
-        let gain = n.gain_db;
-        let half = |f: usize| -> f32 {
-            let db = track.level_db.get(f).copied().unwrap_or(-60.0) + gain;
-            ((db + 50.0) / 50.0).clamp(0.08, 1.0) * row_h.max(6.0) * 0.55
-        };
-        let step = ((fb - fa) / 200).max(1);
-        let pts: Vec<(f32, f32)> = (fa..fb)
-            .step_by(step)
-            .map(|f| (x_of(n.place(PitchTrack::time_of(f))), half(f)))
-            .collect();
-        let fill = if sel { BLOB_SEL } else { BLOB };
-        if pts.len() >= 2 {
-            let mut poly: Vec<Pos2> = pts.iter().map(|(x, h)| pos2(*x, yc - h)).collect();
-            poly.extend(pts.iter().rev().map(|(x, h)| pos2(*x, yc + h)));
-            // One mesh (a strip of triangles), so no seams show between its pieces.
-            let mut mesh = egui::epaint::Mesh::default();
-            for (x, h) in &pts {
-                mesh.colored_vertex(pos2(*x, yc - h), fill);
-                mesh.colored_vertex(pos2(*x, yc + h), fill);
+
+    if v.show_flex || flex_mode == FlexMode::FlexPitch {
+        for (i, n) in shown.iter().enumerate() {
+            let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
+            if x1 < plot.left() || x0 > plot.right() {
+                continue;
             }
-            for k in 0..pts.len() as u32 - 1 {
-                let a = 2 * k;
-                mesh.add_triangle(a, a + 1, a + 2);
-                mesh.add_triangle(a + 1, a + 3, a + 2);
-            }
-            g.add(Shape::mesh(mesh));
-            g.add(Shape::closed_line(
-                poly,
+            let sel = v.selected.contains(&i);
+            let hov = hovered_note == Some(i);
+            let yc = y_of(row_of(n));
+            let hh = (row_h * 0.44).clamp(5.0, 12.0);
+            let beam = Rect::from_min_max(pos2(x0, yc - hh), pos2(x1.max(x0 + 4.0), yc + hh));
+
+            gp.rect_filled(beam, 3.0, if sel { BLOB_SEL } else { BLOB });
+            gp.rect_stroke(
+                beam,
+                3.0,
                 Stroke::new(
                     if sel { 1.5 } else { 1.0 },
-                    Color32::from_rgb(0x7a, 0x4a, 0x12),
+                    if sel {
+                        Color32::WHITE
+                    } else {
+                        Color32::from_rgb(0x22, 0x4b, 0x82)
+                    },
                 ),
-            ));
-        } else {
-            g.rect_filled(
-                Rect::from_min_max(pos2(x0, yc - 3.0), pos2(x1.max(x0 + 2.0), yc + 3.0)),
-                2.0,
-                fill,
+                egui::StrokeKind::Inside,
             );
-        }
-        // The pitch curve through it, as it will sound.
-        if pitched {
-            let line: Vec<Pos2> = (fa..fb)
-                .filter_map(|f| {
-                    let m = track.midi(f)?;
-                    let ratio = curve.ratio.get(f).copied().unwrap_or(1.0);
-                    let m = m + 12.0 * ratio.log2();
-                    Some(pos2(x_of(n.place(PitchTrack::time_of(f))), y_of(m)))
-                })
-                .collect();
-            for w in line.windows(2) {
-                if (w[1].x - w[0].x).abs() < 12.0 {
-                    g.line_segment([w[0], w[1]], Stroke::new(1.5, CURVE));
+
+            // Continuous detected/edited pitch curve
+            if pitched {
+                let (fa, fb) = (
+                    PitchTrack::frame_at(n.start),
+                    PitchTrack::frame_at(n.end).min(track.len()),
+                );
+                let line_pts: Vec<Pos2> = (fa..fb)
+                    .filter_map(|f| {
+                        let m = track.midi(f)?;
+                        let ratio = curve.ratio.get(f).copied().unwrap_or(1.0);
+                        let m = m + 12.0 * ratio.log2();
+                        Some(pos2(x_of(n.place(PitchTrack::time_of(f))), y_of(m)))
+                    })
+                    .collect();
+                for w in line_pts.windows(2) {
+                    if (w[1].x - w[0].x).abs() < 12.0 {
+                        gp.line_segment([w[0], w[1]], Stroke::new(1.5, CURVE));
+                    }
+                }
+            }
+
+            // 6 interactive hotspots on selected or hovered note (manual p. 487)
+            if sel || hov {
+                for (hs, pos) in hotspot_positions(n) {
+                    let active_hs = hovered_hotspot == Some((i, hs))
+                        || v.drag
+                            .as_ref()
+                            .is_some_and(|d| d.kind == DragKind::Hotspot(hs) && d.note == i);
+                    gp.circle_filled(
+                        pos,
+                        if active_hs { 4.2 } else { 3.2 },
+                        if active_hs {
+                            Color32::from_rgb(0x51, 0xee, 0xfc)
+                        } else {
+                            Color32::from_rgb(0x6e, 0x76, 0x85)
+                        },
+                    );
+                    gp.circle_stroke(
+                        pos,
+                        if active_hs { 4.2 } else { 3.2 },
+                        Stroke::new(1.0, Color32::from_rgb(0xd8, 0xdc, 0xe4)),
+                    );
                 }
             }
         }
-        // The formant beam (Formant Tool) and the level (Amplitude Tool).
-        if v.tool == Tool::Formant || n.formant.abs() > 0.01 {
-            let yb = yc - row_h.max(6.0) * 0.9 - n.formant * row_h * 0.25;
-            g.line_segment(
-                [pos2(x0, yb), pos2(x1, yb)],
-                Stroke::new(2.0, Color32::from_rgb(0x8f, 0xd0, 0xff)),
-            );
-        }
-        if v.tool == Tool::Amplitude && sel {
-            g.text(
-                pos2(x0, yc - row_h - 4.0),
-                egui::Align2::LEFT_BOTTOM,
-                format!("{:+.1} dB", n.gain_db),
-                FontId::proportional(11.0),
-                TEXT,
-            );
+    }
+
+    // Floating drag tooltip (e.g., Formant Shift, Fine Pitch, Pitch: D3)
+    if let (Some(d), Some(pt)) = (v.drag.as_ref(), pointer) {
+        if let Some(n) = shown.get(d.note) {
+            let tip = match d.kind {
+                DragKind::Hotspot(hs) => match hs {
+                    Hotspot::DriftStart | Hotspot::DriftEnd => {
+                        format!("{}: {:.0}%", hs.label(), n.drift * 100.0)
+                    }
+                    Hotspot::Vibrato => format!("Vibrato: {:.0}%", n.modulation * 100.0),
+                    Hotspot::Gain => format!("Gain: {:+.1} dB", n.gain_db),
+                    Hotspot::FinePitch => {
+                        let cents = ((n.heard() - n.heard().round()) * 100.0).round();
+                        format!("Fine Pitch: {cents:+.0} ct")
+                    }
+                    Hotspot::FormantShift => format!("Formant Shift: {:+.1} st", n.formant),
+                },
+                DragKind::Pitch => format!("Pitch: {}", note_name(n.heard())),
+                _ => String::new(),
+            };
+            if !tip.is_empty() {
+                let tip_r = Rect::from_min_size(
+                    pt + egui::vec2(12.0, 14.0),
+                    egui::vec2((tip.len() as f32 * 6.8 + 14.0).max(90.0), 22.0),
+                );
+                gp.rect_filled(
+                    tip_r,
+                    4.0,
+                    Color32::from_rgba_unmultiplied(0x16, 0x16, 0x1a, 230),
+                );
+                gp.rect_stroke(
+                    tip_r,
+                    4.0,
+                    Stroke::new(1.0, Color32::from_rgb(0x45, 0x45, 0x50)),
+                    egui::StrokeKind::Inside,
+                );
+                gp.text(
+                    tip_r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    tip,
+                    FontId::proportional(11.0),
+                    Color32::WHITE,
+                );
+            }
         }
     }
-    // The playhead.
+
+    // Playhead
     let ph = clock.secs(p.position_beats);
     if ph >= scroll {
         let x = x_of(ph);
@@ -1718,9 +2228,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Stroke::new(1.0, Color32::WHITE),
         );
     }
-    // The status line: what is selected.
+
+    // Status line
     let status = Rect::from_min_max(pos2(canvas.left(), plot.bottom()), canvas.max);
-    g.rect_filled(status, 0.0, Color32::from_gray(0x1c));
+    g.rect_filled(status, 0.0, Color32::from_rgb(0x16, 0x17, 0x1a));
     let text = match v.selected.as_slice() {
         [] => trf("{} notes", &[&shown.len()]),
         [i] => match shown.get(*i) {
@@ -1760,6 +2271,146 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     );
     if let Some(list) = commit_notes {
         commit(p, t, r, algorithm, list);
+    }
+}
+
+/// Renders and handles interactive Flex Pitch deviation bars (`±0.50` semitones) over an
+/// audio region in the Tracks Area when Flex Pitch is active on the track (manual pp. 488-489).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn tracks_pitch_overlay(
+    ui: &mut Ui,
+    g: &egui::Painter,
+    p: &mut Project,
+    ti: usize,
+    ri: usize,
+    body_rect: Rect,
+    x_of: &dyn Fn(f64) -> f32,
+) {
+    let Some(track_ref) = p.tracks.get(ti) else {
+        return;
+    };
+    if track_ref.params.flex_mode != Some(FlexMode::FlexPitch) {
+        return;
+    }
+    let Some(reg) = track_ref.regions.get(ri) else {
+        return;
+    };
+    let Some(audio) = reg.audio.as_ref() else {
+        return;
+    };
+    let file = crate::flex_edit::recording_of(audio);
+    let err = Arc::new(Mutex::new(None));
+    let found = analysis_ready(&file, Algorithm::Melodic, ui.ctx(), &err);
+    let existing = audio
+        .flex
+        .as_ref()
+        .and_then(|f| f.melody.as_ref())
+        .map(|m| m.notes.clone());
+
+    let Some(mut notes) = existing.or_else(|| {
+        found
+            .as_ref()
+            .map(|a| a.blobs.iter().map(NoteEdit::from_blob).collect())
+    }) else {
+        return;
+    };
+
+    let map = p.tempo_map();
+    let s0 = map.seconds_at(p.region_start_beats(reg));
+    let offset = audio.start_frame as f64 / f64::from(file.sample_rate.max(1));
+    let zero_y = body_rect.center().y;
+    let max_h = (body_rect.height() * 0.42).max(6.0);
+
+    // Zero-cent reference line
+    g.line_segment(
+        [
+            pos2(body_rect.left(), zero_y),
+            pos2(body_rect.right(), zero_y),
+        ],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0xff, 0xff, 0xff, 70)),
+    );
+
+    let mut changed = false;
+    for ni in 0..notes.len() {
+        let n = notes[ni];
+        if n.pitch <= 0.0 {
+            continue;
+        }
+        let b0 = map.beat_at(s0 + n.new_start - offset);
+        let b1 = map.beat_at(s0 + n.new_end - offset);
+        let x0 = x_of(b0).max(body_rect.left());
+        let x1 = x_of(b1).min(body_rect.right());
+        if x1 <= x0 + 2.0 {
+            continue;
+        }
+        let dev = (n.heard() - n.heard().round()).clamp(-0.5, 0.5);
+        let bar_h = (dev.abs() / 0.5) * max_h;
+        let bar_r = if dev >= 0.0 {
+            Rect::from_min_max(pos2(x0, zero_y - bar_h.max(2.0)), pos2(x1, zero_y))
+        } else {
+            Rect::from_min_max(pos2(x0, zero_y), pos2(x1, zero_y + bar_h.max(2.0)))
+        };
+        let fill = if dev.abs() < 0.02 {
+            Color32::from_rgb(0x56, 0x9d, 0xf7)
+        } else {
+            Color32::from_rgb(0x9a, 0xc7, 0xff)
+        };
+        g.rect_filled(bar_r, 1.5, fill);
+
+        let hit_r = Rect::from_min_max(
+            pos2(x0, body_rect.top() + 2.0),
+            pos2(x1, body_rect.bottom() - 2.0),
+        );
+        let resp = ui
+            .interact(
+                hit_r,
+                egui::Id::unique(("tracks_fp_bar", ti, ri, ni)),
+                Sense::click_and_drag(),
+            )
+            .on_hover_text(format!("{} ({:+.0} ct)", note_name(n.heard()), dev * 100.0));
+
+        if resp.double_clicked() {
+            notes[ni].shift = 0.0;
+            changed = true;
+        } else if resp.dragged() {
+            let delta_st = -resp.drag_delta().y / max_h.max(1.0) * 0.5;
+            notes[ni].shift = (notes[ni].shift + delta_st).clamp(-24.0, 24.0);
+            changed = true;
+        }
+
+        resp.context_menu(|ui| {
+            if ui.button(tr("Set to Perfect Pitch")).clicked() {
+                notes[ni].shift = notes[ni].heard().round() - notes[ni].pitch;
+                changed = true;
+                ui.close();
+            }
+            if ui.button(tr("Set All to Perfect Pitch")).clicked() {
+                for note in &mut notes {
+                    if note.pitch > 0.0 {
+                        note.shift = note.heard().round() - note.pitch;
+                    }
+                }
+                changed = true;
+                ui.close();
+            }
+            ui.separator();
+            if ui.button(tr("Set to Original Pitch")).clicked() {
+                notes[ni].shift = 0.0;
+                changed = true;
+                ui.close();
+            }
+            if ui.button(tr("Set All to Original Pitch")).clicked() {
+                for note in &mut notes {
+                    note.shift = 0.0;
+                }
+                changed = true;
+                ui.close();
+            }
+        });
+    }
+
+    if changed {
+        commit(p, ti, ri, Algorithm::Melodic, notes);
     }
 }
 
@@ -1929,12 +2580,12 @@ mod tests {
         let m = melody_of(&p, t).expect("an edit was made");
         assert!((m.notes[0].heard() - 60.0).abs() < 1e-3, "{:?}", m.notes[0]);
         assert_eq!(m.notes[1].shift, 0.0);
-        // The Separation Tool splits the second note where it is clicked.
-        s.pitch_ed.tool = Tool::Separation;
+        // The Scissors Tool splits the second note where it is clicked.
+        s.pitch_ed.tool = Tool::Scissors;
         h.time_passes(1.0);
         h.click(at(1.1, 62.0), |ui| show(ui, &mut p, &mut s));
         assert_eq!(melody_of(&p, t).unwrap().notes.len(), 4);
-        s.pitch_ed.tool = Tool::Main;
+        s.pitch_ed.tool = Tool::Pointer;
         s.pitch_ed.selected = vec![0];
         // Drawn offscreen for a look (never on screen).
         let out = std::env::var_os("PROWAVE_UI_PNG_DIR")

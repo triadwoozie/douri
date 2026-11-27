@@ -205,6 +205,7 @@ pub fn mode_label(mode: FlexMode) -> &'static str {
         FlexMode::Polyphonic => tr("Polyphonic"),
         FlexMode::Speed => tr("Speed"),
         FlexMode::Tempophone => tr("Tempophone"),
+        FlexMode::FlexPitch => tr("Flex Pitch"),
     }
 }
 

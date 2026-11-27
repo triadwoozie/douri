@@ -411,7 +411,7 @@ fn take_steps(leftover: &mut f32, delta_px: f32, px_per_step: f32) -> i32 {
 }
 
 fn lcd(
-    ui: &Ui,
+    ui: &mut Ui,
     g: &Painter,
     p: &mut Project,
     s: &mut UiState,
@@ -1062,6 +1062,161 @@ fn lcd(
     };
     icon_tuner(g, tun_r, mode_color, is_custom_or_alt);
 
+    // Varispeed toggle button (-+)
+    let vs_r = Rect::from_center_size(pos2(x0 + 538.0, rect.center().y), vec2(28.0, 24.0));
+    let vs_resp = ui
+        .interact(
+            vs_r,
+            egui::Id::unique(("lcd", "varispeed_btn")),
+            Sense::click(),
+        )
+        .on_hover_text(tr("Varispeed (-50% to +100%)"));
+    let vs_amber = Color32::from_rgb(0xf5, 0x9e, 0x0b);
+    if p.varispeed {
+        g.rect_filled(
+            vs_r,
+            4.0,
+            Color32::from_rgba_unmultiplied(0xf5, 0x9e, 0x0b, 48),
+        );
+        g.rect_stroke(
+            vs_r,
+            4.0,
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(0xf5, 0x9e, 0x0b, 140)),
+            StrokeKind::Inside,
+        );
+    } else if vs_resp.hovered() {
+        g.rect_filled(vs_r, 4.0, Color32::from_white_alpha(15));
+    }
+    g.text(
+        vs_r.center(),
+        Align2::CENTER_CENTER,
+        "-+",
+        FontId::monospace(11.5),
+        if p.varispeed { vs_amber } else { pal.mid },
+    );
+    if vs_resp.clicked() {
+        p.varispeed = !p.varispeed;
+    }
+
+    // Varispeed two-part readout when enabled or customized into the Control Bar
+    if p.varispeed || s.lcd_custom.show_varispeed {
+        let readout_r = Rect::from_min_size(
+            pos2(x0 + 556.0, rect.top() + 2.0),
+            vec2(104.0, rect.height() - 4.0),
+        );
+        let upper_r =
+            Rect::from_min_max(readout_r.min, pos2(readout_r.right(), readout_r.center().y));
+        let lower_r =
+            Rect::from_min_max(pos2(readout_r.left(), readout_r.center().y), readout_r.max);
+        let upper_resp = ui
+            .interact(
+                upper_r,
+                egui::Id::unique(("lcd", "vs_mode")),
+                Sense::click(),
+            )
+            .on_hover_text(tr("Varispeed Mode"));
+        let lower_resp = ui
+            .interact(
+                lower_r,
+                egui::Id::unique(("lcd", "vs_val")),
+                Sense::click_and_drag(),
+            )
+            .on_hover_text(tr(
+                "Drag vertically or double-click to adjust Varispeed; click to choose unit",
+            ));
+
+        let rate = prowave_engine::varispeed_rate(p.varispeed_pct);
+        let val_str = match p.varispeed_unit {
+            prowave_engine::VarispeedUnit::Percentage => format!("{:+.2}%", p.varispeed_pct),
+            prowave_engine::VarispeedUnit::ResultingTempo => {
+                format!("{:.2} bpm", p.tempo_at(p.position_beats) as f64 * rate)
+            }
+            prowave_engine::VarispeedUnit::Detune => {
+                format!("{:+.2} st", prowave_engine::rate_to_semitones(rate))
+            }
+            prowave_engine::VarispeedUnit::TuningReference => {
+                format!("{:.1} Hz", f64::from(p.tuning_hz) * rate)
+            }
+        };
+        let col = if p.varispeed { vs_amber } else { pal.dim };
+        g.text(
+            upper_r.center(),
+            Align2::CENTER_CENTER,
+            p.varispeed_mode.short_label(),
+            FontId::proportional(9.5),
+            col,
+        );
+        let edit_id = egui::Id::unique(("lcd", "vs_edit_open"));
+        let buf_id = egui::Id::unique(("lcd", "vs_edit_buf"));
+        let mut editing = ui
+            .ctx()
+            .data(|d| d.get_temp::<bool>(edit_id).unwrap_or(false));
+        if lower_resp.double_clicked() {
+            editing = true;
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(edit_id, true);
+                d.insert_temp(buf_id, format!("{:.2}", p.varispeed_pct));
+            });
+        } else if lower_resp.dragged() {
+            p.varispeed = true;
+            p.varispeed_pct =
+                (p.varispeed_pct - lower_resp.drag_delta().y * 0.4).clamp(-50.0, 100.0);
+        }
+        if editing {
+            let mut buf = ui
+                .ctx()
+                .data(|d| d.get_temp::<String>(buf_id).unwrap_or_default());
+            let te = ui.put(
+                lower_r.shrink2(vec2(6.0, 1.0)),
+                egui::TextEdit::singleline(&mut buf).font(FontId::monospace(10.5)),
+            );
+            ui.ctx().data_mut(|d| d.insert_temp(buf_id, buf.clone()));
+            if te.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if let Ok(v) = buf.trim().trim_end_matches('%').parse::<f32>() {
+                    p.varispeed_pct = v.clamp(-50.0, 100.0);
+                    p.varispeed = true;
+                }
+                ui.ctx().data_mut(|d| d.insert_temp(edit_id, false));
+            }
+        } else {
+            g.text(
+                lower_r.center(),
+                Align2::CENTER_CENTER,
+                val_str,
+                FontId::monospace(11.0),
+                col,
+            );
+            egui::Popup::menu(&lower_resp).show(|ui| {
+                for u in prowave_engine::VarispeedUnit::ALL {
+                    if ui
+                        .selectable_label(p.varispeed_unit == u, u.label())
+                        .clicked()
+                    {
+                        p.varispeed_unit = u;
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                if ui.button(tr("Reset Varispeed (0.00%)")).clicked() {
+                    p.varispeed_pct = 0.0;
+                    ui.close();
+                }
+            });
+        }
+        egui::Popup::menu(&upper_resp).show(|ui| {
+            for m in prowave_engine::VarispeedMode::ALL {
+                if ui
+                    .selectable_label(p.varispeed_mode == m, m.label())
+                    .clicked()
+                {
+                    p.varispeed_mode = m;
+                    p.varispeed = true;
+                    ui.close();
+                }
+            }
+        });
+    }
+
     // Display mode popover menu
     egui::Popup::menu(&tun_resp).show(|ui| {
         ui.set_min_width(220.0);
@@ -1360,7 +1515,11 @@ pub fn control_bar(
     }
 
     // Centre: LCD, transport to its left, master volume & editors to its right.
-    let lcd_w = 540.0;
+    let lcd_w = if p.varispeed || s.lcd_custom.show_varispeed {
+        668.0
+    } else {
+        566.0
+    };
     let lcd_rect = Rect::from_center_size(pos2(lcd_center_x(bar), cy), vec2(lcd_w, 42.0));
     lcd(ui, &g, p, s, lcd_rect, s.glass_quality);
 

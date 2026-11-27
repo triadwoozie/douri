@@ -26,16 +26,18 @@ pub enum FlexMode {
     Polyphonic,
     Speed,
     Tempophone,
+    FlexPitch,
 }
 
 impl FlexMode {
-    pub const ALL: [FlexMode; 6] = [
+    pub const ALL: [FlexMode; 7] = [
         FlexMode::Slicing,
         FlexMode::Rhythmic,
         FlexMode::Monophonic,
         FlexMode::Polyphonic,
         FlexMode::Speed,
         FlexMode::Tempophone,
+        FlexMode::FlexPitch,
     ];
 
     pub fn name(self) -> &'static str {
@@ -46,6 +48,7 @@ impl FlexMode {
             FlexMode::Polyphonic => "Polyphonic",
             FlexMode::Speed => "Speed",
             FlexMode::Tempophone => "Tempophone",
+            FlexMode::FlexPitch => "Flex Pitch",
         }
     }
 
@@ -57,7 +60,7 @@ impl FlexMode {
     /// the window.
     fn window(self) -> (f64, f64) {
         match self {
-            FlexMode::Monophonic => (0.030, 0.25),
+            FlexMode::Monophonic | FlexMode::FlexPitch => (0.030, 0.25),
             FlexMode::Rhythmic => (0.040, 0.25),
             FlexMode::Polyphonic => (0.080, 0.25),
             FlexMode::Tempophone => (0.120, 0.0),

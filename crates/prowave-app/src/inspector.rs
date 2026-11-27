@@ -1989,28 +1989,158 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                         y += ROW_H;
                         if audio {
                             label(&g_upper, label_right, y, tr("Freeze Mode:"), true);
-                            popup(
+                            let freeze_label = match tp.freeze_mode {
+                                crate::model::FreezeMode::PreFader => tr("Pre Fader"),
+                                crate::model::FreezeMode::SourceOnly => tr("Source Only"),
+                            };
+                            if let Some(resp) = popup(
                                 ui,
                                 &g_upper,
                                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                                 "freeze",
-                                tr("Pre Fader"),
+                                freeze_label,
                                 true,
-                            );
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    for (fm, lbl) in [
+                                        (crate::model::FreezeMode::PreFader, tr("Pre Fader")),
+                                        (crate::model::FreezeMode::SourceOnly, tr("Source Only")),
+                                    ] {
+                                        if ui.selectable_label(tp.freeze_mode == fm, lbl).clicked()
+                                        {
+                                            p.tracks[ti].params.freeze_mode = fm;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
                             y += ROW_H;
                             label(&g_upper, label_right, y, tr("Q-Reference:"), false);
                             checkbox(ui, &g_upper, pos2(vx, y), "qref", true, false);
                             y += ROW_H;
-                            label(&g_upper, label_right, y, tr("Flex Mode:"), false);
-                            popup(
+                            label(&g_upper, label_right, y, tr("Flex Mode:"), true);
+                            let flex_label = match tp.flex_mode {
+                                None => tr("Off"),
+                                Some(prowave_engine::FlexMode::FlexPitch) => tr("Flex Pitch"),
+                                Some(prowave_engine::FlexMode::Monophonic) => {
+                                    tr("Flex Time - Monophonic")
+                                }
+                                Some(prowave_engine::FlexMode::Rhythmic) => {
+                                    tr("Flex Time - Rhythmic")
+                                }
+                                Some(prowave_engine::FlexMode::Polyphonic) => {
+                                    tr("Flex Time - Polyphonic")
+                                }
+                                Some(m) => m.name(),
+                            };
+                            if let Some(resp) = popup(
                                 ui,
                                 &g_upper,
                                 Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
                                 "flex",
-                                tr("Off"),
-                                false,
-                            );
+                                flex_label,
+                                true,
+                            ) {
+                                egui::Popup::menu(&resp).show(|ui| {
+                                    if ui
+                                        .selectable_label(tp.flex_mode.is_none(), tr("Off"))
+                                        .clicked()
+                                    {
+                                        p.tracks[ti].params.flex_enabled = false;
+                                        p.tracks[ti].params.flex_mode = None;
+                                        ui.close();
+                                    }
+                                    for (mode, lbl) in [
+                                        (prowave_engine::FlexMode::FlexPitch, tr("Flex Pitch")),
+                                        (
+                                            prowave_engine::FlexMode::Monophonic,
+                                            tr("Flex Time - Monophonic"),
+                                        ),
+                                        (
+                                            prowave_engine::FlexMode::Rhythmic,
+                                            tr("Flex Time - Rhythmic"),
+                                        ),
+                                        (
+                                            prowave_engine::FlexMode::Polyphonic,
+                                            tr("Flex Time - Polyphonic"),
+                                        ),
+                                    ] {
+                                        if ui
+                                            .selectable_label(tp.flex_mode == Some(mode), lbl)
+                                            .clicked()
+                                        {
+                                            p.tracks[ti].params.flex_enabled = true;
+                                            p.tracks[ti].params.flex_mode = Some(mode);
+                                            p.tracks[ti].params.freeze_mode =
+                                                crate::model::FreezeMode::SourceOnly;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            }
                             y += ROW_H;
+                            if tp.flex_mode == Some(prowave_engine::FlexMode::FlexPitch) {
+                                label(&g_upper, label_right, y, tr("Formant Track:"), true);
+                                if let Some(v) = drag_value(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "formant_track",
+                                    (tp.formant_track * 100.0).round() as i32,
+                                    (0, 100),
+                                    0,
+                                    format!("{:.2}", tp.formant_track),
+                                    true,
+                                ) {
+                                    p.tracks[ti].params.formant_track = v as f32 / 100.0;
+                                }
+                                y += ROW_H;
+                                label(&g_upper, label_right, y, tr("Formant Shift:"), true);
+                                let fs_txt = if tp.formant_shift.abs() < 0.05 {
+                                    tr("off").to_string()
+                                } else {
+                                    format!("{:+.1} st", tp.formant_shift)
+                                };
+                                if let Some(v) = drag_value(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "formant_shift",
+                                    (tp.formant_shift * 10.0).round() as i32,
+                                    (-120, 120),
+                                    0,
+                                    fs_txt,
+                                    true,
+                                ) {
+                                    p.tracks[ti].params.formant_shift = v as f32 / 10.0;
+                                }
+                                y += ROW_H;
+                                label(&g_upper, label_right, y, tr("Formants:"), true);
+                                if let Some(resp) = popup(
+                                    ui,
+                                    &g_upper,
+                                    Rect::from_min_size(pos2(vx, y + 2.0), vec2(vw, ROW_H - 4.0)),
+                                    "formants_mode",
+                                    tr(tp.formants_mode.name()),
+                                    true,
+                                ) {
+                                    egui::Popup::menu(&resp).show(|ui| {
+                                        for fm in prowave_engine::FormantMode::ALL {
+                                            if ui
+                                                .selectable_label(
+                                                    tp.formants_mode == fm,
+                                                    tr(fm.name()),
+                                                )
+                                                .clicked()
+                                            {
+                                                p.tracks[ti].params.formants_mode = fm;
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                }
+                                y += ROW_H;
+                            }
                         } else {
                             let external = p.tracks[ti].kind == TrackKind::ExternalMidi;
                             if external {

@@ -38,6 +38,7 @@ pub struct EngineSync {
     pub engine: Engine,
     playing: bool,
     playhead_dragging: bool,
+    varispeed: Option<(bool, f32, prowave_engine::VarispeedMode)>,
     /// The tracks that hear their input, as last sent.
     monitors: Vec<MonitorTrack>,
     /// Tempo, tempo changes and signature last sent.
@@ -789,6 +790,7 @@ impl EngineSync {
             engine,
             playing: false,
             playhead_dragging: false,
+            varispeed: None,
             monitors: Vec::new(),
             tempo: None,
             metronome: false,
@@ -948,6 +950,16 @@ impl EngineSync {
         if self.tuning != Some(p.tuning_hz) && self.send(Command::SetTuning { a4_hz: p.tuning_hz })
         {
             self.tuning = Some(p.tuning_hz);
+        }
+        let vs = (p.varispeed, p.varispeed_pct, p.varispeed_mode);
+        if self.varispeed != Some(vs)
+            && self.send(Command::SetVarispeed {
+                active: vs.0,
+                pct: vs.1,
+                mode: vs.2,
+            })
+        {
+            self.varispeed = Some(vs);
         }
         let cycle = (p.cycle, p.cycle_start, p.cycle_end);
         if cycle != self.cycle

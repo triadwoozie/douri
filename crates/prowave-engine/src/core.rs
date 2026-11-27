@@ -440,6 +440,12 @@ pub enum Command {
     Stop,
     /// Suspends transport advancement and flushes active voices while the user drags the playhead.
     SetPlayheadDragging(bool),
+    /// Logic Pro Control Bar Varispeed (`-50%` to `+100%`).
+    SetVarispeed {
+        active: bool,
+        pct: f32,
+        mode: crate::flex_pitch_dsp::VarispeedMode,
+    },
     SetPosition {
         beat: f64,
     },
@@ -1018,6 +1024,10 @@ pub struct EngineCore {
     start_beat: f64,
     playing: bool,
     is_playhead_dragging: bool,
+    varispeed_active: bool,
+    varispeed_pct: f32,
+    varispeed_mode: crate::flex_pitch_dsp::VarispeedMode,
+    varispeed_shifter: crate::flex_pitch_dsp::VarispeedShifter,
     tempo_map: Box<TempoMap>,
     metronome: bool,
     cycle: Option<(f64, f64)>,
@@ -1197,6 +1207,10 @@ impl EngineCore {
             start_beat: 0.0,
             playing: false,
             is_playhead_dragging: false,
+            varispeed_active: false,
+            varispeed_pct: 0.0,
+            varispeed_mode: crate::flex_pitch_dsp::VarispeedMode::SpeedOnly,
+            varispeed_shifter: crate::flex_pitch_dsp::VarispeedShifter::new(),
             tempo_map: Box::default(),
             metronome: false,
             cycle: None,
@@ -1927,6 +1941,18 @@ impl EngineCore {
                         self.clock_resync();
                     }
                 }
+                Command::SetVarispeed { active, pct, mode } => {
+                    self.varispeed_active = active;
+                    self.varispeed_pct = if pct.is_finite() {
+                        pct.clamp(-50.0, 100.0)
+                    } else {
+                        0.0
+                    };
+                    self.varispeed_mode = mode;
+                    if !active {
+                        self.varispeed_shifter.reset();
+                    }
+                }
                 Command::SetPosition { beat } => self.seek(beat),
                 Command::SetTempoMap(map) => {
                     let old = std::mem::replace(&mut self.tempo_map, map);
@@ -2280,7 +2306,14 @@ impl EngineCore {
         idx
     }
 
-    fn trigger(&mut self, n: NoteEvent) -> usize {
+    fn trigger(&mut self, mut n: NoteEvent) -> usize {
+        if self.varispeed_active
+            && self.varispeed_mode == crate::flex_pitch_dsp::VarispeedMode::VarispeedAndMidi
+        {
+            let rate = crate::flex_pitch_dsp::varispeed_rate(self.varispeed_pct);
+            let semi = crate::flex_pitch_dsp::rate_to_semitones(rate).round() as i32;
+            n.pitch = (i32::from(n.pitch) + semi).clamp(0, 127) as u8;
+        }
         if self.plays_elsewhere(n.track) {
             // An external instrument or plug-in instrument makes its own sound.
             self.ext_note_on(n, false);
@@ -2584,7 +2617,12 @@ impl EngineCore {
         flush_denormals();
         self.drain_live_midi();
         self.drain_commands();
-        let frame_secs = 1.0 / self.sr as f64;
+        let vs_rate = if self.varispeed_active {
+            crate::flex_pitch_dsp::varispeed_rate(self.varispeed_pct)
+        } else {
+            1.0
+        };
+        let frame_secs = vs_rate / self.sr as f64;
         let (mut pk_l, mut pk_r) = (0f32, 0f32);
         for c in self.song.clips.iter_mut() {
             c.service();
@@ -2878,6 +2916,20 @@ impl EngineCore {
                     l += al as f64;
                     r += ar as f64;
                 }
+            }
+            if self.varispeed_active
+                && matches!(
+                    self.varispeed_mode,
+                    crate::flex_pitch_dsp::VarispeedMode::SpeedAndPitch
+                        | crate::flex_pitch_dsp::VarispeedMode::VarispeedAndMidi
+                )
+                && (vs_rate - 1.0).abs() > 1e-4
+            {
+                let (sl, sr) = self
+                    .varispeed_shifter
+                    .process(l as f32, r as f32, vs_rate as f32);
+                l = f64::from(sl);
+                r = f64::from(sr);
             }
             let master = self.master.next() as f64;
             // `clamp` lets NaN through, so a non-finite sum becomes silence first.
@@ -5342,6 +5394,41 @@ mod tests {
         assert!(
             core.voices.iter().any(|v| v.active && !v.releasing),
             "note at beat 1.0 should trigger once drag is released"
+        );
+    }
+
+    #[test]
+    fn varispeed_scales_transport_speed_without_allocating() {
+        let (mut core, mut tx, mut state) = rig();
+        assert!(tx.push(Command::Play).is_ok());
+        assert!(tx
+            .push(Command::SetVarispeed {
+                active: true,
+                pct: 100.0,
+                mode: crate::flex_pitch_dsp::VarispeedMode::SpeedAndPitch,
+            })
+            .is_ok());
+        let mut buf = vec![0.0f32; 4800]; // 2400 frames = 50 ms @ 48 kHz -> 0.1 beats @ 120 BPM * 2.0 = 0.2 beats
+        assert_no_alloc::assert_no_alloc(|| core.process(&mut buf));
+        let b_fast = state.read().position_beats;
+        assert!(
+            (b_fast - 0.2).abs() < 0.01,
+            "varispeed +100% should double beat rate: {b_fast}"
+        );
+
+        assert!(tx
+            .push(Command::SetVarispeed {
+                active: true,
+                pct: -50.0,
+                mode: crate::flex_pitch_dsp::VarispeedMode::SpeedOnly,
+            })
+            .is_ok());
+        assert!(tx.push(Command::SetPosition { beat: 0.0 }).is_ok());
+        assert_no_alloc::assert_no_alloc(|| core.process(&mut buf));
+        let b_slow = state.read().position_beats;
+        assert!(
+            (b_slow - 0.05).abs() < 0.01,
+            "varispeed -50% should halve beat rate: {b_slow}"
         );
     }
 }

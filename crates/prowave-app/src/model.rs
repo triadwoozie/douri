@@ -801,6 +801,16 @@ pub struct TrackParams {
     pub internal_midi_in: Option<usize>,
     /// Track freeze mode (`Pre Fader` or `Source Only`).
     pub freeze_mode: FreezeMode,
+    /// Whether Flex Time/Pitch is enabled on this track.
+    pub flex_enabled: bool,
+    /// Active Flex algorithm for this track (`None` = Off).
+    pub flex_mode: Option<prowave_engine::FlexMode>,
+    /// Flex Pitch Formant Track ratio (`0.0..=1.0`).
+    pub formant_track: f32,
+    /// Flex Pitch Formant Shift in semitones (`-12.0..=12.0`).
+    pub formant_shift: f32,
+    /// Flex Pitch Formants mode (`Keep Unvoiced Formants` / `Process Always`).
+    pub formants_mode: prowave_engine::FormantMode,
 }
 
 impl Default for TrackParams {
@@ -818,6 +828,11 @@ impl Default for TrackParams {
             default_region_type: DefaultRegionType::Select,
             internal_midi_in: None,
             freeze_mode: FreezeMode::PreFader,
+            flex_enabled: false,
+            flex_mode: None,
+            formant_track: 0.0,
+            formant_shift: 0.0,
+            formants_mode: prowave_engine::FormantMode::KeepUnvoicedFormants,
         }
     }
 }
@@ -1257,6 +1272,11 @@ pub struct Project {
     pub eclipsa_master: EclipsaMasterConfig,
     /// Per-track Eclipsa Audio 3D Object / Surround Panner configuration keyed by track index.
     pub eclipsa_tracks: std::collections::BTreeMap<usize, EclipsaTrackConfig>,
+    /// Control Bar Varispeed active state, percentage (`-50..=100`), mode, and display unit.
+    pub varispeed: bool,
+    pub varispeed_pct: f32,
+    pub varispeed_mode: prowave_engine::VarispeedMode,
+    pub varispeed_unit: prowave_engine::VarispeedUnit,
 }
 
 /// How a track participates in Eclipsa Spatial Audio mixing.
@@ -1591,6 +1611,10 @@ impl Project {
             spatial_format: prowave_engine::eclipsa::SpatialFormat::Stereo,
             eclipsa_master: EclipsaMasterConfig::default(),
             eclipsa_tracks: std::collections::BTreeMap::new(),
+            varispeed: false,
+            varispeed_pct: 0.0,
+            varispeed_mode: prowave_engine::VarispeedMode::SpeedAndPitch,
+            varispeed_unit: prowave_engine::VarispeedUnit::Percentage,
         }
     }
 

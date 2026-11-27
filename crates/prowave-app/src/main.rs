@@ -2501,6 +2501,7 @@ fn show_lcd_customize_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 &mut ui_state.lcd_custom.show_midi_activity,
                 "MIDI Activity Indicators (In / Out)",
             );
+            ui.checkbox(&mut ui_state.lcd_custom.show_varispeed, "Varispeed");
             ui.add_space(12.0);
             ui.separator();
             ui.add_space(8.0);

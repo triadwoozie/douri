@@ -423,6 +423,8 @@ pub struct LcdCustomOptions {
     pub show_key_signature: bool,
     pub show_performance_meters: bool,
     pub show_midi_activity: bool,
+    #[serde(default)]
+    pub show_varispeed: bool,
 }
 
 impl Default for LcdCustomOptions {
@@ -434,6 +436,7 @@ impl Default for LcdCustomOptions {
             show_key_signature: true,
             show_performance_meters: true,
             show_midi_activity: true,
+            show_varispeed: false,
         }
     }
 }
