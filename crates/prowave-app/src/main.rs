@@ -93,6 +93,7 @@ pub mod pipewire_jack;
 mod pitch_editor;
 mod plugin_manager;
 mod plugin_picker;
+mod plugin_ratings;
 mod plugins;
 mod project_io;
 mod project_settings;

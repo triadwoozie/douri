@@ -837,13 +837,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let gs = ui.painter_at(Rect::from_min_max(hbar.min, vbar.max));
         gs.rect_filled(hbar, 0.0, Color32::from_gray(0x2a));
         gs.rect_filled(vbar, 0.0, Color32::from_gray(0x2a));
-        let tw = hbar.width();
+        let tw = hbar.width().max(0.0);
         let thumb_w = thumb_len(tw, grid.width(), content_w);
         let max_x = (content_w - grid.width()).max(1.0);
         let thumb_x = hbar.left() + (tw - thumb_w) * (v.scroll_x / max_x).clamp(0.0, 1.0);
         let thumb = Rect::from_min_size(
             pos2(thumb_x, hbar.top() + 2.0),
-            vec2(thumb_w, hbar.height() - 4.0),
+            vec2(thumb_w, (hbar.height() - 4.0).max(0.0)),
         );
         let r = ui.interact(thumb, id("hthumb"), Sense::drag());
         if r.dragged() {
@@ -859,13 +859,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }),
         );
 
-        let th = vbar.height();
+        let th = vbar.height().max(0.0);
         let thumb_h = thumb_len(th, grid.height(), content_h);
         let max_y = (content_h - grid.height()).max(1.0);
         let thumb_y = vbar.top() + (th - thumb_h) * (v.scroll_y / max_y).clamp(0.0, 1.0);
         let thumb = Rect::from_min_size(
             pos2(vbar.left() + 2.0, thumb_y),
-            vec2(vbar.width() - 4.0, thumb_h),
+            vec2((vbar.width() - 4.0).max(0.0), thumb_h),
         );
         let r = ui.interact(thumb, id("vthumb"), Sense::drag());
         if r.dragged() {

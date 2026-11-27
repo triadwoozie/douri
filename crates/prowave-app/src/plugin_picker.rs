@@ -163,6 +163,8 @@ pub fn show(ui: &mut Ui, search: &mut String) -> Option<Pick> {
     } else {
         let mut any = false;
         let query = search.trim().to_lowercase();
+        let hidden = crate::plugins::hidden();
+        let ratings = crate::plugin_ratings::ratings();
         // Every match is listed, in a list that scrolls: a bundle of hundreds of plug-ins
         // must not hide the ones past the first few.
         scrolled(ui, |ui| {
@@ -175,20 +177,33 @@ pub fn show(ui: &mut Ui, search: &mut String) -> Option<Pick> {
                 }
             }
             for kind in FxKind::ALL {
-                if matches(kind, search) {
+                if !hidden.hides(&crate::plugins::builtin_fx_id(kind), "Dori")
+                    && matches(kind, search)
+                {
                     any = true;
                     if ui.button(kind.name()).clicked() {
                         picked = Some(Pick::Effect(kind));
                     }
                 }
             }
-            for info in catalog
-                .iter()
-                .filter(|info| info.name.to_lowercase().contains(&query))
-            {
+            for info in catalog.iter().filter(|info| {
+                !hidden.hides(&info.id, &info.vendor)
+                    && crate::plugin_ratings::matches(
+                        search,
+                        &info.name,
+                        &info.vendor,
+                        ratings.of(&info.id, None),
+                    )
+            }) {
                 any = true;
-                let label = format!("{} ({})", info.name, info.format.name());
-                if ui.button(label).clicked() {
+                let rated = ratings.of(&info.id, None);
+                let (shown_name, _) = crate::plugin_ratings::shown(&info.name, &info.vendor, rated);
+                let label = format!("{shown_name} ({})", info.format.name());
+                let mut resp = ui.button(label);
+                if let Some(r) = rated.filter(|r| !r.why.is_empty()) {
+                    resp = resp.on_hover_text(&r.why);
+                }
+                if resp.clicked() {
                     picked = Some(Pick::Hosted(info.clone()));
                 }
             }
@@ -242,8 +257,13 @@ fn hosted_menus(ui: &mut Ui, catalog: &[PluginInfo], picked: &mut Option<Pick>) 
         return;
     }
     ui.separator();
+    let hidden = crate::plugins::hidden();
+    let ratings = crate::plugin_ratings::ratings();
     for format in FORMATS {
-        let of_format: Vec<&PluginInfo> = catalog.iter().filter(|i| i.format == format).collect();
+        let of_format: Vec<&PluginInfo> = catalog
+            .iter()
+            .filter(|i| i.format == format && !hidden.hides(&i.id, &i.vendor))
+            .collect();
         if of_format.is_empty() {
             continue;
         }
@@ -259,7 +279,14 @@ fn hosted_menus(ui: &mut Ui, catalog: &[PluginInfo], picked: &mut Option<Pick>) 
                         // One manufacturer can have hundreds (a whole bundle): scroll them.
                         scrolled(ui, |ui| {
                             for info in group {
-                                if ui.button(&info.name).clicked() {
+                                let rated = ratings.of(&info.id, None);
+                                let (shown_name, _) =
+                                    crate::plugin_ratings::shown(&info.name, &info.vendor, rated);
+                                let mut resp = ui.button(&shown_name);
+                                if let Some(r) = rated.filter(|r| !r.why.is_empty()) {
+                                    resp = resp.on_hover_text(&r.why);
+                                }
+                                if resp.clicked() {
                                     *picked = Some(Pick::Hosted((*info).clone()));
                                 }
                             }

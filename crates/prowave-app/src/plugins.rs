@@ -814,6 +814,102 @@ fn quarantine_file() -> PathBuf {
         .join("quarantine.json")
 }
 
+// ---------------------------------------------------------------- hidden plug-ins
+//
+// Plug-ins left out of every menu and list that offers them: the ids in the settings file
+// `plugin-hidden` (one per line; built-in instruments/effects, Audio Units, CLAP, VST3),
+// and Apple's Audio Units (maker code `appl`) unless `plugin-hide-apple` holds `0`.
+// A project that already uses a hidden plug-in still opens and plays it. The files are read
+// again at most once a second, so a change another program makes shows the next time a menu
+// opens.
+
+/// What is hidden: the listed ids, and whether Apple's Audio Units are.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Hidden {
+    pub ids: Vec<String>,
+    pub show_apple: bool,
+}
+
+impl Hidden {
+    /// Whether the plug-in `id` (made by `maker`) is left out of menus and lists.
+    pub fn hides(&self, id: &str, maker: &str) -> bool {
+        (!self.show_apple && is_apple(id, maker)) || self.ids.iter().any(|h| h == id)
+    }
+
+    /// Reads the two settings texts (`None`: the file is not there).
+    pub fn parse(hidden: Option<&str>, hide_apple: Option<&str>) -> Self {
+        Self {
+            ids: hidden
+                .unwrap_or("")
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect(),
+            show_apple: hide_apple.is_some_and(|t| t.trim() == "0"),
+        }
+    }
+}
+
+/// The id `plugin-hidden` and `plugin-ratings.json` give built-in effect `kind` ("builtin:Space D").
+pub fn builtin_fx_id(kind: prowave_engine::FxKind) -> String {
+    format!("builtin:{}", kind.name())
+}
+
+/// One of the Audio Units macOS comes with (manufacturer code `appl`, or maker "Apple").
+pub fn is_apple(id: &str, maker: &str) -> bool {
+    let is_au = id.starts_with("au:") || id.starts_with("aufx:") || id.starts_with("aumu:");
+    (is_au && id.rsplit(':').next() == Some("appl")) || maker == "Apple"
+}
+
+fn setting_path(name: &str) -> Option<PathBuf> {
+    crate::recent_files::config_dir().map(|d| d.join(name))
+}
+
+static HIDDEN: Mutex<Option<(Instant, Hidden)>> = Mutex::new(None);
+
+/// What is hidden now (the settings files, read again at most once a second).
+pub fn hidden() -> Hidden {
+    let Ok(mut h) = HIDDEN.lock() else {
+        return Hidden::default();
+    };
+    if let Some((at, now)) = h.as_ref() {
+        if cfg!(test) || at.elapsed() < Duration::from_secs(1) {
+            return now.clone();
+        }
+    }
+    let read = |name| setting_path(name).and_then(|f| std::fs::read_to_string(f).ok());
+    let now = if cfg!(test) {
+        Hidden::default()
+    } else {
+        Hidden::parse(
+            read("plugin-hidden").as_deref(),
+            read("plugin-hide-apple").as_deref(),
+        )
+    };
+    *h = Some((Instant::now(), now.clone()));
+    now
+}
+
+/// Shows (`true`) or hides Apple's Audio Units in the menus.
+#[allow(dead_code)]
+pub fn set_show_apple(on: bool) {
+    if let Ok(mut h) = HIDDEN.lock() {
+        if let Some((_, now)) = h.as_mut() {
+            now.show_apple = on;
+        }
+    }
+    if cfg!(test) {
+        return;
+    }
+    if let Some(f) = setting_path("plugin-hide-apple") {
+        if let Some(dir) = f.parent() {
+            let _ = std::fs::create_dir_all(dir)
+                .and_then(|_| std::fs::write(f, if on { "0" } else { "1" }));
+        }
+    }
+}
+
 /// Starts the background scan of the plug-in folders, once: later calls do nothing until a scan
 /// has finished.
 pub fn ensure_scanned() {
@@ -1683,5 +1779,21 @@ mod tests {
         assert_eq!(gain.controls[0].name, "Gain");
         assert_eq!(gain.controls[0].range(), (0.0, 1.0));
         assert_eq!(decode_infos(&encode_infos(&infos)), Ok(infos));
+    }
+
+    #[test]
+    fn hidden_leaves_out_apple_and_listed_plugins() {
+        let none = Hidden::parse(None, None);
+        assert!(none.hides("aufx:dely:appl", "Apple"));
+        assert!(none.hides("aumu:dls :appl", "Apple"));
+        assert!(!none.hides("aufx:Pro3:FbFt", "FabFilter"));
+
+        let show_apple = Hidden::parse(Some("aufx:Pro3:FbFt\n# comment\n"), Some("0\n"));
+        assert!(!show_apple.hides("aufx:dely:appl", "Apple"));
+        assert!(show_apple.hides("aufx:Pro3:FbFt", "FabFilter"));
+        assert_eq!(
+            builtin_fx_id(prowave_engine::FxKind::ChannelEq),
+            "builtin:Channel EQ"
+        );
     }
 }
