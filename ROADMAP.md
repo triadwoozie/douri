@@ -97,7 +97,8 @@ This document serves as the architectural source of truth for Dōri's shipped ca
 - [x] **Command Palette & Privacy-Redacted Diagnostics:** `Cmd/Ctrl+K` Command Palette and `Diagnostics…` / `douri --report` system inspector.
 - [ ] **Neural ONNX Stem Model & Mastering Assistant:** Optional local ONNX (`ort`/`tract`) neural stem separation backend and automated spectral/loudness Mastering Assistant.
 - [ ] **MPE & MIDI 2.0 Property Exchange:** Full per-note pitch, pressure, and timbre expression lanes inside the Piano Roll.
-- [ ] **Eclipsa Audio (IAMF) & 7.1.4 Spatial Mixing:** Zero-alloc 7.1.4 bed accumulator, 3D Object VBAP panner UI, Binaural HRIR monitoring, spatial automation lanes, and `.iamf` offline bounce.
+- [x] **Eclipsa Audio (7.1.2 / 7.1.4) Spatial Renderer & 3-Pane Panner UI:** Zero-alloc `eclipsa.rs` 3D Object / Surround Panner DSP + Binaural downmixer, `Eclipsa Audio` Master Renderer + `3D Object Panner` + `Surround Panner` UI (`eclipsa_ui.rs`), Startup Screen Surround Format, `Project Settings > Audio`, and `Mix > Eclipsa Audio…`.
+- [ ] **Eclipsa `.iamf` Bitstream Export & Spatial Automation Lanes:** Offline `.iamf` bitstream muxer/export and per-track spatial coordinate automation lanes.
 - [ ] **WebAssembly & AudioWorklet Target:** Compile `prowave-engine` to `wasm32` with `SharedArrayBuffer` lock-free ring buffers, OPFS project storage, and Web Remote.
 
 ---

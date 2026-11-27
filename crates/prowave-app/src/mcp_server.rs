@@ -163,6 +163,12 @@ impl McpEngine {
                             "name": "Sound Library Index",
                             "description": "Installed Sound Library categories, patches, SoundFonts, and EXS24 instruments.",
                             "mimeType": "application/json"
+                        },
+                        {
+                            "uri": "douri://spatial/state",
+                            "name": "Eclipsa Spatial Audio State",
+                            "description": "Active spatial format, monitoring layout, surround bed binaural modes, and per-track 3D Object / Surround Panner coordinates.",
+                            "mimeType": "application/json"
                         }
                     ]
                 }),
@@ -223,6 +229,19 @@ impl McpEngine {
                             }),
                         )
                     }
+                    "douri://spatial/state" => {
+                        let spatial = Self::snapshot_spatial(p);
+                        JsonRpcResponse::ok(
+                            id,
+                            json!({
+                                "contents": [{
+                                    "uri": uri,
+                                    "mimeType": "application/json",
+                                    "text": serde_json::to_string_pretty(&spatial).unwrap_or_default()
+                                }]
+                            }),
+                        )
+                    }
                     _ => JsonRpcResponse::err(id, -32602, format!("Resource not found: {uri}")),
                 }
             }
@@ -256,6 +275,49 @@ impl McpEngine {
             }
             _ => JsonRpcResponse::err(id, -32601, format!("Method not found: {}", req.method)),
         }
+    }
+
+    pub fn snapshot_spatial(p: &Project) -> Value {
+        let tracks: Vec<Value> = p
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let cfg = p.eclipsa_tracks.get(&i).cloned().unwrap_or_default();
+                let role = match cfg.role {
+                    crate::model::EclipsaTrackRole::SurroundBed => "bed",
+                    crate::model::EclipsaTrackRole::Object3D => "object",
+                    crate::model::EclipsaTrackRole::Off => "off",
+                };
+                json!({
+                    "track_index": i,
+                    "name": t.name,
+                    "role": role,
+                    "object": {
+                        "left_right": cfg.object.left_right,
+                        "back_front": cfg.object.back_front,
+                        "elevation": cfg.object.elevation,
+                        "size": cfg.object.size,
+                        "spread_deg": cfg.object.spread_deg,
+                        "binaural": cfg.object.binaural.label(),
+                    },
+                    "surround": {
+                        "angle_deg": cfg.surround.angle_deg,
+                        "diversity": cfg.surround.diversity,
+                        "elevation_deg": cfg.surround.elevation_deg,
+                        "spread_deg": cfg.surround.spread_deg,
+                        "center_db": cfg.surround.center_db,
+                        "lfe_db": cfg.surround.lfe_db,
+                    }
+                })
+            })
+            .collect();
+        json!({
+            "spatial_format": p.spatial_format.label(),
+            "enabled": p.eclipsa_master.enabled,
+            "monitoring": p.eclipsa_master.monitoring.label(),
+            "tracks": tracks,
+        })
     }
 
     pub fn snapshot_project_state(p: &Project) -> Value {
@@ -809,14 +871,85 @@ impl McpEngine {
             }),
             json!({
                 "name": "set_workspace_view",
-                "description": "Toggle visibility of workspace panels (Mixer, Library, Inspector, MultiMeter).",
+                "description": "Toggle visibility of workspace panels and studio windows (Mixer, Library, Inspector, MultiMeter, Eclipsa Renderer/Panner, Modulation Drawer, Diagnostics, Collaborate, Git A/B).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "show_mixer": { "type": "boolean" },
                         "show_library": { "type": "boolean" },
                         "show_inspector": { "type": "boolean" },
-                        "show_multimeter": { "type": "boolean" }
+                        "show_multimeter": { "type": "boolean" },
+                        "show_eclipsa_renderer": { "type": "boolean" },
+                        "show_eclipsa_panner": { "type": "boolean" },
+                        "show_modulation_drawer": { "type": "boolean" },
+                        "show_diagnostics": { "type": "boolean" },
+                        "show_collaborate": { "type": "boolean" },
+                        "git_ab_audition": { "type": "boolean" }
+                    }
+                }
+            }),
+            json!({
+                "name": "configure_eclipsa_spatial",
+                "description": "Configure Eclipsa Audio spatial format, monitoring layout, and per-track 3D Object or Surround Panner parameters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "spatial_format": { "type": "string", "enum": ["stereo", "5.1", "7.1.2", "eclipsa"] },
+                        "enabled": { "type": "boolean" },
+                        "monitoring": { "type": "string", "enum": ["binaural", "stereo", "5.1", "7.1.4"] },
+                        "track_index": { "type": "integer" },
+                        "role": { "type": "string", "enum": ["bed", "object", "off"] },
+                        "left_right": { "type": "number" },
+                        "back_front": { "type": "number" },
+                        "elevation": { "type": "number" },
+                        "size": { "type": "number" },
+                        "spread_deg": { "type": "number" },
+                        "binaural": { "type": "string", "enum": ["off", "near", "mid", "far"] },
+                        "angle_deg": { "type": "number" },
+                        "diversity": { "type": "number" },
+                        "center_db": { "type": "number" },
+                        "lfe_db": { "type": "number" }
+                    }
+                }
+            }),
+            json!({
+                "name": "configure_stem_splitter",
+                "description": "Open/close the Stem Splitter sheet and configure Vocals/Drums/Bass/Other stem flags, de-bleed percentage, and source mute.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "open": { "type": "boolean" },
+                        "vocals": { "type": "boolean" },
+                        "drums": { "type": "boolean" },
+                        "bass": { "type": "boolean" },
+                        "other": { "type": "boolean" },
+                        "debleed_pct": { "type": "number" },
+                        "mute_source_region": { "type": "boolean" },
+                        "individual_kit_pieces": { "type": "boolean" }
+                    }
+                }
+            }),
+            json!({
+                "name": "configure_modulation",
+                "description": "Configure the Modulation Matrix drawer, LFO rates, macro knobs, or add a modulation route.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "open": { "type": "boolean" },
+                        "lfo1_hz": { "type": "number" },
+                        "lfo2_hz": { "type": "number" },
+                        "macro1": { "type": "number" },
+                        "macro2": { "type": "number" },
+                        "add_route": {
+                            "type": "object",
+                            "properties": {
+                                "source": { "type": "string", "enum": ["lfo1", "lfo2", "env", "macro1", "macro2"] },
+                                "target_plugin": { "type": "string" },
+                                "target_param": { "type": "string" },
+                                "depth": { "type": "number" }
+                            },
+                            "required": ["source", "target_plugin", "target_param", "depth"]
+                        }
                     }
                 }
             }),
@@ -1526,11 +1659,213 @@ impl McpEngine {
                 if let Some(mm) = args["show_multimeter"].as_bool() {
                     s.show_multimeter = mm;
                 }
+                if let Some(er) = args["show_eclipsa_renderer"].as_bool() {
+                    s.show_eclipsa_renderer = er;
+                }
+                if let Some(ep) = args["show_eclipsa_panner"].as_bool() {
+                    s.show_eclipsa_panner = ep;
+                }
+                if let Some(md) = args["show_modulation_drawer"].as_bool() {
+                    s.modulation_drawer.open = md;
+                }
+                if let Some(dg) = args["show_diagnostics"].as_bool() {
+                    s.diagnostics_window.open = dg;
+                }
+                if let Some(cb) = args["show_collaborate"].as_bool() {
+                    s.show_collaborate = cb;
+                }
+                if let Some(ab) = args["git_ab_audition"].as_bool() {
+                    s.git_ab_audition = ab;
+                }
                 Ok(json!({
                     "show_mixer": s.show_mixer,
                     "show_library": s.show_library,
                     "show_inspector": s.show_inspector,
-                    "show_multimeter": s.show_multimeter
+                    "show_multimeter": s.show_multimeter,
+                    "show_eclipsa_renderer": s.show_eclipsa_renderer,
+                    "show_eclipsa_panner": s.show_eclipsa_panner,
+                    "show_modulation_drawer": s.modulation_drawer.open,
+                    "show_diagnostics": s.diagnostics_window.open,
+                    "show_collaborate": s.show_collaborate,
+                    "git_ab_audition": s.git_ab_audition
+                }))
+            }
+            "configure_eclipsa_spatial" => {
+                use prowave_engine::eclipsa::{BinauralMode, MonitoringFormat, SpatialFormat};
+                if let Some(fmt) = args["spatial_format"].as_str() {
+                    p.spatial_format = match fmt.to_ascii_lowercase().as_str() {
+                        "stereo" => SpatialFormat::Stereo,
+                        "5.1" => SpatialFormat::Surround51,
+                        "7.1.2" => SpatialFormat::Surround712,
+                        "eclipsa" | "eclipsa_audio" => {
+                            p.eclipsa_master.enabled = true;
+                            p.smpte_rate = prowave_engine::SmpteRate::Fps24;
+                            SpatialFormat::EclipsaAudio
+                        }
+                        other => return Err(format!("Unknown spatial_format: {other}")),
+                    };
+                }
+                if let Some(en) = args["enabled"].as_bool() {
+                    p.eclipsa_master.enabled = en;
+                }
+                if let Some(mon) = args["monitoring"].as_str() {
+                    p.eclipsa_master.monitoring = match mon.to_ascii_lowercase().as_str() {
+                        "binaural" => MonitoringFormat::Binaural,
+                        "stereo" => MonitoringFormat::Stereo,
+                        "5.1" => MonitoringFormat::Surround51,
+                        "7.1.4" => MonitoringFormat::Surround714,
+                        other => return Err(format!("Unknown monitoring format: {other}")),
+                    };
+                }
+                if let Some(ti) = args["track_index"].as_u64().map(|v| v as usize) {
+                    if ti >= p.tracks.len() {
+                        return Err(format!("Track index {ti} out of bounds"));
+                    }
+                    let cfg = p.eclipsa_tracks.entry(ti).or_default();
+                    if let Some(role) = args["role"].as_str() {
+                        cfg.role = match role.to_ascii_lowercase().as_str() {
+                            "bed" => crate::model::EclipsaTrackRole::SurroundBed,
+                            "object" => crate::model::EclipsaTrackRole::Object3D,
+                            "off" => crate::model::EclipsaTrackRole::Off,
+                            other => return Err(format!("Unknown track role: {other}")),
+                        };
+                    }
+                    if let Some(v) = args["left_right"].as_f64() {
+                        cfg.object.left_right = (v as f32).clamp(-1.0, 1.0);
+                    }
+                    if let Some(v) = args["back_front"].as_f64() {
+                        cfg.object.back_front = (v as f32).clamp(-1.0, 1.0);
+                    }
+                    if let Some(v) = args["elevation"].as_f64() {
+                        cfg.object.elevation = (v as f32).clamp(0.0, 1.0);
+                    }
+                    if let Some(v) = args["size"].as_f64() {
+                        cfg.object.size = (v as f32).clamp(0.0, 1.0);
+                    }
+                    if let Some(v) = args["spread_deg"].as_f64() {
+                        let deg = (v as f32).clamp(0.0, 180.0);
+                        cfg.object.spread_deg = deg;
+                        cfg.surround.spread_deg = deg;
+                    }
+                    if let Some(bm) = args["binaural"].as_str() {
+                        cfg.object.binaural = match bm.to_ascii_lowercase().as_str() {
+                            "off" => BinauralMode::Off,
+                            "near" => BinauralMode::Near,
+                            "mid" => BinauralMode::Mid,
+                            "far" => BinauralMode::Far,
+                            other => return Err(format!("Unknown binaural mode: {other}")),
+                        };
+                    }
+                    if let Some(v) = args["angle_deg"].as_f64() {
+                        cfg.surround.angle_deg = (v as f32).clamp(-180.0, 180.0);
+                    }
+                    if let Some(v) = args["diversity"].as_f64() {
+                        cfg.surround.diversity = (v as f32).clamp(0.0, 1.0);
+                    }
+                    if let Some(v) = args["center_db"].as_f64() {
+                        cfg.surround.center_db = (v as f32).clamp(-60.0, 0.0);
+                    }
+                    if let Some(v) = args["lfe_db"].as_f64() {
+                        cfg.surround.lfe_db = (v as f32).clamp(-60.0, 0.0);
+                    }
+                }
+                Ok(Self::snapshot_spatial(p))
+            }
+            "configure_stem_splitter" => {
+                if let Some(open) = args["open"].as_bool() {
+                    if open {
+                        s.stem_splitter.open_dialog();
+                    } else {
+                        s.stem_splitter.open = false;
+                    }
+                }
+                if let Some(v) = args["vocals"].as_bool() {
+                    s.stem_splitter.include_stems[0] = v;
+                }
+                if let Some(v) = args["drums"].as_bool() {
+                    s.stem_splitter.include_stems[1] = v;
+                }
+                if let Some(v) = args["bass"].as_bool() {
+                    s.stem_splitter.include_stems[2] = v;
+                }
+                if let Some(v) = args["other"].as_bool() {
+                    s.stem_splitter.include_stems[3] = v;
+                }
+                if let Some(v) = args["debleed_pct"].as_f64() {
+                    s.stem_splitter.debleed_pct = (v as f32).clamp(0.0, 100.0);
+                }
+                if let Some(v) = args["mute_source_region"].as_bool() {
+                    s.stem_splitter.mute_source_region = v;
+                }
+                if let Some(v) = args["individual_kit_pieces"].as_bool() {
+                    s.stem_splitter.individual_kit_pieces = v;
+                }
+                Ok(json!({
+                    "open": s.stem_splitter.open,
+                    "include_stems": s.stem_splitter.include_stems,
+                    "debleed_pct": s.stem_splitter.debleed_pct,
+                    "mute_source_region": s.stem_splitter.mute_source_region,
+                    "individual_kit_pieces": s.stem_splitter.individual_kit_pieces
+                }))
+            }
+            "configure_modulation" => {
+                if let Some(open) = args["open"].as_bool() {
+                    s.modulation_drawer.open = open;
+                }
+                if let Some(v) = args["lfo1_hz"].as_f64() {
+                    s.modulation_drawer.lfo1_hz = (v as f32).clamp(0.05, 40.0);
+                }
+                if let Some(v) = args["lfo2_hz"].as_f64() {
+                    s.modulation_drawer.lfo2_hz = (v as f32).clamp(0.05, 40.0);
+                }
+                if let Some(v) = args["macro1"].as_f64() {
+                    s.modulation_drawer.macro1 = (v as f32).clamp(0.0, 1.0);
+                }
+                if let Some(v) = args["macro2"].as_f64() {
+                    s.modulation_drawer.macro2 = (v as f32).clamp(0.0, 1.0);
+                }
+                if let Some(route) = args["add_route"].as_object() {
+                    let src = match route
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
+                        "lfo1" => crate::modulation_drawer::ModSourceKind::Lfo1,
+                        "lfo2" => crate::modulation_drawer::ModSourceKind::Lfo2,
+                        "env" => crate::modulation_drawer::ModSourceKind::EnvFollower,
+                        "macro1" => crate::modulation_drawer::ModSourceKind::Macro1,
+                        "macro2" => crate::modulation_drawer::ModSourceKind::Macro2,
+                        other => return Err(format!("Unknown mod source: {other}")),
+                    };
+                    let target_plugin = route
+                        .get("target_plugin")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Channel EQ")
+                        .to_string();
+                    let target_param = route
+                        .get("target_param")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Mid Freq")
+                        .to_string();
+                    let depth = route.get("depth").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                    s.modulation_drawer
+                        .routes
+                        .push(crate::modulation_drawer::ModRoute {
+                            source: src,
+                            target_plugin,
+                            target_param,
+                            depth: depth.clamp(-1.0, 1.0),
+                        });
+                }
+                Ok(json!({
+                    "open": s.modulation_drawer.open,
+                    "lfo1_hz": s.modulation_drawer.lfo1_hz,
+                    "lfo2_hz": s.modulation_drawer.lfo2_hz,
+                    "macro1": s.modulation_drawer.macro1,
+                    "macro2": s.modulation_drawer.macro2,
+                    "route_count": s.modulation_drawer.routes.len()
                 }))
             }
             _ => Err(format!("Unknown tool: {name}")),
@@ -1698,7 +2033,7 @@ mod tests {
             .as_array()
             .cloned()
             .unwrap();
-        assert_eq!(resources.len(), 4);
+        assert_eq!(resources.len(), 5);
 
         let read_req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -1940,5 +2275,78 @@ mod tests {
             crate::project_settings::MiddleCDisplay::C3YamahaRoland
         );
         assert!(!s.app_settings.show_fader_db);
+    }
+
+    #[test]
+    fn mcp_eclipsa_stem_splitter_and_modulation_tools_work() {
+        let mut p = Project::demo();
+        let mut s = UiState::new();
+
+        let sp_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(201)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_eclipsa_spatial",
+                "arguments": {
+                    "spatial_format": "eclipsa",
+                    "monitoring": "binaural",
+                    "track_index": 0,
+                    "role": "object",
+                    "left_right": 0.4,
+                    "back_front": 0.8,
+                    "elevation": 0.6,
+                    "binaural": "near"
+                }
+            })),
+        };
+        let sp_resp = McpEngine::handle_request(sp_req, &mut p, &mut s, None);
+        assert!(sp_resp.error.is_none());
+        assert_eq!(
+            p.spatial_format,
+            prowave_engine::eclipsa::SpatialFormat::EclipsaAudio
+        );
+        assert!(p.eclipsa_master.enabled);
+        let cfg = p.eclipsa_tracks.get(&0).unwrap();
+        assert_eq!(cfg.role, crate::model::EclipsaTrackRole::Object3D);
+        assert!((cfg.object.left_right - 0.4).abs() < 1e-4);
+
+        let st_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(202)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_stem_splitter",
+                "arguments": { "open": true, "vocals": true, "drums": false, "debleed_pct": 25.0 }
+            })),
+        };
+        let st_resp = McpEngine::handle_request(st_req, &mut p, &mut s, None);
+        assert!(st_resp.error.is_none());
+        assert!(s.stem_splitter.open);
+        assert!(!s.stem_splitter.include_stems[1]);
+        assert!((s.stem_splitter.debleed_pct - 25.0).abs() < 1e-4);
+
+        let mod_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(203)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "configure_modulation",
+                "arguments": {
+                    "open": true,
+                    "lfo1_hz": 3.5,
+                    "add_route": {
+                        "source": "lfo1",
+                        "target_plugin": "Pult EQ",
+                        "target_param": "High Boost",
+                        "depth": 0.6
+                    }
+                }
+            })),
+        };
+        let mod_resp = McpEngine::handle_request(mod_req, &mut p, &mut s, None);
+        assert!(mod_resp.error.is_none());
+        assert!(s.modulation_drawer.open);
+        assert!((s.modulation_drawer.lfo1_hz - 3.5).abs() < 1e-4);
     }
 }

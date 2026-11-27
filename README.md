@@ -50,7 +50,7 @@ Counted directly from source (`menus::enabled` and `ROADMAP.md`). Run `cargo xta
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
 | Menu entries | 231 | 0 | 337 | 68.55% |
-| Roadmap items | 15 | 2 | 27 | 55.56% |
+| Roadmap items | 16 | 2 | 28 | 57.14% |
 
 </div>
 <!-- status:end -->
@@ -63,9 +63,9 @@ Counted directly from source (`menus::enabled` and `ROADMAP.md`). Run `cargo xta
 - **Arranging & Editing:** Multi-track arranger (Audio, Instrument, Drummer, Pattern, Aux, VCA, Folder, External MIDI), Marquee selection, gap-free snap grid, Option/Alt-drag duplication, Take Folders, Per-Note PSOLA Pitch Editor, and autosave crash recovery.
 - **MIDI & Scoring:** Piano Roll (swing/scale quantize, velocity/CC lanes), Step Sequencer, Event List, MIDI FX chain (including sandboxed Rhai **Scripter**), and Score Editor with MusicXML export.
 - **Built-In Instruments:** Transient-Slicing Sampler (`Pads` / `Slices` / `Instrument` with interactive ADSR), Modal Voice, TripleOscillator (`TriOsc`), WaveDraw wavetable synth, 808 Bass, Subtractive Synth, Electric Piano, Tonewheel Organ, velocity-metered Drum Machine, and `.exs`/`.sfz`/`.sf2` playback.
-- **DSP Effects, Stem Splitter & Metering:** Multi-model Compressor, Pult EQ, 8-band Channel EQ, Convolution Reverb, Lemon Studio Dynamics, Bode Frequency Shifter, Auto-Pan, local AI **Stem Splitter**, and **MultiMeter** (ITU-R BS.1770-4 LUFS, 4× True Peak, 45° goniometer, IEC VU/PPM ballistics).
+- **DSP Effects, Stem Splitter & Spatial Audio:** Multi-model Compressor, Pult EQ, 8-band Channel EQ, Convolution Reverb, Lemon Studio Dynamics, Bode Frequency Shifter, Auto-Pan, local AI **Stem Splitter**, **Eclipsa Audio (7.1.2 / 7.1.4 IAMF)** Spatial Renderer + 3D Object / Surround Panners, and **MultiMeter** (ITU-R BS.1770-4 LUFS, 4× True Peak, 45° goniometer, IEC VU/PPM ballistics).
 - **Mixing, Bounce & Interop:** 64-bit mixer with automation (`Read`/`Touch`/`Latch`/`Write`), offline bounce up to `500×` real-time with TPDF dithering, stem export, and `.logicx`/`.band`/`.h2song`/`.mid` import.
-- **Plugins, UI & Automation:** CLAP/VST3/LADSPA/AU hosting with native X11/XWayland windows, Vulkan (`wgpu`) Liquid Glass UI, Command Palette, Modulation Matrix drawer, and built-in MCP server (`127.0.0.1:38420` / `--mcp-stdio`).
+- **Plugins, UI & Automation:** CLAP/VST3/LADSPA/AU hosting with native X11/XWayland windows, Vulkan (`wgpu`) Liquid Glass UI, Command Palette, Modulation Matrix drawer, and built-in MCP server (`127.0.0.1:38420` / `--mcp-stdio`) with full transport, mixer, spatial, stem-splitter, and modulation tools.
 
 ## Quick Start
 
