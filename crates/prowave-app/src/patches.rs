@@ -547,10 +547,24 @@ fn synth_for(name: &str) -> SynthPatch {
     }
 }
 
+fn percussion_for(name: &str) -> SynthPatch {
+    let n = name.to_lowercase();
+    if n.contains("frame") {
+        kit(Kit::FrameDrum)
+    } else if n.contains("shaker") {
+        kit(Kit::Shaker)
+    } else if n.contains("tambourine") {
+        kit(Kit::Tambourine)
+    } else {
+        kit(Kit::Conga)
+    }
+}
+
 fn by_category(category: &str, name: &str) -> SynthPatch {
     match category {
         "Bass" => bass_for(name),
-        "Drum Kit" | "Percussion" => kit(Kit::Acoustic),
+        "Drum Kit" => kit(Kit::Acoustic),
+        "Percussion" => percussion_for(name),
         "Electronic Drum Kit" => kit(Kit::Electronic),
         "Guitar" | "Guitar Amp" => pluck_for(name),
         "Keyboards" | "Vintage Electric Piano" => electric_piano_for(name),
@@ -702,6 +716,24 @@ mod tests {
         let patch = synth_patch(&track_with("Vintage B3 Organ", "Drawbar Organ"));
         assert_eq!(patch.voice, VoiceKind::DrawbarOrgan);
         assert!(patch.drawbars.iter().any(|&level| level > 0));
+    }
+
+    #[test]
+    fn percussion_kits_map_to_distinct_kit_families() {
+        let kits = [
+            "Conga Set",
+            "Frame Drum",
+            "Shaker Loop Kit",
+            "Tambourine Kit",
+        ];
+        let resolved: Vec<Kit> = kits
+            .iter()
+            .map(|name| synth_patch(&track_with("Percussion", name)).kit)
+            .collect();
+        assert_eq!(
+            resolved,
+            vec![Kit::Conga, Kit::FrameDrum, Kit::Shaker, Kit::Tambourine,]
+        );
     }
 
     #[test]

@@ -44,6 +44,10 @@ pub enum Kit {
     None,
     Acoustic,
     Electronic,
+    Conga,
+    FrameDrum,
+    Shaker,
+    Tambourine,
 }
 
 /// Two oscillators + noise → low/high-pass filter with envelope → ADSR amplitude.
@@ -257,8 +261,164 @@ impl Svf {
 /// General MIDI drum layout (Kick 35/36, Snare 38/40, Clap 37/39, Closed/Pedal Hat 42/44,
 /// Open Hat 46, Toms 41/43/45/47/48/50, Crash 49/57, Ride 51/59) synthesized with DSP
 /// modeling inspired by Soundcraft (storytold/soundcraft, dual MIT / Apache-2.0).
+fn percussion_voice(kit: Kit, mut p: SynthPatch, pitch: u8) -> (SynthPatch, f32) {
+    let shift = ((pitch as f32) - 48.0).clamp(-12.0, 24.0) * 0.015;
+    let hz = match kit {
+        Kit::Conga => {
+            p.wave_a = Wave::Sine;
+            p.wave_b = Wave::Triangle;
+            p.level_a = 0.85;
+            p.level_b = 0.25;
+            p.semi_b = 7.0;
+            p.resonance = 0.32;
+            p.pitch_drop = 6.5;
+            p.pitch_decay = 0.035;
+            p.gain *= 1.35;
+            match pitch % 4 {
+                0 => {
+                    p.cutoff = 1400.0;
+                    p.noise = 0.06;
+                    p.decay = 0.34;
+                    p.release = 0.08;
+                    148.0 * (1.0 + shift)
+                }
+                1 => {
+                    p.cutoff = 1750.0;
+                    p.noise = 0.08;
+                    p.decay = 0.28;
+                    p.release = 0.07;
+                    196.0 * (1.0 + shift)
+                }
+                2 => {
+                    p.cutoff = 2600.0;
+                    p.noise = 0.35;
+                    p.decay = 0.14;
+                    p.release = 0.05;
+                    262.0 * (1.0 + shift)
+                }
+                _ => {
+                    p.cutoff = 950.0;
+                    p.noise = 0.18;
+                    p.decay = 0.09;
+                    p.release = 0.04;
+                    170.0 * (1.0 + shift)
+                }
+            }
+        }
+        Kit::FrameDrum => {
+            p.wave_a = Wave::Sine;
+            p.wave_b = Wave::Sine;
+            p.level_a = 0.9;
+            p.level_b = 0.3;
+            p.semi_b = 12.0;
+            p.attack = 0.004;
+            p.resonance = 0.25;
+            p.pitch_drop = 4.0;
+            p.pitch_decay = 0.06;
+            p.gain *= 1.45;
+            match pitch % 3 {
+                0 => {
+                    p.cutoff = 900.0;
+                    p.noise = 0.05;
+                    p.decay = 0.55;
+                    p.release = 0.12;
+                    92.0 * (1.0 + shift)
+                }
+                1 => {
+                    p.cutoff = 1600.0;
+                    p.noise = 0.16;
+                    p.decay = 0.30;
+                    p.release = 0.08;
+                    142.0 * (1.0 + shift)
+                }
+                _ => {
+                    p.cutoff = 2200.0;
+                    p.noise = 0.28;
+                    p.decay = 0.18;
+                    p.release = 0.06;
+                    185.0 * (1.0 + shift)
+                }
+            }
+        }
+        Kit::Shaker => {
+            p.level_a = 0.0;
+            p.level_b = 0.0;
+            p.highpass = true;
+            p.noise = 0.9;
+            p.release = 0.03;
+            p.gain *= 1.15;
+            match pitch % 4 {
+                0 => {
+                    p.attack = 0.018;
+                    p.decay = 0.075;
+                    p.cutoff = 6200.0;
+                    p.resonance = 0.28;
+                }
+                1 => {
+                    p.attack = 0.004;
+                    p.decay = 0.045;
+                    p.cutoff = 8500.0;
+                    p.resonance = 0.20;
+                }
+                2 => {
+                    p.attack = 0.010;
+                    p.decay = 0.11;
+                    p.cutoff = 5200.0;
+                    p.resonance = 0.38;
+                }
+                _ => {
+                    p.attack = 0.024;
+                    p.decay = 0.14;
+                    p.cutoff = 7200.0;
+                    p.resonance = 0.15;
+                }
+            }
+            440.0
+        }
+        Kit::Tambourine => {
+            p.wave_a = Wave::Triangle;
+            p.wave_b = Wave::Sine;
+            p.semi_b = 19.0;
+            p.highpass = true;
+            p.resonance = 0.35;
+            p.release = 0.06;
+            p.gain *= 1.1;
+            match pitch % 3 {
+                0 => {
+                    p.level_a = 0.25;
+                    p.level_b = 0.20;
+                    p.noise = 0.85;
+                    p.cutoff = 6800.0;
+                    p.attack = 0.008;
+                    p.decay = 0.22;
+                    1180.0
+                }
+                1 => {
+                    p.level_a = 0.45;
+                    p.level_b = 0.25;
+                    p.noise = 0.90;
+                    p.cutoff = 5400.0;
+                    p.attack = 0.002;
+                    p.decay = 0.28;
+                    760.0
+                }
+                _ => {
+                    p.level_a = 0.20;
+                    p.level_b = 0.15;
+                    p.noise = 0.75;
+                    p.cutoff = 8200.0;
+                    p.attack = 0.003;
+                    p.decay = 0.09;
+                    1420.0
+                }
+            }
+        }
+        Kit::None | Kit::Acoustic | Kit::Electronic => 440.0,
+    };
+    (p, hz)
+}
+
 pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
-    let electronic = base.kit == Kit::Electronic;
     let mut p = SynthPatch {
         kit: base.kit,
         gain: base.gain,
@@ -267,6 +427,13 @@ pub fn kit_voice(base: &SynthPatch, pitch: u8) -> (SynthPatch, f32) {
     p.attack = 0.001;
     p.sustain = 0.0;
     p.level_b = 0.0;
+    if matches!(
+        base.kit,
+        Kit::Conga | Kit::FrameDrum | Kit::Shaker | Kit::Tambourine
+    ) {
+        return percussion_voice(base.kit, p, pitch);
+    }
+    let electronic = base.kit == Kit::Electronic;
     let hz = match pitch {
         0..=36 => {
             // Kick (35/36 standard GM)
@@ -465,5 +632,38 @@ mod tests {
             36,
         );
         assert!(e_kick.decay > kick.decay);
+    }
+
+    #[test]
+    fn percussion_kits_produce_distinct_voices() {
+        let kits = [Kit::Conga, Kit::FrameDrum, Kit::Shaker, Kit::Tambourine];
+        let voices: Vec<(SynthPatch, f32)> = kits
+            .iter()
+            .map(|&kit| {
+                kit_voice(
+                    &SynthPatch {
+                        kit,
+                        ..SynthPatch::default()
+                    },
+                    36,
+                )
+            })
+            .collect();
+        // Every pair of percussion kits differs in voice parameters or pitch.
+        for i in 0..voices.len() {
+            for j in (i + 1)..voices.len() {
+                assert_ne!(
+                    voices[i], voices[j],
+                    "kits {:?} and {:?} sounded identical",
+                    kits[i], kits[j]
+                );
+            }
+        }
+        // Shaker is pure high-passed noise; Conga & FrameDrum have pitched bodies.
+        assert_eq!(voices[2].0.level_a, 0.0);
+        assert!(voices[2].0.highpass);
+        assert!(voices[0].0.level_a > 0.5);
+        assert!(voices[1].1 < voices[0].1);
+        assert!(voices[3].0.highpass && voices[3].0.level_a > 0.0);
     }
 }
