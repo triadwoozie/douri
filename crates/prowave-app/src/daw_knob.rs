@@ -22,6 +22,7 @@ pub enum DawKnobFinish {
     VintageFluted,
     MiniMoog,
     Jp8000,
+    LogicSession,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -297,26 +298,33 @@ pub fn draw_custom(
         finish,
     );
 
-    // Interactive value readout below the knob (click/double-click for inline text edit)
-    let readout_rect = Rect::from_center_size(
-        pos2(cell.center().x, center.y + radius + 12.0),
-        vec2(cell.width().max(56.0), 16.0),
-    );
-    let readout_id = cfg.id.with("readout_edit");
-    if let Some(edited) = crate::widgets::daw_param_readout(
-        ui,
-        g,
-        readout_rect,
-        readout_id,
-        &format_value(cfg.unit, val),
-        cfg.unit,
-        cfg.min,
-        cfg.max,
-        resp.hovered() || resp.dragged(),
-        midi_cc,
-    ) {
-        val = edited;
-        changed = true;
+    // Interactive value readout below the knob (hidden for clean LogicSession layout; shown on hover)
+    if finish == DawKnobFinish::LogicSession {
+        if resp.hovered() || resp.dragged() {
+            resp.clone()
+                .on_hover_text(format!("{}: {}", cfg.label, format_value(cfg.unit, val)));
+        }
+    } else {
+        let readout_rect = Rect::from_center_size(
+            pos2(cell.center().x, center.y + radius + 12.0),
+            vec2(cell.width().max(56.0), 16.0),
+        );
+        let readout_id = cfg.id.with("readout_edit");
+        if let Some(edited) = crate::widgets::daw_param_readout(
+            ui,
+            g,
+            readout_rect,
+            readout_id,
+            &format_value(cfg.unit, val),
+            cfg.unit,
+            cfg.min,
+            cfg.max,
+            resp.hovered() || resp.dragged(),
+            midi_cc,
+        ) {
+            val = edited;
+            changed = true;
+        }
     }
 
     DawKnobResult {
@@ -353,22 +361,24 @@ fn paint_daw_knob(
 
     match style {
         DawKnobStyle::Continuous => {
-            // Subtle graduation ticks outside the recessed track
-            let tick_in = track_r + 3.0;
-            let tick_out = track_r + 5.5;
-            for i in 0..=10 {
-                let frac = i as f32 / 10.0;
-                let a = (start_deg + frac * sweep_deg - 90.0).to_radians();
-                let d = vec2(a.cos(), a.sin());
-                let w = if i == 0 || i == 5 || i == 10 {
-                    1.3
-                } else {
-                    0.9
-                };
-                g.line_segment(
-                    [c + d * tick_in, c + d * tick_out],
-                    Stroke::new(w, Color32::from_rgb(0x4a, 0x4d, 0x54)),
-                );
+            if finish != DawKnobFinish::LogicSession {
+                // Subtle graduation ticks outside the recessed track
+                let tick_in = track_r + 3.0;
+                let tick_out = track_r + 5.5;
+                for i in 0..=10 {
+                    let frac = i as f32 / 10.0;
+                    let a = (start_deg + frac * sweep_deg - 90.0).to_radians();
+                    let d = vec2(a.cos(), a.sin());
+                    let w = if i == 0 || i == 5 || i == 10 {
+                        1.3
+                    } else {
+                        0.9
+                    };
+                    g.line_segment(
+                        [c + d * tick_in, c + d * tick_out],
+                        Stroke::new(w, Color32::from_rgb(0x4a, 0x4d, 0x54)),
+                    );
+                }
             }
 
             // Recessed circular track groove (3.0px, #303030)
@@ -483,6 +493,26 @@ fn paint_daw_knob(
             g.circle_filled(c, cap_r * 0.72, Color32::from_rgb(0x2c, 0x2e, 0x35));
             let led_pos = c + dir * (cap_r * 0.62);
             g.circle_filled(led_pos, 2.6, arc_col);
+        }
+        DawKnobFinish::LogicSession => {
+            // Clean dark dial with subtle bevel and golden-yellow radial pointer
+            g.circle_filled(c, cap_r, Color32::from_rgb(0x34, 0x36, 0x3c));
+            g.circle_stroke(
+                c,
+                cap_r,
+                Stroke::new(
+                    1.0,
+                    if active {
+                        Color32::from_rgb(0x5c, 0x60, 0x6b)
+                    } else {
+                        Color32::from_rgb(0x45, 0x48, 0x50)
+                    },
+                ),
+            );
+            g.line_segment(
+                [c + dir * (cap_r * 0.34), c + dir * (cap_r - 1.5)],
+                Stroke::new(2.0, arc_col),
+            );
         }
     }
 }

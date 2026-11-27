@@ -1,14 +1,8 @@
-//! Bottom Session Player Editor (`session1.png` & `session2.png` layout).
+//! Bottom Session Player Editor (`sessionrefs/Untitled.png`, `session1.png`, `session2.png` layout
+//! using the `Untitled.png` / `session1.png` dark + golden-ochre color system).
 //!
-//! Replicates the Logic Pro Session Player Editor: top `Session Player` header strip,
-//! unified `Chords` pill, `Preset:` selector with double-chevron indicator, segmented
-//! Pointer/Pencil tool switcher, `Snap:` dropdown + magnet button, catch-playhead +
-//! zoom slider, beat-subdivision ruler + region strip (triangular velocity transients for
-//! Drummer; note stems + pitch-bend glides for Keyboard/Bass), left column (wireframe kit /
-//! synth / piano disc with radial yellow glow, `Regenerate`, thick vertical yellow
-//! `Complexity` & `Intensity` faders), compact borderless segmented tab bar (3 tabs for
-//! Drummer, 5 tabs for Keyboard/Bass), Drummer kit piece toggles + 4x4 pattern dot matrices,
-//! and right-hand golden-yellow `daw_knob` Fill & Swing controls with lock icons.
+//! Uses Dori's `daw_knob::draw_custom` (`DawKnobFinish::LogicSession`), `widgets::daw_adsr_envelope`,
+//! and `phosphor_egui::regular` vector icons throughout.
 
 use crate::daw_knob::{self, DawKnobConfig, DawKnobFinish, DawKnobStyle};
 use crate::model::{Generator, Project, PITCH_BEND};
@@ -24,16 +18,18 @@ use egui::{
     StrokeKind, Ui,
 };
 
-const BG_DARK: Color32 = Color32::from_rgb(0x1b, 0x1c, 0x20);
-const STRIP_BG: Color32 = Color32::from_rgb(0x17, 0x18, 0x1c);
-const CARD_BG: Color32 = Color32::from_rgb(0x21, 0x22, 0x27);
-const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
-const PILL_BG: Color32 = Color32::from_rgb(0x2a, 0x2c, 0x33);
-const BORDER: Color32 = Color32::from_rgb(0x34, 0x36, 0x3e);
+const BG_DARK: Color32 = Color32::from_rgb(0x18, 0x19, 0x1d);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1f, 0x20, 0x25);
+const CARD_BG: Color32 = Color32::from_rgb(0x1f, 0x20, 0x25);
+const WELL_BG: Color32 = Color32::from_rgb(0x13, 0x14, 0x18);
+const PILL_BG: Color32 = Color32::from_rgb(0x2c, 0x2e, 0x35);
+const BORDER: Color32 = Color32::from_rgb(0x2c, 0x2e, 0x35);
 const ACCENT_YELLOW: Color32 = Color32::from_rgb(0xea, 0xc3, 0x2a);
+const REGION_HEADER_BG: Color32 = Color32::from_rgb(0xeb, 0xe3, 0xbd);
+const REGION_BODY_BG: Color32 = Color32::from_rgb(0xb5, 0x99, 0x34);
 const BLUE_ACTIVE: Color32 = Color32::from_rgb(0x12, 0x69, 0xcc);
 const TEXT_MAIN: Color32 = Color32::from_rgb(0xea, 0xec, 0xf0);
-const TEXT_DIM: Color32 = Color32::from_rgb(0x8e, 0x93, 0x9e);
+const TEXT_DIM: Color32 = Color32::from_rgb(0x9a, 0x9f, 0xaa);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
@@ -165,43 +161,43 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     };
     let mut sp = orig.clone();
 
-    if sp.kind == SessionPlayerKind::Drummer
-        && matches!(tab, EditorTab::SlidesOrEnv | EditorTab::Lfo)
-    {
+    let has_five_tabs = sp.kind == SessionPlayerKind::Bass
+        || (sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad());
+    if !has_five_tabs && matches!(tab, EditorTab::SlidesOrEnv | EditorTab::Lfo) {
         tab = EditorTab::Main;
     }
 
-    // 0. Top Window Strip ("Session Player")
+    // 0. Centered Top Window Strip ("Session Player")
     egui::Frame::new()
-        .fill(STRIP_BG)
-        .stroke(Stroke::new(1.0, Color32::from_rgb(0x28, 0x2a, 0x31)))
+        .fill(BG_DARK)
+        .stroke(Stroke::new(1.0, Color32::from_rgb(0x25, 0x26, 0x2b)))
         .inner_margin(egui::Margin::symmetric(10, 3))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.vertical_centered(|ui| {
                 ui.label(
                     RichText::new("Session Player")
-                        .size(11.0)
+                        .size(11.5)
                         .strong()
                         .color(TEXT_MAIN),
                 );
             });
         });
 
-    // 1. Top Preview Toolbar (Chords pill, Preset w/ ^v, Segmented Tool Switcher, Snap/Catch/Zoom)
+    // 1. Top Toolbar
     egui::Frame::new()
-        .fill(BG_DARK)
+        .fill(TOOLBAR_BG)
         .inner_margin(egui::Margin::symmetric(10, 4))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                // Unified "Chords v" dropdown pill
+                // Left: Chords v + Preset: <name> ^v
                 let chords_lbl = format!("Chords  {}", phosphor_egui::regular::CARET_DOWN);
-                let chords_btn =
+                let chords_resp = ui.add(
                     egui::Button::new(RichText::new(chords_lbl).size(11.0).color(TEXT_MAIN))
                         .fill(PILL_BG)
                         .stroke(Stroke::new(1.0, BORDER))
                         .corner_radius(CornerRadius::same(4))
-                        .min_size(vec2(72.0, 20.0));
-                let chords_resp = ui.add(chords_btn);
+                        .min_size(vec2(72.0, 21.0)),
+                );
                 egui::Popup::menu(&chords_resp).show(|ui| {
                     if ui
                         .button("Use Default Progression (Cmaj7 - Am7 - Fmaj7 - G7)")
@@ -227,18 +223,28 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
                 ui.add_space(10.0);
                 ui.label(RichText::new("Preset:").size(11.0).color(TEXT_DIM));
-                let preset_lbl = format!(
-                    "{}   {}",
-                    sp.preset_name,
-                    phosphor_egui::regular::CARET_UP_DOWN
-                );
-                let preset_btn =
-                    egui::Button::new(RichText::new(preset_lbl).size(11.0).color(TEXT_MAIN))
-                        .fill(Color32::from_rgb(0x25, 0x27, 0x2d))
-                        .stroke(Stroke::new(1.0, BORDER))
-                        .corner_radius(CornerRadius::same(4))
-                        .min_size(vec2(158.0, 20.0));
-                let preset_resp = ui.add(preset_btn);
+                let preset_btn_w = 172.0;
+                let (p_rect, preset_resp) =
+                    ui.allocate_exact_size(vec2(preset_btn_w, 21.0), Sense::click());
+                {
+                    let g = ui.painter_at(p_rect);
+                    g.rect_filled(p_rect, 4.0, Color32::from_rgb(0x28, 0x2a, 0x31));
+                    g.rect_stroke(p_rect, 4.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+                    g.text(
+                        pos2(p_rect.left() + 8.0, p_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        &sp.preset_name,
+                        FontId::proportional(11.0),
+                        TEXT_MAIN,
+                    );
+                    g.text(
+                        pos2(p_rect.right() - 8.0, p_rect.center().y),
+                        Align2::RIGHT_CENTER,
+                        phosphor_egui::regular::CARET_UP_DOWN,
+                        FontId::proportional(11.0),
+                        TEXT_DIM,
+                    );
+                }
                 egui::Popup::menu(&preset_resp).show(|ui| {
                     for name in SESSION_PRESETS {
                         if ui.selectable_label(sp.preset_name == name, name).clicked() {
@@ -256,11 +262,11 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     }
                 });
 
-                ui.add_space((ui.available_width() * 0.12).max(12.0));
-
-                // Segmented Tool Switcher Pill (Pointer v | Pencil v)
+                // Centered Segmented Tool Switcher Pill
+                let center_pad = ((ui.available_width() - 320.0) * 0.45).max(16.0);
+                ui.add_space(center_pad);
                 egui::Frame::new()
-                    .fill(WELL_BG)
+                    .fill(PILL_BG)
                     .stroke(Stroke::new(1.0, BORDER))
                     .corner_radius(CornerRadius::same(4))
                     .inner_margin(egui::Margin::symmetric(1, 1))
@@ -283,12 +289,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                                         }),
                                     )
                                     .fill(if ptr_active {
-                                        BLUE_ACTIVE
+                                        Color32::from_rgb(0x3f, 0x42, 0x4b)
                                     } else {
                                         Color32::TRANSPARENT
                                     })
                                     .corner_radius(CornerRadius::same(3))
-                                    .min_size(vec2(34.0, 18.0)),
+                                    .min_size(vec2(34.0, 19.0)),
                                 )
                                 .on_hover_text("Pointer Tool")
                                 .clicked()
@@ -297,7 +303,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             }
 
                             let (div, _) = ui.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
-                            ui.painter().rect_filled(div, 0.0, BORDER);
+                            ui.painter()
+                                .rect_filled(div, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
 
                             let pen_txt = format!(
                                 "{} {}",
@@ -315,12 +322,12 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                                         }),
                                     )
                                     .fill(if pen_active {
-                                        BLUE_ACTIVE
+                                        Color32::from_rgb(0x3f, 0x42, 0x4b)
                                     } else {
                                         Color32::TRANSPARENT
                                     })
                                     .corner_radius(CornerRadius::same(3))
-                                    .min_size(vec2(34.0, 18.0)),
+                                    .min_size(vec2(34.0, 19.0)),
                                 )
                                 .on_hover_text("Pencil / Line Tool")
                                 .clicked()
@@ -330,8 +337,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         });
                     });
 
+                // Right: Snap: [Magnet] [Beat ^v] [|↔|] [↔ ===●==]
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // White-thumb Zoom Slider
                     draw_white_thumb_zoom_slider(ui, &mut zoom);
                     ui.add_space(4.0);
                     ui.label(
@@ -339,9 +346,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             .size(11.0)
                             .color(TEXT_DIM),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(5.0);
 
-                    // Blue Catch-Playhead Button
                     let catch_btn = egui::Button::new(
                         RichText::new(phosphor_egui::regular::ARROWS_HORIZONTAL)
                             .size(11.0)
@@ -349,39 +355,34 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     )
                     .fill(if catch_on { BLUE_ACTIVE } else { PILL_BG })
                     .corner_radius(CornerRadius::same(4))
-                    .min_size(vec2(22.0, 19.0));
+                    .min_size(vec2(24.0, 20.0));
                     if ui.add(catch_btn).on_hover_text("Catch Playhead").clicked() {
                         catch_on = !catch_on;
                     }
 
-                    ui.add_space(6.0);
+                    ui.add_space(5.0);
 
-                    // Blue Magnet Snap Toggle Button
-                    let snap_btn = egui::Button::new(
-                        RichText::new(phosphor_egui::regular::MAGNET)
-                            .size(11.0)
-                            .color(if snap_on { Color32::WHITE } else { TEXT_DIM }),
-                    )
-                    .fill(if snap_on { BLUE_ACTIVE } else { PILL_BG })
-                    .corner_radius(CornerRadius::same(4))
-                    .min_size(vec2(22.0, 19.0));
-                    if ui.add(snap_btn).on_hover_text("Toggle Snap").clicked() {
-                        snap_on = !snap_on;
+                    let (s_rect, snap_mode_resp) =
+                        ui.allocate_exact_size(vec2(78.0, 20.0), Sense::click());
+                    {
+                        let g = ui.painter_at(s_rect);
+                        g.rect_filled(s_rect, 4.0, PILL_BG);
+                        g.rect_stroke(s_rect, 4.0, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+                        g.text(
+                            pos2(s_rect.left() + 8.0, s_rect.center().y),
+                            Align2::LEFT_CENTER,
+                            snap_mode.label(),
+                            FontId::proportional(11.0),
+                            TEXT_MAIN,
+                        );
+                        g.text(
+                            pos2(s_rect.right() - 7.0, s_rect.center().y),
+                            Align2::RIGHT_CENTER,
+                            phosphor_egui::regular::CARET_UP_DOWN,
+                            FontId::proportional(10.5),
+                            TEXT_DIM,
+                        );
                     }
-
-                    // Interactive Snap Mode Dropdown ("Beat v")
-                    let snap_lbl = format!(
-                        "{} {}",
-                        snap_mode.label(),
-                        phosphor_egui::regular::CARET_DOWN
-                    );
-                    let snap_mode_resp = ui.add(
-                        egui::Button::new(RichText::new(snap_lbl).size(11.0).color(TEXT_MAIN))
-                            .fill(PILL_BG)
-                            .stroke(Stroke::new(1.0, BORDER))
-                            .corner_radius(CornerRadius::same(4))
-                            .min_size(vec2(54.0, 19.0)),
-                    );
                     egui::Popup::menu(&snap_mode_resp).show(|ui| {
                         for m in SnapMode::ALL {
                             if ui.selectable_label(snap_mode == m, m.label()).clicked() {
@@ -390,19 +391,33 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             }
                         }
                     });
+
+                    ui.add_space(4.0);
+                    let snap_btn = egui::Button::new(
+                        RichText::new(phosphor_egui::regular::MAGNET)
+                            .size(11.0)
+                            .color(if snap_on { Color32::WHITE } else { TEXT_DIM }),
+                    )
+                    .fill(if snap_on { BLUE_ACTIVE } else { PILL_BG })
+                    .corner_radius(CornerRadius::same(4))
+                    .min_size(vec2(22.0, 20.0));
+                    if ui.add(snap_btn).on_hover_text("Toggle Snap").clicked() {
+                        snap_on = !snap_on;
+                    }
                     ui.label(RichText::new("Snap:").size(11.0).color(TEXT_DIM));
                 });
             });
         });
 
-    // 2. Bar Ruler (beat subdivisions 1, 1.3, 2, 2.3...) + Zoomed Region Strip
-    let (strip_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 72.0), Sense::hover());
+    // 2. Bar Ruler + Zoomed Region Strip (always golden-ochre, never session2.png grey)
+    let (strip_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 74.0), Sense::hover());
     draw_bar_ruler_and_strip(ui, strip_rect, &p.tracks[ti].regions[ri], &sp, zoom);
 
-    ui.add_space(8.0);
+    ui.add_space(12.0);
 
-    // 3. Main Body: Left Column + Central Segmented Tab Bar & Dark Card
-    let left_col_w = 246.0;
+    // 3. Centered Main Workspace (Left Identity + Faders | Tab Bar + Main Card w/ Right Knobs)
+    let workspace_w = 780.0_f32.min(ui.available_width() - 16.0).max(640.0);
+    let left_pad = ((ui.available_width() - workspace_w) * 0.5).max(8.0);
     let third_label = if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
         "Envelope"
     } else {
@@ -410,19 +425,21 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     };
 
     ui.horizontal_top(|ui| {
-        // Left Column: Player Identity + Kit/Instrument Disc + Regenerate + Vertical Yellow Faders
+        ui.add_space(left_pad);
+
+        // Left Column: Player Identity + Wireframe Disc + Regenerate + Complexity/Intensity Faders
         ui.vertical(|ui| {
-            ui.set_width(left_col_w);
-            ui.add_space(10.0);
+            ui.set_width(244.0);
+            ui.add_space(14.0);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_width(120.0);
+                    ui.set_width(118.0);
                     let (role_lbl, style_name) = match sp.kind {
                         SessionPlayerKind::Keyboard => {
-                            ("Session Keyboardist", title_case(sp.keyboard_style.label()))
+                            ("Keyboard Player", title_case(sp.keyboard_style.label()))
                         }
                         SessionPlayerKind::Bass => {
-                            ("Session Bassist", title_case(sp.bass_style.label()))
+                            ("Bass Player", title_case(sp.bass_style.label()))
                         }
                         SessionPlayerKind::Drummer => (
                             if sp.drum_style == DrumStyle::Electronic {
@@ -435,13 +452,51 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     };
                     ui.vertical_centered(|ui| {
                         ui.label(RichText::new(role_lbl).size(10.5).color(TEXT_DIM));
-                        ui.label(
-                            RichText::new(style_name)
-                                .size(11.5)
-                                .strong()
-                                .color(ACCENT_YELLOW),
+                        let style_resp = ui.add(
+                            egui::Button::new(
+                                RichText::new(style_name)
+                                    .size(11.5)
+                                    .strong()
+                                    .color(ACCENT_YELLOW),
+                            )
+                            .fill(Color32::TRANSPARENT)
+                            .frame(false),
                         );
-                        ui.add_space(5.0);
+                        egui::Popup::menu(&style_resp).show(|ui| {
+                            ui.label(RichText::new("Drummer").size(10.0).color(TEXT_DIM));
+                            for st in DrumStyle::ALL {
+                                let sel =
+                                    sp.kind == SessionPlayerKind::Drummer && sp.drum_style == st;
+                                if ui.selectable_label(sel, title_case(st.name())).clicked() {
+                                    sp.kind = SessionPlayerKind::Drummer;
+                                    sp.drum_style = st;
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            ui.label(RichText::new("Keyboard Player").size(10.0).color(TEXT_DIM));
+                            for ks in KeyboardStyle::ALL {
+                                let sel = sp.kind == SessionPlayerKind::Keyboard
+                                    && sp.keyboard_style == ks;
+                                if ui.selectable_label(sel, ks.label()).clicked() {
+                                    sp.kind = SessionPlayerKind::Keyboard;
+                                    sp.keyboard_style = ks;
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            ui.label(RichText::new("Bass Player").size(10.0).color(TEXT_DIM));
+                            for bs in BassStyle::ALL {
+                                let sel = sp.kind == SessionPlayerKind::Bass && sp.bass_style == bs;
+                                if ui.selectable_label(sel, bs.label()).clicked() {
+                                    sp.kind = SessionPlayerKind::Bass;
+                                    sp.bass_style = bs;
+                                    ui.close();
+                                }
+                            }
+                        });
+
+                        ui.add_space(4.0);
                         let (disc_rect, _) =
                             ui.allocate_exact_size(vec2(96.0, 96.0), Sense::hover());
                         draw_player_disc(ui, disc_rect, sp.kind);
@@ -451,7 +506,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                                 egui::Button::new(
                                     RichText::new("Regenerate").size(11.0).color(TEXT_MAIN),
                                 )
-                                .fill(Color32::from_rgb(0x3a, 0x3c, 0x42))
+                                .fill(Color32::from_rgb(0x3a, 0x3c, 0x43))
                                 .corner_radius(CornerRadius::same(4))
                                 .min_size(vec2(86.0, 22.0)),
                             )
@@ -469,17 +524,14 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             });
         });
 
-        ui.add_space(8.0);
+        ui.add_space(12.0);
 
-        // Right Area: Compact Borderless Segmented Tab Bar + Dark Rounded Card
+        // Right Workspace: Compact Borderless Segmented Tab Bar + Rounded Card
+        let card_w = (workspace_w - 256.0).max(460.0);
         ui.vertical(|ui| {
-            let tabs: Vec<(EditorTab, &str)> = if sp.kind == SessionPlayerKind::Drummer {
-                vec![
-                    (EditorTab::Main, "Main"),
-                    (EditorTab::Details, "Details"),
-                    (EditorTab::Manual, "Manual"),
-                ]
-            } else {
+            ui.set_width(card_w);
+
+            let tabs: Vec<(EditorTab, &str)> = if has_five_tabs {
                 vec![
                     (EditorTab::Main, "Main"),
                     (EditorTab::Details, "Details"),
@@ -487,13 +539,20 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     (EditorTab::Lfo, "LFO"),
                     (EditorTab::Manual, "Manual"),
                 ]
+            } else {
+                vec![
+                    (EditorTab::Main, "Main"),
+                    (EditorTab::Details, "Details"),
+                    (EditorTab::Manual, "Manual"),
+                ]
             };
 
-            // Segmented Tab Control aligned above right-center of card
+            // Segmented Tab Control aligned above center-right of card
             ui.horizontal(|ui| {
-                ui.add_space((ui.available_width() * 0.30).max(24.0));
+                let tab_bar_w = tabs.len() as f32 * 56.0 + 6.0;
+                ui.add_space(((card_w - tab_bar_w) * 0.52).max(16.0));
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(0x16, 0x17, 0x1b))
+                    .fill(Color32::from_rgb(0x13, 0x14, 0x18))
                     .corner_radius(CornerRadius::same(5))
                     .inner_margin(egui::Margin::symmetric(2, 2))
                     .show(ui, |ui| {
@@ -506,7 +565,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                                     ui.painter().rect_filled(
                                         div,
                                         0.0,
-                                        Color32::from_rgb(0x2a, 0x2c, 0x34),
+                                        Color32::from_rgb(0x2a, 0x2c, 0x33),
                                     );
                                 }
                                 let active = tab == *t;
@@ -536,16 +595,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 
             egui::Frame::new()
                 .fill(CARD_BG)
-                .stroke(Stroke::new(1.0, BORDER))
-                .corner_radius(CornerRadius::same(8))
-                .inner_margin(egui::Margin::symmetric(14, 12))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(0x29, 0x2b, 0x32)))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(egui::Margin::symmetric(16, 14))
                 .show(ui, |ui| {
                     ui.horizontal_top(|ui| {
-                        // Central Tab Area
+                        let right_w = 182.0;
+                        let center_w = (card_w - right_w - 46.0).max(250.0);
                         ui.vertical(|ui| {
-                            ui.set_width((ui.available_width() - 210.0).max(260.0));
+                            ui.set_width(center_w);
                             match tab {
-                                EditorTab::Main => draw_main_tab(ui, &mut sp),
+                                EditorTab::Main => draw_main_tab(ui, &mut sp, center_w),
                                 EditorTab::Details => draw_details_tab(ui, &mut sp),
                                 EditorTab::SlidesOrEnv => draw_slides_or_env_tab(ui, &mut sp),
                                 EditorTab::Lfo => draw_lfo_tab(ui, &mut sp),
@@ -553,11 +613,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                             }
                         });
 
-                        ui.add_space(14.0);
+                        ui.add_space(12.0);
 
-                        // Right Column: Fill & Swing Knobs (no hard full-height vertical rule)
                         ui.vertical(|ui| {
-                            ui.set_width(190.0);
+                            ui.set_width(right_w);
                             draw_right_column(ui, &mut sp, tab);
                         });
                     });
@@ -590,7 +649,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
 }
 
 fn draw_white_thumb_zoom_slider(ui: &mut Ui, zoom: &mut f32) {
-    let (rect, resp) = ui.allocate_exact_size(vec2(56.0, 18.0), Sense::click_and_drag());
+    let (rect, resp) = ui.allocate_exact_size(vec2(58.0, 18.0), Sense::click_and_drag());
     if (resp.dragged() || resp.clicked()) && resp.interact_pointer_pos().is_some() {
         if let Some(pos) = resp.interact_pointer_pos() {
             let norm = ((pos.x - (rect.left() + 6.0)) / (rect.width() - 12.0)).clamp(0.0, 1.0);
@@ -601,13 +660,14 @@ fn draw_white_thumb_zoom_slider(ui: &mut Ui, zoom: &mut f32) {
     let cy = rect.center().y;
     let x0 = rect.left() + 6.0;
     let x1 = rect.right() - 6.0;
-    g.line_segment(
-        [pos2(x0, cy), pos2(x1, cy)],
-        Stroke::new(3.0, Color32::from_rgb(0x3a, 0x3d, 0x45)),
-    );
     let norm = ((*zoom - 0.5) / 1.5).clamp(0.0, 1.0);
     let tx = x0 + norm * (x1 - x0);
-    g.circle_filled(pos2(tx, cy), 5.0, Color32::WHITE);
+    g.line_segment(
+        [pos2(x0, cy), pos2(x1, cy)],
+        Stroke::new(3.0, Color32::from_rgb(0x2e, 0x30, 0x37)),
+    );
+    g.line_segment([pos2(x0, cy), pos2(tx, cy)], Stroke::new(3.0, BLUE_ACTIVE));
+    g.circle_filled(pos2(tx, cy), 4.8, Color32::WHITE);
 }
 
 fn find_session_or_drummer_region(p: &Project, s: &UiState) -> Option<(usize, usize, bool)> {
@@ -641,7 +701,7 @@ fn draw_bar_ruler_and_strip(
     zoom: f32,
 ) {
     let g = ui.painter_at(rect);
-    let ruler_h = 16.0;
+    let ruler_h = 18.0;
     let header_h = 16.0;
     let ruler = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + ruler_h));
     let header = Rect::from_min_max(
@@ -650,14 +710,9 @@ fn draw_bar_ruler_and_strip(
     );
     let body = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
 
-    g.rect_filled(ruler, 0.0, Color32::from_rgb(0x16, 0x17, 0x1b));
-    g.rect_filled(header, 0.0, Color32::from_rgb(0xe6, 0xdf, 0xbe));
-    let body_bg = if sp.kind == SessionPlayerKind::Bass && sp.bass_style == BassStyle::Bass808 {
-        Color32::from_rgb(0x3c, 0x3d, 0x41)
-    } else {
-        Color32::from_rgb(0xa8, 0x8f, 0x2d)
-    };
-    g.rect_filled(body, 0.0, body_bg);
+    g.rect_filled(ruler, 0.0, BG_DARK);
+    g.rect_filled(header, 0.0, REGION_HEADER_BG);
+    g.rect_filled(body, 0.0, REGION_BODY_BG);
 
     let total_beats = ((region.len_bars * 4.0) / zoom.max(0.5)).max(4.0);
     let num_half_bars = (total_beats / 2.0).ceil() as usize;
@@ -696,40 +751,51 @@ fn draw_bar_ruler_and_strip(
             if is_bar {
                 TEXT_MAIN
             } else {
-                Color32::from_rgb(0x6e, 0x73, 0x7e)
+                Color32::from_rgb(0x88, 0x8d, 0x98)
             },
         );
     }
 
-    // Framed play icon + repeating region name across the header strip
+    // Fine beat/16th tick marks along bottom edge of header strip
+    let total_sixteenths = (total_beats * 4.0).round() as usize;
+    for s in 0..total_sixteenths {
+        let x = header.left() + (s as f32 / total_sixteenths.max(1) as f32) * header.width();
+        let h_tick = if s % 4 == 0 { 5.0 } else { 3.0 };
+        g.line_segment(
+            [pos2(x, header.bottom() - h_tick), pos2(x, header.bottom())],
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(60, 52, 28, 70)),
+        );
+    }
+
+    // Framed play icon + repeating region name across the cream header strip
     let icon_box = Rect::from_center_size(
         pos2(header.left() + 12.0, header.center().y),
-        vec2(11.0, 10.0),
+        vec2(10.0, 10.0),
     );
     g.rect_stroke(
         icon_box,
         2.0,
-        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x34, 0x20)),
+        Stroke::new(1.0, Color32::from_rgb(0x52, 0x48, 0x2a)),
         StrokeKind::Inside,
     );
     let tri_c = icon_box.center();
     g.add(Shape::convex_polygon(
         vec![
-            pos2(tri_c.x - 2.0, tri_c.y - 2.5),
-            pos2(tri_c.x + 2.5, tri_c.y),
-            pos2(tri_c.x - 2.0, tri_c.y + 2.5),
+            pos2(tri_c.x - 1.8, tri_c.y - 2.3),
+            pos2(tri_c.x + 2.3, tri_c.y),
+            pos2(tri_c.x - 1.8, tri_c.y + 2.3),
         ],
-        Color32::from_rgb(0x28, 0x25, 0x1a),
+        Color32::from_rgb(0x3a, 0x33, 0x1e),
         Stroke::NONE,
     ));
 
-    let style_lbl = match sp.kind {
-        SessionPlayerKind::Keyboard => title_case(sp.keyboard_style.label()),
-        SessionPlayerKind::Bass => title_case(sp.bass_style.label()),
-        SessionPlayerKind::Drummer => title_case(sp.drum_style.name()),
+    let (role_title, style_lbl) = match sp.kind {
+        SessionPlayerKind::Keyboard => ("Keyboard Player", title_case(sp.keyboard_style.label())),
+        SessionPlayerKind::Bass => ("Bass Player", title_case(sp.bass_style.label())),
+        SessionPlayerKind::Drummer => ("Drummer", title_case(sp.drum_style.name())),
     };
-    let region_title = format!("{} - {style_lbl}", sp.preset_name);
-    let repeat_px = 190.0_f32;
+    let region_title = format!("{role_title} - {style_lbl}");
+    let repeat_px = 210.0_f32;
     let count = ((header.width() - 26.0) / repeat_px).ceil().max(1.0) as usize;
     for i in 0..count {
         let tx = header.left() + 24.0 + i as f32 * repeat_px;
@@ -745,54 +811,60 @@ fn draw_bar_ruler_and_strip(
     }
 
     if sp.kind == SessionPlayerKind::Drummer {
-        // Two-lane high-contrast triangular transient/velocity shapes (top: cymbals/hats, bottom: kick/snare)
-        let mid_y = body.top() + body.height() * 0.44;
+        // Two-lane high-contrast triangular transient wedges (Untitled.png)
+        let mid_y = body.top() + body.height() * 0.45;
         for n in &region.notes {
             let x0 = body.left() + (n.start / total_beats) * body.width();
             if x0 > body.right() {
                 continue;
             }
-            let vel_norm = (f32::from(n.vel) / 127.0).clamp(0.25, 1.0);
+            let vel_norm = (f32::from(n.vel) / 127.0).clamp(0.3, 1.0);
             let is_top_lane = n.pitch >= 42;
-            let (base_y, max_h, w) = if is_top_lane {
-                (mid_y - 2.0, (mid_y - body.top() - 3.0) * vel_norm, 6.0)
+            let (cy, half_h, w) = if is_top_lane {
+                (
+                    body.top() + (mid_y - body.top()) * 0.5,
+                    (mid_y - body.top()) * 0.24 * vel_norm,
+                    18.0,
+                )
             } else {
                 (
-                    body.bottom() - 2.0,
-                    (body.bottom() - mid_y - 3.0) * vel_norm,
-                    8.5,
+                    mid_y + (body.bottom() - mid_y) * 0.52,
+                    (body.bottom() - mid_y) * 0.38 * vel_norm,
+                    16.0,
                 )
             };
-            let col = Color32::from_rgba_unmultiplied(255, 253, 240, (175 + n.vel / 2).min(255));
+            let col = Color32::from_rgba_unmultiplied(255, 253, 240, (180 + n.vel / 2).min(255));
             g.add(Shape::convex_polygon(
                 vec![
-                    pos2(x0, base_y - max_h),
-                    pos2(x0 + w, base_y),
-                    pos2(x0, base_y),
+                    pos2(x0, cy - half_h),
+                    pos2(x0 + w, cy),
+                    pos2(x0, cy + half_h),
                 ],
                 col,
                 Stroke::NONE,
             ));
         }
     } else {
-        // Note stems with notehead + tail for Keyboard / Bass
+        // Horizontal note bars with crisp left transient ticks (session1.png)
         for n in &region.notes {
             let x0 = body.left() + (n.start / total_beats) * body.width();
-            let x1 = (x0 + (n.len / total_beats) * body.width()).max(x0 + 4.0);
+            let x1 = (x0 + (n.len / total_beats) * body.width()).max(x0 + 5.0);
             if x0 > body.right() {
                 continue;
             }
-            let pitch_norm = ((f32::from(n.pitch) - 28.0) / 60.0).clamp(0.08, 0.92);
+            let pitch_norm = ((f32::from(n.pitch) - 28.0) / 60.0).clamp(0.10, 0.90);
             let y = body.bottom() - pitch_norm * body.height();
-            let col = Color32::from_rgba_unmultiplied(255, 252, 232, (150 + n.vel / 2).min(255));
-            g.circle_filled(pos2(x0, y), 2.2, col);
+            let col = Color32::from_rgba_unmultiplied(255, 252, 232, (165 + n.vel / 2).min(255));
+            g.line_segment(
+                [pos2(x0, y - 2.5), pos2(x0, y + 2.5)],
+                Stroke::new(1.8, col),
+            );
             g.line_segment(
                 [pos2(x0, y), pos2(x1.min(body.right()), y)],
-                Stroke::new(1.6, col),
+                Stroke::new(1.5, col),
             );
         }
 
-        // Smooth white pitch-bend glide curve overlay
         let mut bend_pts: Vec<Pos2> = region
             .controls
             .iter()
@@ -815,11 +887,10 @@ fn draw_player_disc(ui: &Ui, rect: Rect, kind: SessionPlayerKind) {
     let g = ui.painter_at(rect);
     let c = rect.center();
     let r = rect.width().min(rect.height()) * 0.48;
-    // Subtle yellow radial glow behind disc
-    g.circle_filled(c, r, Color32::from_rgb(0x14, 0x15, 0x18));
+    g.circle_filled(c, r, Color32::from_rgb(0x11, 0x12, 0x15));
     g.circle_filled(
         c,
-        r * 0.84,
+        r * 0.85,
         Color32::from_rgba_unmultiplied(0xea, 0xc3, 0x2a, 14),
     );
     g.circle_filled(
@@ -829,8 +900,8 @@ fn draw_player_disc(ui: &Ui, rect: Rect, kind: SessionPlayerKind) {
     );
     g.circle_stroke(c, r, Stroke::new(1.0, BORDER));
 
-    let st = Stroke::new(1.25, ACCENT_YELLOW);
-    let dim_st = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0xea, 0xc3, 0x2a, 150));
+    let st = Stroke::new(1.2, ACCENT_YELLOW);
+    let dim_st = Stroke::new(0.95, Color32::from_rgba_unmultiplied(0xea, 0xc3, 0x2a, 150));
     match kind {
         SessionPlayerKind::Keyboard => {
             let body = Rect::from_center_size(c + vec2(0.0, -3.0), vec2(52.0, 20.0));
@@ -890,8 +961,6 @@ fn draw_player_disc(ui: &Ui, rect: Rect, kind: SessionPlayerKind) {
             }
         }
         SessionPlayerKind::Drummer => {
-            // Top-down wireframe acoustic drum kit: kick, snare, rack toms, floor tom, hi-hat, crash & ride
-            // Kick drum (bottom center) + pedal
             let kick_rect = Rect::from_center_size(c + vec2(0.0, 12.0), vec2(22.0, 16.0));
             g.rect_stroke(kick_rect, 4.0, st, StrokeKind::Inside);
             g.rect_stroke(
@@ -900,25 +969,19 @@ fn draw_player_disc(ui: &Ui, rect: Rect, kind: SessionPlayerKind) {
                 dim_st,
                 StrokeKind::Inside,
             );
-            // Snare drum (left-center)
             let snare_c = c + vec2(-15.0, 8.0);
             g.circle_stroke(snare_c, 9.5, st);
             g.circle_stroke(snare_c, 7.2, dim_st);
-            // Rack toms (top-left, top-right)
             g.circle_stroke(c + vec2(-9.0, -5.0), 7.0, st);
             g.circle_stroke(c + vec2(9.0, -5.0), 7.5, st);
-            // Floor tom (bottom-right)
             g.circle_stroke(c + vec2(17.0, 11.0), 9.5, st);
             g.circle_stroke(c + vec2(17.0, 11.0), 7.2, dim_st);
-            // Hi-hat (far-left)
             let hh_c = c + vec2(-25.0, -2.0);
             g.circle_stroke(hh_c, 7.5, st);
             g.circle_filled(hh_c, 1.5, ACCENT_YELLOW);
-            // Crash cymbal (top-left)
             let crash_c = c + vec2(-20.0, -18.0);
             g.circle_stroke(crash_c, 10.5, st);
             g.circle_stroke(crash_c, 2.8, dim_st);
-            // Ride cymbal (top-right)
             let ride_c = c + vec2(21.0, -14.0);
             g.circle_stroke(ride_c, 12.0, st);
             g.circle_stroke(ride_c, 3.0, dim_st);
@@ -930,8 +993,9 @@ fn vertical_yellow_fader(ui: &mut Ui, label: &str, val: &mut f32) {
     ui.vertical(|ui| {
         ui.set_width(56.0);
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new(label).size(9.5).color(TEXT_DIM));
-            let (rect, resp) = ui.allocate_exact_size(vec2(30.0, 124.0), Sense::click_and_drag());
+            ui.label(RichText::new(label).size(10.0).color(TEXT_DIM));
+            ui.add_space(4.0);
+            let (rect, resp) = ui.allocate_exact_size(vec2(28.0, 122.0), Sense::click_and_drag());
             if (resp.dragged() || resp.clicked()) && resp.interact_pointer_pos().is_some() {
                 if let Some(pos) = resp.interact_pointer_pos() {
                     *val = (1.0 - (pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
@@ -940,15 +1004,15 @@ fn vertical_yellow_fader(ui: &mut Ui, label: &str, val: &mut f32) {
             let g = ui.painter_at(rect);
             let x = rect.center().x;
             let track = Rect::from_min_max(
-                pos2(x - 4.0, rect.top() + 6.0),
-                pos2(x + 4.0, rect.bottom() - 6.0),
+                pos2(x - 2.5, rect.top() + 5.0),
+                pos2(x + 2.5, rect.bottom() - 5.0),
             );
-            g.rect_filled(track, 4.0, WELL_BG);
+            g.rect_filled(track, 2.5, Color32::from_rgb(0x11, 0x12, 0x15));
             let thumb_y = track.bottom() - *val * track.height();
             let fill = Rect::from_min_max(pos2(x - 2.0, thumb_y), pos2(x + 2.0, track.bottom()));
             g.rect_filled(fill, 2.0, ACCENT_YELLOW);
-            let thumb = Rect::from_center_size(pos2(x, thumb_y), vec2(24.0, 11.0));
-            g.rect_filled(thumb, 4.5, Color32::from_rgb(0x5c, 0x60, 0x6a));
+            let thumb = Rect::from_center_size(pos2(x, thumb_y), vec2(22.0, 10.0));
+            g.rect_filled(thumb, 4.5, Color32::from_rgb(0x5e, 0x62, 0x6c));
             g.rect_stroke(
                 thumb,
                 4.5,
@@ -960,7 +1024,7 @@ fn vertical_yellow_fader(ui: &mut Ui, label: &str, val: &mut f32) {
                     pos2(thumb.left() + 4.0, thumb.center().y),
                     pos2(thumb.right() - 4.0, thumb.center().y),
                 ],
-                Stroke::new(2.0, ACCENT_YELLOW),
+                Stroke::new(1.5, ACCENT_YELLOW),
             );
         });
     });
@@ -1001,8 +1065,6 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
         }
         ui.add(egui::Slider::new(&mut sp.humanize, 0.0..=1.0).text("Humanize"));
     } else {
-        // Left sub-column: Fill Amount (top-left) + Fill Complexity (bottom-left)
-        // Right sub-column: Swing + solid grey 16th pill centered vertically
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(92.0);
@@ -1020,7 +1082,7 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
                             log: false,
                             bipolar: false,
                             accent: true,
-                            unit: "",
+                            unit: "%",
                             diameter: 36.0,
                         },
                         sp.fill_amount,
@@ -1065,7 +1127,7 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
                         log: false,
                         bipolar: false,
                         accent: true,
-                        unit: "",
+                        unit: "%",
                         diameter: 36.0,
                     },
                     sp.fill_complexity,
@@ -1075,10 +1137,10 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
                 }
             });
 
-            ui.add_space(6.0);
+            ui.add_space(4.0);
 
             ui.vertical(|ui| {
-                ui.set_width(88.0);
+                ui.set_width(86.0);
                 ui.add_space(26.0);
                 ui.horizontal(|ui| {
                     let swing_res = draw_session_knob(
@@ -1094,7 +1156,7 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
                             log: false,
                             bipolar: false,
                             accent: true,
-                            unit: "",
+                            unit: "%",
                             diameter: 36.0,
                         },
                         sp.swing,
@@ -1151,14 +1213,14 @@ fn draw_right_column(ui: &mut Ui, sp: &mut SessionPlayerParams, tab: EditorTab) 
     }
 }
 
-fn draw_drummer_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
-    ui.add_space(4.0);
-    // Row 1: Kit pieces (Hi-Hat, Tambourine, Cowbell) + Pattern 1 (4x4 step dot groups)
+fn draw_drummer_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
+    ui.add_space(6.0);
+    // Row 1: Hi-Hat, Tambourine, Cowbell + [1] + 4x4 step dots
     ui.horizontal(|ui| {
         if draw_kit_icon_button(ui, "hihat", sp.kit_hihat, KitPieceIcon::HiHat) {
             sp.kit_hihat = !sp.kit_hihat;
         }
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         if draw_kit_icon_button(
             ui,
             "tambourine",
@@ -1167,20 +1229,25 @@ fn draw_drummer_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         ) {
             sp.kit_tambourine = !sp.kit_tambourine;
         }
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         if draw_kit_icon_button(ui, "cowbell", sp.kit_cowbell, KitPieceIcon::Cowbell) {
             sp.kit_cowbell = !sp.kit_cowbell;
         }
 
-        ui.add_space(16.0);
-        draw_pattern_badge_and_dots(ui, 1, &mut sp.pattern_idx, sp.complexity, false);
+        ui.add_space(14.0);
+        let dots_w = (center_w - 170.0).max(120.0);
+        draw_pattern_badge_and_dots(ui, 1, &mut sp.pattern_idx, sp.complexity, false, dots_w);
     });
 
-    ui.add_space(14.0);
+    ui.add_space(10.0);
+    let (div_r, _) = ui.allocate_exact_size(vec2(center_w, 1.0), Sense::hover());
+    ui.painter()
+        .rect_filled(div_r, 0.0, Color32::from_rgb(0x2b, 0x2d, 0x34));
+    ui.add_space(10.0);
 
-    // Row 2: Kit pieces (Kick, Snare) + Pattern 2 (two-tier 4x4 step dot matrix)
+    // Row 2: Kick, Snare + [2] + two-tier 4x4 step dots
     ui.horizontal(|ui| {
-        ui.add_space(14.0);
+        ui.add_space(18.0);
         if draw_kit_icon_button(ui, "kick", sp.kit_kick, KitPieceIcon::Kick) {
             sp.kit_kick = !sp.kit_kick;
         }
@@ -1190,14 +1257,15 @@ fn draw_drummer_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         }
 
         ui.add_space(34.0);
-        draw_pattern_badge_and_dots(ui, 2, &mut sp.pattern_idx_2, sp.intensity, true);
+        let dots_w = (center_w - 170.0).max(120.0);
+        draw_pattern_badge_and_dots(ui, 2, &mut sp.pattern_idx_2, sp.intensity, true, dots_w);
     });
 
-    ui.add_space(12.0);
+    ui.add_space(8.0);
 
-    // Directly beneath Row 2's dot matrix: inline Follow: Chord Rhythm (no button border)
+    // Directly beneath Row 2's dot matrix: inline Follow: Chord Rhythm
     ui.horizontal(|ui| {
-        ui.add_space(148.0);
+        ui.add_space(138.0);
         ui.label(RichText::new("Follow:").size(10.5).color(TEXT_DIM));
         let f_lbl = match sp.follow_rhythm {
             FollowRhythmMode::ChordRhythm => "Chord Rhythm",
@@ -1216,17 +1284,6 @@ fn draw_drummer_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                 FollowRhythmMode::Track => FollowRhythmMode::ChordRhythm,
             };
         }
-
-        ui.add_space(18.0);
-        ui.label(RichText::new("Style:").size(10.0).color(TEXT_DIM));
-        egui::ComboBox::from_id_salt("sp_main_drum_style")
-            .width(105.0)
-            .selected_text(title_case(sp.drum_style.name()))
-            .show_ui(ui, |ui| {
-                for st in DrumStyle::ALL {
-                    ui.selectable_value(&mut sp.drum_style, st, title_case(st.name()));
-                }
-            });
     });
 }
 
@@ -1240,7 +1297,7 @@ enum KitPieceIcon {
 }
 
 fn draw_kit_icon_button(ui: &mut Ui, tip: &str, active: bool, icon: KitPieceIcon) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::click());
     let g = ui.painter_at(rect);
     let c = rect.center();
     let col = if active {
@@ -1248,53 +1305,53 @@ fn draw_kit_icon_button(ui: &mut Ui, tip: &str, active: bool, icon: KitPieceIcon
     } else {
         Color32::from_rgb(0x6e, 0x73, 0x7e)
     };
-    let st = Stroke::new(1.5, col);
-    let thin = Stroke::new(1.1, col);
+    let st = Stroke::new(1.4, col);
+    let thin = Stroke::new(1.0, col);
     match icon {
         KitPieceIcon::HiHat => {
             g.line_segment(
-                [pos2(c.x - 13.0, c.y - 3.0), pos2(c.x + 13.0, c.y - 3.0)],
+                [pos2(c.x - 12.0, c.y - 3.0), pos2(c.x + 12.0, c.y - 3.0)],
                 st,
             );
             g.line_segment(
-                [pos2(c.x - 12.0, c.y + 1.0), pos2(c.x + 12.0, c.y + 1.0)],
+                [pos2(c.x - 11.0, c.y + 1.0), pos2(c.x + 11.0, c.y + 1.0)],
                 st,
             );
-            g.line_segment([pos2(c.x, c.y - 8.0), pos2(c.x, c.y + 13.0)], thin);
+            g.line_segment([pos2(c.x, c.y - 7.0), pos2(c.x, c.y + 11.0)], thin);
         }
         KitPieceIcon::Tambourine => {
-            g.circle_stroke(c, 11.0, st);
+            g.circle_stroke(c, 9.5, st);
             for i in 0..6 {
                 let a = (i as f32 / 6.0) * std::f32::consts::TAU;
-                g.circle_filled(c + vec2(a.cos(), a.sin()) * 11.0, 1.8, col);
+                g.circle_filled(c + vec2(a.cos(), a.sin()) * 9.5, 1.6, col);
             }
         }
         KitPieceIcon::Cowbell => {
             g.add(Shape::convex_polygon(
                 vec![
-                    pos2(c.x - 5.0, c.y - 10.0),
-                    pos2(c.x + 5.0, c.y - 10.0),
-                    pos2(c.x + 9.0, c.y + 9.0),
-                    pos2(c.x - 9.0, c.y + 9.0),
+                    pos2(c.x - 4.5, c.y - 9.0),
+                    pos2(c.x + 4.5, c.y - 9.0),
+                    pos2(c.x + 8.0, c.y + 8.0),
+                    pos2(c.x - 8.0, c.y + 8.0),
                 ],
                 Color32::TRANSPARENT,
                 st,
             ));
             g.line_segment(
-                [pos2(c.x - 2.0, c.y - 13.0), pos2(c.x + 2.0, c.y - 13.0)],
+                [pos2(c.x - 2.0, c.y - 12.0), pos2(c.x + 2.0, c.y - 12.0)],
                 st,
             );
         }
         KitPieceIcon::Kick => {
-            g.circle_stroke(c, 13.0, st);
-            g.circle_stroke(c, 9.5, thin);
-            g.circle_filled(pos2(c.x + 4.0, c.y + 3.0), 2.2, col);
+            g.circle_stroke(c, 12.0, st);
+            g.circle_stroke(c, 8.5, thin);
+            g.circle_filled(pos2(c.x + 3.5, c.y + 2.5), 2.0, col);
         }
         KitPieceIcon::Snare => {
-            let body = Rect::from_center_size(c, vec2(26.0, 14.0));
+            let body = Rect::from_center_size(c, vec2(24.0, 12.0));
             g.rect_stroke(body, 2.0, st, StrokeKind::Inside);
             for i in -1..=1 {
-                let x = c.x + i as f32 * 8.0;
+                let x = c.x + i as f32 * 7.0;
                 g.line_segment([pos2(x, body.top()), pos2(x, body.bottom())], thin);
             }
         }
@@ -1308,6 +1365,7 @@ fn draw_pattern_badge_and_dots(
     pattern_idx: &mut usize,
     density: f32,
     two_tier: bool,
+    dots_w: f32,
 ) {
     let badge = egui::Button::new(
         RichText::new(format!("{badge_num}"))
@@ -1317,14 +1375,14 @@ fn draw_pattern_badge_and_dots(
     )
     .fill(ACCENT_YELLOW)
     .corner_radius(CornerRadius::same(10))
-    .min_size(vec2(20.0, 20.0));
+    .min_size(vec2(19.0, 19.0));
     if ui.add(badge).clicked() {
         *pattern_idx = (*pattern_idx + 1) % 16;
     }
     ui.add_space(6.0);
 
     let h = if two_tier { 24.0 } else { 18.0 };
-    let (dot_rect, dot_resp) = ui.allocate_exact_size(vec2(216.0, h), Sense::click());
+    let (dot_rect, dot_resp) = ui.allocate_exact_size(vec2(dots_w, h), Sense::click());
     if dot_resp.clicked() {
         if let Some(pos) = dot_resp.interact_pointer_pos() {
             let idx = (((pos.x - dot_rect.left()) / dot_rect.width()) * 16.0).floor() as usize;
@@ -1357,11 +1415,11 @@ fn draw_pattern_badge_and_dots(
             if two_tier {
                 let y_top = dot_rect.center().y - 4.5;
                 let y_bot = dot_rect.center().y + 4.5;
-                g.circle_filled(pos2(cx, y_top), if is_sel { 3.0 } else { 2.0 }, col);
+                g.circle_filled(pos2(cx, y_top), if is_sel { 2.8 } else { 1.9 }, col);
                 let bot_active = is_sel || (step % 2 == 0 && density > 0.25);
                 g.circle_filled(
                     pos2(cx, y_bot),
-                    if is_sel { 3.0 } else { 2.0 },
+                    if is_sel { 2.8 } else { 1.9 },
                     if bot_active {
                         ACCENT_YELLOW
                     } else {
@@ -1371,7 +1429,7 @@ fn draw_pattern_badge_and_dots(
             } else {
                 g.circle_filled(
                     pos2(cx, dot_rect.center().y),
-                    if is_sel { 3.4 } else { 2.2 },
+                    if is_sel { 3.2 } else { 2.1 },
                     col,
                 );
             }
@@ -1379,49 +1437,41 @@ fn draw_pattern_badge_and_dots(
     }
 }
 
-fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
+fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
     if sp.kind == SessionPlayerKind::Drummer {
-        draw_drummer_main_tab(ui, sp);
+        draw_drummer_main_tab(ui, sp, center_w);
         return;
     }
 
-    // Pattern dot matrix strip (4x4) + Follow Rhythm (for Keyboard / Bass)
-    ui.horizontal(|ui| {
-        draw_pattern_badge_and_dots(ui, 1, &mut sp.pattern_idx, sp.complexity, false);
-        ui.add_space(8.0);
-        ui.label(RichText::new("Follow:").size(10.0).color(TEXT_DIM));
-        let f_lbl = match sp.follow_rhythm {
-            FollowRhythmMode::ChordRhythm => "Chord Rhythm",
-            FollowRhythmMode::Track => "Track",
-        };
-        if ui
-            .add(
-                egui::Button::new(RichText::new(f_lbl).size(10.0).color(ACCENT_YELLOW))
-                    .fill(Color32::TRANSPARENT)
-                    .frame(false),
-            )
-            .clicked()
-        {
-            sp.follow_rhythm = match sp.follow_rhythm {
-                FollowRhythmMode::ChordRhythm => FollowRhythmMode::Track,
-                FollowRhythmMode::Track => FollowRhythmMode::ChordRhythm,
-            };
-        }
-        ui.menu_button("Add Notes", |ui| {
-            ui.selectable_value(&mut sp.add_notes, AddNotesMode::None, "None");
-            ui.selectable_value(&mut sp.add_notes, AddNotesMode::Eighths, "8ths");
-            ui.selectable_value(&mut sp.add_notes, AddNotesMode::Sixteenths, "16ths");
-        });
-    });
-
-    ui.add_space(6.0);
-
     match sp.kind {
         SessionPlayerKind::Bass => {
+            ui.vertical_centered(|ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(30.0);
+                    draw_pattern_badge_and_dots(
+                        ui,
+                        1,
+                        &mut sp.pattern_idx,
+                        sp.complexity,
+                        false,
+                        (center_w - 100.0).max(140.0),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(56.0);
+                    draw_inline_follow(ui, sp);
+                });
+            });
+            ui.add_space(6.0);
+            let (div_r, _) = ui.allocate_exact_size(vec2(center_w, 1.0), Sense::hover());
+            ui.painter()
+                .rect_filled(div_r, 0.0, Color32::from_rgb(0x2b, 0x2d, 0x34));
+            ui.add_space(8.0);
+
             ui.horizontal_top(|ui| {
                 // Square XY Pad (Y: Octave, X: Melody)
                 let (xy_rect, xy_resp) =
-                    ui.allocate_exact_size(vec2(138.0, 118.0), Sense::click_and_drag());
+                    ui.allocate_exact_size(vec2(128.0, 114.0), Sense::click_and_drag());
                 if (xy_resp.dragged() || xy_resp.clicked())
                     && xy_resp.interact_pointer_pos().is_some()
                 {
@@ -1449,9 +1499,9 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                 );
                 let px = xy_rect.left() + 14.0 + sp.xy_melody * (xy_rect.width() - 28.0);
                 let py = xy_rect.bottom() - 14.0 - sp.xy_octave * (xy_rect.height() - 28.0);
-                g.circle_filled(pos2(px, py), 11.0, ACCENT_YELLOW);
+                g.circle_filled(pos2(px, py), 10.5, ACCENT_YELLOW);
 
-                ui.add_space(16.0);
+                ui.add_space(14.0);
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Note Range").size(10.5).color(TEXT_DIM));
@@ -1469,7 +1519,7 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                         });
                     });
                     let (rng_rect, rng_resp) = ui.allocate_exact_size(
-                        vec2(ui.available_width(), 22.0),
+                        vec2(ui.available_width(), 20.0),
                         Sense::click_and_drag(),
                     );
                     if rng_resp.dragged() || rng_resp.clicked() {
@@ -1496,7 +1546,7 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                             pos2(x_hi, rng_rect.bottom()),
                         ),
                         2.0,
-                        Color32::from_rgb(0x2b, 0x2d, 0x34),
+                        Color32::from_rgb(0x28, 0x2a, 0x31),
                     );
                     gr.line_segment(
                         [
@@ -1557,44 +1607,63 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         }
         SessionPlayerKind::Keyboard => {
             ui.horizontal(|ui| {
-                ui.add_space(ui.available_width() * 0.30);
+                ui.add_space(8.0);
                 ui.label(
                     RichText::new(phosphor_egui::regular::HAND_PALM)
-                        .size(22.0)
+                        .size(20.0)
                         .color(ACCENT_YELLOW),
                 );
-                ui.add_space(18.0);
+                ui.add_space(6.0);
                 ui.label(
                     RichText::new(phosphor_egui::regular::HAND_PALM)
-                        .size(22.0)
+                        .size(20.0)
                         .color(ACCENT_YELLOW),
+                );
+                ui.add_space(16.0);
+                draw_pattern_badge_and_dots(
+                    ui,
+                    1,
+                    &mut sp.pattern_idx,
+                    sp.complexity,
+                    false,
+                    (center_w - 135.0).max(120.0),
                 );
             });
-            let (kr_rect, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+            ui.horizontal(|ui| {
+                ui.add_space(104.0);
+                draw_inline_follow(ui, sp);
+            });
+
+            ui.add_space(6.0);
+            let (div_r, _) = ui.allocate_exact_size(vec2(center_w, 1.0), Sense::hover());
+            ui.painter()
+                .rect_filled(div_r, 0.0, Color32::from_rgb(0x2b, 0x2d, 0x34));
+            ui.add_space(6.0);
+
+            let (kr_rect, _) = ui.allocate_exact_size(vec2(center_w, 18.0), Sense::hover());
             let gk = ui.painter_at(kr_rect);
             gk.rect_filled(kr_rect, 3.0, WELL_BG);
-            let x_l = kr_rect.left() + kr_rect.width() * 0.33;
-            let x_r = kr_rect.left() + kr_rect.width() * 0.62;
+            let x_l = kr_rect.left() + kr_rect.width() * 0.34;
+            let x_r = kr_rect.left() + kr_rect.width() * 0.60;
             gk.rect_filled(
                 Rect::from_min_max(pos2(x_l, kr_rect.top()), pos2(x_r, kr_rect.bottom())),
                 2.0,
                 Color32::from_rgb(0x28, 0x2a, 0x31),
             );
             gk.rect_stroke(
-                Rect::from_center_size(pos2(x_l, kr_rect.center().y), vec2(12.0, 14.0)),
+                Rect::from_center_size(pos2(x_l, kr_rect.center().y), vec2(14.0, 15.0)),
                 2.0,
                 Stroke::new(1.0, ACCENT_YELLOW),
                 StrokeKind::Inside,
             );
             gk.rect_stroke(
-                Rect::from_center_size(pos2(x_r, kr_rect.center().y), vec2(12.0, 14.0)),
+                Rect::from_center_size(pos2(x_r, kr_rect.center().y), vec2(14.0, 15.0)),
                 2.0,
                 Stroke::new(1.0, ACCENT_YELLOW),
                 StrokeKind::Inside,
             );
 
-            ui.add_space(6.0);
+            ui.add_space(8.0);
             ui.columns(2, |cols| {
                 cols[0].label(
                     RichText::new("Left Hand")
@@ -1653,6 +1722,42 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         }
         SessionPlayerKind::Drummer => {}
     }
+}
+
+fn draw_inline_follow(ui: &mut Ui, sp: &mut SessionPlayerParams) {
+    ui.label(RichText::new("Follow:").size(10.0).color(TEXT_DIM));
+    let f_lbl = match sp.follow_rhythm {
+        FollowRhythmMode::ChordRhythm => "Chord Rhythm",
+        FollowRhythmMode::Track => "Track",
+    };
+    if ui
+        .add(
+            egui::Button::new(RichText::new(f_lbl).size(10.0).color(ACCENT_YELLOW))
+                .fill(Color32::TRANSPARENT)
+                .frame(false),
+        )
+        .clicked()
+    {
+        sp.follow_rhythm = match sp.follow_rhythm {
+            FollowRhythmMode::ChordRhythm => FollowRhythmMode::Track,
+            FollowRhythmMode::Track => FollowRhythmMode::ChordRhythm,
+        };
+    }
+    ui.add_space(8.0);
+    ui.menu_button(
+        RichText::new(match sp.add_notes {
+            AddNotesMode::None => "Add Notes: None",
+            AddNotesMode::Eighths => "Add Notes: 8ths",
+            AddNotesMode::Sixteenths => "Add Notes: 16ths",
+        })
+        .size(10.0)
+        .color(TEXT_DIM),
+        |ui| {
+            ui.selectable_value(&mut sp.add_notes, AddNotesMode::None, "None");
+            ui.selectable_value(&mut sp.add_notes, AddNotesMode::Eighths, "8ths");
+            ui.selectable_value(&mut sp.add_notes, AddNotesMode::Sixteenths, "16ths");
+        },
+    );
 }
 
 fn draw_details_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
@@ -1849,7 +1954,7 @@ fn draw_manual_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
                     .color(if *step { Color32::BLACK } else { TEXT_DIM }),
             )
             .fill(col)
-            .min_size(vec2(24.0, 42.0))
+            .min_size(vec2(16.0, 38.0))
             .corner_radius(CornerRadius::same(3));
             if ui.add(btn).clicked() {
                 *step = !*step;
@@ -1865,7 +1970,7 @@ fn draw_session_knob(
     current_val: f32,
 ) -> daw_knob::DawKnobResult {
     let side = cfg.diameter.max(36.0);
-    let (cell, _) = ui.allocate_exact_size(vec2(side + 28.0, side + 32.0), Sense::hover());
+    let (cell, _) = ui.allocate_exact_size(vec2(side + 28.0, side + 28.0), Sense::hover());
     let g = ui.painter().clone();
     daw_knob::draw_custom(
         ui,
@@ -1874,7 +1979,7 @@ fn draw_session_knob(
         cfg,
         current_val,
         None,
-        DawKnobFinish::StudioMatte,
+        DawKnobFinish::LogicSession,
         Some(ACCENT_YELLOW),
         true,
     )
