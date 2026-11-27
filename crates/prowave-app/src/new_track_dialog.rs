@@ -121,6 +121,11 @@ pub struct NewTrackDialog {
     pub input_channel: u16,
     pub output_channel: u16,
     pub instrument_choice: usize,
+    pub keyboard_style: crate::session_player::KeyboardStyle,
+    pub bass_style: crate::session_player::BassStyle,
+    pub drum_style: crate::pattern::DrumStyle,
+    pub use_default_chords: bool,
+    pub open_editor: bool,
 }
 
 impl Default for NewTrackDialog {
@@ -138,6 +143,11 @@ impl Default for NewTrackDialog {
             input_channel: 0,
             output_channel: 0,
             instrument_choice: 0,
+            keyboard_style: crate::session_player::KeyboardStyle::Freely,
+            bass_style: crate::session_player::BassStyle::Bass808,
+            drum_style: crate::pattern::DrumStyle::Electronic,
+            use_default_chords: true,
+            open_editor: true,
         }
     }
 }
@@ -495,8 +505,115 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                         ui.horizontal(|ui| {
                             ui.checkbox(&mut s.new_track.open_library, "Open Sound Library");
                             ui.add_space(8.0);
-                            ui.checkbox(&mut s.new_track.load_default_patch, "Load Default Patch");
+                            if s.new_track.choice == CardChoice::SessionPlayer {
+                                ui.checkbox(&mut s.new_track.open_editor, "Open Editor");
+                            } else {
+                                ui.checkbox(
+                                    &mut s.new_track.load_default_patch,
+                                    "Load Default Patch",
+                                );
+                            }
                         });
+
+                        if s.new_track.choice == CardChoice::SessionPlayer {
+                            ui.horizontal(|ui| match s.new_track.session_sub {
+                                SessionPlayerSub::KeyboardPlayer => {
+                                    ui.label(
+                                        egui::RichText::new("Keyboard Player Style:")
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                                    );
+                                    egui::ComboBox::from_id_salt("sp_kb_style")
+                                        .selected_text(s.new_track.keyboard_style.label())
+                                        .show_ui(ui, |ui| {
+                                            ui.label(
+                                                egui::RichText::new("SYNTH")
+                                                    .size(9.5)
+                                                    .color(Color32::from_rgb(0x8E, 0x94, 0xA0)),
+                                            );
+                                            for st in crate::session_player::KeyboardStyle::SYNTH {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.keyboard_style,
+                                                    st,
+                                                    st.label(),
+                                                );
+                                            }
+                                            ui.separator();
+                                            ui.label(
+                                                egui::RichText::new("ACOUSTIC")
+                                                    .size(9.5)
+                                                    .color(Color32::from_rgb(0x8E, 0x94, 0xA0)),
+                                            );
+                                            for st in crate::session_player::KeyboardStyle::ACOUSTIC
+                                            {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.keyboard_style,
+                                                    st,
+                                                    st.label(),
+                                                );
+                                            }
+                                        });
+                                }
+                                SessionPlayerSub::BassPlayer => {
+                                    ui.label(
+                                        egui::RichText::new("Bass Player Style:")
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                                    );
+                                    egui::ComboBox::from_id_salt("sp_bass_style")
+                                        .selected_text(s.new_track.bass_style.label())
+                                        .show_ui(ui, |ui| {
+                                            ui.label(
+                                                egui::RichText::new("SYNTH")
+                                                    .size(9.5)
+                                                    .color(Color32::from_rgb(0x8E, 0x94, 0xA0)),
+                                            );
+                                            for st in crate::session_player::BassStyle::SYNTH {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.bass_style,
+                                                    st,
+                                                    st.label(),
+                                                );
+                                            }
+                                            ui.separator();
+                                            ui.label(
+                                                egui::RichText::new("ELECTRIC")
+                                                    .size(9.5)
+                                                    .color(Color32::from_rgb(0x8E, 0x94, 0xA0)),
+                                            );
+                                            for st in crate::session_player::BassStyle::ELECTRIC {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.bass_style,
+                                                    st,
+                                                    st.label(),
+                                                );
+                                            }
+                                        });
+                                }
+                                SessionPlayerSub::Drummer => {
+                                    ui.label(
+                                        egui::RichText::new("Drummer Style:")
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0x9C, 0xA3, 0xAF)),
+                                    );
+                                    egui::ComboBox::from_id_salt("sp_drum_style")
+                                        .selected_text(s.new_track.drum_style.name())
+                                        .show_ui(ui, |ui| {
+                                            for st in crate::pattern::DrumStyle::ALL {
+                                                ui.selectable_value(
+                                                    &mut s.new_track.drum_style,
+                                                    st,
+                                                    st.name(),
+                                                );
+                                            }
+                                        });
+                                }
+                            });
+                            ui.checkbox(
+                                &mut s.new_track.use_default_chords,
+                                "Use Default Chord Progression for New Regions",
+                            );
+                        }
                     });
             }
 
@@ -654,23 +771,54 @@ pub fn show(ctx: &egui::Context, p: &mut Project, s: &mut UiState) {
                     p.tracks[at].name = "Pattern".to_string();
                     p.tracks[at].color = ACCENT_INDIGO;
                 }
-                CardChoice::SessionPlayer => match s.new_track.session_sub {
-                    SessionPlayerSub::Drummer => {
-                        let at = p.add_track(TrackKind::Drummer);
-                        p.tracks[at].name = "Drummer".to_string();
-                        p.tracks[at].color = ACCENT_AMBER;
+                CardChoice::SessionPlayer => {
+                    if s.new_track.use_default_chords && p.chords.is_empty() {
+                        p.chords = crate::session_player::default_chords();
                     }
-                    SessionPlayerSub::BassPlayer => {
-                        let at = p.add_track(TrackKind::Instrument);
-                        p.tracks[at].name = "Bass Player".to_string();
-                        p.tracks[at].color = ACCENT_AMBER;
+                    let mut sp = crate::session_player::SessionPlayerParams::default();
+                    match s.new_track.session_sub {
+                        SessionPlayerSub::Drummer => {
+                            let at = p.add_track(TrackKind::Drummer);
+                            p.tracks[at].name =
+                                format!("Drummer · {}", s.new_track.drum_style.name());
+                            p.tracks[at].color = ACCENT_AMBER;
+                            sp.kind = crate::session_player::SessionPlayerKind::Drummer;
+                            sp.drum_style = s.new_track.drum_style;
+                            p.add_session_region(at, sp, 1.0);
+                        }
+                        SessionPlayerSub::BassPlayer => {
+                            let at = p.add_track(TrackKind::Instrument);
+                            p.tracks[at].name = s.new_track.bass_style.label().to_string();
+                            p.tracks[at].color = ACCENT_AMBER;
+                            if s.new_track.bass_style == crate::session_player::BassStyle::Bass808 {
+                                p.tracks[at].bass808 = Some(prowave_engine::Bass808Spec::default());
+                            } else {
+                                p.tracks[at].instrument = Some("Retro Bass");
+                            }
+                            sp.kind = crate::session_player::SessionPlayerKind::Bass;
+                            sp.bass_style = s.new_track.bass_style;
+                            p.add_session_region(at, sp, 1.0);
+                        }
+                        SessionPlayerSub::KeyboardPlayer => {
+                            let at = p.add_track(TrackKind::Instrument);
+                            p.tracks[at].name = s.new_track.keyboard_style.label().to_string();
+                            p.tracks[at].color = ACCENT_AMBER;
+                            p.tracks[at].instrument =
+                                Some(if s.new_track.keyboard_style.is_pad() {
+                                    "Warm Pad"
+                                } else {
+                                    "Electric Piano"
+                                });
+                            sp.kind = crate::session_player::SessionPlayerKind::Keyboard;
+                            sp.keyboard_style = s.new_track.keyboard_style;
+                            p.add_session_region(at, sp, 1.0);
+                        }
                     }
-                    SessionPlayerSub::KeyboardPlayer => {
-                        let at = p.add_track(TrackKind::Instrument);
-                        p.tracks[at].name = "Keyboard Player".to_string();
-                        p.tracks[at].color = ACCENT_AMBER;
+                    if s.new_track.open_editor {
+                        s.bottom = crate::Bottom::SessionPlayer;
+                        s.show_mixer = false;
                     }
-                },
+                }
                 CardChoice::Audio => match s.new_track.audio_sub {
                     AudioSub::MicLine => {
                         let at = p.add_track(TrackKind::Audio);

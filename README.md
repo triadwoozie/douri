@@ -140,6 +140,8 @@ Dōri is free software licensed under the **GNU General Public License v3.0 or l
 - **[webaudio-controls](https://github.com/g200kg/webaudio-controls)** (Apache-2.0, g200kg et al.): Hardware rotary, slider, and keyboard control ergonomics.
 - **[ouestlabs/audio-ui](https://github.com/ouestlabs/audio-ui)** (MIT License, Ouest Labs): IEC VU/PPM meter ballistics, 45° Mid/Side stereo goniometer, interactive ADSR envelope, and velocity-metered pad styling.
 - **[google/eclipsa-studio](https://github.com/google/eclipsa-studio)** (Apache-2.0, Google LLC): Eclipsa Audio / IAMF 7.1.2 & 7.1.4 spatial audio rendering, OAR monitoring, and binaural downmix architecture.
+- **[joshband/GenerativeMIDI](https://github.com/joshband/GenerativeMIDI)** (MIT License): Euclidean rhythm, swing, ratchet, and LFO modulation engines for Session Players.
+- **[billyblu2000/accomontage2](https://github.com/billyblu2000/accomontage2)** (MIT License, Billy Yi): Chord voicing and accompaniment taxonomy for Keyboard Session Players.
 - **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 
 See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for full attributions and [`LICENSE`](LICENSE) for complete license terms.

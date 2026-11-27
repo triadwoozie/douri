@@ -113,6 +113,8 @@ mod score_import;
 mod scripter;
 mod section_edit;
 mod select_similar;
+mod session_player;
+mod session_player_ui;
 mod shuffle_edit;
 mod side_panes;
 mod signature_track;
@@ -176,6 +178,8 @@ pub enum Bottom {
     PitchEditor,
     /// Macro Controls 8-knob Moog-style control surface and inline EQ.
     MacroControls,
+    /// Revamped Session Player Editor (Keyboard, Bass, Drummer).
+    SessionPlayer,
 }
 
 pub struct UiState {
@@ -1985,7 +1989,10 @@ impl eframe::App for App {
         if s.show_mixer
             || matches!(
                 s.bottom,
-                Bottom::PianoRoll | Bottom::PitchEditor | Bottom::MacroControls
+                Bottom::PianoRoll
+                    | Bottom::PitchEditor
+                    | Bottom::MacroControls
+                    | Bottom::SessionPlayer
             )
         {
             // About half of the space under the control bar (500 points at most), so the Tracks
@@ -2017,6 +2024,7 @@ impl eframe::App for App {
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),
                 Bottom::PitchEditor => pitch_editor::show(ui, p, s),
                 Bottom::MacroControls => macro_controls::show(ui, p, s, false),
+                Bottom::SessionPlayer => session_player_ui::show(ui, p, s),
             });
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);
@@ -2389,6 +2397,7 @@ fn show_about_dialog(ctx: &egui::Context, ui_state: &mut UiState) {
                 ui.label("• webaudio-controls by g200kg et al. (Apache-2.0) - Hardware control ergonomics");
                 ui.label("• ouestlabs/audio-ui by Ouest Labs (MIT License) - Meter ballistics, goniometer & ADSR UI");
                 ui.label("• google/eclipsa-studio by Google LLC (Apache-2.0) - Eclipsa IAMF 7.1.2/7.1.4 spatial audio");
+                ui.label("• joshband/GenerativeMIDI (MIT) & billyblu2000/accomontage2 (MIT) - Session Player engines & voicings");
                 ui.label("• Dōri 3D app icon & studio artwork by triadwoozie");
                 ui.add_space(8.0);
                 ui.label(

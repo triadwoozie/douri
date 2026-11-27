@@ -156,6 +156,9 @@ pub struct RegionDoc {
     pub q_range: u8,
     #[serde(default = "default_q_strength")]
     pub q_strength: f32,
+    /// A Session Player region (JSON-encoded `SessionPlayerParams`).
+    #[serde(default)]
+    pub session_player: Option<String>,
 }
 
 impl Default for RegionDoc {
@@ -194,6 +197,7 @@ impl Default for RegionDoc {
             q_flam: 0,
             q_range: 0,
             q_strength: 100.0,
+            session_player: None,
         }
     }
 }

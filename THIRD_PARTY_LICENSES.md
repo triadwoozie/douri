@@ -54,6 +54,16 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: Apache License 2.0
 - **Description**: Eclipsa Audio / IAMF 7.1.2 & 7.1.4 spatial audio architecture, OAR monitoring layouts, and binaural spatialization reference.
 
+- **Project**: GenerativeMIDI ([joshband/GenerativeMIDI](https://github.com/joshband/GenerativeMIDI))
+- **Copyright**: (c) 2025 GenerativeMIDI Contributors
+- **License**: MIT License
+- **Description**: Euclidean rhythm distribution, swing, ratchet, and LFO modulation engines ported for Dōri's Session Players.
+
+- **Project**: AccoMontage2 ([billyblu2000/accomontage2](https://github.com/billyblu2000/accomontage2))
+- **Copyright**: (c) 2021 Billy Yi
+- **License**: MIT License
+- **Description**: Chord voicing and accompaniment style taxonomy for Keyboard Session Players.
+
 - **Artwork**: Dōri 3D Studio App Icon & Custom Artwork
 - **Creator**: triadwoozie
 - **Description**: Blender-rendered high-resolution application icon and 3D studio visual assets.

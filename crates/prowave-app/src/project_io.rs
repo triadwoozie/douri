@@ -709,6 +709,10 @@ pub fn to_doc(p: &Project) -> (ProjectDoc, Vec<MediaFile>) {
                         Some(Generator::Drummer(d)) => Some(drummer_to_doc(d)),
                         _ => None,
                     },
+                    session_player: match r.generated.as_ref().map(|g| &g.source) {
+                        Some(Generator::Session(sp)) => serde_json::to_string(sp).ok(),
+                        _ => None,
+                    },
                 })
                 .collect(),
         })
@@ -1263,6 +1267,11 @@ fn generated_from_doc(r: &RegionDoc) -> Option<Generated> {
         };
         p.tidy();
         return Some(Generated::new(Generator::Pattern(p)));
+    }
+    if let Some(raw) = r.session_player.as_deref() {
+        if let Ok(sp) = serde_json::from_str::<crate::session_player::SessionPlayerParams>(raw) {
+            return Some(Generated::new(Generator::Session(sp)));
+        }
     }
     r.drummer.as_ref().map(|d| {
         let mut p = DrummerParams {

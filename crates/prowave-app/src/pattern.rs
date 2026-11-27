@@ -374,7 +374,7 @@ impl PatternParams {
 // ------------------------------------------------------------------------- drummer
 
 /// The styles a Drummer region plays.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DrumStyle {
     Rock,
     Pop,

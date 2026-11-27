@@ -953,6 +953,22 @@ impl McpEngine {
                     }
                 }
             }),
+            json!({
+                "name": "configure_session_player",
+                "description": "Create or configure a Session Player region (Keyboard, Bass, Drummer) with presets, styles, complexity/intensity, or run Chord ID on a track.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "track_index": { "type": "integer" },
+                        "preset": { "type": "string" },
+                        "kind": { "type": "string", "enum": ["keyboard", "bass", "drummer"] },
+                        "complexity": { "type": "number" },
+                        "intensity": { "type": "number" },
+                        "open_editor": { "type": "boolean" },
+                        "run_chord_id": { "type": "boolean" }
+                    }
+                }
+            }),
         ]
     }
 
@@ -1866,6 +1882,85 @@ impl McpEngine {
                     "macro1": s.modulation_drawer.macro1,
                     "macro2": s.modulation_drawer.macro2,
                     "route_count": s.modulation_drawer.routes.len()
+                }))
+            }
+            "configure_session_player" => {
+                let ti = args["track_index"]
+                    .as_u64()
+                    .map(|v| v as usize)
+                    .unwrap_or(p.selected_track)
+                    .min(p.tracks.len().saturating_sub(1));
+                if p.chords.is_empty() {
+                    p.chords = crate::session_player::default_chords();
+                }
+                if args["run_chord_id"].as_bool() == Some(true) {
+                    let notes = p
+                        .tracks
+                        .get(ti)
+                        .and_then(|t| t.regions.first())
+                        .map(|r| r.notes.clone())
+                        .unwrap_or_default();
+                    p.chords = crate::session_player::detect_chords_from_notes(&notes, 4);
+                }
+                let mut sp = p
+                    .tracks
+                    .get(ti)
+                    .and_then(|t| {
+                        t.regions.iter().find_map(|r| {
+                            match r.generated.as_ref().map(|g| &g.source) {
+                                Some(crate::model::Generator::Session(existing)) => {
+                                    Some(existing.clone())
+                                }
+                                _ => None,
+                            }
+                        })
+                    })
+                    .unwrap_or_default();
+                if let Some(preset) = args["preset"].as_str() {
+                    sp.apply_preset(preset);
+                }
+                if let Some(k) = args["kind"].as_str() {
+                    sp.kind = match k.to_ascii_lowercase().as_str() {
+                        "keyboard" => crate::session_player::SessionPlayerKind::Keyboard,
+                        "bass" => crate::session_player::SessionPlayerKind::Bass,
+                        "drummer" => crate::session_player::SessionPlayerKind::Drummer,
+                        other => return Err(format!("Unknown session kind: {other}")),
+                    };
+                }
+                if let Some(c) = args["complexity"].as_f64() {
+                    sp.complexity = (c as f32).clamp(0.0, 1.0);
+                }
+                if let Some(i) = args["intensity"].as_f64() {
+                    sp.intensity = (i as f32).clamp(0.0, 1.0);
+                }
+                let existing_ri = p.tracks.get(ti).and_then(|t| {
+                    t.regions.iter().position(|r| {
+                        matches!(
+                            r.generated.as_ref().map(|g| &g.source),
+                            Some(crate::model::Generator::Session(_))
+                        )
+                    })
+                });
+                let ri = if let Some(ri) = existing_ri {
+                    if let Some(g) = p.tracks[ti].regions[ri].generated.as_mut() {
+                        g.source = crate::model::Generator::Session(sp.clone());
+                    }
+                    p.regenerate(ti, ri);
+                    ri
+                } else {
+                    p.add_session_region(ti, sp.clone(), 1.0)
+                        .ok_or("Track cannot hold Session Player regions")?
+                };
+                if args["open_editor"].as_bool() == Some(true) {
+                    s.bottom = crate::Bottom::SessionPlayer;
+                }
+                Ok(json!({
+                    "track_index": ti,
+                    "region_index": ri,
+                    "kind": sp.kind.label(),
+                    "preset": sp.preset_name,
+                    "notes": p.tracks[ti].regions[ri].notes.len(),
+                    "chords": p.chords.len()
                 }))
             }
             _ => Err(format!("Unknown tool: {name}")),

@@ -356,7 +356,10 @@ pub(crate) fn delete_unused(p: &mut Project, s: &mut UiState) -> usize {
 /// is showing. With no region selected, the selected track's kind decides.
 pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
     use crate::Bottom;
-    if matches!(s.bottom, Bottom::PianoRoll | Bottom::PitchEditor) {
+    if matches!(
+        s.bottom,
+        Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SessionPlayer
+    ) {
         s.bottom = Bottom::Mixer;
         s.show_mixer = false;
         return;
@@ -366,6 +369,24 @@ pub(crate) fn toggle_editor(p: &Project, s: &mut UiState) {
         .selection()
         .into_iter()
         .find(|&(t, r)| p.tracks.get(t).is_some_and(|tr| r < tr.regions.len()));
+    let is_session = match first {
+        Some((t, r)) => matches!(
+            p.tracks[t].regions[r].generated.as_ref().map(|g| &g.source),
+            Some(crate::model::Generator::Session(_))
+        ),
+        None => p.tracks.get(p.selected_track).is_some_and(|t| {
+            t.regions.iter().any(|r| {
+                matches!(
+                    r.generated.as_ref().map(|g| &g.source),
+                    Some(crate::model::Generator::Session(_))
+                )
+            })
+        }),
+    };
+    if is_session {
+        s.bottom = Bottom::SessionPlayer;
+        return;
+    }
     let audio = match first {
         Some((t, r)) => p.tracks[t].regions[r].audio.is_some(),
         None => p

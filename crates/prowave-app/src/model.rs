@@ -157,6 +157,7 @@ impl MissingAudio {
 pub enum Generator {
     Pattern(PatternParams),
     Drummer(DrummerParams),
+    Session(crate::session_player::SessionPlayerParams),
 }
 
 /// A region whose notes are made from settings. The notes are made again whenever the
@@ -2388,6 +2389,15 @@ impl Project {
             mix(bar.beats.to_bits());
             mix(u64::from(bar.num) << 8 | u64::from(bar.den));
         }
+        mix(u64::from(self.key_root));
+        mix(self.chords.len() as u64);
+        for c in &self.chords {
+            mix(c.start_beat.to_bits());
+            mix(c.len_beats.to_bits());
+            for b in c.name.as_bytes() {
+                mix(u64::from(*b));
+            }
+        }
         hash
     }
 
@@ -2400,13 +2410,25 @@ impl Project {
         let Some(generated) = &r.generated else {
             return;
         };
-        let notes = match &generated.source {
-            Generator::Pattern(p) => p.notes(self.region_len_beats(r)),
-            Generator::Drummer(d) => drummer_notes(d, &self.region_bars(r)),
+        let (notes, controls) = match &generated.source {
+            Generator::Pattern(p) => (p.notes(self.region_len_beats(r)), None),
+            Generator::Drummer(d) => (drummer_notes(d, &self.region_bars(r)), None),
+            Generator::Session(sp) => {
+                let (n, c) = crate::session_player::generate_session_region(
+                    sp,
+                    &self.region_bars(r),
+                    &self.chords,
+                    self.key_root,
+                );
+                (n, Some(c))
+            }
         };
         let key = self.generated_key(r);
         let region = &mut self.tracks[ti].regions[ri];
         region.notes = notes;
+        if let Some(c) = controls {
+            region.controls = c;
+        }
         if let Some(g) = region.generated.as_mut() {
             g.made_for = key;
         }
@@ -2501,6 +2523,35 @@ impl Project {
             missing: None,
             params: RegionParams::default(),
             generated: Some(Generated::new(source)),
+        });
+        let ri = track.regions.len() - 1;
+        self.regenerate(ti, ri);
+        Some(ri)
+    }
+
+    /// Adds a 4-bar Session Player region (`Keyboard`, `Bass`, or `Drummer`) at `at_bar`.
+    pub fn add_session_region(
+        &mut self,
+        ti: usize,
+        params: crate::session_player::SessionPlayerParams,
+        at_bar: f32,
+    ) -> Option<usize> {
+        let track = self.tracks.get_mut(ti)?;
+        if !track.kind.has_regions() || track.kind == TrackKind::Audio {
+            return None;
+        }
+        let name = params.kind.label().to_string();
+        track.regions.push(Region {
+            name,
+            start_bar: at_bar.max(1.0),
+            len_bars: 4.0,
+            notes: Vec::new(),
+            controls: Vec::new(),
+            folder: None,
+            audio: None,
+            missing: None,
+            params: RegionParams::default(),
+            generated: Some(Generated::new(Generator::Session(params))),
         });
         let ri = track.regions.len() - 1;
         self.regenerate(ti, ri);

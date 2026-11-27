@@ -232,6 +232,7 @@ fn dispatch(
                 crate::Bottom::PianoRoll => "piano_roll",
                 crate::Bottom::PitchEditor => "pitch_editor",
                 crate::Bottom::MacroControls => "macro_controls",
+                crate::Bottom::SessionPlayer => "session_player",
             };
             Some(json!({
                 "ok": true,
