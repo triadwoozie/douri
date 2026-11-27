@@ -3443,6 +3443,18 @@ fn main() -> eframe::Result {
                     }
                 }
             }
+            if scene == "kestrel-eq" {
+                app.ui.bottom = Bottom::Mixer;
+                let mut ins = crate::model::Insert::new(prowave_engine::FxKind::KestrelEq);
+                ins.params[prowave_engine::kestrel_eq::idx::MID_GAIN] = 6.0;
+                ins.params[prowave_engine::kestrel_eq::idx::LOW_GAIN] = 3.5;
+                ins.params[prowave_engine::kestrel_eq::idx::HPF] = 2.0;
+                app.project.tracks[0].inserts = vec![ins];
+                app.ui.mixer.fx_window = Some((0, 0));
+            }
+            if scene == "mixer-meters" {
+                app.ui.bottom = Bottom::Mixer;
+            }
             if scene == "pattern" || scene == "step-sequencer" {
                 let pr = &mut app.project;
                 if let Some(t) = pr

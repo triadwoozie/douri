@@ -30,6 +30,7 @@ mod fx;
 mod gain_smoothing;
 pub mod hydrogen;
 pub mod ir_file;
+pub mod kestrel_eq;
 #[cfg(not(target_arch = "wasm32"))]
 mod mapped;
 pub mod melody;

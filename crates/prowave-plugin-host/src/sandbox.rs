@@ -1134,9 +1134,12 @@ pub(crate) fn serve(args: &[OsString]) -> ! {
     let Some(local) = instance.local().cloned() else {
         fail("the plug-in is not in this process")
     };
-    let has_editor =
-        (cfg!(target_os = "macos") || cfg!(target_os = "linux") || cfg!(target_os = "windows"))
-            && local.backend().main_has_editor();
+    let has_display =
+        !cfg!(target_os = "linux") || std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty());
+    let has_editor = (cfg!(target_os = "macos")
+        || (cfg!(target_os = "linux") && has_display)
+        || cfg!(target_os = "windows"))
+        && local.backend().main_has_editor();
     let latency = instance.latency_samples();
     out.line(&format!("r\tready\t{latency}\t{}", u8::from(has_editor)));
     for (i, param) in instance.params().iter().enumerate() {

@@ -82,6 +82,8 @@ const IID_QUEUE: Tuid = iid(0x0126_3A18, 0xED07_4F6F, 0x98C9_D356, 0x4686_F9BA);
 const IID_HOST: Tuid = iid(0x58E5_95CC, 0xDB2D_4969, 0x8B6A_AF8C, 0x36A6_64E5);
 const IID_HANDLER: Tuid = iid(0x93A0_BEA3, 0x0BD0_45DB, 0x8E89_0B0C, 0xC1E4_6AC6);
 const IID_FRAME: Tuid = iid(0x367F_AF01, 0xAFA9_4693, 0x8D4D_A2A0, 0xED08_82A3);
+#[cfg(target_os = "linux")]
+const IID_RUNLOOP: Tuid = iid(0x18C3_5366, 0x9776_4F1A, 0x9C5B_8385, 0x7A87_1389);
 const IID_MESSAGE: Tuid = iid(0x936F_033B, 0xC6C0_47DB, 0xBB08_82F8, 0x13C1_E613);
 const IID_ATTRIBUTES: Tuid = iid(0x1E5F_0AEB, 0xCC7F_4533, 0xA254_4011, 0x38AD_5EE4);
 const IID_EVENT_LIST: Tuid = iid(0x3A2C_4214, 0x3463_49FE, 0xB2C4_F397, 0xB969_5A44);
@@ -290,6 +292,16 @@ unsafe fn query(object: Object, id: &Tuid) -> Object {
         out
     } else {
         std::ptr::null_mut()
+    }
+}
+
+/// # Safety
+/// `object` is null or a live VST3 object.
+#[cfg(target_os = "linux")]
+unsafe fn retain(object: Object) {
+    if !object.is_null() {
+        // SAFETY: the caller's contract.
+        unsafe { (table::<Unknown>(object).add_ref)(object) };
     }
 }
 
@@ -1525,12 +1537,299 @@ struct FrameTable {
     resize: unsafe extern "system" fn(Object, Object, *mut ViewRect) -> TResult,
 }
 
+/// `Linux::IEventHandler`: a plug-in object told when its file descriptor is ready.
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct EventHandlerTable {
+    unknown: Unknown,
+    on_fd_is_set: unsafe extern "system" fn(Object, i32),
+}
+
+/// `Linux::ITimerHandler`: a plug-in object told when its interval has passed.
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct TimerHandlerTable {
+    unknown: Unknown,
+    on_timer: unsafe extern "system" fn(Object),
+}
+
+/// `Linux::IRunLoop`, in the order of the VST3 SDK's `iplugview.h`.
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct RunLoopTable {
+    unknown: Unknown,
+    register_event_handler: unsafe extern "system" fn(Object, Object, i32) -> TResult,
+    unregister_event_handler: unsafe extern "system" fn(Object, Object) -> TResult,
+    register_timer: unsafe extern "system" fn(Object, Object, u64) -> TResult,
+    unregister_timer: unsafe extern "system" fn(Object, Object) -> TResult,
+}
+
+#[cfg(target_os = "linux")]
+struct TimerRegistration {
+    handler: Object,
+    due: std::time::Instant,
+    interval: std::time::Duration,
+}
+
+/// The host's Linux run loop: descriptors the plug-in wants read and timers it wants called.
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct RunLoop {
+    table: *const RunLoopTable,
+    events: Mutex<Vec<(Object, i32)>>,
+    timers: Mutex<Vec<TimerRegistration>>,
+}
+
+#[cfg(target_os = "linux")]
+static RUNLOOP_TABLE: RunLoopTable = RunLoopTable {
+    unknown: Unknown {
+        query: runloop_query,
+        add_ref: host_count,
+        release: host_count,
+    },
+    register_event_handler: runloop_register_event_handler,
+    unregister_event_handler: runloop_unregister_event_handler,
+    register_timer: runloop_register_timer,
+    unregister_timer: runloop_unregister_timer,
+};
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn runloop_query(
+    this: Object,
+    id: *const Tuid,
+    out: *mut Object,
+) -> TResult {
+    // SAFETY: the plug-in's `queryInterface` arguments.
+    unsafe { host_query(this, id, out, &IID_RUNLOOP) }
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn runloop_register_event_handler(
+    this: Object,
+    handler: Object,
+    fd: i32,
+) -> TResult {
+    if this.is_null() || handler.is_null() || fd < 0 {
+        return FALSE;
+    }
+    // SAFETY: `this` is the `RunLoop` embedded in the frame, held alive by the backend.
+    let run = unsafe { &*this.cast::<RunLoop>() };
+    let Ok(mut events) = run.events.lock() else {
+        return FALSE;
+    };
+    if events.iter().any(|(h, _)| *h == handler) {
+        return FALSE;
+    }
+    // SAFETY: `handler` is a live plug-in object that the host keeps until unregistration.
+    unsafe { retain(handler) };
+    events.push((handler, fd));
+    OK
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn runloop_unregister_event_handler(
+    this: Object,
+    handler: Object,
+) -> TResult {
+    if this.is_null() || handler.is_null() {
+        return FALSE;
+    }
+    // SAFETY: as in `runloop_register_event_handler`.
+    let run = unsafe { &*this.cast::<RunLoop>() };
+    let entry = {
+        let Ok(mut events) = run.events.lock() else {
+            return FALSE;
+        };
+        let Some(index) = events.iter().position(|(h, _)| *h == handler) else {
+            return FALSE;
+        };
+        events.remove(index)
+    };
+    // SAFETY: the entry was registered above and held one reference for the host.
+    unsafe { release(entry.0) };
+    OK
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn runloop_register_timer(
+    this: Object,
+    handler: Object,
+    milliseconds: u64,
+) -> TResult {
+    if this.is_null() || handler.is_null() {
+        return FALSE;
+    }
+    let Some(due) =
+        std::time::Instant::now().checked_add(std::time::Duration::from_millis(milliseconds))
+    else {
+        return FALSE;
+    };
+    // SAFETY: as in `runloop_register_event_handler`.
+    let run = unsafe { &*this.cast::<RunLoop>() };
+    let Ok(mut timers) = run.timers.lock() else {
+        return FALSE;
+    };
+    if timers.iter().any(|t| t.handler == handler) {
+        return FALSE;
+    }
+    // SAFETY: `handler` is a live plug-in object that the host keeps until unregistration.
+    unsafe { retain(handler) };
+    timers.push(TimerRegistration {
+        handler,
+        due,
+        interval: std::time::Duration::from_millis(milliseconds),
+    });
+    OK
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn runloop_unregister_timer(this: Object, handler: Object) -> TResult {
+    if this.is_null() || handler.is_null() {
+        return FALSE;
+    }
+    // SAFETY: as in `runloop_register_event_handler`.
+    let run = unsafe { &*this.cast::<RunLoop>() };
+    let entry = {
+        let Ok(mut timers) = run.timers.lock() else {
+            return FALSE;
+        };
+        let Some(index) = timers.iter().position(|t| t.handler == handler) else {
+            return FALSE;
+        };
+        timers.remove(index)
+    };
+    // SAFETY: the entry was registered above and held one reference for the host.
+    unsafe { release(entry.handler) };
+    OK
+}
+
+#[cfg(target_os = "linux")]
+impl RunLoop {
+    fn new() -> Self {
+        Self {
+            table: &RUNLOOP_TABLE,
+            events: Mutex::new(Vec::new()),
+            timers: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Calls plug-in handlers for readable descriptors and elapsed timers. Called on the
+    /// plug-in process's main thread, never from the audio thread.
+    pub(crate) fn pump(&self) {
+        let events: Vec<(Object, i32)> = match self.events.lock() {
+            Ok(events) => events.iter().copied().collect(),
+            Err(_) => Vec::new(),
+        };
+        if !events.is_empty() {
+            let mut fds: Vec<libc::pollfd> = events
+                .iter()
+                .map(|(_, fd)| libc::pollfd {
+                    fd: *fd,
+                    events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
+                    revents: 0,
+                })
+                .collect();
+            // SAFETY: `fds` is writable and holds only descriptors the plug-in registered.
+            let ready = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 0) };
+            if ready > 0 {
+                for ((handler, fd), polled) in events.iter().zip(&fds) {
+                    if polled.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
+                        && self.hold_event(*handler, *fd)
+                    {
+                        // SAFETY: `hold_event` took a reference, so the handler stays alive for
+                        // this callback even if it unregisters itself there.
+                        unsafe {
+                            (table::<EventHandlerTable>(*handler).on_fd_is_set)(*handler, *fd);
+                            release(*handler);
+                        }
+                    }
+                }
+            }
+        }
+
+        let now = std::time::Instant::now();
+        let due: Vec<Object> = match self.timers.lock() {
+            Ok(mut timers) => {
+                let mut due = Vec::new();
+                for timer in timers.iter_mut() {
+                    if timer.due <= now {
+                        due.push(timer.handler);
+                        if let Some(next) = now.checked_add(timer.interval) {
+                            timer.due = next;
+                        }
+                    }
+                }
+                due
+            }
+            Err(_) => Vec::new(),
+        };
+        for handler in due {
+            if !self.hold_timer(handler) {
+                continue;
+            }
+            // SAFETY: `hold_timer` took a reference, so the handler stays alive for this
+            // callback even if it unregisters itself there.
+            unsafe {
+                (table::<TimerHandlerTable>(handler).on_timer)(handler);
+                release(handler);
+            }
+        }
+    }
+
+    /// Takes a reference to `handler` if it is still registered for `fd`, skipping handlers
+    /// unregistered by an earlier callback in the same pump.
+    fn hold_event(&self, handler: Object, fd: i32) -> bool {
+        let Ok(events) = self.events.lock() else {
+            return false;
+        };
+        let held = events.iter().any(|(h, f)| *h == handler && *f == fd);
+        if held {
+            // SAFETY: the registration holds a reference and the lock is held.
+            unsafe { retain(handler) };
+        }
+        held
+    }
+
+    /// Takes a reference to `handler` if its timer is still registered.
+    fn hold_timer(&self, handler: Object) -> bool {
+        let Ok(timers) = self.timers.lock() else {
+            return false;
+        };
+        let held = timers.iter().any(|t| t.handler == handler);
+        if held {
+            // SAFETY: the registration holds a reference and the lock is held.
+            unsafe { retain(handler) };
+        }
+        held
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for RunLoop {
+    fn drop(&mut self) {
+        // SAFETY: the host holds one reference for each live registration.
+        if let Ok(events) = self.events.lock() {
+            for (handler, _) in events.iter() {
+                unsafe { release(*handler) };
+            }
+        }
+        if let Ok(timers) = self.timers.lock() {
+            for timer in timers.iter() {
+                unsafe { release(timer.handler) };
+            }
+        }
+    }
+}
+
 /// The `IPlugFrame` a view asks for another size: the size is kept for the window (width in
-/// the high half, height in the low; 0: nothing asked) and the view is told it has it.
+/// the high half, height in the low; 0: nothing asked) and the view is told it has it. On Linux
+/// it also carries the `IRunLoop` the view needs for its own event handling.
 #[repr(C)]
 struct Frame {
     table: *const FrameTable,
     wanted: AtomicU64,
+    #[cfg(target_os = "linux")]
+    run_loop: RunLoop,
 }
 
 static FRAME_TABLE: FrameTable = FrameTable {
@@ -1542,9 +1841,45 @@ static FRAME_TABLE: FrameTable = FrameTable {
     resize: frame_resize,
 };
 
+#[cfg(not(target_os = "linux"))]
 unsafe extern "system" fn frame_query(this: Object, id: *const Tuid, out: *mut Object) -> TResult {
     // SAFETY: the plug-in's `queryInterface` arguments.
     unsafe { host_query(this, id, out, &IID_FRAME) }
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "system" fn frame_query(this: Object, id: *const Tuid, out: *mut Object) -> TResult {
+    if this.is_null() || id.is_null() || out.is_null() {
+        return FALSE;
+    }
+    // SAFETY: checked not null; an interface id is sixteen readable bytes.
+    let id = unsafe { &*id };
+    if *id == IID_FRAME || *id == IID_UNKNOWN {
+        // SAFETY: `out` is writable for one pointer.
+        unsafe { *out = this };
+        return OK;
+    }
+    if *id == IID_RUNLOOP {
+        // SAFETY: `this` is the backend's live `Frame`; its `RunLoop` outlives the call.
+        let frame = unsafe { &*this.cast::<Frame>() };
+        // SAFETY: `out` is writable for one pointer, and the run loop starts with its table.
+        unsafe {
+            *out = std::ptr::from_ref(&frame.run_loop)
+                .cast::<*const c_void>()
+                .cast_mut();
+        }
+        return OK;
+    }
+    // SAFETY: `out` is writable for one pointer.
+    unsafe { *out = std::ptr::null_mut() };
+    NO_INTERFACE
+}
+
+#[cfg(target_os = "linux")]
+impl Frame {
+    fn pump(&self) {
+        self.run_loop.pump();
+    }
 }
 
 unsafe extern "system" fn frame_resize(this: Object, view: Object, size: *mut ViewRect) -> TResult {
@@ -1817,6 +2152,8 @@ pub(crate) fn load(path: &Path, id: &str, rate: f64, block: usize) -> Result<Vst
             frame: Box::new(Frame {
                 table: &FRAME_TABLE,
                 wanted: AtomicU64::new(0),
+                #[cfg(target_os = "linux")]
+                run_loop: RunLoop::new(),
             }),
             view: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
             component,
@@ -2091,6 +2428,11 @@ impl Backend for Vst3Backend {
         right[..frames].copy_from_slice(&audio.output[usize::from(!audio.mono_out)][..frames]);
     }
 
+    fn main_idle(&self) {
+        #[cfg(target_os = "linux")]
+        self.frame.pump();
+    }
+
     fn main_has_editor(&self) -> bool {
         // The view is made when it is first shown (making it needs the main thread's run
         // loop); until then a controller is taken to have one.
@@ -2192,6 +2534,90 @@ impl Drop for Vst3Backend {
             release(self.processor);
             (comp.terminate)(self.component);
             release(self.component);
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod runloop_tests {
+    use super::*;
+    use std::ptr;
+    use std::sync::atomic::AtomicUsize;
+
+    unsafe extern "system" fn test_query(
+        _: super::Object,
+        _: *const super::Tuid,
+        out: *mut super::Object,
+    ) -> super::TResult {
+        unsafe { *out = ptr::null_mut() };
+        super::NO_INTERFACE
+    }
+    unsafe extern "system" fn test_add_ref(_: super::Object) -> u32 {
+        2
+    }
+    unsafe extern "system" fn test_release(_: super::Object) -> u32 {
+        1
+    }
+
+    #[test]
+    fn a_handler_unregistered_during_the_pump_is_not_called() {
+        static A_CALLS: AtomicUsize = AtomicUsize::new(0);
+        static B_CALLS: AtomicUsize = AtomicUsize::new(0);
+        static RUN: AtomicUsize = AtomicUsize::new(0);
+        static OBJ_B: AtomicUsize = AtomicUsize::new(0);
+
+        unsafe extern "system" fn a_unregisters_b(_: super::Object, _: i32) {
+            A_CALLS.fetch_add(1, Ordering::Relaxed);
+            let run = RUN.load(Ordering::Relaxed) as super::Object;
+            let b = OBJ_B.load(Ordering::Relaxed) as super::Object;
+            unsafe { runloop_unregister_event_handler(run, b) };
+        }
+        unsafe extern "system" fn b_counts(_: super::Object, _: i32) {
+            B_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+
+        let table_a = EventHandlerTable {
+            unknown: Unknown {
+                query: test_query,
+                add_ref: test_add_ref,
+                release: test_release,
+            },
+            on_fd_is_set: a_unregisters_b,
+        };
+        let table_b = EventHandlerTable {
+            unknown: Unknown {
+                query: test_query,
+                add_ref: test_add_ref,
+                release: test_release,
+            },
+            on_fd_is_set: b_counts,
+        };
+        let mut table_a_ptr: *const EventHandlerTable = &table_a;
+        let mut table_b_ptr: *const EventHandlerTable = &table_b;
+        let obj_a = ptr::from_mut(&mut table_a_ptr).cast::<*const c_void>();
+        let obj_b = ptr::from_mut(&mut table_b_ptr).cast::<*const c_void>();
+        let run = RunLoop::new();
+        let this = ptr::from_ref(&run).cast::<*const c_void>().cast_mut();
+        RUN.store(this as usize, Ordering::Relaxed);
+        OBJ_B.store(obj_b as usize, Ordering::Relaxed);
+
+        let mut fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        assert_eq!(unsafe { libc::write(fds[1], b"x".as_ptr().cast(), 1) }, 1);
+        unsafe {
+            assert_eq!(runloop_register_event_handler(this, obj_a, fds[0]), OK);
+            assert_eq!(runloop_register_event_handler(this, obj_b, fds[0]), OK);
+        }
+        run.pump();
+        assert_eq!(A_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            B_CALLS.load(Ordering::Relaxed),
+            0,
+            "a handler unregistered by an earlier callback must not be called"
+        );
+        unsafe {
+            libc::close(fds[0]);
+            libc::close(fds[1]);
         }
     }
 }

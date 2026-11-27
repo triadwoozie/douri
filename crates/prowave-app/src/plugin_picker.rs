@@ -55,7 +55,7 @@ pub fn category(kind: FxKind) -> &'static str {
         | FxKind::LemonLimiter
         | FxKind::LemonClip
         | FxKind::LemonTransient => "Dynamics",
-        FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq => "EQ",
+        FxKind::ChannelEq | FxKind::MultiEq | FxKind::PultEq | FxKind::KestrelEq => "EQ",
         FxKind::Filter => "Filter",
         FxKind::Chorus | FxKind::Phaser | FxKind::FreqShifter => "Modulation",
         FxKind::AutoPan => "Imaging",
