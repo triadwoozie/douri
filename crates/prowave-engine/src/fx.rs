@@ -7,7 +7,9 @@
 //! [`FxKind::params`] lists their names, ranges and defaults, and anything out of range or
 //! not finite is clamped, so a damaged project cannot make the output blow up.
 use crate::convolver::Convolver;
+use crate::dustbowl::DustState;
 use crate::kestrel_eq::KestrelState;
+use crate::mosaic::MosaicState;
 use crate::native_fx::NativeFx;
 use crate::plugin::{BlockEffect, PluginSlot, PLUGIN_BLOCK};
 use crate::pult_eq::PultState;
@@ -42,6 +44,10 @@ pub enum FxKind {
     /// Kestrel EQ: a console-style channel EQ with an input transformer (see
     /// [`crate::kestrel_eq`]).
     KestrelEq,
+    /// Mosaic Decimator: a bit-depth and sample-rate reducer (see [`crate::mosaic`]).
+    Decimator,
+    /// Dustbowl Lo-Fi: worn tape and dusty vinyl (see [`crate::dustbowl`]).
+    LoFi,
     /// Lemon Limiter: FL Fruity Limiter recreation from Lemon Studio.
     LemonLimiter,
     /// Lemon Soft Clipper: FL Soft Clipper recreation from Lemon Studio.
@@ -307,6 +313,26 @@ const DRIVE_PARAMS: [ParamInfo; 4] = [
     pl("Tone", 500.0, 16000.0, 8000.0, "Hz"),
     p("Level", -24.0, 6.0, -3.0, "dB"),
     p("Mix", 0.0, 1.0, 1.0, ""),
+];
+/// Mosaic Decimator's dials (see `mosaic.rs`).
+const MOSAIC_PARAMS: [ParamInfo; crate::mosaic::idx::COUNT] = [
+    p("Bits", 1.0, 24.0, 24.0, "bit"),
+    pl("Rate", 500.0, 48_000.0, 48_000.0, "Hz"),
+    p("Dither", 0.0, 100.0, 0.0, "%"),
+    p("Mix", 0.0, 100.0, 100.0, "%"),
+    p("Output", -24.0, 12.0, 0.0, "dB"),
+];
+/// Dustbowl Lo-Fi's dials (see `dustbowl.rs`): 20 Hz of Low Cut and 20 kHz of High Cut are off.
+const DUSTBOWL_PARAMS: [ParamInfo; crate::dustbowl::idx::COUNT] = [
+    pl("Low Cut", 20.0, 2_000.0, 90.0, "Hz"),
+    pl("High Cut", 1_000.0, 20_000.0, 7_000.0, "Hz"),
+    p("Wow", 0.0, 100.0, 25.0, "%"),
+    p("Flutter", 0.0, 100.0, 15.0, "%"),
+    p("Drive", 0.0, 100.0, 20.0, "%"),
+    p("Hiss", 0.0, 100.0, 15.0, "%"),
+    p("Crackle", 0.0, 100.0, 0.0, "%"),
+    p("Mix", 0.0, 100.0, 100.0, "%"),
+    p("Output", -24.0, 12.0, 0.0, "dB"),
 ];
 const FILTER_PARAMS: [ParamInfo; 3] = [
     pl("Cutoff", 20.0, 20000.0, 1000.0, "Hz"),
@@ -685,7 +711,7 @@ fn limiter_len(sr: f32) -> usize {
 }
 
 impl FxKind {
-    pub const ALL: [FxKind; 24] = [
+    pub const ALL: [FxKind; 26] = [
         FxKind::ChannelEq,
         FxKind::Compressor,
         FxKind::MultiComp,
@@ -701,6 +727,8 @@ impl FxKind {
         FxKind::Amp,
         FxKind::PultEq,
         FxKind::KestrelEq,
+        FxKind::Decimator,
+        FxKind::LoFi,
         FxKind::LemonLimiter,
         FxKind::LemonClip,
         FxKind::LemonDist,
@@ -731,6 +759,8 @@ impl FxKind {
             FxKind::Plugin => "Plug-in",
             FxKind::PultEq => "Pult EQ",
             FxKind::KestrelEq => "Kestrel EQ",
+            FxKind::Decimator => "Mosaic Decimator",
+            FxKind::LoFi => "Dustbowl Lo-Fi",
             FxKind::LemonLimiter => "Lemon Limiter",
             FxKind::LemonClip => "Lemon Soft Clipper",
             FxKind::LemonDist => "Lemon Fast Dist",
@@ -784,6 +814,10 @@ impl FxKind {
             "plug-in" | "plugin" | "ladspa" => FxKind::Plugin,
             "pult eq" | "pulteq" | "pultec eq" | "tube eq" => FxKind::PultEq,
             "kestrel eq" | "kestreleq" | "console eq" | "vintage console eq" => FxKind::KestrelEq,
+            "mosaic decimator" | "mosaic" | "decimator" | "bitcrusher" | "bit crusher" => {
+                FxKind::Decimator
+            }
+            "dustbowl lo-fi" | "dustbowl" | "lo-fi" | "lofi" | "lo fi" => FxKind::LoFi,
             "lemon limiter" => FxKind::LemonLimiter,
             "lemon soft clipper" | "lemon clip" | "soft clipper" => FxKind::LemonClip,
             "lemon fast dist" | "lemon fast distortion" | "fast dist" | "fast distortion" => {
@@ -822,6 +856,8 @@ impl FxKind {
             FxKind::Plugin => &PLUGIN_PARAMS,
             FxKind::PultEq => &PULT_PARAMS,
             FxKind::KestrelEq => &KESTREL_PARAMS,
+            FxKind::Decimator => &MOSAIC_PARAMS,
+            FxKind::LoFi => &DUSTBOWL_PARAMS,
             FxKind::LemonLimiter => &LEMON_LIMITER_PARAMS,
             FxKind::LemonClip => &LEMON_CLIP_PARAMS,
             FxKind::LemonDist => &LEMON_DIST_PARAMS,
@@ -1179,14 +1215,14 @@ pub fn eq_response_db(params: [f32; MAX_FX_PARAMS], freqs: &[f32], sr: f32) -> V
 
 /// A delay line with linear interpolation. The buffer is a power of two long.
 #[derive(Clone, Debug)]
-struct Line {
-    buf: Vec<f32>,
+pub(crate) struct Line {
+    pub(crate) buf: Vec<f32>,
     pos: usize,
     mask: usize,
 }
 
 impl Line {
-    fn new(max_samples: usize) -> Self {
+    pub(crate) fn new(max_samples: usize) -> Self {
         let len = (max_samples + 2).next_power_of_two().max(4);
         Self {
             buf: vec![0.0; len],
@@ -1196,14 +1232,14 @@ impl Line {
     }
 
     #[inline]
-    fn push(&mut self, x: f32) {
+    pub(crate) fn push(&mut self, x: f32) {
         self.pos = (self.pos + 1) & self.mask;
         self.buf[self.pos] = x;
     }
 
     /// The sample written `delay` samples ago (a fraction is interpolated).
     #[inline]
-    fn read(&self, delay: f32) -> f32 {
+    pub(crate) fn read(&self, delay: f32) -> f32 {
         let d = delay.clamp(1.0, (self.mask - 1) as f32);
         let whole = d as usize;
         let frac = d - whole as f32;
@@ -1881,6 +1917,8 @@ enum State {
     Plugin(Box<PluginSlot>),
     PultEq(Box<PultState>),
     KestrelEq(Box<KestrelState>),
+    Mosaic(Box<MosaicState>),
+    Dust(Box<DustState>),
     LemonLimiter(Box<LemonLimiterState>),
     LemonClip(LemonClipState),
     LemonDist(Box<LemonDistState>),
@@ -1969,6 +2007,8 @@ impl Fx {
             FxKind::Plugin => State::Plugin(Box::new(PluginSlot::empty())),
             FxKind::PultEq => State::PultEq(Box::new(PultState::new())),
             FxKind::KestrelEq => State::KestrelEq(Box::new(KestrelState::new())),
+            FxKind::Decimator => State::Mosaic(Box::new(MosaicState::new())),
+            FxKind::LoFi => State::Dust(Box::new(DustState::new(sr))),
             FxKind::LemonLimiter => State::LemonLimiter(Box::new(LemonLimiterState::new(sr))),
             FxKind::LemonClip => State::LemonClip(LemonClipState::new(&params)),
             FxKind::LemonDist => State::LemonDist(Box::new(LemonDistState::new(sr, &params))),
@@ -2177,6 +2217,8 @@ impl Fx {
             State::Plugin(s) => s.apply_settings(&pr),
             State::PultEq(s) => s.retune(&pr, sr),
             State::KestrelEq(s) => s.retune(&pr, sr),
+            State::Mosaic(s) => s.retune(&pr, sr),
+            State::Dust(s) => s.retune(&pr, sr),
             State::Amp(s) => {
                 let model = &AMP_VOICES[pr[0].round().clamp(0.0, 4.0) as usize];
                 // The Gain knob is spread over the four valves, so each one clips in turn.
@@ -2515,6 +2557,8 @@ impl Fx {
             State::Plugin(s) => s.tick(l, r),
             State::PultEq(s) => s.process(&pr, l, r),
             State::KestrelEq(s) => s.process(&pr, l, r),
+            State::Mosaic(s) => s.process(l, r),
+            State::Dust(s) => s.process(l, r),
             State::Amp(s) => {
                 let input = [l, r];
                 let mut out = [0f32; 2];
@@ -2681,6 +2725,8 @@ impl Fx {
             State::Plugin(s) => s.reset(),
             State::PultEq(s) => s.reset(),
             State::KestrelEq(s) => s.reset(),
+            State::Mosaic(s) => s.reset(),
+            State::Dust(s) => s.reset(),
             State::Amp(s) => {
                 s.input_hp.iter_mut().for_each(|b| *b = b.cleared());
                 s.pre_lp.iter_mut().for_each(|b| *b = b.cleared());

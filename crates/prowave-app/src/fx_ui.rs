@@ -77,7 +77,9 @@ fn family(kind: FxKind) -> (Family, &'static str, Color32) {
         FxKind::Delay | FxKind::Chorus | FxKind::Phaser | FxKind::LemonDelay => {
             (Family::Time, "Time", TIME_BLUE)
         }
-        FxKind::Overdrive | FxKind::Amp | FxKind::LemonDist => (Family::Drive, "Drive", DRIVE_RUST),
+        FxKind::Overdrive | FxKind::Amp | FxKind::LemonDist | FxKind::Decimator | FxKind::LoFi => {
+            (Family::Drive, "Drive", DRIVE_RUST)
+        }
         FxKind::Filter | FxKind::FreqShifter | FxKind::AutoPan | FxKind::PitchCorrection => {
             (Family::Filter, "Pitch / Mod", FILTER_TEAL)
         }
@@ -689,7 +691,12 @@ fn visual(ui: &mut Ui, insert: &Insert, reduction: f32, beat: f64, accent: Color
         FxKind::LemonClip => lemon_clip_panel(ui, &params, accent),
         FxKind::LemonTransient => lemon_transient_panel(ui, &params, accent),
         FxKind::LemonReverb => lemon_reverb_panel(ui, &params, accent),
-        FxKind::PitchCorrection | FxKind::Amp | FxKind::Reverb | FxKind::Plugin => {}
+        FxKind::PitchCorrection
+        | FxKind::Amp
+        | FxKind::Reverb
+        | FxKind::Plugin
+        | FxKind::Decimator
+        | FxKind::LoFi => {}
     }
 }
 
@@ -1046,6 +1053,20 @@ fn param_text(kind: FxKind, info: &ParamInfo, v: f32) -> String {
         if let Some(text) = kestrel_text(info.name, v) {
             return text;
         }
+    }
+    if kind == FxKind::Decimator && info.name == "Bits" {
+        return if v >= 23.5 {
+            "24 bit (off)".into()
+        } else {
+            format!("{v:.1} bit")
+        };
+    }
+    if matches!(kind, FxKind::Decimator | FxKind::LoFi) && info.unit == "Hz" {
+        return if v >= 1000.0 {
+            format!("{:.1} kHz", v / 1000.0)
+        } else {
+            format!("{v:.0} Hz")
+        };
     }
     if matches!(info.name, "Amp" | "Cabinet") {
         return format!("{:.0}", v + 1.0);
@@ -4401,6 +4422,42 @@ mod tests {
         assert_eq!(kestrel_text("Mid Gain", 9.0), None);
         let (doc, _) = crate::project_io::to_doc(&p);
         assert_eq!(doc.tracks[0].fx[0].kind, "Kestrel EQ");
+        let (back, _) =
+            crate::project_io::from_doc(&doc, std::path::Path::new("."), &egui::Context::default());
+        assert_eq!(back.tracks[0].inserts, p.tracks[0].inserts);
+    }
+
+    #[test]
+    fn the_mosaic_and_dustbowl_windows_draw_show_their_values_and_survive_a_save() {
+        let mut p = Project::empty();
+        let mut mosaic = Insert::new(FxKind::Decimator);
+        mosaic.params[prowave_engine::mosaic::idx::BITS] = 8.0;
+        mosaic.params[prowave_engine::mosaic::idx::RATE] = 11_025.0;
+        let mut dust = Insert::new(FxKind::LoFi);
+        dust.params[prowave_engine::dustbowl::idx::CRACKLE] = 40.0;
+        p.tracks[0].inserts = vec![mosaic, dust];
+        let mut s = UiState::new();
+        let meters = Meters::default();
+        let mut h = crate::ui_test::Harness::new(1000.0, 800.0);
+        for slot in 0..2 {
+            s.mixer.fx_window = Some((0, slot));
+            for _ in 0..3 {
+                h.frame(vec![], |ui| show(ui.ctx(), &mut p, &mut s, &meters));
+            }
+            assert_eq!(s.mixer.fx_window, Some((0, slot)));
+        }
+        let bits = &FxKind::Decimator.params()[prowave_engine::mosaic::idx::BITS];
+        let rate = &FxKind::Decimator.params()[prowave_engine::mosaic::idx::RATE];
+        assert_eq!(param_text(FxKind::Decimator, bits, 24.0), "24 bit (off)");
+        assert_eq!(param_text(FxKind::Decimator, bits, 8.0), "8.0 bit");
+        assert_eq!(param_text(FxKind::Decimator, rate, 11_025.0), "11.0 kHz");
+        assert_eq!(param_text(FxKind::Decimator, rate, 800.0), "800 Hz");
+        let low = &FxKind::LoFi.params()[prowave_engine::dustbowl::idx::LOW_CUT];
+        assert_eq!(param_text(FxKind::LoFi, low, 90.0), "90 Hz");
+        // They are saved by their names and open again with the same settings.
+        let (doc, _) = crate::project_io::to_doc(&p);
+        assert_eq!(doc.tracks[0].fx[0].kind, "Mosaic Decimator");
+        assert_eq!(doc.tracks[0].fx[1].kind, "Dustbowl Lo-Fi");
         let (back, _) =
             crate::project_io::from_doc(&doc, std::path::Path::new("."), &egui::Context::default());
         assert_eq!(back.tracks[0].inserts, p.tracks[0].inserts);
