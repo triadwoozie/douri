@@ -1260,6 +1260,8 @@ fn generated_from_doc(r: &RegionDoc) -> Option<Generated> {
                     chance: row.chance.iter().copied().take(MAX_STEPS).collect(),
                     tie: row.tie.iter().copied().take(MAX_STEPS).collect(),
                     repeat: row.repeat.iter().copied().take(MAX_STEPS).collect(),
+                    mute: false,
+                    solo: false,
                 })
                 .collect(),
             direction: Direction::from_name(&d.direction),

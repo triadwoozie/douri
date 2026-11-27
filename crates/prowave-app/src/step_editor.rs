@@ -21,15 +21,16 @@ use crate::piano_roll::{velocity_color, Audition};
 use crate::widgets::{context_menu, BLUE, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{
-    pos2, vec2, Align, Align2, Color32, FontId, Layout, Rect, Sense, Stroke, StrokeKind, Ui,
-    UiBuilder,
+    pos2, vec2, Align, Align2, Color32, FontId, Layout, Rect, RichText, Sense, Stroke, StrokeKind,
+    Ui, UiBuilder,
 };
 
 const BG: Color32 = crate::theme::CANVAS_BG;
 const STRIP_BG: Color32 = crate::theme::CARD_BG;
-const STRIP_H: f32 = 32.0;
-const ROW_H: f32 = 24.0;
-const LABEL_W: f32 = 124.0;
+const STRIP_H: f32 = 34.0;
+const ROW_H: f32 = 25.0;
+const LABEL_W: f32 = 196.0;
+const INSPECTOR_W: f32 = 224.0;
 /// Width of the Drummer's controls.
 const PANEL_W: f32 = 330.0;
 
@@ -74,6 +75,14 @@ fn direction_name(d: Direction) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum InspectorTab {
+    #[default]
+    Pattern,
+    Row,
+    Step,
+}
+
 /// What the editors remember between frames.
 #[derive(Default)]
 pub struct StepView {
@@ -84,6 +93,29 @@ pub struct StepView {
     /// How far a row's name has been dragged towards its next pitch.
     pitch_drag: f32,
     scroll_y: f32,
+    show_inspector: bool,
+    inspector_tab: InspectorTab,
+    selected_row: usize,
+    selected_step: Option<(usize, usize)>,
+}
+
+fn rotate_vec<T: Clone>(v: &mut Vec<T>, len: usize, right: bool) {
+    let n = len.min(v.len());
+    if n <= 1 {
+        return;
+    }
+    if right {
+        v[..n].rotate_right(1);
+    } else {
+        v[..n].rotate_left(1);
+    }
+}
+
+fn rotate_row(row: &mut PatternRow, steps: usize, right: bool) {
+    rotate_vec(&mut row.steps, steps, right);
+    rotate_vec(&mut row.chance, steps, right);
+    rotate_vec(&mut row.tie, steps, right);
+    rotate_vec(&mut row.repeat, steps, right);
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -401,17 +433,100 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let mut convert = false;
     let mut mode = s.steps.mode;
 
-    // ---- settings
-    row_ui(ui, strip.shrink2(vec2(10.0, 4.0)), |ui| {
-        ui.label(tr("Steps:"));
-        let mut steps = pat.steps as u32;
+    // ---- Step Sequencer Menu Bar (Logic Pro p. 724)
+    let mut show_insp = s.steps.show_inspector;
+    let mut insp_tab = s.steps.inspector_tab;
+    row_ui(ui, strip.shrink2(vec2(8.0, 4.0)), |ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.menu_button("Functions", |ui| {
+            if ui.button("Rotate Left").clicked() {
+                for row in &mut pat.rows {
+                    rotate_row(row, pat.steps, false);
+                }
+                changed = true;
+                ui.close();
+            }
+            if ui.button("Rotate Right").clicked() {
+                for row in &mut pat.rows {
+                    rotate_row(row, pat.steps, true);
+                }
+                changed = true;
+                ui.close();
+            }
+            ui.separator();
+            for (lbl, delta) in [
+                ("Transpose +1 Semitone", 1i32),
+                ("Transpose -1 Semitone", -1),
+                ("Transpose +1 Octave", 12),
+                ("Transpose -1 Octave", -12),
+            ] {
+                if ui.button(lbl).clicked() {
+                    for row in &mut pat.rows {
+                        row.pitch = (row.pitch as i32 + delta).clamp(0, 127) as u8;
+                    }
+                    changed = true;
+                    ui.close();
+                }
+            }
+            ui.separator();
+            if ui.button("Delete Unused Rows").clicked() {
+                pat.rows.retain(|r| {
+                    r.steps[..pat.steps.min(r.steps.len())]
+                        .iter()
+                        .any(|&v| v > 0)
+                });
+                changed = true;
+                ui.close();
+            }
+            if ui.button("Clear Pattern").clicked() {
+                for row in &mut pat.rows {
+                    row.steps.fill(0);
+                    row.chance.fill(100);
+                    row.tie.fill(false);
+                    row.repeat.fill(1);
+                }
+                changed = true;
+                ui.close();
+            }
+            ui.separator();
+            if ui.button(tr("Convert to MIDI Region")).clicked() {
+                convert = true;
+                ui.close();
+            }
+        });
+
+        let insp_btn = egui::Button::new(
+            RichText::new(phosphor_egui::regular::INFO)
+                .size(13.0)
+                .color(if show_insp { Color32::WHITE } else { TEXT_DIM }),
+        )
+        .fill(if show_insp {
+            BLUE
+        } else {
+            Color32::from_rgb(0x28, 0x2a, 0x31)
+        })
+        .min_size(vec2(24.0, 22.0));
         if ui
-            .add(egui::DragValue::new(&mut steps).range(1..=64))
-            .changed()
+            .add(insp_btn)
+            .on_hover_text("Show Step Sequencer Inspector")
+            .clicked()
         {
-            pat.steps = steps as usize;
-            changed = true;
+            show_insp = !show_insp;
         }
+
+        ui.label(tr("Edit:"));
+        egui::ComboBox::from_id_salt("pattern_mode")
+            .selected_text(mode.name())
+            .width(76.0)
+            .show_ui(ui, |ui| {
+                for m in EditMode::ALL {
+                    if ui.selectable_label(mode == m, m.name()).clicked() {
+                        mode = m;
+                    }
+                }
+            });
+
+        ui.label(tr("Steps:"));
         for n in [16, 32, 64] {
             if ui
                 .selectable_label(pat.steps == n, format!("{n}"))
@@ -424,7 +539,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         ui.label(tr("Rate:"));
         egui::ComboBox::from_id_salt("pattern_rate")
             .selected_text(pat.rate.name())
-            .width(64.0)
+            .width(56.0)
             .show_ui(ui, |ui| {
                 for r in StepRate::ALL {
                     if ui.selectable_label(pat.rate == r, r.name()).clicked() {
@@ -433,30 +548,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                     }
                 }
             });
-        ui.label(tr("Swing:"));
-        let (rail_rect, _) = ui.allocate_exact_size(vec2(60.0, 18.0), Sense::hover());
-        let rail_line = Rect::from_center_size(rail_rect.center(), vec2(rail_rect.width(), 4.0));
-        ui.painter()
-            .rect_filled(rail_line, 2.0, Color32::from_rgb(0x2e, 0x31, 0x38));
-        let mut swing = (pat.swing * 100.0).round() as u32;
-        let drag = egui::DragValue::new(&mut swing).range(0..=50).suffix(" %");
-        if ui.put(rail_rect, drag).changed() {
-            pat.swing = swing as f32 / 100.0;
-            changed = true;
-        }
-        ui.label(tr("Gate:"));
-        let mut gate = (pat.gate * 100.0).round() as u32;
-        if ui
-            .add(egui::DragValue::new(&mut gate).range(5..=100).suffix(" %"))
-            .changed()
-        {
-            pat.gate = gate as f32 / 100.0;
-            changed = true;
-        }
         ui.label(tr("Direction:"));
         egui::ComboBox::from_id_salt("pattern_direction")
             .selected_text(direction_name(pat.direction))
-            .width(84.0)
+            .width(78.0)
             .show_ui(ui, |ui| {
                 for d in Direction::ALL {
                     if ui
@@ -468,23 +563,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
                     }
                 }
             });
-        ui.label(tr("Edit:"));
-        egui::ComboBox::from_id_salt("pattern_mode")
-            .selected_text(mode.name())
-            .width(84.0)
-            .show_ui(ui, |ui| {
-                for m in EditMode::ALL {
-                    if ui.selectable_label(mode == m, m.name()).clicked() {
-                        mode = m;
-                    }
-                }
-            });
-        let random = pat.rows.iter().any(|r| r.chance.iter().any(|c| *c < 100))
-            || pat.direction == Direction::Random;
-        if random && ui.button(tr("New Variation")).clicked() {
-            pat.seed = pat.seed.wrapping_add(1);
-            changed = true;
-        }
+
         let room = pat.rows.len() < MAX_ROWS;
         if ui
             .add_enabled(room, egui::Button::new(tr("Add Row")))
@@ -494,6 +573,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             pat.rows.push(PatternRow::new(pitch));
             changed = true;
         }
+
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui.button(tr("Convert to MIDI Region")).clicked() {
                 convert = true;
@@ -502,9 +582,18 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     });
 
     s.steps.mode = mode;
+    s.steps.show_inspector = show_insp;
 
-    // ---- grid
-    let area = Rect::from_min_max(pos2(body.left(), strip.bottom()), body.max);
+    // ---- grid + optional right-hand Step Sequencer Inspector (pp. 753-755)
+    let main_right = if show_insp && body.width() > 560.0 {
+        body.right() - INSPECTOR_W
+    } else {
+        body.right()
+    };
+    let area = Rect::from_min_max(
+        pos2(body.left(), strip.bottom()),
+        pos2(main_right, body.bottom()),
+    );
     let grid = Rect::from_min_max(pos2(area.left() + LABEL_W, area.top()), area.max);
     let steps = pat.steps.clamp(1, crate::pattern::MAX_STEPS);
     let cw = ((grid.width() - 12.0) / steps as f32).clamp(10.0, 64.0);
@@ -597,13 +686,27 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             continue;
         }
         let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0));
-        g.rect_filled(label, 3.0, crate::theme::CARD_BG);
+        let row_bg = if v.selected_row == r {
+            Color32::from_rgb(0x2a, 0x2d, 0x36)
+        } else {
+            crate::theme::CARD_BG
+        };
+        g.rect_filled(label, 3.0, row_bg);
+        g.rect_filled(
+            Rect::from_min_size(label.min, vec2(3.0, label.height())),
+            1.0,
+            if row.mute {
+                Color32::from_rgb(0x50, 0x54, 0x5e)
+            } else {
+                BLUE
+            },
+        );
         g.text(
-            label.left_center() + vec2(8.0, 0.0),
+            label.left_center() + vec2(44.0, 0.0),
             Align2::LEFT_CENTER,
             row_label(row.pitch, drums, kit.as_ref()),
-            FontId::proportional(12.0),
-            TEXT,
+            FontId::proportional(11.5),
+            if row.mute { TEXT_DIM } else { TEXT },
         );
         for k in 0..steps {
             let c = cell(r, k).shrink(1.0);
@@ -820,7 +923,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         v.gesture = None;
     }
 
-    // ---- the rows' names
+    // ---- Row headers: Mute (M), Solo (S), Name/Pitch Drag, Rotate (< / >)
     let mut sounding = None;
     let mut delete = None;
     for r in 0..pat.rows.len() {
@@ -830,17 +933,136 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         }
         let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0))
             .intersect(area);
+        let m_rect = Rect::from_center_size(
+            pos2(label.left() + 14.0, label.center().y),
+            vec2(15.0, 16.0),
+        );
+        let s_rect = Rect::from_center_size(
+            pos2(label.left() + 31.0, label.center().y),
+            vec2(15.0, 16.0),
+        );
+        let rot_l_rect = Rect::from_center_size(
+            pos2(label.right() - 26.0, label.center().y),
+            vec2(15.0, 16.0),
+        );
+        let rot_r_rect = Rect::from_center_size(
+            pos2(label.right() - 10.0, label.center().y),
+            vec2(15.0, 16.0),
+        );
+        let name_rect = Rect::from_min_max(
+            pos2(label.left() + 41.0, label.top()),
+            pos2(label.right() - 36.0, label.bottom()),
+        );
+
+        let m_resp = ui.interact(
+            m_rect,
+            egui::Id::unique(("pat_mute", ti, ri, r)),
+            Sense::click(),
+        );
+        let s_resp = ui.interact(
+            s_rect,
+            egui::Id::unique(("pat_solo", ti, ri, r)),
+            Sense::click(),
+        );
+        let rl_resp = ui.interact(
+            rot_l_rect,
+            egui::Id::unique(("pat_rot_l", ti, ri, r)),
+            Sense::click(),
+        );
+        let rr_resp = ui.interact(
+            rot_r_rect,
+            egui::Id::unique(("pat_rot_r", ti, ri, r)),
+            Sense::click(),
+        );
+
+        let gm = ui.painter_at(label);
+        gm.rect_filled(
+            m_rect,
+            3.0,
+            if pat.rows[r].mute {
+                Color32::from_rgb(0x28, 0x64, 0xb8)
+            } else {
+                Color32::from_rgb(0x2d, 0x2f, 0x36)
+            },
+        );
+        gm.text(
+            m_rect.center(),
+            Align2::CENTER_CENTER,
+            "M",
+            FontId::proportional(9.5),
+            if pat.rows[r].mute {
+                Color32::WHITE
+            } else {
+                TEXT_DIM
+            },
+        );
+        gm.rect_filled(
+            s_rect,
+            3.0,
+            if pat.rows[r].solo {
+                Color32::from_rgb(0xd4, 0xa8, 0x24)
+            } else {
+                Color32::from_rgb(0x2d, 0x2f, 0x36)
+            },
+        );
+        gm.text(
+            s_rect.center(),
+            Align2::CENTER_CENTER,
+            "S",
+            FontId::proportional(9.5),
+            if pat.rows[r].solo {
+                Color32::BLACK
+            } else {
+                TEXT_DIM
+            },
+        );
+        gm.text(
+            rot_l_rect.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::CARET_LEFT,
+            FontId::proportional(10.0),
+            TEXT_DIM,
+        );
+        gm.text(
+            rot_r_rect.center(),
+            Align2::CENTER_CENTER,
+            phosphor_egui::regular::CARET_RIGHT,
+            FontId::proportional(10.0),
+            TEXT_DIM,
+        );
+
+        if m_resp.clicked() {
+            pat.rows[r].mute = !pat.rows[r].mute;
+            changed = true;
+        }
+        if s_resp.clicked() {
+            pat.rows[r].solo = !pat.rows[r].solo;
+            changed = true;
+        }
+        if rl_resp.clicked() {
+            rotate_row(&mut pat.rows[r], pat.steps, false);
+            changed = true;
+        }
+        if rr_resp.clicked() {
+            rotate_row(&mut pat.rows[r], pat.steps, true);
+            changed = true;
+        }
+
         let resp = ui
             .interact(
-                label,
+                name_rect,
                 egui::Id::unique(("pattern_row", ti, ri, r)),
                 Sense::click_and_drag(),
             )
             .on_hover_text(tr(
                 "Drag to change the pitch; right-click to delete the row",
             ));
+        if resp.clicked() {
+            v.selected_row = r;
+        }
         if resp.drag_started_by(egui::PointerButton::Primary) {
             v.pitch_drag = 0.0;
+            v.selected_row = r;
         }
         if resp.dragged_by(egui::PointerButton::Primary) {
             v.pitch_drag -= resp.drag_delta().y;
@@ -856,6 +1078,14 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             sounding = Some(pat.rows[r].pitch);
         }
         context_menu(&resp, |ui| {
+            if ui.button("Clear Row").clicked() {
+                pat.rows[r].steps.fill(0);
+                pat.rows[r].chance.fill(100);
+                pat.rows[r].tie.fill(false);
+                pat.rows[r].repeat.fill(1);
+                changed = true;
+                ui.close();
+            }
             if ui.button(tr("Delete Row")).clicked() {
                 delete = Some(r);
                 ui.close();
@@ -878,9 +1108,179 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     if let Some(r) = delete {
         if r < pat.rows.len() {
             pat.rows.remove(r);
+            if v.selected_row >= pat.rows.len() {
+                v.selected_row = pat.rows.len().saturating_sub(1);
+            }
             changed = true;
         }
     }
+
+    // ---- Collapsible Step Sequencer Inspector (pp. 753-755)
+    if show_insp && body.width() > 560.0 {
+        let insp_rect = Rect::from_min_max(pos2(main_right, strip.bottom()), body.max);
+        let gi = ui.painter_at(insp_rect);
+        gi.rect_filled(insp_rect, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
+        gi.line_segment(
+            [insp_rect.left_top(), insp_rect.left_bottom()],
+            Stroke::new(1.0, crate::theme::BORDER),
+        );
+
+        ui.scope_builder(
+            UiBuilder::new()
+                .max_rect(insp_rect.shrink2(vec2(10.0, 8.0)))
+                .layout(Layout::top_down(Align::LEFT)),
+            |ui| {
+                ui.horizontal(|ui| {
+                    for (t, lbl) in [
+                        (InspectorTab::Pattern, "Pattern"),
+                        (InspectorTab::Row, "Row"),
+                        (InspectorTab::Step, "Step"),
+                    ] {
+                        if ui.selectable_label(insp_tab == t, lbl).clicked() {
+                            insp_tab = t;
+                        }
+                    }
+                });
+                ui.separator();
+                match insp_tab {
+                    InspectorTab::Pattern => {
+                        ui.label(tr("Swing:"));
+                        ui.horizontal(|ui| {
+                            let sw_cell =
+                                ui.allocate_exact_size(vec2(64.0, 68.0), Sense::hover()).0;
+                            let sw_g = ui.painter().clone();
+                            let sw_res = crate::daw_knob::draw_custom(
+                                ui,
+                                &sw_g,
+                                sw_cell,
+                                crate::daw_knob::DawKnobConfig {
+                                    id: egui::Id::unique("step_insp_swing"),
+                                    label: "Swing",
+                                    help_id: "step_swing",
+                                    style: crate::daw_knob::DawKnobStyle::Continuous,
+                                    min: 0.0,
+                                    max: 50.0,
+                                    default: 0.0,
+                                    log: false,
+                                    bipolar: false,
+                                    accent: true,
+                                    unit: "%",
+                                    diameter: 34.0,
+                                },
+                                pat.swing * 100.0,
+                                None,
+                                crate::daw_knob::DawKnobFinish::StudioMatte,
+                                None,
+                                true,
+                            );
+                            if sw_res.changed {
+                                pat.swing = sw_res.value / 100.0;
+                                changed = true;
+                            }
+
+                            let gt_cell =
+                                ui.allocate_exact_size(vec2(64.0, 68.0), Sense::hover()).0;
+                            let gt_g = ui.painter().clone();
+                            let gt_res = crate::daw_knob::draw_custom(
+                                ui,
+                                &gt_g,
+                                gt_cell,
+                                crate::daw_knob::DawKnobConfig {
+                                    id: egui::Id::unique("step_insp_gate"),
+                                    label: "Gate",
+                                    help_id: "step_gate",
+                                    style: crate::daw_knob::DawKnobStyle::Continuous,
+                                    min: 5.0,
+                                    max: 100.0,
+                                    default: 90.0,
+                                    log: false,
+                                    bipolar: false,
+                                    accent: true,
+                                    unit: "%",
+                                    diameter: 34.0,
+                                },
+                                pat.gate * 100.0,
+                                None,
+                                crate::daw_knob::DawKnobFinish::StudioMatte,
+                                None,
+                                true,
+                            );
+                            if gt_res.changed {
+                                pat.gate = gt_res.value / 100.0;
+                                changed = true;
+                            }
+                        });
+                        if ui.button(tr("New Variation")).clicked() {
+                            pat.seed = pat.seed.wrapping_add(1);
+                            changed = true;
+                        }
+                    }
+                    InspectorTab::Row => {
+                        let r = v.selected_row.min(pat.rows.len().saturating_sub(1));
+                        if let Some(row) = pat.rows.get_mut(r) {
+                            ui.label(
+                                RichText::new(row_label(row.pitch, drums, kit.as_ref())).strong(),
+                            );
+                            let mut pitch = row.pitch;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut pitch)
+                                        .range(0..=127)
+                                        .prefix("Pitch "),
+                                )
+                                .changed()
+                            {
+                                row.pitch = pitch;
+                                changed = true;
+                            }
+                            if ui.checkbox(&mut row.mute, "Mute").changed() {
+                                changed = true;
+                            }
+                            if ui.checkbox(&mut row.solo, "Solo").changed() {
+                                changed = true;
+                            }
+                        }
+                    }
+                    InspectorTab::Step => {
+                        let (sr, sk) = v.selected_step.unwrap_or((v.selected_row, 0));
+                        let sr = sr.min(pat.rows.len().saturating_sub(1));
+                        let sk = sk.min(pat.steps.saturating_sub(1));
+                        if let Some(row) = pat.rows.get_mut(sr) {
+                            ui.label(format!("Row {} · Step {}", sr + 1, sk + 1));
+                            let mut vel = row.steps[sk];
+                            if ui
+                                .add(egui::Slider::new(&mut vel, 0..=127).text("Vel"))
+                                .changed()
+                            {
+                                row.steps[sk] = vel;
+                                changed = true;
+                            }
+                            let mut ch = row.chance[sk];
+                            if ui
+                                .add(egui::Slider::new(&mut ch, 0..=100).text("Chance"))
+                                .changed()
+                            {
+                                row.chance[sk] = ch;
+                                changed = true;
+                            }
+                            let mut rep = row.repeat[sk];
+                            if ui
+                                .add(egui::Slider::new(&mut rep, 1..=4).text("Repeat"))
+                                .changed()
+                            {
+                                row.repeat[sk] = rep;
+                                changed = true;
+                            }
+                            if ui.checkbox(&mut row.tie[sk], "Tie").changed() {
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            },
+        );
+    }
+    s.steps.inspector_tab = insp_tab;
 
     if changed {
         pat.tidy();

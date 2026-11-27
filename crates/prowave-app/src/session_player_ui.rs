@@ -43,7 +43,18 @@ enum EditorTab {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreviewTool {
     Pointer,
+    Velocity,
     Pencil,
+    Eraser,
+}
+
+impl PreviewTool {
+    fn is_pointer_group(self) -> bool {
+        matches!(self, Self::Pointer | Self::Velocity)
+    }
+    fn is_pencil_group(self) -> bool {
+        matches!(self, Self::Pencil | Self::Eraser)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -60,6 +71,13 @@ impl SnapMode {
             Self::Beat => "Beat",
             Self::Bar => "Bar",
             Self::Sixteenth => "1/16",
+        }
+    }
+    fn step_beats(self) -> f32 {
+        match self {
+            Self::Beat => 1.0,
+            Self::Bar => 4.0,
+            Self::Sixteenth => 0.25,
         }
     }
 }
@@ -167,22 +185,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         tab = EditorTab::Main;
     }
 
-    // 0. Centered Top Window Strip ("Session Player")
-    egui::Frame::new()
-        .fill(BG_DARK)
-        .stroke(Stroke::new(1.0, Color32::from_rgb(0x25, 0x26, 0x2b)))
-        .inner_margin(egui::Margin::symmetric(10, 3))
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    RichText::new("Session Player")
-                        .size(11.5)
-                        .strong()
-                        .color(TEXT_MAIN),
-                );
-            });
-        });
-
     // 1. Top Toolbar
     egui::Frame::new()
         .fill(TOOLBAR_BG)
@@ -262,8 +264,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     }
                 });
 
-                // Centered Segmented Tool Switcher Pill
-                let center_pad = ((ui.available_width() - 320.0) * 0.45).max(16.0);
+                // Centered Segmented Tool Switcher Pill (Pointer / Velocity | Pencil / Eraser)
+                let center_pad = ((ui.available_width() - 480.0) * 0.45).max(8.0);
                 ui.add_space(center_pad);
                 egui::Frame::new()
                     .fill(PILL_BG)
@@ -273,67 +275,133 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         ui.horizontal(|ui| {
-                            let ptr_txt = format!(
-                                "{} {}",
-                                phosphor_egui::regular::CURSOR,
-                                phosphor_egui::regular::CARET_DOWN
-                            );
-                            let ptr_active = tool == PreviewTool::Pointer;
+                            let ptr_active = tool.is_pointer_group();
+                            let ptr_icon = if tool == PreviewTool::Velocity {
+                                phosphor_egui::regular::SLIDERS
+                            } else {
+                                phosphor_egui::regular::CURSOR
+                            };
+                            let ptr_bg = if ptr_active {
+                                Color32::from_rgb(0x3f, 0x42, 0x4b)
+                            } else {
+                                Color32::TRANSPARENT
+                            };
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(ptr_txt).size(10.5).color(if ptr_active {
+                                        RichText::new(ptr_icon).size(10.5).color(if ptr_active {
                                             Color32::WHITE
                                         } else {
                                             TEXT_DIM
                                         }),
                                     )
-                                    .fill(if ptr_active {
-                                        Color32::from_rgb(0x3f, 0x42, 0x4b)
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    })
+                                    .fill(ptr_bg)
                                     .corner_radius(CornerRadius::same(3))
-                                    .min_size(vec2(34.0, 19.0)),
+                                    .min_size(vec2(22.0, 19.0)),
                                 )
-                                .on_hover_text("Pointer Tool")
+                                .on_hover_text("Pointer / Scrub Tool")
                                 .clicked()
                             {
                                 tool = PreviewTool::Pointer;
                             }
+                            let ptr_menu_resp = ui.add(
+                                egui::Button::new(
+                                    RichText::new(phosphor_egui::regular::CARET_DOWN)
+                                        .size(9.0)
+                                        .color(if ptr_active { Color32::WHITE } else { TEXT_DIM }),
+                                )
+                                .fill(ptr_bg)
+                                .corner_radius(CornerRadius::same(3))
+                                .min_size(vec2(13.0, 19.0)),
+                            );
+                            egui::Popup::menu(&ptr_menu_resp).show(|ui| {
+                                if ui
+                                    .selectable_label(
+                                        tool == PreviewTool::Pointer,
+                                        "Pointer (Select / Move / Scrub)",
+                                    )
+                                    .clicked()
+                                {
+                                    tool = PreviewTool::Pointer;
+                                    ui.close();
+                                }
+                                if ui
+                                    .selectable_label(
+                                        tool == PreviewTool::Velocity,
+                                        "Velocity (Drag Vertical)",
+                                    )
+                                    .clicked()
+                                {
+                                    tool = PreviewTool::Velocity;
+                                    ui.close();
+                                }
+                            });
 
                             let (div, _) = ui.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
                             ui.painter()
                                 .rect_filled(div, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
 
-                            let pen_txt = format!(
-                                "{} {}",
-                                phosphor_egui::regular::PENCIL_SIMPLE,
-                                phosphor_egui::regular::CARET_DOWN
-                            );
-                            let pen_active = tool == PreviewTool::Pencil;
+                            let pen_active = tool.is_pencil_group();
+                            let pen_icon = if tool == PreviewTool::Eraser {
+                                phosphor_egui::regular::ERASER
+                            } else {
+                                phosphor_egui::regular::PENCIL_SIMPLE
+                            };
+                            let pen_bg = if pen_active {
+                                Color32::from_rgb(0x3f, 0x42, 0x4b)
+                            } else {
+                                Color32::TRANSPARENT
+                            };
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(pen_txt).size(10.5).color(if pen_active {
+                                        RichText::new(pen_icon).size(10.5).color(if pen_active {
                                             Color32::WHITE
                                         } else {
                                             TEXT_DIM
                                         }),
                                     )
-                                    .fill(if pen_active {
-                                        Color32::from_rgb(0x3f, 0x42, 0x4b)
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    })
+                                    .fill(pen_bg)
                                     .corner_radius(CornerRadius::same(3))
-                                    .min_size(vec2(34.0, 19.0)),
+                                    .min_size(vec2(22.0, 19.0)),
                                 )
-                                .on_hover_text("Pencil / Line Tool")
+                                .on_hover_text("Pencil Tool (Add Notes)")
                                 .clicked()
                             {
                                 tool = PreviewTool::Pencil;
                             }
+                            let pen_menu_resp = ui.add(
+                                egui::Button::new(
+                                    RichText::new(phosphor_egui::regular::CARET_DOWN)
+                                        .size(9.0)
+                                        .color(if pen_active { Color32::WHITE } else { TEXT_DIM }),
+                                )
+                                .fill(pen_bg)
+                                .corner_radius(CornerRadius::same(3))
+                                .min_size(vec2(13.0, 19.0)),
+                            );
+                            egui::Popup::menu(&pen_menu_resp).show(|ui| {
+                                if ui
+                                    .selectable_label(
+                                        tool == PreviewTool::Pencil,
+                                        "Pencil (Add Notes)",
+                                    )
+                                    .clicked()
+                                {
+                                    tool = PreviewTool::Pencil;
+                                    ui.close();
+                                }
+                                if ui
+                                    .selectable_label(
+                                        tool == PreviewTool::Eraser,
+                                        "Eraser (Remove Notes)",
+                                    )
+                                    .clicked()
+                                {
+                                    tool = PreviewTool::Eraser;
+                                    ui.close();
+                                }
+                            });
                         });
                     });
 
@@ -409,220 +477,234 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             });
         });
 
-    // 2. Bar Ruler + Zoomed Region Strip (always golden-ochre, never session2.png grey)
+    // 2. Bar Ruler + Zoomed Region Strip (interactive Pointer / Velocity / Pencil / Eraser + Playhead)
     let (strip_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 74.0), Sense::hover());
-    draw_bar_ruler_and_strip(ui, strip_rect, &p.tracks[ti].regions[ri], &sp, zoom);
+    draw_bar_ruler_and_strip(
+        ui, strip_rect, p, ti, ri, &sp, tool, snap_on, snap_mode, zoom,
+    );
 
-    ui.add_space(12.0);
+    ui.add_space(10.0);
 
-    // 3. Centered Main Workspace (Left Identity + Faders | Tab Bar + Main Card w/ Right Knobs)
-    let workspace_w = 780.0_f32.min(ui.available_width() - 16.0).max(640.0);
-    let left_pad = ((ui.available_width() - workspace_w) * 0.5).max(8.0);
-    let third_label = if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
-        "Envelope"
-    } else {
-        "Slides"
-    };
+    // 3. Scrollable Centered Main Workspace (prevents bottom panel from snapping back on resize)
+    egui::ScrollArea::vertical()
+        .id_salt("session_player_body_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let workspace_w = 780.0_f32.min(ui.available_width() - 16.0).max(640.0);
+            let left_pad = ((ui.available_width() - workspace_w) * 0.5).max(8.0);
+            let third_label =
+                if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
+                    "Envelope"
+                } else {
+                    "Slides"
+                };
 
-    ui.horizontal_top(|ui| {
-        ui.add_space(left_pad);
-
-        // Left Column: Player Identity + Wireframe Disc + Regenerate + Complexity/Intensity Faders
-        ui.vertical(|ui| {
-            ui.set_width(244.0);
-            ui.add_space(14.0);
             ui.horizontal_top(|ui| {
+                ui.add_space(left_pad);
+
+                // Left Column: Player Identity + Wireframe Disc + Regenerate + Complexity/Intensity Faders
                 ui.vertical(|ui| {
-                    ui.set_width(118.0);
-                    let (role_lbl, style_name) = match sp.kind {
-                        SessionPlayerKind::Keyboard => {
-                            ("Keyboard Player", title_case(sp.keyboard_style.label()))
-                        }
-                        SessionPlayerKind::Bass => {
-                            ("Bass Player", title_case(sp.bass_style.label()))
-                        }
-                        SessionPlayerKind::Drummer => (
-                            if sp.drum_style == DrumStyle::Electronic {
-                                "Electronic Drummer"
-                            } else {
-                                "Acoustic Drummer"
-                            },
-                            title_case(sp.drum_style.name()),
-                        ),
-                    };
-                    ui.vertical_centered(|ui| {
-                        ui.label(RichText::new(role_lbl).size(10.5).color(TEXT_DIM));
-                        let style_resp = ui.add(
-                            egui::Button::new(
-                                RichText::new(style_name)
-                                    .size(11.5)
-                                    .strong()
-                                    .color(ACCENT_YELLOW),
-                            )
-                            .fill(Color32::TRANSPARENT)
-                            .frame(false),
-                        );
-                        egui::Popup::menu(&style_resp).show(|ui| {
-                            ui.label(RichText::new("Drummer").size(10.0).color(TEXT_DIM));
-                            for st in DrumStyle::ALL {
-                                let sel =
-                                    sp.kind == SessionPlayerKind::Drummer && sp.drum_style == st;
-                                if ui.selectable_label(sel, title_case(st.name())).clicked() {
-                                    sp.kind = SessionPlayerKind::Drummer;
-                                    sp.drum_style = st;
-                                    ui.close();
+                    ui.set_width(244.0);
+                    ui.add_space(14.0);
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(118.0);
+                            let (role_lbl, style_name) = match sp.kind {
+                                SessionPlayerKind::Keyboard => {
+                                    ("Keyboard Player", title_case(sp.keyboard_style.label()))
                                 }
-                            }
-                            ui.separator();
-                            ui.label(RichText::new("Keyboard Player").size(10.0).color(TEXT_DIM));
-                            for ks in KeyboardStyle::ALL {
-                                let sel = sp.kind == SessionPlayerKind::Keyboard
-                                    && sp.keyboard_style == ks;
-                                if ui.selectable_label(sel, ks.label()).clicked() {
-                                    sp.kind = SessionPlayerKind::Keyboard;
-                                    sp.keyboard_style = ks;
-                                    ui.close();
+                                SessionPlayerKind::Bass => {
+                                    ("Bass Player", title_case(sp.bass_style.label()))
                                 }
-                            }
-                            ui.separator();
-                            ui.label(RichText::new("Bass Player").size(10.0).color(TEXT_DIM));
-                            for bs in BassStyle::ALL {
-                                let sel = sp.kind == SessionPlayerKind::Bass && sp.bass_style == bs;
-                                if ui.selectable_label(sel, bs.label()).clicked() {
-                                    sp.kind = SessionPlayerKind::Bass;
-                                    sp.bass_style = bs;
-                                    ui.close();
+                                SessionPlayerKind::Drummer => (
+                                    if sp.drum_style == DrumStyle::Electronic {
+                                        "Electronic Drummer"
+                                    } else {
+                                        "Acoustic Drummer"
+                                    },
+                                    title_case(sp.drum_style.name()),
+                                ),
+                            };
+                            ui.vertical_centered(|ui| {
+                                ui.label(RichText::new(role_lbl).size(10.5).color(TEXT_DIM));
+                                let style_resp = ui.add(
+                                    egui::Button::new(
+                                        RichText::new(style_name)
+                                            .size(11.5)
+                                            .strong()
+                                            .color(ACCENT_YELLOW),
+                                    )
+                                    .fill(Color32::TRANSPARENT)
+                                    .frame(false),
+                                );
+                                egui::Popup::menu(&style_resp).show(|ui| {
+                                    ui.label(RichText::new("Drummer").size(10.0).color(TEXT_DIM));
+                                    for st in DrumStyle::ALL {
+                                        let sel = sp.kind == SessionPlayerKind::Drummer
+                                            && sp.drum_style == st;
+                                        if ui.selectable_label(sel, title_case(st.name())).clicked()
+                                        {
+                                            sp.kind = SessionPlayerKind::Drummer;
+                                            sp.drum_style = st;
+                                            ui.close();
+                                        }
+                                    }
+                                    ui.separator();
+                                    ui.label(
+                                        RichText::new("Keyboard Player").size(10.0).color(TEXT_DIM),
+                                    );
+                                    for ks in KeyboardStyle::ALL {
+                                        let sel = sp.kind == SessionPlayerKind::Keyboard
+                                            && sp.keyboard_style == ks;
+                                        if ui.selectable_label(sel, ks.label()).clicked() {
+                                            sp.kind = SessionPlayerKind::Keyboard;
+                                            sp.keyboard_style = ks;
+                                            ui.close();
+                                        }
+                                    }
+                                    ui.separator();
+                                    ui.label(
+                                        RichText::new("Bass Player").size(10.0).color(TEXT_DIM),
+                                    );
+                                    for bs in BassStyle::ALL {
+                                        let sel = sp.kind == SessionPlayerKind::Bass
+                                            && sp.bass_style == bs;
+                                        if ui.selectable_label(sel, bs.label()).clicked() {
+                                            sp.kind = SessionPlayerKind::Bass;
+                                            sp.bass_style = bs;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+
+                                ui.add_space(4.0);
+                                let (disc_rect, _) =
+                                    ui.allocate_exact_size(vec2(96.0, 96.0), Sense::hover());
+                                draw_player_disc(ui, disc_rect, sp.kind);
+                                ui.add_space(6.0);
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Regenerate").size(11.0).color(TEXT_MAIN),
+                                        )
+                                        .fill(Color32::from_rgb(0x3a, 0x3c, 0x43))
+                                        .corner_radius(CornerRadius::same(4))
+                                        .min_size(vec2(86.0, 22.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    sp.seed = sp.seed.wrapping_add(1);
                                 }
-                            }
+                            });
                         });
 
                         ui.add_space(4.0);
-                        let (disc_rect, _) =
-                            ui.allocate_exact_size(vec2(96.0, 96.0), Sense::hover());
-                        draw_player_disc(ui, disc_rect, sp.kind);
-                        ui.add_space(6.0);
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("Regenerate").size(11.0).color(TEXT_MAIN),
-                                )
-                                .fill(Color32::from_rgb(0x3a, 0x3c, 0x43))
-                                .corner_radius(CornerRadius::same(4))
-                                .min_size(vec2(86.0, 22.0)),
-                            )
-                            .clicked()
-                        {
-                            sp.seed = sp.seed.wrapping_add(1);
-                        }
+                        vertical_yellow_fader(ui, "Complexity", &mut sp.complexity);
+                        ui.add_space(4.0);
+                        vertical_yellow_fader(ui, "Intensity", &mut sp.intensity);
                     });
                 });
 
-                ui.add_space(4.0);
-                vertical_yellow_fader(ui, "Complexity", &mut sp.complexity);
-                ui.add_space(4.0);
-                vertical_yellow_fader(ui, "Intensity", &mut sp.intensity);
-            });
-        });
+                ui.add_space(12.0);
 
-        ui.add_space(12.0);
+                // Right Workspace: Compact Borderless Segmented Tab Bar + Rounded Card
+                let card_w = (workspace_w - 256.0).max(460.0);
+                ui.vertical(|ui| {
+                    ui.set_width(card_w);
 
-        // Right Workspace: Compact Borderless Segmented Tab Bar + Rounded Card
-        let card_w = (workspace_w - 256.0).max(460.0);
-        ui.vertical(|ui| {
-            ui.set_width(card_w);
+                    let tabs: Vec<(EditorTab, &str)> = if has_five_tabs {
+                        vec![
+                            (EditorTab::Main, "Main"),
+                            (EditorTab::Details, "Details"),
+                            (EditorTab::SlidesOrEnv, third_label),
+                            (EditorTab::Lfo, "LFO"),
+                            (EditorTab::Manual, "Manual"),
+                        ]
+                    } else {
+                        vec![
+                            (EditorTab::Main, "Main"),
+                            (EditorTab::Details, "Details"),
+                            (EditorTab::Manual, "Manual"),
+                        ]
+                    };
 
-            let tabs: Vec<(EditorTab, &str)> = if has_five_tabs {
-                vec![
-                    (EditorTab::Main, "Main"),
-                    (EditorTab::Details, "Details"),
-                    (EditorTab::SlidesOrEnv, third_label),
-                    (EditorTab::Lfo, "LFO"),
-                    (EditorTab::Manual, "Manual"),
-                ]
-            } else {
-                vec![
-                    (EditorTab::Main, "Main"),
-                    (EditorTab::Details, "Details"),
-                    (EditorTab::Manual, "Manual"),
-                ]
-            };
-
-            // Segmented Tab Control aligned above center-right of card
-            ui.horizontal(|ui| {
-                let tab_bar_w = tabs.len() as f32 * 56.0 + 6.0;
-                ui.add_space(((card_w - tab_bar_w) * 0.52).max(16.0));
-                egui::Frame::new()
-                    .fill(Color32::from_rgb(0x13, 0x14, 0x18))
-                    .corner_radius(CornerRadius::same(5))
-                    .inner_margin(egui::Margin::symmetric(2, 2))
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.x = 0.0;
-                        ui.horizontal(|ui| {
-                            for (idx, (t, lbl)) in tabs.iter().enumerate() {
-                                if idx > 0 {
-                                    let (div, _) =
-                                        ui.allocate_exact_size(vec2(1.0, 14.0), Sense::hover());
-                                    ui.painter().rect_filled(
-                                        div,
-                                        0.0,
-                                        Color32::from_rgb(0x2a, 0x2c, 0x33),
-                                    );
-                                }
-                                let active = tab == *t;
-                                let btn = egui::Button::new(
-                                    RichText::new(*lbl).size(11.0).strong().color(if active {
-                                        Color32::BLACK
-                                    } else {
-                                        TEXT_DIM
-                                    }),
-                                )
-                                .fill(if active {
-                                    ACCENT_YELLOW
-                                } else {
-                                    Color32::TRANSPARENT
-                                })
-                                .corner_radius(CornerRadius::same(4))
-                                .min_size(vec2(54.0, 20.0));
-                                if ui.add(btn).clicked() {
-                                    tab = *t;
-                                }
-                            }
-                        });
+                    // Segmented Tab Control centered above card
+                    ui.vertical_centered(|ui| {
+                        egui::Frame::new()
+                            .fill(Color32::from_rgb(0x13, 0x14, 0x18))
+                            .corner_radius(CornerRadius::same(5))
+                            .inner_margin(egui::Margin::symmetric(2, 2))
+                            .show(ui, |ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                ui.horizontal(|ui| {
+                                    for (idx, (t, lbl)) in tabs.iter().enumerate() {
+                                        if idx > 0 {
+                                            let (div, _) = ui.allocate_exact_size(
+                                                vec2(1.0, 14.0),
+                                                Sense::hover(),
+                                            );
+                                            ui.painter().rect_filled(
+                                                div,
+                                                0.0,
+                                                Color32::from_rgb(0x2a, 0x2c, 0x33),
+                                            );
+                                        }
+                                        let active = tab == *t;
+                                        let btn = egui::Button::new(
+                                            RichText::new(*lbl).size(11.0).strong().color(
+                                                if active { Color32::BLACK } else { TEXT_DIM },
+                                            ),
+                                        )
+                                        .fill(if active {
+                                            ACCENT_YELLOW
+                                        } else {
+                                            Color32::TRANSPARENT
+                                        })
+                                        .corner_radius(CornerRadius::same(4))
+                                        .min_size(vec2(54.0, 20.0));
+                                        if ui.add(btn).clicked() {
+                                            tab = *t;
+                                        }
+                                    }
+                                });
+                            });
                     });
-            });
 
-            ui.add_space(6.0);
+                    ui.add_space(6.0);
 
-            egui::Frame::new()
-                .fill(CARD_BG)
-                .stroke(Stroke::new(1.0, Color32::from_rgb(0x29, 0x2b, 0x32)))
-                .corner_radius(CornerRadius::same(10))
-                .inner_margin(egui::Margin::symmetric(16, 14))
-                .show(ui, |ui| {
-                    ui.horizontal_top(|ui| {
-                        let right_w = 182.0;
-                        let center_w = (card_w - right_w - 46.0).max(250.0);
-                        ui.vertical(|ui| {
-                            ui.set_width(center_w);
-                            match tab {
-                                EditorTab::Main => draw_main_tab(ui, &mut sp, center_w),
-                                EditorTab::Details => draw_details_tab(ui, &mut sp),
-                                EditorTab::SlidesOrEnv => draw_slides_or_env_tab(ui, &mut sp),
-                                EditorTab::Lfo => draw_lfo_tab(ui, &mut sp),
-                                EditorTab::Manual => draw_manual_tab(ui, &mut sp),
-                            }
+                    egui::Frame::new()
+                        .fill(CARD_BG)
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(0x29, 0x2b, 0x32)))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(egui::Margin::symmetric(16, 14))
+                        .show(ui, |ui| {
+                            ui.horizontal_top(|ui| {
+                                let right_w = 182.0;
+                                let center_w = (card_w - right_w - 46.0).max(250.0);
+                                ui.vertical(|ui| {
+                                    ui.set_width(center_w);
+                                    match tab {
+                                        EditorTab::Main => draw_main_tab(ui, &mut sp, center_w),
+                                        EditorTab::Details => draw_details_tab(ui, &mut sp),
+                                        EditorTab::SlidesOrEnv => {
+                                            draw_slides_or_env_tab(ui, &mut sp, center_w)
+                                        }
+                                        EditorTab::Lfo => draw_lfo_tab(ui, &mut sp, center_w),
+                                        EditorTab::Manual => draw_manual_tab(ui, &mut sp, center_w),
+                                    }
+                                });
+
+                                ui.add_space(12.0);
+
+                                ui.vertical(|ui| {
+                                    ui.set_width(right_w);
+                                    draw_right_column(ui, &mut sp, tab);
+                                });
+                            });
                         });
-
-                        ui.add_space(12.0);
-
-                        ui.vertical(|ui| {
-                            ui.set_width(right_w);
-                            draw_right_column(ui, &mut sp, tab);
-                        });
-                    });
                 });
+            });
         });
-    });
 
     ui.ctx().data_mut(|d| {
         d.insert_temp(tab_id, tab);
@@ -693,14 +775,19 @@ fn find_session_or_drummer_region(p: &Project, s: &UiState) -> Option<(usize, us
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_bar_ruler_and_strip(
     ui: &Ui,
     rect: Rect,
-    region: &crate::model::Region,
+    p: &mut Project,
+    ti: usize,
+    ri: usize,
     sp: &SessionPlayerParams,
+    tool: PreviewTool,
+    snap_on: bool,
+    snap_mode: SnapMode,
     zoom: f32,
 ) {
-    let g = ui.painter_at(rect);
     let ruler_h = 18.0;
     let header_h = 16.0;
     let ruler = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + ruler_h));
@@ -709,6 +796,122 @@ fn draw_bar_ruler_and_strip(
         pos2(rect.right(), ruler.bottom() + header_h),
     );
     let body = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
+
+    let total_beats = ((p.tracks[ti].regions[ri].len_bars * 4.0) / zoom.max(0.5)).max(4.0);
+    let reg_start_beats = f64::from(p.tracks[ti].regions[ri].start_bar - 1.0) * 4.0;
+    let quantize = |b: f32| -> f32 {
+        if snap_on {
+            let s = snap_mode.step_beats();
+            ((b / s).round() * s).max(0.0)
+        } else {
+            b.max(0.0)
+        }
+    };
+
+    // Ruler interaction: scrub playhead
+    let ruler_resp = ui.interact(
+        ruler,
+        egui::Id::unique("sp_ruler_scrub"),
+        Sense::click_and_drag(),
+    );
+    if (ruler_resp.clicked() || ruler_resp.dragged()) && ruler_resp.interact_pointer_pos().is_some()
+    {
+        if let Some(pt) = ruler_resp.interact_pointer_pos() {
+            let rel_b = ((pt.x - ruler.left()) / ruler.width()).clamp(0.0, 1.0) * total_beats;
+            p.position_beats = reg_start_beats + f64::from(quantize(rel_b));
+        }
+    }
+
+    // Header interaction: click framed play button to jump playhead to region start
+    let header_resp = ui.interact(header, egui::Id::unique("sp_header_play"), Sense::click());
+    if header_resp.clicked() {
+        p.position_beats = reg_start_beats;
+    }
+
+    // Region body interaction: Pointer / Velocity / Pencil / Eraser
+    let body_resp = ui.interact(
+        body,
+        egui::Id::unique("sp_body_edit"),
+        Sense::click_and_drag(),
+    );
+    if body_resp.hovered() || body_resp.dragged() {
+        ui.ctx().set_cursor_icon(match tool {
+            PreviewTool::Pointer => egui::CursorIcon::Default,
+            PreviewTool::Velocity => egui::CursorIcon::ResizeVertical,
+            PreviewTool::Pencil => egui::CursorIcon::Crosshair,
+            PreviewTool::Eraser => egui::CursorIcon::NotAllowed,
+        });
+    }
+    if (body_resp.clicked() || body_resp.dragged()) && body_resp.interact_pointer_pos().is_some() {
+        if let Some(pt) = body_resp.interact_pointer_pos() {
+            let rel_b = ((pt.x - body.left()) / body.width()).clamp(0.0, 1.0) * total_beats;
+            let q_b = quantize(rel_b);
+            let y_frac = (1.0 - (pt.y - body.top()) / body.height()).clamp(0.0, 1.0);
+            let notes = &mut p.tracks[ti].regions[ri].notes;
+            match tool {
+                PreviewTool::Pointer => {
+                    if body_resp.dragged() {
+                        if let Some((idx, _)) = notes
+                            .iter()
+                            .enumerate()
+                            .min_by(|(_, a), (_, b)| {
+                                (a.start - rel_b).abs().total_cmp(&(b.start - rel_b).abs())
+                            })
+                            .filter(|(_, n)| (n.start - rel_b).abs() < 0.5)
+                        {
+                            notes[idx].start = q_b;
+                        }
+                    } else if body_resp.clicked() {
+                        p.position_beats = reg_start_beats + f64::from(q_b);
+                    }
+                }
+                PreviewTool::Velocity => {
+                    if let Some((idx, _)) = notes
+                        .iter()
+                        .enumerate()
+                        .min_by(|(_, a), (_, b)| {
+                            (a.start - rel_b).abs().total_cmp(&(b.start - rel_b).abs())
+                        })
+                        .filter(|(_, n)| (n.start - rel_b).abs() < 0.6)
+                    {
+                        notes[idx].vel = (20.0 + y_frac * 107.0).round().clamp(20.0, 127.0) as u8;
+                    }
+                }
+                PreviewTool::Pencil => {
+                    let pitch = if sp.kind == SessionPlayerKind::Drummer {
+                        if y_frac > 0.55 {
+                            42 // Closed Hi-Hat
+                        } else if y_frac > 0.28 {
+                            38 // Snare
+                        } else {
+                            36 // Kick
+                        }
+                    } else {
+                        (28.0 + y_frac * 60.0).round().clamp(24.0, 96.0) as u8
+                    };
+                    let exists = notes
+                        .iter()
+                        .any(|n| (n.start - q_b).abs() < 0.05 && n.pitch == pitch);
+                    if !exists {
+                        notes.push(crate::model::Note {
+                            start: q_b,
+                            len: snap_mode.step_beats().min(0.5),
+                            pitch,
+                            vel: 100,
+                            mute: false,
+                            lyric: Default::default(),
+                        });
+                    }
+                }
+                PreviewTool::Eraser => {
+                    notes.retain(|n| (n.start - rel_b).abs() > 0.25);
+                }
+            }
+        }
+    }
+
+    let region = &p.tracks[ti].regions[ri];
+    let g = ui.painter_at(rect);
 
     g.rect_filled(ruler, 0.0, BG_DARK);
     g.rect_filled(header, 0.0, REGION_HEADER_BG);
@@ -880,6 +1083,25 @@ fn draw_bar_ruler_and_strip(
             bend_pts.sort_by(|a, b| a.x.total_cmp(&b.x));
             g.add(Shape::line(bend_pts, Stroke::new(1.3, Color32::WHITE)));
         }
+    }
+
+    // Live playhead line across ruler + header + body
+    let rel_play = (p.position_beats - reg_start_beats) as f32;
+    if rel_play >= 0.0 && rel_play <= total_beats {
+        let px = rect.left() + (rel_play / total_beats) * rect.width();
+        g.line_segment(
+            [pos2(px, ruler.top()), pos2(px, body.bottom())],
+            Stroke::new(1.4, Color32::WHITE),
+        );
+        g.add(Shape::convex_polygon(
+            vec![
+                pos2(px - 4.0, ruler.top()),
+                pos2(px + 4.0, ruler.top()),
+                pos2(px, ruler.top() + 6.0),
+            ],
+            Color32::WHITE,
+            Stroke::NONE,
+        ));
     }
 }
 
@@ -1640,11 +1862,26 @@ fn draw_main_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
                 .rect_filled(div_r, 0.0, Color32::from_rgb(0x2b, 0x2d, 0x34));
             ui.add_space(6.0);
 
-            let (kr_rect, _) = ui.allocate_exact_size(vec2(center_w, 18.0), Sense::hover());
+            let (kr_rect, kr_resp) =
+                ui.allocate_exact_size(vec2(center_w, 18.0), Sense::click_and_drag());
+            if (kr_resp.dragged() || kr_resp.clicked()) && kr_resp.interact_pointer_pos().is_some()
+            {
+                if let Some(pos) = kr_resp.interact_pointer_pos() {
+                    let frac = ((pos.x - kr_rect.left()) / kr_rect.width()).clamp(0.0, 1.0);
+                    let midi = (36.0 + frac * 60.0).round() as u8;
+                    if midi.abs_diff(sp.key_range_lo) <= midi.abs_diff(sp.key_range_hi) {
+                        sp.key_range_lo = midi.min(sp.key_range_hi.saturating_sub(5));
+                    } else {
+                        sp.key_range_hi = midi.max(sp.key_range_lo + 5);
+                    }
+                }
+            }
             let gk = ui.painter_at(kr_rect);
             gk.rect_filled(kr_rect, 3.0, WELL_BG);
-            let x_l = kr_rect.left() + kr_rect.width() * 0.34;
-            let x_r = kr_rect.left() + kr_rect.width() * 0.60;
+            let x_l = kr_rect.left()
+                + ((f32::from(sp.key_range_lo) - 36.0) / 60.0).clamp(0.0, 1.0) * kr_rect.width();
+            let x_r = kr_rect.left()
+                + ((f32::from(sp.key_range_hi) - 36.0) / 60.0).clamp(0.0, 1.0) * kr_rect.width();
             gk.rect_filled(
                 Rect::from_min_max(pos2(x_l, kr_rect.top()), pos2(x_r, kr_rect.bottom())),
                 2.0,
@@ -1814,15 +2051,15 @@ fn draw_details_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
     }
 }
 
-fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
+fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
     if sp.kind == SessionPlayerKind::Keyboard && sp.keyboard_style.is_pad() {
         ui.horizontal(|ui| {
+            ui.spacing_mut().slider_width = 76.0;
             ui.add(egui::Slider::new(&mut sp.env_shift_start, 0.0..=0.5).text("Shift Start"));
             ui.checkbox(&mut sp.env_align_peak, "Align: Peak");
             ui.checkbox(&mut sp.env_invert, "Invert");
         });
-        let (env_rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width().max(220.0), 86.0), Sense::hover());
+        let (env_rect, _) = ui.allocate_exact_size(vec2(center_w.max(220.0), 86.0), Sense::hover());
         let mut sustain = sp.env_hold;
         let mut rel = sp.env_decay;
         crate::widgets::daw_adsr_envelope(
@@ -1841,7 +2078,7 @@ fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
         sp.env_decay = rel;
     } else {
         ui.horizontal_top(|ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(140.0, 96.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(vec2(104.0, 96.0), Sense::hover());
             let g = ui.painter_at(rect);
             g.rect_filled(rect, 6.0, WELL_BG);
             let pts: Vec<Pos2> = (0..=24)
@@ -1867,8 +2104,10 @@ fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
 
             ui.add_space(8.0);
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
+                ui.spacing_mut().slider_width = (center_w - 190.0).clamp(72.0, 120.0);
+                ui.horizontal_wrapped(|ui| {
                     egui::ComboBox::from_id_salt("sp_slide_start")
+                        .width(88.0)
                         .selected_text(match sp.slide_start {
                             SlideStart::Auto => "Auto",
                             SlideStart::ToNextNote => "To Next Note",
@@ -1898,8 +2137,8 @@ fn draw_slides_or_env_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
     }
 }
 
-fn draw_lfo_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
-    ui.horizontal(|ui| {
+fn draw_lfo_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
+    ui.horizontal_wrapped(|ui| {
         for (w, lbl) in [
             (LfoWave::TriSaw, "Tri/Saw"),
             (LfoWave::Sine, "Sine"),
@@ -1912,7 +2151,7 @@ fn draw_lfo_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
     });
 
     ui.horizontal_top(|ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(140.0, 76.0), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(vec2(104.0, 76.0), Sense::hover());
         let g = ui.painter_at(rect);
         g.rect_filled(rect, 6.0, WELL_BG);
         let pts: Vec<Pos2> = (0..=32)
@@ -1929,6 +2168,7 @@ fn draw_lfo_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
 
         ui.add_space(8.0);
         ui.vertical(|ui| {
+            ui.spacing_mut().slider_width = (center_w - 190.0).clamp(72.0, 120.0);
             ui.add(egui::Slider::new(&mut sp.lfo_rate, 0.05..=2.0).text("Rate"));
             ui.add(egui::Slider::new(&mut sp.lfo_amount, 0.0..=1.0).text("Amount"));
             ui.add(egui::Slider::new(&mut sp.lfo_phase, 0.0..=1.0).text("Phase"));
@@ -1937,30 +2177,36 @@ fn draw_lfo_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
     });
 }
 
-fn draw_manual_tab(ui: &mut Ui, sp: &mut SessionPlayerParams) {
-    ui.horizontal(|ui| {
+fn draw_manual_tab(ui: &mut Ui, sp: &mut SessionPlayerParams, center_w: f32) {
+    ui.vertical_centered(|ui| {
         ui.checkbox(
             &mut sp.manual_override,
-            "Override AI Pattern (1 Bar / 16 Steps)",
+            "Override Pattern (1 Bar / 16 Steps)",
         );
-    });
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        for (i, step) in sp.manual_steps.iter_mut().enumerate() {
-            let col = if *step { ACCENT_YELLOW } else { WELL_BG };
-            let btn = egui::Button::new(
-                RichText::new(format!("{}", i + 1))
-                    .size(9.5)
-                    .color(if *step { Color32::BLACK } else { TEXT_DIM }),
-            )
-            .fill(col)
-            .min_size(vec2(16.0, 38.0))
-            .corner_radius(CornerRadius::same(3));
-            if ui.add(btn).clicked() {
-                *step = !*step;
-                sp.manual_override = true;
+        ui.add_space(8.0);
+        let gap = 3.0;
+        let step_w = ((center_w - 15.0 * gap) / 16.0).clamp(11.0, 17.0);
+        let row_w = step_w * 16.0 + gap * 15.0;
+        let pad = ((center_w - row_w) * 0.5).max(0.0);
+        ui.horizontal(|ui| {
+            ui.add_space(pad);
+            ui.spacing_mut().item_spacing.x = gap;
+            for (i, step) in sp.manual_steps.iter_mut().enumerate() {
+                let col = if *step { ACCENT_YELLOW } else { WELL_BG };
+                let btn = egui::Button::new(
+                    RichText::new(format!("{}", i + 1))
+                        .size(8.5)
+                        .color(if *step { Color32::BLACK } else { TEXT_DIM }),
+                )
+                .fill(col)
+                .min_size(vec2(step_w, 38.0))
+                .corner_radius(CornerRadius::same(3));
+                if ui.add(btn).clicked() {
+                    *step = !*step;
+                    sp.manual_override = true;
+                }
             }
-        }
+        });
     });
 }
 

@@ -145,6 +145,8 @@ pub struct PatternRow {
     /// on) instead of starting its own.
     pub tie: Vec<bool>,
     pub repeat: Vec<u8>,
+    pub mute: bool,
+    pub solo: bool,
 }
 
 impl PatternRow {
@@ -155,6 +157,8 @@ impl PatternRow {
             chance: vec![100; MAX_STEPS],
             tie: vec![false; MAX_STEPS],
             repeat: vec![1; MAX_STEPS],
+            mute: false,
+            solo: false,
         }
     }
 
@@ -300,7 +304,11 @@ impl PatternParams {
             }
             let at = self.index_at(k);
             let before = (k > 0).then(|| self.index_at(k - 1));
+            let any_solo = self.rows.iter().any(|r| r.solo);
             for (ri, row) in self.rows.iter().enumerate() {
+                if row.mute || (any_solo && !row.solo) {
+                    continue;
+                }
                 let on = |i: usize| row.steps.get(i).copied().unwrap_or(0) > 0;
                 let vel = row.steps.get(at).copied().unwrap_or(0);
                 if vel == 0 {

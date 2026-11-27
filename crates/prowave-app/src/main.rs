@@ -2012,11 +2012,11 @@ impl eframe::App for App {
             let panel = egui::Panel::bottom("bottom")
                 .resizable(true)
                 .min_size(min_h)
-                .max_size(520.0)
-                .default_size(if s.bottom == Bottom::MacroControls {
-                    260.0
-                } else {
-                    240.0
+                .max_size((room * 0.85).max(520.0))
+                .default_size(match s.bottom {
+                    Bottom::MacroControls => 260.0,
+                    Bottom::SessionPlayer => 350.0,
+                    _ => 240.0,
                 })
                 .frame(opaque_panel_frame);
             panel.show(ui, |ui| match s.bottom {
