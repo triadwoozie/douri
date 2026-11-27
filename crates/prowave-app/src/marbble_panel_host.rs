@@ -6,12 +6,13 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use egui::{Color32, RichText, Ui};
 use prowave_engine::marbble_dsp::fx::{self, EffectInfo, ParamKind, ParamSpec, Unit, MAX_METERS};
-use prowave_engine::marbble_dsp::instrument::InstrumentInfo;
+use prowave_engine::marbble_dsp::instrument::{self, InstrumentInfo};
 
 /// Shared live state exposed over the local HTTP/JSON bridge for WebView/React panels.
 #[derive(Debug, Clone)]
@@ -35,6 +36,25 @@ impl PanelBridgeState {
             plugin_id: info.id.to_string(),
             plugin_name: info.name.to_string(),
             category: info.category.to_string(),
+            params,
+            meters: [0.0; MAX_METERS],
+            pending_edits: Vec::new(),
+            pending_preset: None,
+        }
+    }
+
+    pub fn from_instrument(
+        info: &InstrumentInfo,
+        current: &std::collections::BTreeMap<u32, f32>,
+    ) -> Self {
+        let mut params = HashMap::new();
+        for p in info.params {
+            params.insert(p.id, current.get(&p.id).copied().unwrap_or(p.default));
+        }
+        Self {
+            plugin_id: info.id.to_string(),
+            plugin_name: info.name.to_string(),
+            category: info.group.to_string(),
             params,
             meters: [0.0; MAX_METERS],
             pending_edits: Vec::new(),
@@ -171,44 +191,75 @@ fn write_http(
     stream.write_all(body.as_bytes())
 }
 
+fn param_spec_json(p: &ParamSpec, val: f32) -> serde_json::Value {
+    let (kind_str, choices): (&str, Vec<&str>) = match p.kind {
+        ParamKind::Continuous => ("continuous", Vec::new()),
+        ParamKind::Toggle => ("toggle", Vec::new()),
+        ParamKind::Choice(labels) => ("choice", labels.to_vec()),
+    };
+    serde_json::json!({
+        "id": p.id,
+        "name": p.name,
+        "min": p.min,
+        "max": p.max,
+        "default": p.default,
+        "value": val,
+        "log": p.log,
+        "unit": format!("{:?}", p.unit),
+        "kind": kind_str,
+        "choices": choices,
+    })
+}
+
 fn state_json(state: &Arc<Mutex<PanelBridgeState>>) -> String {
     let Ok(guard) = state.lock() else {
         return "{}".to_string();
     };
-    let info = fx::find(&guard.plugin_id);
-    let specs: Vec<serde_json::Value> = info
-        .as_ref()
-        .map(|inf| {
-            inf.params
-                .iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "id": p.id,
-                        "name": p.name,
-                        "min": p.min,
-                        "max": p.max,
-                        "default": p.default,
-                        "value": guard.params.get(&p.id).copied().unwrap_or(p.default),
-                        "log": p.log,
-                        "unit": format!("{:?}", p.unit),
-                    })
-                })
-                .collect()
+    if let Some(inf) = fx::find(&guard.plugin_id) {
+        let specs: Vec<serde_json::Value> = inf
+            .params
+            .iter()
+            .map(|p| param_spec_json(p, guard.params.get(&p.id).copied().unwrap_or(p.default)))
+            .collect();
+        let presets: Vec<&str> = fx::factory_presets(&guard.plugin_id)
+            .iter()
+            .map(|pr| pr.name)
+            .collect();
+        return serde_json::json!({
+            "id": guard.plugin_id,
+            "name": guard.plugin_name,
+            "category": guard.category,
+            "params": specs,
+            "sections": [],
+            "presets": presets,
+            "meters": guard.meters,
         })
-        .unwrap_or_default();
-    let presets: Vec<&str> = fx::factory_presets(&guard.plugin_id)
-        .iter()
-        .map(|pr| pr.name)
-        .collect();
-    serde_json::json!({
-        "id": guard.plugin_id,
-        "name": guard.plugin_name,
-        "category": guard.category,
-        "params": specs,
-        "presets": presets,
-        "meters": guard.meters,
-    })
-    .to_string()
+        .to_string();
+    }
+    if let Some(inf) = instrument::find(&guard.plugin_id) {
+        let specs: Vec<serde_json::Value> = inf
+            .params
+            .iter()
+            .map(|p| param_spec_json(p, guard.params.get(&p.id).copied().unwrap_or(p.default)))
+            .collect();
+        let sections: Vec<serde_json::Value> = inf
+            .sections
+            .iter()
+            .map(|s| serde_json::json!({ "title": s.title, "params": s.params }))
+            .collect();
+        let presets: Vec<&str> = inf.presets.iter().map(|pr| pr.name).collect();
+        return serde_json::json!({
+            "id": guard.plugin_id,
+            "name": guard.plugin_name,
+            "category": guard.category,
+            "params": specs,
+            "sections": sections,
+            "presets": presets,
+            "meters": guard.meters,
+        })
+        .to_string();
+    }
+    "{}".to_string()
 }
 
 fn panel_html(state: &Arc<Mutex<PanelBridgeState>>) -> String {
@@ -221,30 +272,63 @@ fn panel_html(state: &Arc<Mutex<PanelBridgeState>>) -> String {
 <html>
 <head><meta charset="utf-8"><title>{name} - Marbble Panel</title>
 <style>
-body{{margin:0;background:#18191d;color:#e6e6eb;font:12px/1.4 system-ui,sans-serif;padding:14px}}
-h2{{margin:0 0 10px;font-size:14px;color:#4cc9f0}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}}
-.card{{background:#22242a;border:1px solid #30333b;border-radius:6px;padding:8px}}
-.lbl{{display:flex;justify-content:space-between;color:#9aa0aa;margin-bottom:4px}}
-input[type=range]{{width:100%}}
+*{{box-sizing:border-box}}
+body{{margin:0;background:#18181a;color:#e6e6eb;font:12px/1.4 system-ui,sans-serif;padding:14px}}
+.hdr{{display:flex;align-items:center;gap:10px;margin-bottom:10px}}
+.hdr h2{{margin:0;font-size:15px;color:#fff}}
+.badge{{font-size:11px;color:#4cc9f0;background:#222327;border:1px solid #303136;border-radius:4px;padding:2px 7px}}
+.presets{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}}
+.presets button{{background:#232327;color:#d6d8de;border:1px solid #34353a;border-radius:4px;padding:4px 9px;cursor:pointer;font-size:11px}}
+.presets button:hover{{background:#2b6cb0;color:#fff;border-color:#2b6cb0}}
+.sections{{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}}
+.sec{{background:#202023;border:1px solid #2e2e32;border-radius:6px;padding:10px}}
+.sec h3{{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#4cc9f0}}
+.row{{margin-bottom:8px}}
+.lbl{{display:flex;justify-content:space-between;color:#a0a3ac;margin-bottom:3px;font-size:11px}}
+input[type=range]{{width:100%;accent-color:#4cc9f0}}
+select,button.tgl{{width:100%;background:#18181a;color:#e6e6eb;border:1px solid #34353a;border-radius:4px;padding:4px 6px;font-size:11px}}
+button.tgl.on{{background:#2b6cb0;border-color:#2b6cb0;color:#fff}}
 </style></head>
 <body>
-<h2>{name}</h2>
-<div id="grid" class="grid"></div>
+<div class="hdr"><h2>{name}</h2><span id="cat" class="badge"></span></div>
+<div id="presets" class="presets"></div>
+<div id="sections" class="sections"></div>
 <script>
+async function post(url, body){{await fetch(url,{{method:'POST',body:JSON.stringify(body)}});}}
+function renderParam(p){{
+  const d=document.createElement('div');d.className='row';
+  if(p.kind==='toggle'){{
+    const b=document.createElement('button');b.className='tgl'+(p.value>=0.5?' on':'');
+    b.textContent=p.name+': '+(p.value>=0.5?'On':'Off');
+    b.onclick=()=>{{p.value=p.value>=0.5?0:1;b.className='tgl'+(p.value>=0.5?' on':'');b.textContent=p.name+': '+(p.value>=0.5?'On':'Off');post('/api/param',{{id:p.id,value:p.value}});}};
+    d.appendChild(b);return d;
+  }}
+  if(p.kind==='choice'&&p.choices&&p.choices.length){{
+    d.innerHTML=`<div class="lbl"><span>${{p.name}}</span></div>`;
+    const s=document.createElement('select');
+    p.choices.forEach((c,i)=>{{const o=document.createElement('option');o.value=i;o.textContent=c;if(Math.round(p.value)===i)o.selected=true;s.appendChild(o);}});
+    s.onchange=()=>post('/api/param',{{id:p.id,value:Number(s.value)}});
+    d.appendChild(s);return d;
+  }}
+  d.innerHTML=`<div class="lbl"><span>${{p.name}}</span><span id="v${{p.id}}">${{p.value.toFixed(2)}}</span></div>
+    <input type="range" min="${{p.min}}" max="${{p.max}}" step="${{(p.max-p.min)/200}}" value="${{p.value}}">`;
+  const inp=d.querySelector('input');
+  inp.oninput=()=>{{document.getElementById('v'+p.id).textContent=Number(inp.value).toFixed(2);post('/api/param',{{id:p.id,value:Number(inp.value)}});}};
+  return d;
+}}
 async function load(){{
   const r=await fetch('/api/state');const s=await r.json();
-  const g=document.getElementById('grid');g.innerHTML='';
-  for(const p of s.params){{
-    const c=document.createElement('div');c.className='card';
-    c.innerHTML=`<div class="lbl"><span>${{p.name}}</span><span id="v${{p.id}}">${{p.value.toFixed(2)}}</span></div>
-      <input type="range" min="${{p.min}}" max="${{p.max}}" step="${{(p.max-p.min)/200}}" value="${{p.value}}">`;
-    const inp=c.querySelector('input');
-    inp.oninput=()=>{{
-      document.getElementById('v'+p.id).textContent=Number(inp.value).toFixed(2);
-      fetch('/api/param',{{method:'POST',body:JSON.stringify({{id:p.id,value:Number(inp.value)}})}});
-    }};
-    g.appendChild(c);
+  document.getElementById('cat').textContent=s.category||'';
+  const pb=document.getElementById('presets');pb.innerHTML='';
+  (s.presets||[]).forEach(n=>{{const b=document.createElement('button');b.textContent=n;b.onclick=async()=>{{await post('/api/preset',{{name:n}});load();}};pb.appendChild(b);}});
+  const byId=new Map((s.params||[]).map(p=>[p.id,p]));
+  const sc=document.getElementById('sections');sc.innerHTML='';
+  const secs=(s.sections&&s.sections.length)?s.sections:[{{title:'Parameters',params:(s.params||[]).map(p=>p.id)}}];
+  for(const sec of secs){{
+    const box=document.createElement('div');box.className='sec';
+    box.innerHTML=`<h3>${{sec.title}}</h3>`;
+    for(const id of sec.params){{const p=byId.get(id);if(p)box.appendChild(renderParam(p));}}
+    sc.appendChild(box);
   }}
 }}
 load();
@@ -489,6 +573,45 @@ mod tests {
     }
 }
 
+struct WebViewSession {
+    track_idx: usize,
+    plugin_id: String,
+    bridge: MarbblePanelBridge,
+    child: Option<Child>,
+}
+
+fn webview_store() -> &'static Mutex<Option<WebViewSession>> {
+    static STORE: std::sync::OnceLock<Mutex<Option<WebViewSession>>> = std::sync::OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(None))
+}
+
+fn spawn_webkit_window(url: &str, title: &str) -> Option<Child> {
+    let py = r#"
+import sys, gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('WebKit2', '4.1')
+from gi.repository import Gtk, WebKit2
+win = Gtk.Window(title=sys.argv[2])
+win.set_default_size(760, 560)
+wv = WebKit2.WebView()
+wv.load_uri(sys.argv[1])
+win.add(wv)
+win.connect('destroy', Gtk.main_quit)
+win.show_all()
+Gtk.main()
+"#;
+    Command::new("python3")
+        .arg("-c")
+        .arg(py)
+        .arg(url)
+        .arg(title)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()
+}
+
 pub fn show_track_instrument_window(
     ctx: &egui::Context,
     p: &mut crate::model::Project,
@@ -509,14 +632,61 @@ pub fn show_track_instrument_window(
         s.show_marbble_inst = None;
         return;
     };
+
+    // Drain any edits made inside the WebView preview window into the track's instrument state.
+    if let Ok(mut guard) = webview_store().lock() {
+        if let Some(sess) = guard.as_mut() {
+            if sess.track_idx == ti && sess.plugin_id == use_.id {
+                let (edits, preset) = sess.bridge.drain_edits();
+                for (id, v) in edits {
+                    use_.params.insert(id, v);
+                }
+                if let Some(preset_name) = preset {
+                    if let Some(pr) = info.presets.iter().find(|pr| pr.name == preset_name) {
+                        for p in info.params {
+                            use_.params.insert(p.id, p.default);
+                        }
+                        for &(id, v) in pr.values {
+                            use_.params.insert(id, v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut open = true;
     let mut vals: HashMap<u32, f32> = use_.params.iter().map(|(&k, &v)| (k, v)).collect();
     let meters = [0.0; MAX_METERS];
     egui::Window::new(format!("{} - {}", track.name, info.name))
         .open(&mut open)
-        .default_size([460.0, 420.0])
+        .default_size([460.0, 440.0])
         .resizable(true)
         .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Open WebView Preview").clicked() {
+                    if let Ok(mut guard) = webview_store().lock() {
+                        if let Some(mut old) = guard.take() {
+                            if let Some(mut ch) = old.child.take() {
+                                let _ = ch.kill();
+                            }
+                        }
+                        if let Ok(bridge) = MarbblePanelBridge::start(
+                            PanelBridgeState::from_instrument(&info, &use_.params),
+                        ) {
+                            let title = format!("{} - {} (Marbble WebView)", track.name, info.name);
+                            let child = spawn_webkit_window(&bridge.url(), &title);
+                            *guard = Some(WebViewSession {
+                                track_idx: ti,
+                                plugin_id: use_.id.clone(),
+                                bridge,
+                                child,
+                            });
+                        }
+                    }
+                }
+            });
+            ui.separator();
             show_instrument_panel(ui, &info, &mut vals, &meters, &mut |id, v| {
                 use_.params.insert(id, v);
             });
