@@ -37,6 +37,7 @@ pub type InstrumentData = std::sync::Arc<dyn std::any::Any + Send + Sync>;
 pub mod cinque;
 pub mod common;
 pub mod onda;
+pub mod sampler;
 pub mod sedici;
 pub mod sei;
 #[cfg(test)]
@@ -207,6 +208,7 @@ pub fn registry() -> Vec<InstrumentInfo> {
         uno::info(),
         sedici::info(),
         onda::info(),
+        sampler::info(),
     ]
 }
 

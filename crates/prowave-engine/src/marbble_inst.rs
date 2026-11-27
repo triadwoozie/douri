@@ -80,6 +80,14 @@ impl MarbbleInstNode {
     pub fn tail_secs(&self) -> f32 {
         self.inst.tail_secs()
     }
+
+    /// Swaps off-thread built instrument data (such as a `SamplerMap`) on the audio thread.
+    pub fn swap_data(
+        &mut self,
+        data: marbble_dsp::instrument::InstrumentData,
+    ) -> Option<marbble_dsp::instrument::InstrumentData> {
+        self.inst.swap_data(data)
+    }
 }
 
 impl BlockProcessor for MarbbleInstNode {
@@ -155,7 +163,7 @@ mod tests {
     fn all_6_marbble_synths_are_allocation_free_in_process() {
         let sr = 48_000.0;
         let reg = instrument::registry();
-        assert_eq!(reg.len(), 6);
+        assert_eq!(reg.len(), 7);
 
         let mut out_l = [0.0_f32; 256];
         let mut out_r = [0.0_f32; 256];
@@ -172,7 +180,9 @@ mod tests {
             assert!(out_l.iter().all(|x| x.is_finite()));
             assert!(out_r.iter().all(|x| x.is_finite()));
             let energy: f32 = out_l.iter().chain(&out_r).map(|x| x * x).sum();
-            assert!(energy > 0.0, "{} produced silence on NoteOn", info.id);
+            if info.id != "builtin:sampler" {
+                assert!(energy > 0.0, "{} produced silence on NoteOn", info.id);
+            }
         }
     }
 }

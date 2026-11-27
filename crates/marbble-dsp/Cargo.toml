@@ -6,10 +6,13 @@ license = "MIT"
 description = "Built-in effects, plug-in delay compensation, and instrument DSP ported from Marbble (Copyright (c) 2026 Jack Mechem, MIT License)"
 
 [dependencies]
+parking_lot = "0.12"
 realfft = "3.5"
 rtrb = "0.4.0"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+symphonia = { version = "0.5", default-features = false, features = ["wav", "aiff", "pcm", "flac", "mp3", "caf", "ogg", "vorbis", "isomp4", "aac", "alac", "adpcm"] }
 tracing = "0.1.44"
 
 [dev-dependencies]
-serde_json = "1"
+tempfile = "3.27.0"
