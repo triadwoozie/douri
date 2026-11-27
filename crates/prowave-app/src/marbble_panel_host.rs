@@ -309,6 +309,8 @@ pub fn show_effect_panel(
     });
 }
 
+/// Floating `egui::Window` for the active track's Marbble Synth or Sampler (`UiState::show_marbble_inst`).
+
 /// Renders any Marbble `InstrumentInfo` panel grouped by its `Section`s with factory presets.
 #[allow(dead_code)]
 pub fn show_instrument_panel(
@@ -379,6 +381,8 @@ pub fn show_instrument_panel(
     });
 }
 
+/// Floating `egui::Window` for the active track's Marbble Synth or Sampler (`UiState::show_marbble_inst`).
+
 fn draw_param_row(
     ui: &mut Ui,
     p: &ParamSpec,
@@ -433,6 +437,8 @@ fn draw_param_row(
     });
 }
 
+/// Floating `egui::Window` for the active track's Marbble Synth or Sampler (`UiState::show_marbble_inst`).
+
 fn unit_suffix(u: Unit) -> &'static str {
     match u {
         Unit::Db => " dB",
@@ -480,5 +486,42 @@ mod tests {
 
         let (edits, _) = bridge.drain_edits();
         assert_eq!(edits, vec![(0, -18.0)]);
+    }
+}
+
+pub fn show_track_instrument_window(
+    ctx: &egui::Context,
+    p: &mut crate::model::Project,
+    s: &mut crate::UiState,
+) {
+    let Some(ti) = s.show_marbble_inst else {
+        return;
+    };
+    let Some(track) = p.tracks.get_mut(ti) else {
+        s.show_marbble_inst = None;
+        return;
+    };
+    let Some(use_) = track.marbble_inst.as_mut() else {
+        s.show_marbble_inst = None;
+        return;
+    };
+    let Some(info) = prowave_engine::marbble_dsp::instrument::find(&use_.id) else {
+        s.show_marbble_inst = None;
+        return;
+    };
+    let mut open = true;
+    let mut vals: HashMap<u32, f32> = use_.params.iter().map(|(&k, &v)| (k, v)).collect();
+    let meters = [0.0; MAX_METERS];
+    egui::Window::new(format!("{} - {}", track.name, info.name))
+        .open(&mut open)
+        .default_size([460.0, 420.0])
+        .resizable(true)
+        .show(ctx, |ui| {
+            show_instrument_panel(ui, &info, &mut vals, &meters, &mut |id, v| {
+                use_.params.insert(id, v);
+            });
+        });
+    if !open {
+        s.show_marbble_inst = None;
     }
 }

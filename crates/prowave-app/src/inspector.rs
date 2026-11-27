@@ -2251,10 +2251,18 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                                 let sampler = p.tracks[ti].sampler.clone();
                                 let has_drums = p.tracks[ti].drums.is_some();
                                 let has_bass808 = p.tracks[ti].bass808.is_some();
+                                let marbble_inst_name =
+                                    p.tracks[ti].marbble_inst.as_ref().and_then(|m| {
+                                        prowave_engine::marbble_dsp::instrument::find(&m.id)
+                                            .map(|inf| inf.name.to_string())
+                                    });
                                 let hosted_inst = p.tracks[ti].hosted_instrument;
                                 let shown = match (&current, piano) {
                                     _ if hosted_inst != 0 => {
                                         crate::hosted_plugins::name(hosted_inst).to_string()
+                                    }
+                                    _ if marbble_inst_name.is_some() => {
+                                        marbble_inst_name.clone().unwrap_or_default()
                                     }
                                     _ if has_drums => tr("Drum Machine").to_string(),
                                     _ if has_bass808 => "808 Bass".to_string(),
@@ -2281,6 +2289,8 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                                             s.mixer.plugin_controls = false;
                                         } else if has_drums {
                                             s.show_drum_machine = Some(ti);
+                                        } else if marbble_inst_name.is_some() {
+                                            s.show_marbble_inst = Some(ti);
                                         } else if has_bass808 {
                                             s.show_bass808 = Some(ti);
                                         }
@@ -2351,6 +2361,48 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
                                                 ui.close();
                                             }
                                         }
+                                        ui.separator();
+                                        ui.menu_button(tr("Marbble Synths & Sampler"), |ui| {
+                                            for info in
+                                                prowave_engine::marbble_dsp::instrument::registry()
+                                            {
+                                                let active = p.tracks[ti]
+                                                    .marbble_inst
+                                                    .as_ref()
+                                                    .is_some_and(|m| m.id == info.id);
+                                                if ui.selectable_label(active, info.name).clicked()
+                                                {
+                                                    p.tracks[ti].marbble_inst = Some(
+                                                        crate::model::MarbbleInstUse::new(info.id),
+                                                    );
+                                                    p.tracks[ti].soundfont = None;
+                                                    p.tracks[ti].sampler = None;
+                                                    p.tracks[ti].epiano = None;
+                                                    p.tracks[ti].drums = None;
+                                                    p.tracks[ti].bass808 = None;
+                                                    p.tracks[ti].hosted_instrument = 0;
+                                                    s.show_marbble_inst = Some(ti);
+                                                    ui.close();
+                                                }
+                                            }
+                                            if p.tracks[ti].marbble_inst.is_some() {
+                                                ui.separator();
+                                                if ui
+                                                    .button(tr("Open Marbble Instrument…"))
+                                                    .clicked()
+                                                {
+                                                    s.show_marbble_inst = Some(ti);
+                                                    ui.close();
+                                                }
+                                                if ui
+                                                    .button(tr("Remove Marbble Instrument"))
+                                                    .clicked()
+                                                {
+                                                    p.tracks[ti].marbble_inst = None;
+                                                    ui.close();
+                                                }
+                                            }
+                                        });
                                         ui.separator();
                                         if ui.button(tr("Drum Machine")).clicked() {
                                             p.tracks[ti].drums =

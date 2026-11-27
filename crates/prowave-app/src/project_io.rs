@@ -1019,6 +1019,7 @@ pub fn from_doc(doc: &ProjectDoc, media_dir: &Path, ctx: &egui::Context) -> (Pro
             epiano: epiano_of(t),
             drums: drums_of(t),
             bass808: None,
+            marbble_inst: None,
             hosted_instrument: hosted_instrument_of(t),
             icon: t
                 .icon

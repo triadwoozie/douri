@@ -903,6 +903,28 @@ impl AudioRegion {
     }
 }
 
+/// A Marbble synthesizer (`builtin:tre`..`builtin:onda`) or `builtin:sampler` attached to a track.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MarbbleInstUse {
+    pub id: String,
+    pub params: std::collections::BTreeMap<u32, f32>,
+}
+
+impl MarbbleInstUse {
+    pub fn new(id: &str) -> Self {
+        let mut params = std::collections::BTreeMap::new();
+        if let Some(info) = prowave_engine::marbble_dsp::instrument::find(id) {
+            for p in info.params {
+                params.insert(p.id, p.default);
+            }
+        }
+        Self {
+            id: id.to_string(),
+            params,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Track {
     pub name: String,
@@ -968,6 +990,8 @@ pub struct Track {
     pub drums: Option<crate::drum_kit::DrumsUse>,
     /// The tuned 808 Bass synthesizer or sample player.
     pub bass808: Option<prowave_engine::Bass808Spec>,
+    /// A Marbble synthesizer or sampler (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`, `Sampler`).
+    pub marbble_inst: Option<MarbbleInstUse>,
     /// A hosted CLAP, VST3 or Audio Unit instrument plug-in: its slot in `hosted_plugins`, or 0.
     pub hosted_instrument: u32,
     /// Software instrument / MIDI input port filter (`None` = All).
@@ -1080,6 +1104,7 @@ impl Track {
             epiano: None,
             drums: None,
             bass808: None,
+            marbble_inst: None,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,
@@ -1405,6 +1430,7 @@ impl Project {
             epiano: None,
             drums: None,
             bass808: None,
+            marbble_inst: None,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,
@@ -1481,6 +1507,7 @@ impl Project {
             epiano: None,
             drums: None,
             bass808: None,
+            marbble_inst: None,
             hosted_instrument: 0,
             midi_in_port: None,
             midi_in_channel: None,

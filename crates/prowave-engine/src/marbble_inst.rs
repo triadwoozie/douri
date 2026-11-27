@@ -3,6 +3,7 @@
 //! Ported from Marbble (<https://github.com/JackMechem/marbble>),
 //! Copyright (c) 2026 Jack Mechem, MIT License.
 
+use crate::plugin::PluginInstrument;
 use crate::plugin_track::{BlockProcessor, BlockTransport};
 use marbble_dsp::instrument::{
     self, FxContext, Instrument, InstrumentInfo, MidiEvent, MAX_BLOCK, MAX_METERS,
@@ -19,6 +20,9 @@ pub struct MarbbleInstNode {
     meters: [f32; MAX_METERS],
     midi_buf: [MidiEvent; MAX_BLOCK_MIDI],
     midi_len: usize,
+    render_l: [f32; 64],
+    render_r: [f32; 64],
+    render_pos: usize,
 }
 
 impl MarbbleInstNode {
@@ -42,6 +46,9 @@ impl MarbbleInstNode {
                 data: [0; 3],
             }; MAX_BLOCK_MIDI],
             midi_len: 0,
+            render_l: [0.0; 64],
+            render_r: [0.0; 64],
+            render_pos: 64,
         })
     }
 
@@ -151,6 +158,66 @@ impl BlockProcessor for MarbbleInstNode {
         self.ctx.playing = t.playing;
         self.ctx.tempo = t.tempo;
         self.ctx.position = t.beat;
+    }
+}
+
+impl PluginInstrument for MarbbleInstNode {
+    fn note_on(&mut self, pitch: u8, vel: u8) {
+        self.midi(0x90, pitch & 127, vel.max(1) & 127, 0);
+    }
+
+    fn note_off(&mut self, pitch: u8) {
+        self.midi(0x80, pitch & 127, 0, 0);
+    }
+
+    fn control(&mut self, number: u8, value: u16) {
+        if number == 128 {
+            let lsb = (value & 0x7F) as u8;
+            let msb = ((value >> 7) & 0x7F) as u8;
+            self.midi(0xE0, lsb, msb, 0);
+        } else {
+            self.midi(0xB0, number & 127, (value as u8) & 127, 0);
+        }
+    }
+
+    fn all_notes_off(&mut self) {
+        self.inst.all_notes_off();
+    }
+
+    fn render(&mut self) -> (f32, f32) {
+        if self.render_pos >= 64 {
+            let mut l = [0.0_f32; 64];
+            let mut r = [0.0_f32; 64];
+            self.process((&[], &[]), (&mut l, &mut r));
+            self.render_l = l;
+            self.render_r = r;
+            self.render_pos = 0;
+        }
+        let i = self.render_pos;
+        self.render_pos += 1;
+        (self.render_l[i], self.render_r[i])
+    }
+
+    fn set_param(&mut self, index: usize, norm: f32) {
+        if let Some(spec) = self.info.params.get(index) {
+            let n = if norm.is_finite() {
+                norm.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let v = if spec.log && spec.min > 0.0 {
+                spec.min * (spec.max / spec.min).powf(n)
+            } else {
+                spec.min + (spec.max - spec.min) * n
+            };
+            self.inst.set_param(spec.id, v.clamp(spec.min, spec.max));
+        }
+    }
+
+    fn reset(&mut self) {
+        self.inst.reset();
+        self.midi_len = 0;
+        self.render_pos = 64;
     }
 }
 

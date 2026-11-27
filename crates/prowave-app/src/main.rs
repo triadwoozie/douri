@@ -381,6 +381,8 @@ pub struct UiState {
     pub drum_error: Option<String>,
     /// The track whose 808 Bass window is open.
     pub show_bass808: Option<usize>,
+    /// The track whose Marbble Synth / Sampler window is open.
+    pub show_marbble_inst: Option<usize>,
     /// MultiMeter analyzer window is open.
     pub show_multimeter: bool,
     /// Eclipsa Audio Master Renderer window is open.
@@ -582,6 +584,7 @@ impl UiState {
             drum_held: None,
             drum_error: None,
             show_bass808: None,
+            show_marbble_inst: None,
             show_multimeter: false,
             show_eclipsa_renderer: false,
             show_eclipsa_panner: false,
@@ -1942,12 +1945,15 @@ impl eframe::App for App {
         let opaque_panel_frame =
             egui::Frame::side_top_panel(ui.style()).fill(egui::Color32::from_rgb(28, 28, 30));
         if s.show_library {
+            let library_frame = egui::Frame::new()
+                .fill(egui::Color32::from_rgb(0x18, 0x18, 0x1a))
+                .inner_margin(egui::Margin::ZERO);
             egui::Panel::left("library")
                 .resizable(true)
                 .min_size(240.0)
                 .max_size(480.0)
                 .default_size(300.0)
-                .frame(opaque_panel_frame)
+                .frame(library_frame)
                 .show(ui, |ui| library::show(ui, p, s));
         }
         if s.show_inspector {
@@ -2367,6 +2373,7 @@ impl eframe::App for App {
         musical_typing::show(&ctx, &mut self.ui.typing, typed.as_deref());
         drum_machine_ui::show(&ctx, &mut self.project, &mut self.ui);
         bass808_ui::show(&ctx, &mut self.project, &mut self.ui);
+        marbble_panel_host::show_track_instrument_window(&ctx, &mut self.project, &mut self.ui);
         multimeter::show(&ctx, &mut self.ui.show_multimeter, &meters, &mut self.sync);
         eclipsa_ui::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);

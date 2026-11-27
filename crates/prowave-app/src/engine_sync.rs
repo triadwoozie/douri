@@ -69,6 +69,8 @@ pub struct EngineSync {
     pianos: Vec<Option<[f32; prowave_engine::epiano::PARAMS]>>,
     /// The Bass 808 each track was last given (`None`: no Bass 808), by track.
     bass808s: Vec<Option<prowave_engine::Bass808Spec>>,
+    /// The Marbble Synth / Sampler each track was last given, by track.
+    marbble_insts: Vec<Option<crate::model::MarbbleInstUse>>,
     /// The hosted instrument plugin each track was last given, by track (`0`: none).
     hosted_instruments: Vec<u32>,
     /// Which tracks the engine was told are external, by track.
@@ -809,6 +811,7 @@ impl EngineSync {
             sampler_jobs: std::collections::HashMap::new(),
             pianos: Vec::new(),
             bass808s: Vec::new(),
+            marbble_insts: Vec::new(),
             hosted_instruments: Vec::new(),
             externals: Vec::new(),
             controls: Vec::new(),
@@ -1014,6 +1017,18 @@ impl EngineSync {
                 }
                 continue;
             }
+            if let Some(m) = t.marbble_inst.as_ref().filter(|_| !external) {
+                if !self.sync_marbble_inst(i, m, sample_rate) {
+                    break;
+                }
+                if let Some(slot) = self.pianos.get_mut(i) {
+                    *slot = None;
+                }
+                if let Some(slot) = self.hosted_instruments.get_mut(i) {
+                    *slot = 0;
+                }
+                continue;
+            }
             if let Some(b808) = t.bass808.as_ref().filter(|_| !external) {
                 if !self.sync_bass808(i, b808, sample_rate) {
                     break;
@@ -1049,9 +1064,14 @@ impl EngineSync {
                 .is_some_and(|d| d.take().is_some());
             self.drum_jobs.remove(&i);
             let bass808_was = self.bass808s.get_mut(i).is_some_and(|b| b.take().is_some());
+            let marbble_was = self
+                .marbble_insts
+                .get_mut(i)
+                .is_some_and(|m| m.take().is_some());
             let force = self.samplers.get_mut(i).is_some_and(|s| s.take().is_some())
                 || drums_were
-                || bass808_was;
+                || bass808_was
+                || marbble_was;
             self.sampler_jobs.remove(&i);
             let want = if external { None } else { t.soundfont.as_ref() };
             let want_piano = if external {
@@ -1502,6 +1522,43 @@ impl EngineSync {
         true
     }
 
+    fn sync_marbble_inst(
+        &mut self,
+        i: usize,
+        want: &crate::model::MarbbleInstUse,
+        sample_rate: f32,
+    ) -> bool {
+        if self.marbble_insts.len() <= i {
+            self.marbble_insts.resize(i + 1, None);
+        }
+        if self.marbble_insts[i].as_ref() == Some(want) {
+            return true;
+        }
+        let Some(mut node) = prowave_engine::marbble_inst::MarbbleInstNode::open(
+            &want.id,
+            sample_rate,
+            i as u64 + 1,
+        ) else {
+            return true;
+        };
+        for (&pid, &val) in &want.params {
+            node.set_param_by_id(pid, val);
+        }
+        let cmd = Command::SetTrackSoundFont {
+            track: i as u16,
+            player: Some(Box::new(SfPlayer::plugin(Box::new(node), sample_rate))),
+        };
+        if !self.send(cmd) {
+            return false;
+        }
+        self.marbble_insts[i] = Some(want.clone());
+        if self.soundfonts.len() <= i {
+            self.soundfonts.resize(i + 1, None);
+        }
+        self.soundfonts[i] = None;
+        true
+    }
+
     /// Keeps track `i`'s Sampler in step with `want`: moves its dials when only they changed,
     /// else loads the new instrument in the background and swaps it in when it is ready (the
     /// old instrument plays until then; one that cannot be loaded is logged and the old one
@@ -1864,6 +1921,7 @@ mod tests {
             epiano: None,
             drums: None,
             bass808: None,
+            marbble_inst: None,
             hosted_instrument: 0,
             summing_stack: false,
             midi_channel: 1,

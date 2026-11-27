@@ -1094,3 +1094,6 @@ Varispeed Mode = Varispeed Mode
 Drag vertically or double-click to adjust Varispeed; click to choose unit = Drag vertically or double-click to adjust Varispeed; click to choose unit
 Reset Varispeed (0.00%) = Reset Varispeed (0.00%)
 Fit = Adatta
+Marbble Synths & Sampler = Sintetizzatori e Sampler Marbble
+Open Marbble Instrument… = Apri strumento Marbble…
+Remove Marbble Instrument = Rimuovi strumento Marbble
