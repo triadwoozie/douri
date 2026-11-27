@@ -1327,6 +1327,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         }),
                     )
                     .on_hover_text(tr("Show/Hide Flex Pitch"));
+                crate::quick_help::hover(ui.ctx(), &flex_btn, "flex_toggle");
                 if flex_btn.clicked() {
                     v.show_flex = !v.show_flex;
                     if v.show_flex && p.tracks[t].params.flex_mode.is_none() {

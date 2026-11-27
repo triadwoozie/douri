@@ -15,23 +15,23 @@ const ROW_H: f32 = 19.0;
 const TICKS_PER_BEAT: i64 = 960;
 const TICKS_PER_DIVISION: i64 = 240;
 
-// Authentic Liquid Glass Palette
-const WELL_BG: Color32 = Color32::from_rgb(0x14, 0x15, 0x18); // #141518 deep recessed well
-const TAB_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1c); // #18191C
-const TAB_ACTIVE_BG: Color32 = Color32::from_rgb(0x22, 0x25, 0x2a); // #22252A
-const TAB_INACTIVE_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1c);
-const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24); // #1E2024
-const FILTER_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x19, 0x1d); // #18191D
-const HEADER_BG: Color32 = Color32::from_rgb(0x1e, 0x20, 0x24); // #1E2024
-const BORDER_COLOR: Color32 = Color32::from_rgb(0x2e, 0x31, 0x38); // #2E3138
-const ROW_DIVIDER: Color32 = Color32::from_rgb(0x23, 0x26, 0x2c); // #23262C
-const ROW_BG_EVEN: Color32 = Color32::from_rgb(0x16, 0x18, 0x1c); // #16181C
-const ROW_BG_ODD: Color32 = Color32::from_rgb(0x1b, 0x1d, 0x22); // #1B1D22
+// Neutral dark charcoal palette matching the rest of Dōri
+const WELL_BG: Color32 = Color32::from_rgb(0x16, 0x16, 0x18);
+const TAB_BAR_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const TAB_ACTIVE_BG: Color32 = Color32::from_rgb(0x23, 0x23, 0x26);
+const TAB_INACTIVE_BG: Color32 = Color32::from_rgb(0x18, 0x18, 0x1a);
+const TOOLBAR_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
+const FILTER_BAR_BG: Color32 = Color32::from_rgb(0x19, 0x19, 0x1b);
+const HEADER_BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x21);
+const BORDER_COLOR: Color32 = Color32::from_rgb(0x2d, 0x2d, 0x30);
+const ROW_DIVIDER: Color32 = Color32::from_rgb(0x24, 0x24, 0x27);
+const ROW_BG_EVEN: Color32 = Color32::from_rgb(0x17, 0x17, 0x19);
+const ROW_BG_ODD: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x1e);
 
 const PILL_ACTIVE_BG: Color32 = Color32::from_rgb(0x2b, 0x6c, 0xb0); // #2B6CB0 (Logic Blue)
 const PILL_ACTIVE_TEXT: Color32 = Color32::WHITE;
-const PILL_INACTIVE_BG: Color32 = Color32::from_rgb(0x20, 0x22, 0x26); // #202226
-const PILL_INACTIVE_TEXT: Color32 = Color32::from_rgb(0x9a, 0xa0, 0xac); // #9AA0AC
+const PILL_INACTIVE_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x25);
+const PILL_INACTIVE_TEXT: Color32 = Color32::from_rgb(0x9a, 0x9c, 0xa2);
 
 /// Tabs available in the List Editors panel.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -368,6 +368,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let r = Rect::from_min_size(pos2(area.left() + i as f32 * tab_w, y), vec2(tab_w, 26.0));
         let is_active = s.lists.active_tab == *tab;
         let resp = ui.interact(r, egui::Id::unique(("list_tab", i)), Sense::click());
+        let help_id = match tab {
+            ListTab::Event => "list_event",
+            ListTab::Marker => "list_marker",
+            ListTab::Tempo => "list_tempo",
+            ListTab::Signature => "list_signature",
+        };
+        crate::quick_help::hover(ui.ctx(), &resp, help_id);
         if resp.clicked() {
             s.lists.active_tab = *tab;
             s.lists.scroll = 0.0;
@@ -376,7 +383,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         let fill = if is_active {
             TAB_ACTIVE_BG
         } else if resp.hovered() {
-            Color32::from_rgb(0x1e, 0x20, 0x24)
+            Color32::from_rgb(0x22, 0x22, 0x25)
         } else {
             TAB_INACTIVE_BG
         };

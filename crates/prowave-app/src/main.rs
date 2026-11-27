@@ -1993,11 +1993,12 @@ impl eframe::App for App {
                 .default_size(360.0)
                 .max_size(440.0)
                 .frame(
-                    egui::Frame::side_top_panel(ui.style())
+                    egui::Frame::new()
                         .fill(egui::Color32::from_rgb(28, 28, 30))
+                        .inner_margin(egui::Margin::ZERO)
                         .stroke(egui::Stroke::new(
                             1.0,
-                            egui::Color32::from_rgb(0x2e, 0x31, 0x38),
+                            egui::Color32::from_rgb(0x2d, 0x2d, 0x30),
                         )),
                 )
                 .show(ui, |ui| event_list::show(ui, p, s));
