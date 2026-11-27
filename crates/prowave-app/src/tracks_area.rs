@@ -4303,8 +4303,10 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     s.tracks_drop_beat = ptr_pos.map(|pt| beat_of(pt.x).max(0.0));
     let os_hover = ui.input(|i| !i.raw.hovered_files.is_empty());
     let has_region_payload = !v.group_drag.is_empty() || s.dragged_region.is_some();
+    let browser_drag = s.browser.dragging.is_some();
+    s.browser_drop_track = None;
     if let Some(pos) = ptr_pos {
-        if headers.contains(pos) && (os_hover || has_region_payload) {
+        if headers.contains(pos) && (os_hover || has_region_payload || browser_drag) {
             let hl = ui.painter_at(headers);
             hl.rect_filled(
                 headers,
@@ -4324,19 +4326,48 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 FontId::proportional(11.0),
                 Color32::WHITE,
             );
-        } else if lanes.contains(pos) && s.dragged_user_loop.is_some() {
+        } else if lanes.contains(pos) && (s.dragged_user_loop.is_some() || browser_drag) {
             let hl = ui.painter_at(lanes);
-            hl.rect_filled(
-                lanes,
-                4.0,
-                Color32::from_rgba_unmultiplied(0x51, 0xee, 0xfc, 18),
-            );
-            hl.rect_stroke(
-                lanes,
-                4.0,
-                Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
-                egui::StrokeKind::Inside,
-            );
+            let mut target_row = None;
+            if browser_drag {
+                for (i, &(top, row_h)) in rows.iter().enumerate() {
+                    if row_h <= 0.0 {
+                        continue;
+                    }
+                    let y = lanes.top() + top - scroll_y;
+                    if pos.y >= y && pos.y <= y + row_h {
+                        target_row = Some((
+                            i,
+                            Rect::from_min_size(pos2(lanes.left(), y), vec2(lanes.width(), row_h)),
+                        ));
+                        break;
+                    }
+                }
+            }
+            if let Some((ti, row_rect)) = target_row {
+                s.browser_drop_track = Some(ti);
+                hl.rect_filled(
+                    row_rect,
+                    2.0,
+                    Color32::from_rgba_unmultiplied(0x12, 0x69, 0xcc, 34),
+                );
+                hl.line_segment(
+                    [pos2(pos.x, row_rect.top()), pos2(pos.x, row_rect.bottom())],
+                    Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
+                );
+            } else {
+                hl.rect_filled(
+                    lanes,
+                    4.0,
+                    Color32::from_rgba_unmultiplied(0x51, 0xee, 0xfc, 18),
+                );
+                hl.rect_stroke(
+                    lanes,
+                    4.0,
+                    Stroke::new(2.0, Color32::from_rgb(0x51, 0xee, 0xfc)),
+                    egui::StrokeKind::Inside,
+                );
+            }
         }
     }
 

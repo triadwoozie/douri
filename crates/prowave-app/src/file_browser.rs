@@ -80,6 +80,8 @@ pub struct BrowserView {
     /// The Apple Loops tags read so far (`None`: the file has none), and the read still running.
     tags: HashMap<PathBuf, Option<LoopTags>>,
     scan: Option<TagScan>,
+    /// File currently being dragged from the browser onto the Tracks Area.
+    pub dragging: Option<PathBuf>,
 }
 
 impl BrowserView {
@@ -241,6 +243,8 @@ pub fn show(ui: &mut egui::Ui, s: &mut crate::UiState) {
     ui.separator();
     let mut enter = None;
     let mut add = None;
+    let mut start_drag = None;
+    let browser_rect = ui.max_rect();
     egui::ScrollArea::vertical().show(ui, |ui| {
         for e in v.entries.iter().filter(|e| {
             let tags = v.tags.get(&e.path).and_then(Option::as_ref);
@@ -251,11 +255,20 @@ pub fn show(ui: &mut egui::Ui, s: &mut crate::UiState) {
             } else {
                 e.name.clone()
             };
-            let row = ui.selectable_label(false, text);
+            let row = if e.folder {
+                ui.selectable_label(false, text)
+            } else {
+                ui.add(egui::Button::selectable(false, text).sense(egui::Sense::click_and_drag()))
+            };
             if e.folder && row.clicked() {
                 enter = Some(e.path.clone());
-            } else if !e.folder && row.double_clicked() {
-                add = Some(e.path.clone());
+            } else if !e.folder {
+                if row.double_clicked() {
+                    add = Some(e.path.clone());
+                }
+                if row.drag_started() {
+                    start_drag = Some(e.path.clone());
+                }
             }
             if let Some(line) = v
                 .tags
@@ -274,6 +287,60 @@ pub fn show(ui: &mut egui::Ui, s: &mut crate::UiState) {
     if enter.is_some() {
         v.dir = enter;
         v.search.clear();
+    }
+    if start_drag.is_some() {
+        v.dragging = start_drag;
+    }
+    if let Some(path) = v.dragging.clone() {
+        let ptr = ui
+            .ctx()
+            .input(|i| i.pointer.hover_pos().or(i.pointer.interact_pos()));
+        if let Some(pos) = ptr {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::unique("browser_drag_ghost"),
+            ));
+            let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("Audio");
+            let pill = egui::Rect::from_min_size(
+                pos + egui::vec2(12.0, 12.0),
+                egui::vec2((label.len() as f32 * 7.2 + 20.0).clamp(90.0, 240.0), 24.0),
+            );
+            painter.rect_filled(
+                pill,
+                6.0,
+                egui::Color32::from_rgba_unmultiplied(0x12, 0x69, 0xcc, 220),
+            );
+            painter.text(
+                pill.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(11.5),
+                egui::Color32::WHITE,
+            );
+        }
+        if ui
+            .ctx()
+            .input(|i| i.pointer.any_released() || !i.pointer.any_down())
+        {
+            v.dragging = None;
+            let over_headers =
+                ptr.is_some_and(|p| s.tracks_headers_rect.is_some_and(|r| r.contains(p)));
+            if over_headers && crate::import::is_audio_path(&path) {
+                let name = path
+                    .file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Audio")
+                    .to_string();
+                s.track_drop_slice
+                    .open(crate::track_drop_slice::DropAudioSource::File { path, name });
+            } else if let (Some(ti), Some(beat)) = (s.browser_drop_track.take(), s.tracks_drop_beat)
+            {
+                s.open_drops.push((path, Some((ti, beat))));
+            } else if ptr.is_some_and(|p| !browser_rect.contains(p)) {
+                s.open_drops.push((path, None));
+            }
+        }
     }
     s.open_paths.extend(add);
 }

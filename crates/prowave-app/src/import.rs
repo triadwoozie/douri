@@ -45,8 +45,25 @@ pub fn audio_region(file: AudioFile, ctx: &egui::Context) -> AudioRegion {
 
 /// Adds a new audio track with one region starting at the bar under the playhead.
 pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result<(), AudioError> {
+    import_audio_at(p, path, None, None, ctx)
+}
+
+/// Imports an audio file onto `track_idx` (if it is an existing Audio track) at `beat`, or
+/// creates a new Audio track at `beat` (defaulting to the playhead bar).
+pub fn import_audio_at(
+    p: &mut Project,
+    path: &Path,
+    track_idx: Option<usize>,
+    beat: Option<f64>,
+    ctx: &egui::Context,
+) -> Result<(), AudioError> {
     let file = AudioFile::open(path)?;
-    let start_bar = p.beats_to_bar(p.position_beats).floor() + 1.0;
+    let anchor_beats = beat.unwrap_or(p.position_beats).max(0.0);
+    let start_bar = if beat.is_some() {
+        p.beats_to_bar(anchor_beats) + 1.0
+    } else {
+        p.beats_to_bar(anchor_beats).floor() + 1.0
+    };
     // The region's length follows the Tempo track from where it starts.
     let map = p.tempo_map();
     let start = p.bar_to_beats(start_bar - 1.0);
@@ -58,8 +75,32 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         .unwrap_or("Audio")
         .to_string();
 
-    p.tracks.push(Track {
+    let region = Region {
         name: name.clone(),
+        start_bar: start_bar as f32,
+        len_bars: len_bars as f32,
+        notes: vec![],
+        controls: Vec::new(),
+        folder: None,
+        generated: None,
+        audio: Some(audio_region(file, ctx)),
+        missing: None,
+        params: RegionParams::default(),
+    };
+
+    if let Some(ti) = track_idx {
+        if let Some(track) = p.tracks.get_mut(ti) {
+            if track.kind == TrackKind::Audio {
+                track.regions.push(region);
+                p.selected_track = ti;
+                p.song_rev += 1;
+                return Ok(());
+            }
+        }
+    }
+
+    p.tracks.push(Track {
+        name,
         kind: TrackKind::Audio,
         color: egui::Color32::from_rgb(0x3f, 0x5f, 0xc0),
         mute: false,
@@ -73,18 +114,7 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
         pan: 0.0,
         inserts: vec![],
         instrument: None,
-        regions: vec![Region {
-            name,
-            start_bar: start_bar as f32,
-            len_bars: len_bars as f32,
-            notes: vec![],
-            controls: Vec::new(),
-            folder: None,
-            generated: None,
-            audio: Some(audio_region(file, ctx)),
-            missing: None,
-            params: RegionParams::default(),
-        }],
+        regions: vec![region],
         params: TrackParams::default(),
         category: None,
         sends: Vec::new(),
@@ -116,4 +146,27 @@ pub fn import_audio(p: &mut Project, path: &Path, ctx: &egui::Context) -> Result
     p.selected_track = p.tracks.len() - 1;
     p.song_rev += 1;
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_audio_at_places_region_on_audio_track_at_target_beat() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("kick.wav");
+        let samples = vec![0.0f32; 4_410];
+        prowave_engine::stems::write_wav_stereo(&wav, &samples, &samples, 44_100).unwrap();
+
+        let mut p = Project::empty();
+        p.tracks.push(Track::new("Audio 1", TrackKind::Audio));
+        let audio_idx = p.tracks.len() - 1;
+        let ctx = egui::Context::default();
+
+        import_audio_at(&mut p, &wav, Some(audio_idx), Some(8.0), &ctx).unwrap();
+        assert_eq!(p.tracks[audio_idx].regions.len(), 1);
+        assert!((p.tracks[audio_idx].regions[0].start_bar - 3.0).abs() < 1e-4);
+    }
 }

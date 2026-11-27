@@ -166,9 +166,17 @@ pub struct StemSet {
     pub stems: [(Vec<f32>, Vec<f32>); 4],
 }
 
+fn median_of(buf: &mut [f32]) -> f32 {
+    if buf.is_empty() {
+        return 0.0;
+    }
+    let mid = buf.len() / 2;
+    *buf.select_nth_unstable_by(mid, f32::total_cmp).1
+}
+
 /// Separates stereo audio into 4 stems `[Vocals, Drums, Bass, Other]`.
-/// `debleed_pct` (0.0..=100.0) attenuates bleed gently (up to -12 dB) instead of hard-zeroing,
-/// avoiding watery phase artifacts for singer-songwriters and podcasters.
+/// `debleed_pct` (0.0..=100.0) sharpens stem separation masks to suppress cross-stem bleed
+/// while preserving phase coherence and partition-of-unity reconstruction.
 pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct: f32) -> StemSet {
     let n_frames = left.len().min(right.len());
     if n_frames == 0 {
@@ -186,16 +194,20 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
 
     const FFT_N: usize = 2048;
     const HOP: usize = 512;
+    const PAD: usize = HOP * 3;
+    const HPSS_HALF: usize = 8; // 17-frame / 17-bin median window
     let bins = FFT_N / 2 + 1;
     let fft = Fft::new(FFT_N);
+    let padded_len = n_frames + PAD * 2;
 
     let hann: Vec<f32> = (0..FFT_N)
         .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / FFT_N as f32).cos()))
         .collect();
 
-    let num_stft_frames = n_frames.div_ceil(HOP) + 1;
+    let num_stft_frames = padded_len.saturating_sub(FFT_N).div_ceil(HOP) + 1;
     let mut mag_mid = vec![0.0f32; num_stft_frames * bins];
     let mut mag_side = vec![0.0f32; num_stft_frames * bins];
+    let mut mag_total = vec![0.0f32; num_stft_frames * bins];
 
     let mut spec_l_re = vec![0.0f32; num_stft_frames * FFT_N];
     let mut spec_l_im = vec![0.0f32; num_stft_frames * FFT_N];
@@ -205,17 +217,20 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
     let mut re = vec![0.0f32; FFT_N];
     let mut im = vec![0.0f32; FFT_N];
 
-    // Forward STFT
-    for (t, frame_idx) in (0..num_stft_frames).enumerate() {
-        let start = frame_idx * HOP;
+    let padded_sample = |src: &[f32], idx: usize| -> f32 {
+        if idx >= PAD && idx - PAD < n_frames {
+            src[idx - PAD]
+        } else {
+            0.0
+        }
+    };
+
+    // Forward STFT over center-padded signal
+    for t in 0..num_stft_frames {
+        let start = t * HOP;
 
         for i in 0..FFT_N {
-            let s = if start + i < n_frames {
-                left[start + i]
-            } else {
-                0.0
-            };
-            re[i] = s * hann[i];
+            re[i] = padded_sample(left, start + i) * hann[i];
             im[i] = 0.0;
         }
         fft.process(&mut re, &mut im, false);
@@ -223,12 +238,7 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
         spec_l_im[t * FFT_N..(t + 1) * FFT_N].copy_from_slice(&im);
 
         for i in 0..FFT_N {
-            let s = if start + i < n_frames {
-                right[start + i]
-            } else {
-                0.0
-            };
-            re[i] = s * hann[i];
+            re[i] = padded_sample(right, start + i) * hann[i];
             im[i] = 0.0;
         }
         fft.process(&mut re, &mut im, false);
@@ -248,46 +258,130 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
             let sr = 0.5 * (lr - rr);
             let si = 0.5 * (li - ri);
 
-            mag_mid[m_base + k] = (mr * mr + mi * mi).sqrt();
-            mag_side[m_base + k] = (sr * sr + si * si).sqrt();
+            let mm = (mr * mr + mi * mi).sqrt();
+            let ms = (sr * sr + si * si).sqrt();
+            mag_mid[m_base + k] = mm;
+            mag_side[m_base + k] = ms;
+            mag_total[m_base + k] = mm + ms;
         }
     }
 
-    // Harmonic-Percussive Source Separation (HPSS)
+    // Median-filter Harmonic-Percussive Source Separation (HPSS)
     let mut harm = vec![0.0f32; num_stft_frames * bins];
     let mut perc = vec![0.0f32; num_stft_frames * bins];
+    let mut win_buf = [0.0f32; HPSS_HALF * 2 + 1];
 
     for t in 0..num_stft_frames {
+        let t0 = t.saturating_sub(HPSS_HALF);
+        let t1 = (t + HPSS_HALF).min(num_stft_frames - 1);
         for k in 0..bins {
-            let t0 = t.saturating_sub(2);
-            let t1 = (t + 2).min(num_stft_frames - 1);
-            let mut sum_t = 0.0f32;
-            let mut cnt_t = 0.0f32;
+            let mut nt = 0usize;
             for tt in t0..=t1 {
-                sum_t += mag_mid[tt * bins + k] + mag_side[tt * bins + k];
-                cnt_t += 1.0;
+                win_buf[nt] = mag_total[tt * bins + k];
+                nt += 1;
             }
-            harm[t * bins + k] = sum_t / cnt_t.max(1.0);
+            harm[t * bins + k] = median_of(&mut win_buf[..nt]);
 
-            let k0 = k.saturating_sub(2);
-            let k1 = (k + 2).min(bins - 1);
-            let mut sum_k = 0.0f32;
-            let mut cnt_k = 0.0f32;
+            let k0 = k.saturating_sub(HPSS_HALF);
+            let k1 = (k + HPSS_HALF).min(bins - 1);
+            let mut nk = 0usize;
             for kk in k0..=k1 {
-                sum_k += mag_mid[t * bins + kk] + mag_side[t * bins + kk];
-                cnt_k += 1.0;
+                win_buf[nk] = mag_total[t * bins + kk];
+                nk += 1;
             }
-            perc[t * bins + k] = sum_k / cnt_k.max(1.0);
+            perc[t * bins + k] = median_of(&mut win_buf[..nk]);
         }
     }
 
-    let bin_hz = sample_rate as f32 / FFT_N as f32;
+    let bin_hz = sample_rate.max(8000) as f32 / FFT_N as f32;
     let debleed = (debleed_pct.clamp(0.0, 100.0)) / 100.0;
-    let bleed_floor = if debleed > 0.0 {
-        1.0 - debleed * (1.0 - 0.2512)
-    } else {
-        0.0
-    };
+    let gamma = 1.0 + debleed * 1.5;
+
+    // Raw soft masks before 2D smoothing
+    let total_tf = num_stft_frames * bins;
+    let mut raw_masks = [
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+    ];
+    for t in 0..num_stft_frames {
+        let m_base = t * bins;
+        for k in 0..bins {
+            let freq = k as f32 * bin_hz;
+            let h = harm[m_base + k];
+            let p = perc[m_base + k];
+            let mid = mag_mid[m_base + k];
+            let side = mag_side[m_base + k];
+            let eps = 1e-8;
+
+            let w_perc = (p * p) / (p * p + h * h + eps);
+            let w_harm = 1.0 - w_perc;
+
+            // Smooth 4th-order Linkwitz-Riley-like bass crossover around 210 Hz
+            let bass_lp = 1.0 / (1.0 + (freq / 210.0).powi(4));
+            let w_bass = w_harm * bass_lp + w_perc * bass_lp * 0.25;
+            let w_drums = w_perc * (1.0 - bass_lp * 0.25);
+
+            let center_ratio = (mid * mid) / (mid * mid + 2.0 * side * side + eps);
+            let vocal_band = if (200.0..=6000.0).contains(&freq) {
+                1.0
+            } else if freq < 200.0 {
+                let u = ((freq - 80.0) / 120.0).clamp(0.0, 1.0);
+                0.5 * (1.0 - (PI * u).cos())
+            } else {
+                let u = (1.0 - (freq - 6000.0) / 4000.0).clamp(0.0, 1.0);
+                0.5 * (1.0 - (PI * u).cos())
+            };
+
+            let w_vocals = w_harm * (1.0 - bass_lp) * center_ratio * vocal_band;
+            let w_other = (1.0 - w_drums - w_bass - w_vocals).max(0.0);
+
+            let idx = m_base + k;
+            raw_masks[0][idx] = w_vocals;
+            raw_masks[1][idx] = w_drums;
+            raw_masks[2][idx] = w_bass;
+            raw_masks[3][idx] = w_other;
+        }
+    }
+
+    // 2D (3x3) mask smoothing eliminates bin-to-bin musical noise
+    let mut smooth_masks = [
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+        vec![0.0f32; total_tf],
+    ];
+    for t in 0..num_stft_frames {
+        let t0 = t.saturating_sub(1);
+        let t1 = (t + 1).min(num_stft_frames - 1);
+        for k in 0..bins {
+            let k0 = k.saturating_sub(1);
+            let k1 = (k + 1).min(bins - 1);
+            let mut acc = [0.0f32; 4];
+            let mut cnt = 0.0f32;
+            for tt in t0..=t1 {
+                for kk in k0..=k1 {
+                    let idx = tt * bins + kk;
+                    for s in 0..4 {
+                        acc[s] += raw_masks[s][idx];
+                    }
+                    cnt += 1.0;
+                }
+            }
+            let out_idx = t * bins + k;
+            let mut sum_s = 0.0f32;
+            for s in 0..4 {
+                let v = (acc[s] / cnt).powf(gamma);
+                smooth_masks[s][out_idx] = v;
+                sum_s += v;
+            }
+            let inv = 1.0 / sum_s.max(1e-8);
+            for mask in &mut smooth_masks {
+                mask[out_idx] *= inv;
+            }
+        }
+    }
 
     let mut out_stems: [(Vec<f32>, Vec<f32>); 4] = [
         (vec![0.0; n_frames], vec![0.0; n_frames]),
@@ -295,68 +389,32 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
         (vec![0.0; n_frames], vec![0.0; n_frames]),
         (vec![0.0; n_frames], vec![0.0; n_frames]),
     ];
-    let mut win_norm = vec![0.0f32; n_frames];
-
+    let mut win_norm = vec![0.0f32; padded_len];
     for t in 0..num_stft_frames {
         let start = t * HOP;
         for i in 0..FFT_N {
-            if start + i < n_frames {
+            if start + i < padded_len {
                 win_norm[start + i] += hann[i] * hann[i];
             }
         }
     }
 
+    let inv_n = 1.0 / FFT_N as f32;
+    let mut re_l = vec![0.0f32; FFT_N];
+    let mut im_l = vec![0.0f32; FFT_N];
+    let mut re_r = vec![0.0f32; FFT_N];
+    let mut im_r = vec![0.0f32; FFT_N];
+
     #[allow(clippy::needless_range_loop)]
     for stem_idx in 0..4 {
+        let mut padded_l = vec![0.0f32; padded_len];
+        let mut padded_r = vec![0.0f32; padded_len];
         for t in 0..num_stft_frames {
             let base = t * FFT_N;
             let m_base = t * bins;
 
-            let mut re_l = vec![0.0f32; FFT_N];
-            let mut im_l = vec![0.0f32; FFT_N];
-            let mut re_r = vec![0.0f32; FFT_N];
-            let mut im_r = vec![0.0f32; FFT_N];
-
             for k in 0..bins {
-                let freq = k as f32 * bin_hz;
-                let h = harm[m_base + k];
-                let p = perc[m_base + k];
-                let mid = mag_mid[m_base + k];
-                let side = mag_side[m_base + k];
-                let eps = 1e-7;
-
-                let w_drums = (p * p) / (p * p + h * h + eps);
-                let w_harm = 1.0 - w_drums;
-
-                let w_bass = if freq < 250.0 {
-                    w_harm * (1.0 - (freq / 250.0).powi(2))
-                } else {
-                    0.0
-                };
-
-                let center_ratio = (mid * mid) / (mid * mid + side * side + eps);
-                let vocal_band = if (180.0..=6500.0).contains(&freq) {
-                    1.0
-                } else if freq < 180.0 {
-                    (freq / 180.0).clamp(0.0, 1.0)
-                } else {
-                    (1.0 - (freq - 6500.0) / 4000.0).clamp(0.0, 1.0)
-                };
-                let w_vocals = w_harm * center_ratio * vocal_band * (1.0 - w_bass);
-                let w_other = (1.0 - w_drums - w_bass - w_vocals).max(0.0);
-
-                let sum_w = (w_vocals + w_drums + w_bass + w_other).max(eps);
-                let mut mask = match stem_idx {
-                    0 => w_vocals / sum_w,
-                    1 => w_drums / sum_w,
-                    2 => w_bass / sum_w,
-                    _ => w_other / sum_w,
-                };
-
-                if debleed > 0.0 {
-                    mask = bleed_floor + (1.0 - bleed_floor) * mask;
-                }
-
+                let mask = smooth_masks[stem_idx][m_base + k];
                 re_l[k] = spec_l_re[base + k] * mask;
                 im_l[k] = spec_l_im[base + k] * mask;
                 re_r[k] = spec_r_re[base + k] * mask;
@@ -374,19 +432,18 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
             fft.process(&mut re_r, &mut im_r, true);
 
             let start = t * HOP;
-            let inv_n = 1.0 / FFT_N as f32;
             for i in 0..FFT_N {
-                if start + i < n_frames {
-                    out_stems[stem_idx].0[start + i] += re_l[i] * inv_n * hann[i];
-                    out_stems[stem_idx].1[start + i] += re_r[i] * inv_n * hann[i];
+                if start + i < padded_len {
+                    padded_l[start + i] += re_l[i] * inv_n * hann[i];
+                    padded_r[start + i] += re_r[i] * inv_n * hann[i];
                 }
             }
         }
 
         for i in 0..n_frames {
-            let norm = win_norm[i].max(1e-6);
-            out_stems[stem_idx].0[i] /= norm;
-            out_stems[stem_idx].1[i] /= norm;
+            let norm = win_norm[PAD + i].max(1e-6);
+            out_stems[stem_idx].0[i] = padded_l[PAD + i] / norm;
+            out_stems[stem_idx].1[i] = padded_r[PAD + i] / norm;
         }
     }
 
@@ -612,6 +669,121 @@ pub type StemProgress<'a> = Option<&'a dyn Fn(f32, &str)>;
 
 /// Separates stereo audio using either a local `.onnx` AI model (when `model_path` is `Some`)
 /// or the built-in 100% offline Local AI Hybrid engine (when `model_path` is `None`).
+#[cfg(not(target_arch = "wasm32"))]
+fn find_demucs_bin() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("DOURI_DEMUCS_BIN").map(PathBuf::from) {
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    if let Some(path_env) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_env) {
+            let cand = dir.join("demucs");
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        for cand in [
+            home.join(".local/share/douri/venv/bin/demucs"),
+            home.join("Documents/douritestproject/.venv/bin/demucs"),
+        ] {
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn separate_stems_demucs(
+    demucs_bin: &Path,
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+    progress: StemProgress<'_>,
+) -> Result<StemSet, String> {
+    let n_frames = left.len().min(right.len());
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let work_dir = std::env::temp_dir().join(format!("douri_demucs_{nonce}"));
+    let in_wav = work_dir.join("input.wav");
+    let out_dir = work_dir.join("out");
+    write_wav_stereo(&in_wav, &left[..n_frames], &right[..n_frames], sample_rate)?;
+
+    if let Some(p) = progress {
+        p(0.2, "Running HTDemucs neural stem separation…");
+    }
+
+    let status = std::process::Command::new(demucs_bin)
+        .args(["-n", "htdemucs", "--out"])
+        .arg(&out_dir)
+        .arg(&in_wav)
+        .status()
+        .map_err(|e| format!("Failed to launch demucs: {e}"))?;
+
+    if !status.success() {
+        let _ = std::fs::remove_dir_all(&work_dir);
+        return Err(format!("demucs exited with {status}"));
+    }
+
+    if let Some(p) = progress {
+        p(0.85, "Loading separated HTDemucs stems…");
+    }
+
+    let stem_dir = out_dir.join("htdemucs").join("input");
+    let mut out_stems: [(Vec<f32>, Vec<f32>); 4] = [
+        (Vec::new(), Vec::new()),
+        (Vec::new(), Vec::new()),
+        (Vec::new(), Vec::new()),
+        (Vec::new(), Vec::new()),
+    ];
+    for (idx, kind) in StemKind::ALL.iter().enumerate() {
+        let stem_wav = stem_dir.join(format!("{}.wav", kind.name().to_lowercase()));
+        let af = match crate::AudioFile::open(&stem_wav) {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&work_dir);
+                return Err(e.to_string());
+            }
+        };
+        let interleaved = match af.read_stereo() {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&work_dir);
+                return Err(e.to_string());
+            }
+        };
+        let mut sl = vec![0.0f32; n_frames];
+        let mut sr_vec = vec![0.0f32; n_frames];
+        for (i, chunk) in interleaved
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .take(n_frames)
+            .enumerate()
+        {
+            sl[i] = chunk[0];
+            sr_vec[i] = chunk[1];
+        }
+        out_stems[idx] = (sl, sr_vec);
+    }
+
+    let _ = std::fs::remove_dir_all(&work_dir);
+    if let Some(p) = progress {
+        p(1.0, "HTDemucs separation complete");
+    }
+    Ok(StemSet {
+        sample_rate,
+        frames: n_frames,
+        stems: out_stems,
+    })
+}
+
 pub fn separate_stems_with_model(
     left: &[f32],
     right: &[f32],
@@ -636,6 +808,13 @@ pub fn separate_stems_with_model(
             }
         }
         None => {
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(demucs) = find_demucs_bin() {
+                if let Ok(set) = separate_stems_demucs(&demucs, left, right, sample_rate, progress)
+                {
+                    return Ok(set);
+                }
+            }
             if let Some(p) = progress {
                 p(0.25, "Running built-in local AI hybrid separation...");
             }
@@ -1046,6 +1225,17 @@ mod tests {
             assert_eq!(r.len(), n);
             assert!(l.iter().all(|v| v.is_finite()));
             assert!(r.iter().all(|v| v.is_finite()));
+        }
+        // Summing all 4 stems must reconstruct the original signal cleanly (partition of unity).
+        for i in 0..n {
+            let sum_l: f32 = set.stems.iter().map(|s| s.0[i]).sum();
+            let sum_r: f32 = set.stems.iter().map(|s| s.1[i]).sum();
+            assert!(
+                (sum_l - left[i]).abs() < 1e-3 && (sum_r - right[i]).abs() < 1e-3,
+                "reconstruction mismatch at {i}: ({sum_l}, {sum_r}) vs ({}, {})",
+                left[i],
+                right[i]
+            );
         }
     }
 

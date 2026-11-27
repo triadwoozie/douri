@@ -210,8 +210,11 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
         .collapsible(false)
         .resizable(false)
         .default_width(420.0)
+        .min_width(420.0)
+        .max_width(420.0)
         .show(ctx, |ui| {
             ui.set_width(392.0);
+            ui.set_max_width(392.0);
 
             // Top header bar: circular X | centered "Stem Splitter" | circular blue checkmark
             ui.horizontal(|ui| {
@@ -644,7 +647,20 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
                     .lock()
                     .map(|g| g.clone())
                     .unwrap_or((0.0, "Separating stems…".to_string()));
-                ui.add(egui::ProgressBar::new(prog).text(msg).animate(true));
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(msg)
+                            .size(11.0)
+                            .color(Color32::from_rgb(0xb8, 0xb8, 0xc0)),
+                    )
+                    .truncate(),
+                );
+                ui.add_space(3.0);
+                ui.add(
+                    egui::ProgressBar::new(prog)
+                        .desired_width(ui.available_width())
+                        .animate(true),
+                );
             }
         });
 

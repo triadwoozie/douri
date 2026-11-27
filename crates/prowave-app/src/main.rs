@@ -417,6 +417,10 @@ pub struct UiState {
     pub tracks_timeline_rect: Option<egui::Rect>,
     /// Beat position under the pointer in the Tracks Area timeline.
     pub tracks_drop_beat: Option<f64>,
+    /// Track index under the pointer when dragging a file from the browser.
+    pub browser_drop_track: Option<usize>,
+    /// Pending file drops from the Loop / Files browser with optional `(track, beat)`.
+    pub open_drops: Vec<(std::path::PathBuf, Option<(usize, f64)>)>,
     /// Last rendered Sound Library / Loops panel rect for drop detection.
     pub library_panel_rect: Option<egui::Rect>,
     /// Active cross-panel region drag payload mirrored alongside egui DragAndDrop.
@@ -511,6 +515,8 @@ impl UiState {
             tracks_headers_rect: None,
             tracks_timeline_rect: None,
             tracks_drop_beat: None,
+            browser_drop_track: None,
+            open_drops: Vec::new(),
             library_panel_rect: None,
             dragged_region: None,
             dragged_user_loop: None,
@@ -2196,6 +2202,26 @@ impl eframe::App for App {
         quick_help::show_overlay(&ctx, &mut self.ui);
         quick_help::show_reference_window(&ctx, &mut self.ui);
         for path in std::mem::take(&mut self.ui.open_paths) {
+            self.import(&path, &ctx);
+        }
+        for (path, target) in std::mem::take(&mut self.ui.open_drops) {
+            if let Some((ti, beat)) = target {
+                if import::is_audio_path(&path) {
+                    if let Err(e) = import::import_audio_at(
+                        &mut self.project,
+                        &path,
+                        Some(ti),
+                        Some(beat),
+                        &ctx,
+                    ) {
+                        self.ui.status =
+                            Some(i18n::trf("cannot import {}: {}", &[&path.display(), &e]));
+                    } else {
+                        self.history.record(&self.project);
+                    }
+                    continue;
+                }
+            }
             self.import(&path, &ctx);
         }
         self.record_audio(&ctx);
