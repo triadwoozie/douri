@@ -36,6 +36,7 @@ pub mod kestrel_eq;
 #[cfg(not(target_arch = "wasm32"))]
 mod mapped;
 pub mod marbble_fx;
+pub mod marbble_guard;
 pub mod marbble_inst;
 pub mod melody;
 pub use marbble_dsp;

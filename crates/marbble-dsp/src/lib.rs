@@ -3,6 +3,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod audio_file;
+pub mod denormals;
 pub mod fx;
 pub mod instrument;
 pub mod model;
