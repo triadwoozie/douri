@@ -27,11 +27,13 @@ use egui::{
 
 const BG: Color32 = crate::theme::CANVAS_BG;
 const STRIP_BG: Color32 = crate::theme::CARD_BG;
-const STRIP_H1: f32 = 28.0;
-const STRIP_H2: f32 = 26.0;
+const STRIP_H1: f32 = 34.0;
+const STRIP_H2: f32 = 30.0;
 const STRIP_H: f32 = STRIP_H1 + STRIP_H2;
 const ROW_H: f32 = 40.0;
-const LABEL_W: f32 = 215.0;
+const ROW_GAP: f32 = 4.0;
+const ROW_STRIDE: f32 = ROW_H + ROW_GAP;
+const LABEL_W: f32 = 230.0;
 const INSPECTOR_W: f32 = 224.0;
 /// Width of the Drummer's controls.
 const PANEL_W: f32 = 330.0;
@@ -497,8 +499,8 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     );
 
     // Top Bar (Edit Mode, Overview Mini-Map, Steps, Convert)
-    row_ui(ui, top_strip.shrink2(vec2(8.0, 3.0)), |ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+    row_ui(ui, top_strip.shrink2(vec2(10.0, 4.0)), |ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
 
         ui.menu_button("Edit", |ui| {
             if ui.button("Select All Steps").clicked() {
@@ -657,9 +659,9 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             });
 
         // Center Live Pattern Overview Mini-Map
-        let map_w = (ui.available_width() - 210.0).clamp(90.0, 180.0);
+        let map_w = (ui.available_width() - 230.0).clamp(110.0, 220.0);
         let (map_rect, map_resp) =
-            ui.allocate_exact_size(vec2(map_w, 18.0), Sense::click_and_drag());
+            ui.allocate_exact_size(vec2(map_w, 24.0), Sense::click_and_drag());
         let mg = ui.painter_at(map_rect);
         mg.rect_filled(map_rect, 3.0, Color32::from_rgb(0x13, 0x14, 0x18));
         mg.rect_stroke(
@@ -669,16 +671,24 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             egui::StrokeKind::Inside,
         );
         let n_rows = pat.rows.len().max(1);
-        let rmh = (map_rect.height() - 2.0) / n_rows as f32;
-        let smw = (map_rect.width() - 2.0) / pat.steps.max(1) as f32;
+        let inner_h = (map_rect.height() - 4.0).max(4.0);
+        let inner_w = (map_rect.width() - 4.0).max(4.0);
+        let rmh = inner_h / n_rows as f32;
+        let smw = inner_w / pat.steps.max(1) as f32;
         for (r_idx, r_item) in pat.rows.iter().enumerate() {
             let r_col = row_color_family(r_idx);
-            let ry = map_rect.top() + 1.0 + r_idx as f32 * rmh;
+            let ry = map_rect.top() + 2.0 + r_idx as f32 * rmh;
+            let track_h = (rmh - 1.0).max(1.5);
+            mg.rect_filled(
+                Rect::from_min_size(pos2(map_rect.left() + 2.0, ry), vec2(inner_w, track_h)),
+                0.5,
+                Color32::from_rgba_unmultiplied(r_col.r(), r_col.g(), r_col.b(), 26),
+            );
             for s_idx in 0..pat.steps.min(r_item.steps.len()) {
                 if r_item.steps[s_idx] > 0 {
-                    let rx = map_rect.left() + 1.0 + s_idx as f32 * smw;
+                    let rx = map_rect.left() + 2.0 + s_idx as f32 * smw;
                     mg.rect_filled(
-                        Rect::from_min_size(pos2(rx, ry), vec2(smw.max(1.0), rmh.max(1.0))),
+                        Rect::from_min_size(pos2(rx, ry), vec2((smw - 1.0).max(2.0), track_h)),
                         0.5,
                         r_col,
                     );
@@ -688,10 +698,13 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         let now = p.position_beats - origin;
         if now >= 0.0 && now < len_beats {
             let frac = (now / len_beats).clamp(0.0, 1.0) as f32;
-            let px = map_rect.left() + 1.0 + frac * (map_rect.width() - 2.0);
+            let px = map_rect.left() + 2.0 + frac * inner_w;
             mg.line_segment(
-                [pos2(px, map_rect.top()), pos2(px, map_rect.bottom())],
-                Stroke::new(1.5, Color32::WHITE),
+                [
+                    pos2(px, map_rect.top() + 1.0),
+                    pos2(px, map_rect.bottom() - 1.0),
+                ],
+                Stroke::new(2.0, Color32::WHITE),
             );
         }
         if map_resp.dragged() || map_resp.clicked() {
@@ -725,8 +738,8 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     });
 
     // Sub-bar (Add Row, Rate, Direction, Pattern Randomize/Clear)
-    row_ui(ui, sub_strip.shrink2(vec2(8.0, 3.0)), |ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+    row_ui(ui, sub_strip.shrink2(vec2(10.0, 4.0)), |ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
 
         let room = pat.rows.len() < MAX_ROWS;
         let add_btn = egui::Button::new(
@@ -840,7 +853,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let per_beat = pat.rate.per_beat().max(1);
     let step_len = pat.rate.beats();
     let v = &mut s.steps;
-    let overflow = (pat.rows.len() as f32 * ROW_H - area.height() + 8.0).max(0.0);
+    let overflow = (pat.rows.len() as f32 * ROW_STRIDE - area.height() + 8.0).max(0.0);
     let (middle_down, middle_delta, hover) = ui.input(|i| {
         (
             i.pointer.middle_down(),
@@ -863,7 +876,7 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let top = area.top() + ruler_h + 4.0 - v.scroll_y;
     let cell = |r: usize, k: usize| {
         Rect::from_min_size(
-            pos2(grid.left() + k as f32 * cw, top + r as f32 * ROW_H),
+            pos2(grid.left() + k as f32 * cw, top + r as f32 * ROW_STRIDE),
             vec2(cw, ROW_H),
         )
     };
@@ -921,11 +934,11 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
         }
     }
     for (r, row) in pat.rows.iter().enumerate() {
-        let y = top + r as f32 * ROW_H;
+        let y = top + r as f32 * ROW_STRIDE;
         if y + ROW_H < area.top() || y > area.bottom() {
             continue;
         }
-        let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0));
+        let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 6.0, ROW_H));
         let row_bg = if v.selected_row == r {
             Color32::from_rgb(0x2a, 0x2d, 0x36)
         } else {
@@ -939,32 +952,33 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
             row_color,
         );
 
-        // Top line: Chevron + Icon + Name
+        // Top line: Chevron + 15px Icon + 12.5px Bold Name (10px horizontal padding, 5px top padding)
+        let line1_y = label.top() + 5.0 + 7.5;
         g.text(
-            pos2(label.left() + 10.0, label.top() + 11.0),
+            pos2(label.left() + 10.0, line1_y),
             Align2::LEFT_CENTER,
             phosphor_egui::regular::CARET_DOWN,
             FontId::proportional(10.0),
             TEXT_DIM,
         );
         g.text(
-            pos2(label.left() + 23.0, label.top() + 11.0),
+            pos2(label.left() + 24.0, line1_y),
             Align2::LEFT_CENTER,
             row_icon(row.pitch, drums),
-            FontId::proportional(12.0),
+            FontId::proportional(15.0),
             row_color,
         );
         g.text(
-            pos2(label.left() + 38.0, label.top() + 11.0),
+            pos2(label.left() + 44.0, line1_y),
             Align2::LEFT_CENTER,
             row_label(row.pitch, drums, kit.as_ref()),
-            FontId::proportional(11.5),
+            FontId::new(12.5, egui::FontFamily::Proportional),
             if row.mute { TEXT_DIM } else { TEXT },
         );
 
-        // Steps grid
+        // Steps grid (3.0px horizontal gap between steps)
         for k in 0..steps {
-            let c = cell(r, k).shrink(1.0);
+            let c = cell(r, k).shrink2(vec2(1.5, 0.0));
             let vel = row.steps[k];
             if vel > 0 {
                 // Saturated active step
@@ -1087,9 +1101,10 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let cell_at = |pt: egui::Pos2| -> Option<(usize, usize)> {
         let (kx, ry) = (
             ((pt.x - grid.left()) / cw).floor(),
-            ((pt.y - top) / ROW_H).floor(),
+            ((pt.y - top) / ROW_STRIDE).floor(),
         );
-        (kx >= 0.0 && ry >= 0.0 && (kx as usize) < steps && (ry as usize) < row_count)
+        let in_row = ry >= 0.0 && ((pt.y - top) - ry * ROW_STRIDE) <= ROW_H;
+        (kx >= 0.0 && in_row && (kx as usize) < steps && (ry as usize) < row_count)
             .then_some((ry as usize, kx as usize))
     };
     if let Some(pt) = pointer {
@@ -1208,48 +1223,44 @@ fn show_pattern(ui: &mut Ui, p: &mut Project, s: &mut UiState, ti: usize, ri: us
     let mut sounding = None;
     let mut delete = None;
     for r in 0..pat.rows.len() {
-        let y = top + r as f32 * ROW_H;
+        let y = top + r as f32 * ROW_STRIDE;
         if y + ROW_H < area.top() || y > area.bottom() {
             continue;
         }
-        let label = Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 4.0, ROW_H - 1.0))
-            .intersect(area);
+        let label =
+            Rect::from_min_size(pos2(area.left(), y), vec2(LABEL_W - 6.0, ROW_H)).intersect(area);
 
-        // Top line: Name and Power toggle
+        // Top line (5px top padding): Name and crisp On/Off power pill
+        let line1_y = label.top() + 5.0 + 7.5;
         let name_rect = Rect::from_min_max(
-            pos2(label.left() + 34.0, label.top()),
-            pos2(label.right() - 28.0, label.top() + 20.0),
+            pos2(label.left() + 40.0, label.top()),
+            pos2(label.right() - 34.0, label.top() + 21.0),
         );
-        let pwr_rect = Rect::from_center_size(
-            pos2(label.right() - 14.0, label.top() + 10.0),
-            vec2(16.0, 15.0),
-        );
+        let pwr_rect =
+            Rect::from_center_size(pos2(label.right() - 10.0 - 9.0, line1_y), vec2(18.0, 16.0));
 
-        // Bottom line: M, S, Rotate < >, Randomize, Clear
-        let m_rect = Rect::from_center_size(
-            pos2(label.left() + 18.0, label.top() + 28.0),
-            vec2(16.0, 15.0),
-        );
+        // Bottom line (5px bottom padding): 20x16 M and S pills on left, 18x16 <, >, rand, delete on right
+        let line2_y = label.bottom() - 5.0 - 8.0;
+        let m_rect =
+            Rect::from_center_size(pos2(label.left() + 10.0 + 10.0, line2_y), vec2(20.0, 16.0));
         let s_rect = Rect::from_center_size(
-            pos2(label.left() + 37.0, label.top() + 28.0),
-            vec2(16.0, 15.0),
+            pos2(label.left() + 10.0 + 20.0 + 4.0 + 10.0, line2_y),
+            vec2(20.0, 16.0),
         );
         let rot_l_rect = Rect::from_center_size(
-            pos2(label.right() - 62.0, label.top() + 28.0),
-            vec2(15.0, 15.0),
+            pos2(label.right() - 10.0 - 9.0 - 3.0 * 21.0, line2_y),
+            vec2(18.0, 16.0),
         );
         let rot_r_rect = Rect::from_center_size(
-            pos2(label.right() - 44.0, label.top() + 28.0),
-            vec2(15.0, 15.0),
+            pos2(label.right() - 10.0 - 9.0 - 2.0 * 21.0, line2_y),
+            vec2(18.0, 16.0),
         );
         let rand_rect = Rect::from_center_size(
-            pos2(label.right() - 26.0, label.top() + 28.0),
-            vec2(15.0, 15.0),
+            pos2(label.right() - 10.0 - 9.0 - 21.0, line2_y),
+            vec2(18.0, 16.0),
         );
-        let clr_rect = Rect::from_center_size(
-            pos2(label.right() - 8.0, label.top() + 28.0),
-            vec2(15.0, 15.0),
-        );
+        let clr_rect =
+            Rect::from_center_size(pos2(label.right() - 10.0 - 9.0, line2_y), vec2(18.0, 16.0));
 
         let pwr_resp = ui
             .interact(
@@ -2041,11 +2052,11 @@ mod tests {
     /// Where a step of the pattern editor is, in a `body()` scrolled to the top.
     fn pattern_cell(steps: usize, row: usize, step: usize) -> Rect {
         let grid_left = LABEL_W;
-        let cw = ((W - grid_left - 12.0) / steps as f32).clamp(10.0, 64.0);
+        let cw = ((W - grid_left - 4.0) / steps as f32).max(12.0);
         Rect::from_min_size(
             pos2(
                 grid_left + step as f32 * cw,
-                STRIP_H + 20.0 + 4.0 + row as f32 * ROW_H,
+                STRIP_H + 20.0 + 4.0 + row as f32 * ROW_STRIDE,
             ),
             vec2(cw, ROW_H),
         )
@@ -2275,8 +2286,8 @@ mod tests {
     fn dragging_a_rows_name_changes_its_pitch_and_it_sounds_while_held() {
         let mut rig = Rig::pattern();
         let before = rig.pattern_params().rows[1].pitch;
-        let y = STRIP_H + 20.0 + 4.0 + 1.0 * ROW_H + ROW_H / 2.0;
-        let x = 40.0;
+        let y = STRIP_H + 20.0 + 4.0 + 1.0 * ROW_STRIDE + 10.0;
+        let x = 44.0;
         let (p, s, t, r) = (&mut rig.p, &mut rig.s, rig.t, rig.r);
         rig.h.press(pos2(x, y), PointerButton::Primary, |ui| {
             show(ui, p, s, t, Some(r), body())
