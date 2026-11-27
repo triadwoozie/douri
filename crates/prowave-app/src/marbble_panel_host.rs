@@ -11,6 +11,7 @@ use std::thread;
 
 use egui::{Color32, RichText, Ui};
 use prowave_engine::marbble_dsp::fx::{self, EffectInfo, ParamKind, ParamSpec, Unit, MAX_METERS};
+use prowave_engine::marbble_dsp::instrument::InstrumentInfo;
 
 /// Shared live state exposed over the local HTTP/JSON bridge for WebView/React panels.
 #[derive(Debug, Clone)]
@@ -304,6 +305,76 @@ pub fn show_effect_panel(
     egui::ScrollArea::vertical().show(ui, |ui| {
         for p in info.params {
             draw_param_row(ui, p, values, on_param);
+        }
+    });
+}
+
+/// Renders any Marbble `InstrumentInfo` panel grouped by its `Section`s with factory presets.
+#[allow(dead_code)]
+pub fn show_instrument_panel(
+    ui: &mut Ui,
+    info: &InstrumentInfo,
+    values: &mut HashMap<u32, f32>,
+    meters: &[f32; MAX_METERS],
+    on_param: &mut dyn FnMut(u32, f32),
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(info.name)
+                .strong()
+                .size(14.0)
+                .color(Color32::WHITE),
+        );
+        ui.label(
+            RichText::new(info.group)
+                .size(11.0)
+                .color(Color32::from_rgb(0x8e, 0x94, 0xa0)),
+        );
+    });
+    if !info.presets.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for pr in info.presets {
+                if ui.small_button(pr.name).clicked() {
+                    for p in info.params {
+                        values.insert(p.id, p.default);
+                        on_param(p.id, p.default);
+                    }
+                    for &(id, val) in pr.values {
+                        values.insert(id, val);
+                        on_param(id, val);
+                    }
+                }
+            }
+        });
+    }
+    if !info.meters.is_empty() {
+        ui.horizontal(|ui| {
+            for (idx, &m_name) in info.meters.iter().enumerate() {
+                if let Some(&val) = meters.get(idx) {
+                    ui.label(
+                        RichText::new(format!("{m_name}: {val:.1}"))
+                            .size(11.0)
+                            .color(Color32::from_rgb(0x4c, 0xc9, 0xf0)),
+                    );
+                }
+            }
+        });
+    }
+    ui.separator();
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for sec in info.sections {
+            ui.label(
+                RichText::new(sec.title)
+                    .strong()
+                    .size(12.0)
+                    .color(Color32::from_rgb(0x4c, 0xc9, 0xf0)),
+            );
+            for &id in sec.params {
+                if let Some(p) = info.param(id) {
+                    draw_param_row(ui, p, values, on_param);
+                }
+            }
+            ui.add_space(6.0);
         }
     });
 }

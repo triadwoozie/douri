@@ -3,8 +3,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod fx;
+pub mod instrument;
 pub mod model;
 pub mod pdc;
+pub mod synth_dsp;
 
 /// The largest block `process` is called with.
 pub const MAX_BLOCK: usize = fx::MAX_BLOCK;
