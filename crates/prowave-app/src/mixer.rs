@@ -98,6 +98,8 @@ pub struct MixerView {
     pub show_drum_machine: Option<usize>,
     /// Requests opening the 808 Bass editor window for a track.
     pub show_bass808: Option<usize>,
+    /// Requests opening the Marbble Synth / Sampler editor window for a track.
+    pub show_marbble_inst: Option<usize>,
     /// The Automation editor window.
     pub auto_editor: crate::automation::AutoEditor,
     /// Sends on Faders: the bus whose send levels the faders set.
@@ -147,6 +149,7 @@ impl Default for MixerView {
             inst_window: None,
             show_drum_machine: None,
             show_bass808: None,
+            show_marbble_inst: None,
             auto_editor: Default::default(),
             sends_on_faders: None,
             copied: None,
@@ -1559,6 +1562,8 @@ pub fn channel_strip(
             let t = &p.tracks[i];
             let inst = if t.hosted_instrument != 0 {
                 Some(crate::hosted_plugins::name(t.hosted_instrument))
+            } else if let Some(m) = t.marbble_inst.as_ref() {
+                prowave_engine::marbble_dsp::instrument::find(&m.id).map(|inf| inf.name)
             } else {
                 t.instrument
             };
@@ -1722,8 +1727,13 @@ pub fn channel_strip(
         }
         let input_r = row(r.input, 16.0);
         match (kind, instrument) {
-            (Some(TrackKind::Instrument | TrackKind::Drummer), Some(inst)) => {
-                slot(g, input_r, inst, plug, plug_text);
+            (Some(TrackKind::Instrument | TrackKind::Drummer), inst_opt) => {
+                let (label, bg, fg) = if let Some(inst) = inst_opt {
+                    (inst, plug, plug_text)
+                } else {
+                    ("Instrument", SLOT_EMPTY, TEXT_DIM)
+                };
+                slot(g, input_r, label, bg, fg);
                 let inst_resp = ui.interact(input_r, id(ns, (key, "inst_slot")), Sense::click());
                 if inst_resp.double_clicked() {
                     if let StripKey::Track(i) = key {
@@ -1732,12 +1742,49 @@ pub fn channel_strip(
                             v.inst_window = Some(i);
                             v.fx_window = None;
                             v.plugin_controls = false;
+                        } else if t.marbble_inst.is_some() {
+                            v.show_marbble_inst = Some(i);
                         } else if t.drums.is_some() {
                             v.show_drum_machine = Some(i);
                         } else if t.bass808.is_some() {
                             v.show_bass808 = Some(i);
                         }
                     }
+                }
+                if let StripKey::Track(i) = key {
+                    egui::Popup::menu(&inst_resp).show(|ui| {
+                        ui.menu_button(tr("Marbble Synths & Sampler"), |ui| {
+                            for info in prowave_engine::marbble_dsp::instrument::registry() {
+                                let active = p.tracks[i]
+                                    .marbble_inst
+                                    .as_ref()
+                                    .is_some_and(|m| m.id == info.id);
+                                if ui.selectable_label(active, info.name).clicked() {
+                                    p.tracks[i].marbble_inst =
+                                        Some(crate::model::MarbbleInstUse::new(info.id));
+                                    p.tracks[i].soundfont = None;
+                                    p.tracks[i].sampler = None;
+                                    p.tracks[i].epiano = None;
+                                    p.tracks[i].drums = None;
+                                    p.tracks[i].bass808 = None;
+                                    p.tracks[i].hosted_instrument = 0;
+                                    v.show_marbble_inst = Some(i);
+                                    ui.close();
+                                }
+                            }
+                            if p.tracks[i].marbble_inst.is_some() {
+                                ui.separator();
+                                if ui.button(tr("Open Marbble Instrument…")).clicked() {
+                                    v.show_marbble_inst = Some(i);
+                                    ui.close();
+                                }
+                                if ui.button(tr("Remove Marbble Instrument")).clicked() {
+                                    p.tracks[i].marbble_inst = None;
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
                 }
             }
             // An aux strip's input is the bus it listens to: Aux 1 takes Bus 1, and so on.

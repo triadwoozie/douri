@@ -677,6 +677,26 @@ fn header(
                     {
                         edited.params = edited.kind.defaults();
                     }
+                    if let Some(mid) = edited.kind.marbble_id() {
+                        crate::marbble_panel_host::drain_effect_webview(mid, &mut edited.params);
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("WebView")
+                                        .size(10.5)
+                                        .color(Color32::from_rgb(0x4c, 0xc9, 0xf0)),
+                                )
+                                .min_size(vec2(58.0, 20.0)),
+                            )
+                            .clicked()
+                        {
+                            crate::marbble_panel_host::open_effect_webview(
+                                mid,
+                                &edited.label(),
+                                &edited.params,
+                            );
+                        }
+                    }
                 });
             });
         });

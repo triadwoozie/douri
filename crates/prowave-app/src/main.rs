@@ -2056,6 +2056,9 @@ impl eframe::App for App {
             if let Some(i) = s.mixer.show_drum_machine.take() {
                 s.show_drum_machine = Some(i);
             }
+            if let Some(i) = s.mixer.show_marbble_inst.take() {
+                s.show_marbble_inst = Some(i);
+            }
             if let Some(i) = s.mixer.show_bass808.take() {
                 s.show_bass808 = Some(i);
             }

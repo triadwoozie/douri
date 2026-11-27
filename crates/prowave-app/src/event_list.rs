@@ -437,6 +437,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Sense::click(),
         )
         .on_hover_text("Hierarchy Up");
+    crate::quick_help::hover(ui.ctx(), &back_resp, "list_back");
     if back_resp.hovered() {
         g.rect_filled(back_rect, 3.0, Color32::from_rgb(0x28, 0x2b, 0x32));
     }
@@ -477,6 +478,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             Sense::click(),
         )
         .on_hover_text("Link View (Follow Playhead)");
+    crate::quick_help::hover(ui.ctx(), &resp, "list_follow");
     if resp.clicked() {
         s.lists.follow = !s.lists.follow;
     }
@@ -612,6 +614,7 @@ fn show_event_tab(
                     Sense::click(),
                 )
                 .on_hover_text(*tip);
+            crate::quick_help::hover(ui.ctx(), &resp, "list_filter");
             if resp.clicked() {
                 match (row_idx, col_idx) {
                     (0, 0) => s.lists.filter_notes = !s.lists.filter_notes,

@@ -695,3 +695,75 @@ pub fn show_track_instrument_window(
         s.show_marbble_inst = None;
     }
 }
+
+/// Opens (or focuses) the floating `WebKit2` WebView panel for a Marbble effect (`"builtin:*"`).
+pub fn open_effect_webview(marbble_id: &str, title: &str, current_params: &[f32]) {
+    let Some(info) = fx::find(marbble_id) else {
+        return;
+    };
+    let mut state = PanelBridgeState::from_effect(&info);
+    for (idx, spec) in info.params.iter().enumerate() {
+        if let Some(&v) = current_params.get(idx) {
+            state.params.insert(spec.id, v);
+        }
+    }
+    if let Ok(mut guard) = webview_store().lock() {
+        if let Some(mut old) = guard.take() {
+            if let Some(mut ch) = old.child.take() {
+                let _ = ch.kill();
+            }
+        }
+        if let Ok(bridge) = MarbblePanelBridge::start(state) {
+            let child = spawn_webkit_window(&bridge.url(), title);
+            *guard = Some(WebViewSession {
+                track_idx: usize::MAX,
+                plugin_id: marbble_id.to_string(),
+                bridge,
+                child,
+            });
+        }
+    }
+}
+
+/// Drains parameter & preset edits from an active Marbble effect WebView into `Insert::params`.
+pub fn drain_effect_webview(marbble_id: &str, params: &mut [f32]) {
+    let Some(info) = fx::find(marbble_id) else {
+        return;
+    };
+    let Ok(mut guard) = webview_store().lock() else {
+        return;
+    };
+    let Some(sess) = guard.as_mut() else {
+        return;
+    };
+    if sess.track_idx != usize::MAX || sess.plugin_id != marbble_id {
+        return;
+    }
+    let (edits, preset) = sess.bridge.drain_edits();
+    for (id, v) in edits {
+        if let Some(idx) = info.params.iter().position(|p| p.id == id) {
+            if let Some(slot) = params.get_mut(idx) {
+                *slot = v;
+            }
+        }
+    }
+    if let Some(preset_name) = preset {
+        if let Some(pr) = fx::factory_presets(marbble_id)
+            .iter()
+            .find(|pr| pr.name == preset_name)
+        {
+            for (idx, spec) in info.params.iter().enumerate() {
+                if let Some(slot) = params.get_mut(idx) {
+                    *slot = spec.default;
+                }
+            }
+            for &(id, v) in pr.values {
+                if let Some(idx) = info.params.iter().position(|p| p.id == id) {
+                    if let Some(slot) = params.get_mut(idx) {
+                        *slot = v;
+                    }
+                }
+            }
+        }
+    }
+}
