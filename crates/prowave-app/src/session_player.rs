@@ -348,6 +348,28 @@ pub struct SessionPlayerParams {
     // Manual override grid (16 steps = 1 bar)
     pub manual_override: bool,
     pub manual_steps: [bool; 16],
+
+    // Drummer kit piece toggles, secondary pattern & lock states
+    #[serde(default = "default_true")]
+    pub kit_hihat: bool,
+    #[serde(default)]
+    pub kit_tambourine: bool,
+    #[serde(default)]
+    pub kit_cowbell: bool,
+    #[serde(default = "default_true")]
+    pub kit_kick: bool,
+    #[serde(default = "default_true")]
+    pub kit_snare: bool,
+    #[serde(default)]
+    pub pattern_idx_2: usize,
+    #[serde(default)]
+    pub lock_fill_amount: bool,
+    #[serde(default)]
+    pub lock_swing: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SessionPlayerParams {
@@ -420,11 +442,20 @@ impl Default for SessionPlayerParams {
                 true, false, false, false, true, false, false, false, true, false, false, false,
                 true, false, true, false,
             ],
+            kit_hihat: true,
+            kit_tambourine: false,
+            kit_cowbell: false,
+            kit_kick: true,
+            kit_snare: true,
+            pattern_idx_2: 0,
+            lock_fill_amount: false,
+            lock_swing: false,
         }
     }
 }
 
-pub const SESSION_PRESETS: [&str; 7] = [
+pub const SESSION_PRESETS: [&str; 8] = [
+    "Back Roads",
     "Sweet Memories",
     "Dirty South Bender",
     "Fog Machine",
@@ -438,6 +469,15 @@ impl SessionPlayerParams {
     pub fn apply_preset(&mut self, name: &str) {
         self.preset_name = name.to_string();
         match name {
+            "Back Roads" => {
+                self.kind = SessionPlayerKind::Drummer;
+                self.drum_style = DrumStyle::Pop;
+                self.complexity = 0.45;
+                self.intensity = 0.65;
+                self.fill_amount = 0.35;
+                self.fill_complexity = 0.30;
+                self.swing = 0.08;
+            }
             "Sweet Memories" => {
                 self.kind = SessionPlayerKind::Keyboard;
                 self.keyboard_style = KeyboardStyle::Freely;
@@ -673,14 +713,30 @@ pub fn generate_session_region(
     key_root: u8,
 ) -> (Vec<Note>, Vec<Control>) {
     if p.kind == SessionPlayerKind::Drummer {
+        let mut parts = crate::pattern::parts::TOMS | crate::pattern::parts::CYMBALS;
+        if p.kit_kick {
+            parts |= crate::pattern::parts::KICK;
+        }
+        if p.kit_snare {
+            parts |= crate::pattern::parts::SNARE;
+        }
+        if p.kit_hihat {
+            parts |= crate::pattern::parts::HIHAT;
+        }
+        if p.kit_tambourine || p.kit_cowbell {
+            parts |= crate::pattern::parts::PERCUSSION;
+        }
         let dp = DrummerParams {
             style: p.drum_style,
             complexity: (p.complexity * 100.0).round() as u8,
             loudness: (p.intensity * 100.0).round() as u8,
             swing: (p.swing * 100.0).round() as u8,
             fills: (p.fill_amount * 100.0).round() as u8,
-            parts: crate::pattern::parts::ALL,
-            seed: p.seed,
+            parts,
+            seed: p
+                .seed
+                .wrapping_add((p.pattern_idx as u32).wrapping_mul(31))
+                .wrapping_add((p.pattern_idx_2 as u32).wrapping_mul(97)),
         };
         return (drummer_notes(&dp, bars), Vec::new());
     }

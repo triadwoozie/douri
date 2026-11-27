@@ -2529,6 +2529,46 @@ impl Project {
         Some(ri)
     }
 
+    /// Synchronizes a track's kind and built-in instrument with the active Session Player kind/style
+    /// so switching between Drummer, Bass, and Keyboard immediately produces the right sound.
+    pub fn sync_session_track(
+        &mut self,
+        ti: usize,
+        params: &crate::session_player::SessionPlayerParams,
+    ) {
+        let Some(track) = self.tracks.get_mut(ti) else {
+            return;
+        };
+        match params.kind {
+            crate::session_player::SessionPlayerKind::Drummer => {
+                track.kind = TrackKind::Drummer;
+                track.instrument = None;
+                track.bass808 = None;
+            }
+            crate::session_player::SessionPlayerKind::Bass => {
+                track.kind = TrackKind::Instrument;
+                if params.bass_style == crate::session_player::BassStyle::Bass808 {
+                    if track.bass808.is_none() {
+                        track.bass808 = Some(prowave_engine::Bass808Spec::default());
+                    }
+                    track.instrument = None;
+                } else {
+                    track.bass808 = None;
+                    track.instrument = Some("Retro Bass");
+                }
+            }
+            crate::session_player::SessionPlayerKind::Keyboard => {
+                track.kind = TrackKind::Instrument;
+                track.bass808 = None;
+                track.instrument = Some(if params.keyboard_style.is_pad() {
+                    "Warm Pad"
+                } else {
+                    "Electric Piano"
+                });
+            }
+        }
+    }
+
     /// Adds a 4-bar Session Player region (`Keyboard`, `Bass`, or `Drummer`) at `at_bar`.
     pub fn add_session_region(
         &mut self,

@@ -149,7 +149,7 @@ pub fn draw(
     )
 }
 
-/// Draws a rotary knob with a specific hardware finish (`VintageFluted`, `MiniMoog`, `Jp8000`, `StudioMatte`).
+/// Draws a rotary knob with a specific hardware finish (`VintageFluted`, `MiniMoog`, `JP8000`, `StudioMatte`).
 pub fn draw_with_finish(
     ui: &mut Ui,
     g: &Painter,
@@ -158,6 +158,22 @@ pub fn draw_with_finish(
     current_val: f32,
     midi_cc: Option<u8>,
     finish: DawKnobFinish,
+) -> DawKnobResult {
+    draw_custom(ui, g, cell, cfg, current_val, midi_cc, finish, None, false)
+}
+
+/// Draws a rotary knob with an optional custom accent color and Title Case label option.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_custom(
+    ui: &mut Ui,
+    g: &Painter,
+    cell: Rect,
+    cfg: DawKnobConfig<'_>,
+    current_val: f32,
+    midi_cc: Option<u8>,
+    finish: DawKnobFinish,
+    custom_arc: Option<Color32>,
+    preserve_case: bool,
 ) -> DawKnobResult {
     let radius = (cfg.diameter * 0.5).clamp(18.0, 28.0);
     let center = pos2(cell.center().x, cell.center().y + 2.0);
@@ -250,11 +266,16 @@ pub fn draw_with_finish(
         }
     });
 
-    // Uppercase parameter title above the knob
+    // Parameter title above the knob
+    let title = if preserve_case {
+        cfg.label.to_string()
+    } else {
+        cfg.label.to_ascii_uppercase()
+    };
     g.text(
         pos2(cell.center().x, center.y - radius - 14.0),
         Align2::CENTER_CENTER,
-        cfg.label.to_ascii_uppercase(),
+        title,
         FontId::proportional(10.5),
         if resp.hovered() || resp.dragged() {
             Color32::from_rgb(0xf5, 0xf5, 0xf7)
@@ -271,6 +292,7 @@ pub fn draw_with_finish(
         cfg.style,
         cfg.bipolar,
         cfg.accent,
+        custom_arc,
         resp.hovered() || resp.dragged(),
         finish,
     );
@@ -314,10 +336,13 @@ fn paint_daw_knob(
     style: DawKnobStyle,
     bipolar: bool,
     accent: bool,
+    custom_arc: Option<Color32>,
     active: bool,
     finish: DawKnobFinish,
 ) {
-    let arc_col = if accent {
+    let arc_col = if let Some(col) = custom_arc {
+        col
+    } else if accent {
         Color32::from_rgb(0x51, 0xee, 0xfc)
     } else {
         Color32::from_rgb(0x12, 0x69, 0xcc)
