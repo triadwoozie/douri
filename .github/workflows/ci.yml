@@ -29,7 +29,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown, x86_64-pc-windows-gnu
+          targets: x86_64-pc-windows-gnu
 
       - uses: Swatinem/rust-cache@v2
 
@@ -50,15 +50,3 @@ jobs:
 
       - name: Windows gnu check
         run: cargo check --target x86_64-pc-windows-gnu -p douri -p douri-installer
-
-  wasm:
-    name: wasm32 build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      - name: cargo xtask wasm-check
-        run: cargo xtask wasm-check

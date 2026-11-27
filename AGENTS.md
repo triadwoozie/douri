@@ -17,7 +17,6 @@ This is NOT a wrapper around JUCE or Electron. Every agent must respect audio-th
 | **mixer-agent** | `prowave-mixer` | Summing, busses, Aux, VCA, Groups, Sends on Fader, Automation (Read/Touch/Latch/Write/Trim, Bezier curves) | No UI code | Must implement PDC, 64-bit summing, automation sample-accurate |
 | **plugin-agent** | `prowave-plugin-host` | CLAP primary, VST3, AU, out-of-process sandbox (seccomp/seatbelt/AppContainer), scanner, quarantine | No unsafe without SAFETY comment + miri test | Must survive plugin crash without DAW crash |
 | **ui-agent** | `prowave-ui` | egui widgets: Tracks area, Mixer, Piano Roll, Score Editor, Step Seq Grid, Audio Track Editor, Smart Controls, Library/Patches, Loop Browser, Live Loops Grid, Video Track, Key Commands window, Channel Strip | No audio processing, only Commands via ringbuf | Inspired by Logic Pro 13 dark-mode ergonomics and workflows (not a rigid 1:1 clone) |
-| **wasm-agent** | `prowave-wasm` | wasm-bindgen, AudioWorkletGlobalScope (128 samples), SharedArrayBuffer + Atomics, OPFS, Web Remote (Logic Remote clone via browser) | No cpal, no native-only deps | Must play 32 tracks in Chrome |
 | **qa-agent** | all | RTL benchmarks, clippy -D warnings, miri, fuzzing (wav, project), drop-out detection, preset compatibility tests vs Logic presets corpus | No feature work | Must verify no alloc on audio thread |
 
 ### NEW CRATE: prowave-logicx-import — Logic Pro Official File Support (see LOGICX_FORMAT_SPEC.md)
@@ -41,7 +40,6 @@ cargo xtask check # runs:
 # - cargo miri test -p prowave-engine -p prowave-dsp -p prowave-instruments (for unsafe blocks)
 # - cargo deny check advisories bans licenses sources
 # - cargo test -p prowave-dsp --test preset_compat -- --nocapture (compare vs Logic presets)
-# - wasm-agent: wasm-pack test --node
 ```
 
 ### Coding Standards for Agents
@@ -76,8 +74,6 @@ cargo xtask check # runs:
 
 4.  **Logic Pro Parity:** Any param must match Logic's range exactly. Example: Compressor Threshold -50.0 to 0.0 dB, Ratio 1.0 to 20.0, Attack 0.1ms to 200ms. Check Logic Pro manual.
 
-5.  **WASM Parity:** Any new DSP feature in `prowave-dsp` must have a `wasm32` CI test. `cargo xtask wasm-check`.
-
 ### File Naming
 - DSP nodes: `channel_eq.rs` -> struct `ChannelEq` implements `DspNode { fn process(), fn latency(), fn reset() }`
 - Instruments: `sampler.rs` -> struct `Sampler` implements `Instrument`
@@ -100,7 +96,6 @@ Phase: 4
 Logic Parity: Channel EQ with 8 bands, matches Logic param ranges
 Changes: Implements Channel EQ with FFT analyzer
 Audio Thread Safe: yes (checked with cargo xtask rt-check)
-WASM Build: yes (cargo check --target wasm32-unknown-unknown)
 Test: cargo test -p prowave-dsp channel_eq -- --nocapture, preset_compat
 ```
 
@@ -115,7 +110,7 @@ No secrets. If you need signing cert for macOS, ask human. Never commit `.p12`, 
 - **For Jolly:** This is a Rust workspace, not Node. Use `container.python_execution` only for scripts, not engine.
 
 ## 7. Definition of Done for an Agent Task
-1. Code compiles for `x86_64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `wasm32-unknown-unknown`
+1. Code compiles for `x86_64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`
 2. No new clippy warnings
 3. Unit test + 1 integration test (e.g., process 1 second of silence, check no NaN/Inf) + preset compat test if applicable
 4. Documentation comment on public API explaining Logic Pro equivalent

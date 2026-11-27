@@ -1,8 +1,7 @@
 //! `cargo xtask <task>` — the mandatory checks from AGENTS.md §3, in one place.
 //!
 //! - `check`: fmt, clippy -D warnings, tests, rt-check, miri (when unsafe code exists),
-//!   cargo-deny, wasm-check, and the preset/wasm suites once their crates exist
-//! - `wasm-check`: `cargo check --target wasm32-unknown-unknown` for the wasm-portable crates
+//!   cargo-deny, and the preset suite once its crate exists
 //! - `rt-check`: the no-allocation tests for the audio thread (debug build, assert_no_alloc)
 //! - `bench`: release build checked against the lightweight targets (startup, memory, binary
 //!   size, 24-track DSP load); see bench.rs
@@ -14,8 +13,6 @@ mod status;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-/// Crates that must build for the browser (AGENTS.md §3.5: DSP parity on wasm32).
-const WASM_CRATES: &[&str] = &["prowave-engine"];
 /// Crates whose `unsafe` code must pass miri (AGENTS.md §3).
 const MIRI_CRATES: &[&str] = &["prowave-engine", "prowave-dsp", "prowave-instruments"];
 
@@ -119,20 +116,6 @@ fn has_unsafe(name: &str) -> bool {
         })
     }
     scan(&root().join("crates").join(name).join("src"))
-}
-
-fn wasm_steps() -> Vec<Step<'static>> {
-    WASM_CRATES
-        .iter()
-        .filter(|c| crate_exists(c))
-        .map(|c| {
-            step(
-                "wasm-check",
-                "cargo",
-                &["check", "-p", c, "--target", "wasm32-unknown-unknown"],
-            )
-        })
-        .collect()
 }
 
 fn miri_steps() -> Vec<Step<'static>> {
@@ -272,8 +255,6 @@ fn check(full: bool) -> bool {
             println!("xtask: cargo-deny not installed; advisory/license check skipped");
         }
 
-        steps.extend(wasm_steps());
-
         if crate_exists("prowave-dsp") {
             steps.push(step(
                 "preset_compat",
@@ -291,20 +272,8 @@ fn check(full: bool) -> bool {
         } else {
             println!("xtask: prowave-dsp not created yet; preset_compat skipped");
         }
-        if crate_exists("prowave-wasm") {
-            steps.push(Step {
-                name: "wasm-pack",
-                program: "wasm-pack",
-                args: vec!["test", "--node", "crates/prowave-wasm"],
-                env: Vec::new(),
-            });
-        } else {
-            println!("xtask: prowave-wasm not created yet; wasm-pack test skipped");
-        }
     } else {
-        println!(
-            "xtask: fast daily gates (use --full for miri, wasm, cargo-deny, and heavy tests)"
-        );
+        println!("xtask: fast daily gates (use --full for miri, cargo-deny, and heavy tests)");
     }
 
     let mut failed = Vec::new();
@@ -338,7 +307,6 @@ fn main() -> ExitCode {
                 steps.iter().all(run)
             }
         }
-        "wasm" | "wasm-check" => wasm_steps().iter().all(run),
         "rt-check" => run(&rt_step()),
         "test-crate" => {
             if let Some(crate_name) = args.next() {
@@ -359,7 +327,7 @@ fn main() -> ExitCode {
         "package-installers" => package_installers::run(&root()),
         "package-rpm" => package_installers::build_rpm(&root()),
         _ => {
-            eprintln!("usage: cargo xtask <check [--full]|miri|wasm|rt-check|test-crate <crate>|bench|status|package-installers|package-rpm>");
+            eprintln!("usage: cargo xtask <check [--full]|miri|rt-check|test-crate <crate>|bench|status|package-installers|package-rpm>");
             false
         }
     };
