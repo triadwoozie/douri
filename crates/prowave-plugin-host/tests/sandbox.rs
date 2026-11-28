@@ -146,3 +146,34 @@ fn a_plug_in_that_hangs_costs_one_late_block() {
     assert!(!instance.crashed(), "it is stuck, not gone");
     // Dropping the instance ends the stuck process.
 }
+
+#[test]
+fn pitchnet_editor_window_opens_and_renders() {
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    if std::env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    let vst3 = std::path::PathBuf::from(home).join(".vst3/PitchNet.vst3");
+    if !vst3.exists() {
+        return;
+    }
+    let info = scan_file(Format::Vst3, &vst3)
+        .expect("scan PitchNet.vst3")
+        .remove(0);
+    let program = Path::new(env!("CARGO_BIN_EXE_prowave-plugin-host"));
+    let instance = load_sandboxed(&info, 48_000.0, 512, program).expect("PitchNet starts");
+    assert!(instance.has_editor(), "PitchNet should report has_editor");
+    instance.open_editor("PitchNet", false);
+    eventually("PitchNet editor opens", || instance.editor_open());
+    std::thread::sleep(Duration::from_millis(1500));
+    if let Some(dir) = std::env::var_os("PROWAVE_UI_PNG_DIR") {
+        let out = std::path::PathBuf::from(dir).join("shot_pitchnet_vst3.png");
+        let _ = std::process::Command::new("import")
+            .args(["-window", "PitchNet", out.to_string_lossy().as_ref()])
+            .status();
+    }
+    assert!(!instance.crashed(), "PitchNet crashed while editor open");
+    instance.close_editor();
+}

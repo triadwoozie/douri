@@ -123,27 +123,30 @@ fn from_drummer_params(d: &DrummerParams) -> SessionPlayerParams {
     }
 }
 
+/// Returns whether the selected track or selection currently has a Session Player / Drummer region.
+pub fn has_active_region(p: &Project, s: &UiState) -> bool {
+    find_session_or_drummer_region(p, s).is_some()
+}
+
 /// Renders the bottom Session Player Editor for the active Session Player or Drummer region.
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let target = find_session_or_drummer_region(p, s);
     let Some((ti, ri, was_legacy_drummer)) = target else {
-        ui.centered_and_justified(|ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(24.0);
-                ui.label(
-                    RichText::new("No Session Player region on the selected track.")
-                        .size(13.0)
-                        .color(TEXT_DIM),
-                );
-                ui.add_space(8.0);
-                if ui.button("Create Keyboard Session Region").clicked() {
-                    let ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
-                    if p.chords.is_empty() {
-                        p.chords = default_chords();
-                    }
-                    p.add_session_region(ti, SessionPlayerParams::default(), 1.0);
+        ui.add_space(12.0);
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new("No Session Player region on the selected track.")
+                    .size(13.0)
+                    .color(TEXT_DIM),
+            );
+            ui.add_space(6.0);
+            if ui.button("Create Keyboard Session Region").clicked() {
+                let ti = p.selected_track.min(p.tracks.len().saturating_sub(1));
+                if p.chords.is_empty() {
+                    p.chords = default_chords();
                 }
-            });
+                p.add_session_region(ti, SessionPlayerParams::default(), 1.0);
+            }
         });
         return;
     };

@@ -1059,11 +1059,11 @@ impl Server {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => std::process::exit(0),
             }
         }
+        self.instance.idle();
         if self.last_tick.elapsed() < TICK {
             return;
         }
         self.last_tick = Instant::now();
-        self.instance.idle();
         let now = Instant::now();
         self.quiet.retain(|_, until| *until > now);
         if let Some(local) = self.local() {
@@ -1086,6 +1086,12 @@ impl Server {
             }
             if window.take_power_click() {
                 self.out.line("e\tpower");
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if let (Some(window), Some(local)) = (&mut self.window, self.instance.local()) {
+            if let Some((width, height)) = local.backend().main_editor_resized() {
+                window.set_plugin_size(width, height);
             }
         }
     }

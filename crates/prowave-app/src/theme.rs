@@ -64,20 +64,20 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
 
-    // Inactive buttons / pills
-    v.widgets.inactive.bg_fill = CARD_BG;
+    // Inactive buttons / pills (weak_bg_fill) and slider rails/handles (bg_fill)
+    v.widgets.inactive.bg_fill = Color32::from_rgb(0xe8, 0xe8, 0xee);
     v.widgets.inactive.weak_bg_fill = CARD_BG;
     v.widgets.inactive.bg_stroke = Stroke::new(1.0, BORDER);
     v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT);
 
     // Hovered states with clean neutral brightening
-    v.widgets.hovered.bg_fill = CARD_HOVER;
+    v.widgets.hovered.bg_fill = Color32::WHITE;
     v.widgets.hovered.weak_bg_fill = CARD_HOVER;
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(0x42, 0x42, 0x48));
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
 
     // Active states: soft translucent neutral highlight (rgba(255, 255, 255, 0.14))
-    v.widgets.active.bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 36);
+    v.widgets.active.bg_fill = Color32::WHITE;
     v.widgets.active.weak_bg_fill = Color32::from_rgba_unmultiplied(255, 255, 255, 36);
     v.widgets.active.bg_stroke =
         Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20));

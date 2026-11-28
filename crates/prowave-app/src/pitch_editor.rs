@@ -136,6 +136,7 @@ pub struct PitchView {
     fitted: Option<(usize, usize, PathBuf)>,
     pub plot: Rect,
     pub pitchnet_status: Option<String>,
+    pub panel_height: f32,
 }
 
 impl Default for PitchView {
@@ -150,6 +151,7 @@ impl Default for PitchView {
             fitted: None,
             plot: Rect::NOTHING,
             pitchnet_status: None,
+            panel_height: 360.0,
         }
     }
 }
@@ -270,9 +272,38 @@ pub fn find_pitchnet_standalone() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
+fn sync_pitchnet_language() {
+    let douri_lang = crate::i18n::current().code();
+    let pitchnet_lang = match douri_lang {
+        "ja" => "ja",
+        "es" => "es",
+        "pt-BR" | "pt-PT" => "pt",
+        "zh-Hans" => "zh",
+        _ => "en",
+    };
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return;
+    };
+    let cfg_dir = home.join(".config").join("PitchNet");
+    let _ = std::fs::create_dir_all(&cfg_dir);
+    let cfg_path = cfg_dir.join("config.json");
+    let mut obj = std::fs::read_to_string(&cfg_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&s).ok())
+        .unwrap_or_default();
+    obj.insert(
+        "language".to_string(),
+        serde_json::Value::String(pitchnet_lang.to_string()),
+    );
+    if let Ok(json) = serde_json::to_string_pretty(&obj) {
+        let _ = std::fs::write(&cfg_path, json);
+    }
+}
+
 /// Opens PitchNet for track `ti` (inserting its VST3 if found in the hosted catalog, or launching
 /// the PitchNet standalone app with the region's audio file).
 pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path: &Path) {
+    sync_pitchnet_language();
     // 1. Check already-loaded PitchNet hosted plugin on the track.
     if let Some(slot) = p.tracks.get(ti).and_then(|t| {
         t.inserts.iter().position(|ins| {
@@ -428,6 +459,30 @@ const TIME_H: f32 = RULER_H + REGION_STRIP_H;
 const STATUS_H: f32 = 20.0;
 
 pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
+    // Top-edge resize handle owned directly by `s.pitch_ed.panel_height` so resizing never snaps back.
+    let top_rect = Rect::from_min_size(
+        ui.cursor().min,
+        egui::vec2(ui.available_width().max(1.0), 5.0),
+    );
+    let resize_resp = ui.allocate_rect(top_rect, Sense::drag());
+    if resize_resp.hovered() || resize_resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+    }
+    if resize_resp.dragged() {
+        let max_h = (ui.ctx().content_rect().height() * 0.85).max(540.0);
+        s.pitch_ed.panel_height =
+            (s.pitch_ed.panel_height - resize_resp.drag_delta().y).clamp(160.0, max_h);
+    }
+    ui.painter().rect_filled(
+        top_rect,
+        0.0,
+        if resize_resp.hovered() || resize_resp.dragged() {
+            ACCENT
+        } else {
+            BORDER
+        },
+    );
+
     let area = ui.available_rect_before_wrap();
     ui.painter().rect_filled(area, 0.0, BG);
     let Some((t, r)) = target(p, s) else {
@@ -1052,9 +1107,9 @@ mod tests {
             if frame == 1 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 440.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 442.0)));
                 input.events.push(egui::Event::PointerButton {
-                    pos: pos2(400.0, 440.0),
+                    pos: pos2(400.0, 442.0),
                     button: egui::PointerButton::Primary,
                     pressed: true,
                     modifiers: egui::Modifiers::NONE,
@@ -1062,13 +1117,13 @@ mod tests {
             } else if frame == 2 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 302.0)));
             } else if frame == 3 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 302.0)));
                 input.events.push(egui::Event::PointerButton {
-                    pos: pos2(400.0, 300.0),
+                    pos: pos2(400.0, 302.0),
                     button: egui::PointerButton::Primary,
                     pressed: false,
                     modifiers: egui::Modifiers::NONE,
@@ -1076,9 +1131,9 @@ mod tests {
             } else if frame == 5 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 302.0)));
                 input.events.push(egui::Event::PointerButton {
-                    pos: pos2(400.0, 300.0),
+                    pos: pos2(400.0, 302.0),
                     button: egui::PointerButton::Primary,
                     pressed: true,
                     modifiers: egui::Modifiers::NONE,
@@ -1086,13 +1141,13 @@ mod tests {
             } else if frame == 6 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 540.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 542.0)));
             } else if frame == 7 {
                 input
                     .events
-                    .push(egui::Event::PointerMoved(pos2(400.0, 540.0)));
+                    .push(egui::Event::PointerMoved(pos2(400.0, 542.0)));
                 input.events.push(egui::Event::PointerButton {
-                    pos: pos2(400.0, 540.0),
+                    pos: pos2(400.0, 542.0),
                     button: egui::PointerButton::Primary,
                     pressed: false,
                     modifiers: egui::Modifiers::NONE,
@@ -1100,11 +1155,10 @@ mod tests {
             }
             let mut out = ctx.run_ui(input, |ui| {
                 let room = ui.available_height();
+                let max_h = (room * 0.85).max(540.0);
                 let resp = egui::Panel::bottom("bottom_pitch_editor")
-                    .resizable(true)
-                    .min_size(240.0)
-                    .max_size((room * 0.75).max(420.0))
-                    .default_size(360.0)
+                    .resizable(false)
+                    .exact_size(s.pitch_ed.panel_height.clamp(160.0, max_h))
                     .show(ui, |ui| show(ui, &mut p, &mut s));
                 heights.push(resp.response.rect.height());
                 egui::CentralPanel::default().show(ui, |_ui| {});

@@ -2072,16 +2072,26 @@ impl eframe::App for App {
             // the window, so it is never outside its range when the window shrinks.)
             let room = ui.available_height();
             let usual = (room * 0.48).clamp(160.0, 500.0);
+            let session_active =
+                s.bottom == Bottom::SessionPlayer && session_player_ui::has_active_region(p, s);
             let min_h = if s.bottom == Bottom::Mixer {
                 mixer::min_panel_height(p, &s.mixer).clamp(180.0, room * 0.9)
             } else if s.bottom == Bottom::MacroControls {
                 200.0
             } else if s.bottom == Bottom::SessionPlayer {
-                420.0
+                if session_active {
+                    420.0
+                } else {
+                    84.0
+                }
             } else {
                 160.0
             };
-            let max_h = (room * 0.85).max(540.0);
+            let max_h = if s.bottom == Bottom::SessionPlayer && !session_active {
+                140.0
+            } else {
+                (room * 0.85).max(540.0)
+            };
             let panel_id = match s.bottom {
                 Bottom::Mixer => "bottom_mixer",
                 Bottom::PianoRoll => "bottom_piano_roll",
@@ -2089,17 +2099,29 @@ impl eframe::App for App {
                 Bottom::MacroControls => "bottom_macro_controls",
                 Bottom::SessionPlayer => "bottom_session_player",
             };
-            let panel = egui::Panel::bottom(panel_id)
-                .resizable(true)
-                .min_size(min_h)
-                .max_size(max_h)
-                .default_size(match s.bottom {
-                    Bottom::MacroControls => 260.0,
-                    Bottom::SessionPlayer => 460.0,
-                    Bottom::PitchEditor => 360.0,
-                    _ => 240.0,
-                })
-                .frame(opaque_panel_frame);
+            let panel = if s.bottom == Bottom::PitchEditor {
+                egui::Panel::bottom(panel_id)
+                    .resizable(false)
+                    .exact_size(s.pitch_ed.panel_height.clamp(160.0, max_h))
+                    .frame(opaque_panel_frame)
+            } else {
+                egui::Panel::bottom(panel_id)
+                    .resizable(true)
+                    .min_size(min_h)
+                    .max_size(max_h)
+                    .default_size(match s.bottom {
+                        Bottom::MacroControls => 260.0,
+                        Bottom::SessionPlayer => {
+                            if session_active {
+                                460.0
+                            } else {
+                                96.0
+                            }
+                        }
+                        _ => 240.0,
+                    })
+                    .frame(opaque_panel_frame)
+            };
             panel.show(ui, |ui| match s.bottom {
                 Bottom::Mixer => mixer::show(ui, p, s, &meters),
                 Bottom::PianoRoll => piano_roll::show(ui, p, s),

@@ -2472,8 +2472,16 @@ impl Backend for Vst3Backend {
             (table::<ViewTable>(view).get_size)(view, &mut rect);
             let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
             if width > 0 && height > 0 {
+                (table::<ViewTable>(view).on_size)(view, &mut rect);
                 Some((width as u32, height as u32))
             } else {
+                let mut fallback = ViewRect {
+                    left: 0,
+                    top: 0,
+                    right: 480,
+                    bottom: 320,
+                };
+                (table::<ViewTable>(view).on_size)(view, &mut fallback);
                 Some((480, 320))
             }
         }
