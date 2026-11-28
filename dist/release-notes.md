@@ -1,31 +1,45 @@
-### Dōri v0.1.0-alpha.10
+### Dōri v0.1.0-alpha.11
 
-Welcome to Dōri (道理) v0.1.0-alpha.10, a pure-Rust cross-platform digital audio workstation.
+Welcome to Dōri (道理) v0.1.0-alpha.11, a pure-Rust cross-platform digital audio workstation.
 
 #### Downloads & Release Packages
 
-| Package | Platform | Architecture | Details |
-|---|---|---|---|
-| `Dori-Setup-0.1.0-alpha.10-x86_64.exe` | Windows | x86_64 | Guided dark minimal setup installer |
-| `Dori-0.1.0-alpha.10-win64-portable.zip` | Windows | x86_64 | Portable zero-install zip archive |
-| `Dori-Setup-0.1.0-alpha.10-x86_64.AppImage` | Linux | x86_64 | Standalone dark minimal installer |
-| `Dori-0.1.0-alpha.10-linux-x86_64-portable.tar.gz` | Linux | x86_64 | Portable standalone tarball |
-| `dori-0.1.0-alpha.10-1.x86_64.rpm` | Fedora / RHEL / openSUSE | x86_64 | Native RPM package with desktop integration |
-| `SHA256SUMS.txt` | All | Checksums | Cryptographic SHA-256 integrity verification |
+| Platform / Format | File |
+| --- | --- |
+| Windows x86_64 (Guided Installer) | `Dori-Setup-0.1.0-alpha.11-x86_64.exe` |
+| Windows x86_64 (Portable ZIP) | `Dori-0.1.0-alpha.11-win64-portable.zip` |
+| Linux x86_64 (Standalone AppImage Installer) | `Dori-Setup-0.1.0-alpha.11-x86_64.AppImage` |
+| Linux x86_64 (Portable Tarball) | `Dori-0.1.0-alpha.11-linux-x86_64-portable.tar.gz` |
+| Fedora / RHEL / openSUSE (RPM) | `dori-0.1.0-alpha.11-1.x86_64.rpm` |
+| Checksums | `SHA256SUMS.txt` |
 
-## What's new in 0.1.0-alpha.10
+## What's new in 0.1.0-alpha.11
 
-### Stem Separation & Studio Workflow
-- **Local AI Stem Separation & Stem Splitter Sheet**: Integrated local AI stem separation (with settings wiring and a clean Logic Pro-style Stem Splitter sheet) alongside the Windows startup deadlock fix (`#5`).
-- **Command Palette & Diagnostics**: Added quick Command Palette navigation and privacy-redacted Diagnostics reporting.
+### Spatial Audio (Eclipsa Audio 7.1.2 / 7.1.4)
+- Zero-allocation `eclipsa.rs` 3D Object / Surround Panner DSP and Binaural downmixer.
+- `Eclipsa Audio` Master Renderer, `3D Object Panner`, and `Surround Panner` UI, Startup Screen surround format selector, `Project Settings > Audio`, `Mix > Eclipsa Audio…`, and MCP spatial tools.
 
-### Metering, Envelopes & Drum Pads (`ouestlabs/audio-ui`)
-- **MultiMeter Goniometer & IEC Ballistics (`multimeter.rs`, `widgets.rs`)**: Added a 45°-rotated Mid/Side stereo vectorscope with trail history alongside L/R IEC VU (`300 ms` rise, `0.81` damping) and Type I PPM (`5 ms` attack, `20 dB / 1.5 s` release) ballistic meters.
-- **Interactive Sampler ADSR Envelope (`sampler_ui.rs`)**: Wired `daw_adsr_envelope` with draggable Attack, Decay/Sustain, and Release breakpoints bound directly to `Zone` envelope parameters.
-- **Velocity-Metered Drum Pads (`drum_machine_ui.rs`)**: Added vertical click-position velocity mapping and smooth decaying `daw_pad_meter_glow` feedback across all 16 pads.
+### Session Player & Step Sequencer
+- Revamped Session Player engine (`Keyboard`, `Bass`, `Drummer`) with 5-tab Logic Pro-style editor, Chord ID, New Track style integration, and compact empty Session Player bar.
+- Redesigned Step Sequencer with centered tools, yellow sliders, and expanded row spacing.
 
-### UI Polish & Credits
-- **Modulation Drawer & Control Bar Cleanup**: Relocated `A/B Diff` into the **Collaborate** window and `Modulation` into **Smart Controls**, and fixed the bottom Modulation Matrix drawer layout.
-- **Attributions**: Credited `ouestlabs/audio-ui` (MIT License) in `README.md`, `THIRD_PARTY_LICENSES.md`, and **About Dōri**.
+### Marbble DSP, Synths, Sampler & prowave-dsp-kit
+- Ported Marbble PDC and 17 built-in effects (`marbble-dsp`), 6 synthesizers (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`), multisample Sampler with auto-mapping, crossfade loops, and SFZ support, per-strip PDC latency readouts in Mixer, and embedded WebKit2 WebView instrument panels.
+- Ported `prowave-dsp-kit` (`matrix4`, `matrix4_mb`, `Mosaic Decimator`, `Dustbowl Lo-Fi`, `Kestrel EQ`) and upstream `fabox-os` plugin-host, capture, and meter readability improvements.
+
+### Audio Track Editor, PitchNet & Audio Cleanup
+- Replaced Flex Pitch with a themed Audio Track Editor (`#141518` canvas, deterministic top-edge resize, Audacity-ported DC Offset / De-Click / Denoise tools, and aubio-ported onset/YIN pitch analysis).
+- Added 1-click external PitchNet launcher with region audio loading, DAW auto-pause, single-instance guard, and automatic language sync.
+
+### Plugin Hosting, Playback & Format Support
+- Ported Linux LV2 plugin hosting and native LV2 editor UI support (optional `lv2` feature).
+- Unified case-insensitive WAV/FLAC/OGG/AIFF/MP3/OPUS import and browser drag-and-drop.
+- Fixed reverse disk streaming choppiness (`65_536`-frame reverse cache + compressed seek overshoot recovery) and JUCE VST3 X11 `RunLoop` event pumping.
+
+### UI, Configuration & Localization
+- Added Logic Pro auto-unlatching **Catch Playhead** (`Scroll in Play`) across Tracks Area, Piano Roll, and Audio Track Editor.
+- Separated `~/.config/douri` from `prowave` with a one-time migration prompt covering Pro-Wave and older Dōri versions.
+- Added full **Bahasa Melayu (`ms`)** UI and installer translation (20 supported languages).
+- Improved slider visibility with white unfilled rails/handles and Logic blue trailing fill.
 
 Licensed under the GNU General Public License v3 or later.

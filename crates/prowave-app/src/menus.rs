@@ -527,6 +527,7 @@ const LANGUAGE: &[&str] = &[
     "Português (Brasil)",
     "Filipino",
     "Bahasa Indonesia",
+    "Bahasa Melayu",
     "हिन्दी",
     "Українська",
     "Norsk",

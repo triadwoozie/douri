@@ -2,6 +2,16 @@
 
 What changed in each Dōri release.
 
+## [0.1.0-alpha.11] - 2026-11-28
+
+- **Eclipsa Audio Spatial Engine & 3-Pane Panner**: Zero-allocation `eclipsa.rs` 7.1.2 / 7.1.4 spatial renderer and binaural downmixer, `Eclipsa Audio` Master Renderer, `3D Object Panner`, `Surround Panner` UI, Startup Screen surround format, and MCP spatial tools.
+- **Session Player Engine & Step Sequencer**: Revamped Session Player engine (`Keyboard`, `Bass`, `Drummer`) with a 5-tab Logic Pro-style editor, Chord ID, Step Sequencer row spacing and yellow sliders, and New Track style integration.
+- **Marbble DSP, Synths & Sampler**: Ported Marbble PDC and 17 built-in effects (`marbble-dsp`), 6 synthesizers (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`), multisample Sampler with auto-mapping, crossfade loops, and SFZ support, per-strip PDC latency readouts in Mixer, and WebKit2 WebView instrument panels.
+- **prowave-dsp-kit & Effect Suite**: Ported `prowave-dsp-kit` (`matrix4`, `matrix4_mb`, `Mosaic Decimator`, `Dustbowl Lo-Fi`, `Kestrel EQ`) and upstream `fabox-os` plugin-host / capture / meter readability fixes.
+- **Audio Track Editor, PitchNet & Audacity/aubio Cleanup**: Replaced Flex Pitch with a themed Audio Track Editor (`#141518` canvas, deterministic top-edge resize, Audacity DC Offset / De-Click / Denoise tools, aubio onset/YIN analysis), external PitchNet launcher with DAW auto-pause, single-instance guard, and language sync.
+- **LV2 Hosting & Format Support**: Added Linux LV2 plugin hosting and native LV2 UI support (optional `lv2` feature), unified case-insensitive WAV/FLAC/OGG/AIFF/MP3/OPUS import and browser drag-and-drop, and smooth reverse disk streaming (`65_536`-frame cache + overshoot seek recovery).
+- **UI, Config & Localization**: Implemented Logic Pro auto-unlatching Catch Playhead across editors, separated `~/.config/douri` from `prowave` with a one-time migration prompt, white unfilled slider rails/handles, compact empty Session Player bar, and full **Bahasa Melayu (`ms`)** translation.
+
 ## [0.1.0-alpha.10] - 2026-11-27
 
 - **Local AI Stem Separation & Stem Splitter Sheet**: Integrated local AI stem separation (with settings wiring and clean Logic Pro-style Stem Splitter sheet) and Windows startup deadlock fix (`#5`, with contributor attribution).

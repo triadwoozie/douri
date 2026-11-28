@@ -50,7 +50,7 @@ Counted directly from source (`menus::enabled` and `ROADMAP.md`). Run `cargo xta
 | | Done | Started | Total | Done % |
 | --- | ---: | ---: | ---: | ---: |
 | Menu entries | 231 | 0 | 337 | 68.55% |
-| Roadmap items | 16 | 2 | 27 | 59.26% |
+| Roadmap items | 16 | 2 | 28 | 57.14% |
 
 </div>
 <!-- status:end -->
