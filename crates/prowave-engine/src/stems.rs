@@ -778,9 +778,9 @@ fn separate_stems_demucs(
                         );
                     }
                 }
-                if tail.len() > 256 {
-                    tail.drain(..tail.len() - 128);
-                }
+                tail.clear();
+            } else if tail.len() > 512 {
+                tail.clear();
             }
         }
     }
