@@ -224,6 +224,24 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
     win.show(ctx, |ui| {
         ui.set_width(352.0);
         ui.set_max_width(352.0);
+        // Middle-mouse drag anywhere inside the Stem Splitter modal pans/moves the dialog.
+        let (mid_down, mid_delta, mid_pos) = ctx.input(|i| {
+            (
+                i.pointer.button_down(egui::PointerButton::Middle),
+                i.pointer.delta(),
+                i.pointer.latest_pos(),
+            )
+        });
+        if mid_down {
+            if let Some(area_r) = ctx.memory(|m| m.area_rect(win_id)) {
+                if mid_pos.is_some_and(|p| area_r.contains(p)) {
+                    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                    if mid_delta != egui::Vec2::ZERO {
+                        ctx.data_mut(|d| d.insert_temp(pos_id, area_r.min + mid_delta));
+                    }
+                }
+            }
+        }
 
         // Top header bar: circular X | centered "Stem Splitter" | circular blue checkmark
         ui.horizontal(|ui| {

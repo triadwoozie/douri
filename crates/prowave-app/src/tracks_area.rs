@@ -5781,4 +5781,30 @@ mod waveform_scale_tests {
         assert!(p.playing);
         assert_eq!(p.position_beats, 4.5);
     }
+
+    #[test]
+    fn track_header_icons_tinted_with_track_color() {
+        let mut p = crate::model::Project::empty();
+        let mut t1 = crate::model::Track::new("Synth Lead", crate::model::TrackKind::Instrument);
+        t1.color = egui::Color32::from_rgb(0x4e, 0xc9, 0x62);
+        let mut t2 = crate::model::Track::new("Vocals", crate::model::TrackKind::Audio);
+        t2.color = egui::Color32::from_rgb(0x4a, 0x9e, 0xff);
+        p.tracks.push(t1);
+        p.tracks.push(t2);
+        let mut s = crate::UiState::new();
+        let out = std::env::var_os("PROWAVE_UI_PNG_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("shot_track_icons.png");
+        crate::ui_test::render_png(
+            720.0,
+            260.0,
+            1.0,
+            crate::theme::CANVAS_BG,
+            |ui| super::show(ui, &mut p, &mut s, &crate::mixer::Meters::default()),
+            &out,
+        )
+        .unwrap();
+        assert!(std::fs::metadata(&out).unwrap().len() > 3_000);
+    }
 }
