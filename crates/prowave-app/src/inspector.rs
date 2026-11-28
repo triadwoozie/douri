@@ -9,7 +9,7 @@
 use crate::i18n::tr;
 use crate::mixer::{channel_strip, fx_rows_for, rows, send_rows_for, Meters, NameStyle, StripKey};
 use crate::model::{Project, SoundFontUse, TrackKind, MAX_REGION_GAIN, MIN_REGION_GAIN};
-use crate::track_icons::{draw_icon, track_icon};
+use crate::track_icons::{draw_icon_tinted, track_icon};
 use crate::widgets::{stroke, BTN_BG, TEXT, TEXT_DIM};
 use crate::UiState;
 use egui::{
@@ -1776,7 +1776,19 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &Meters) {
 
                         label(&g_upper, label_right, y, tr("Icon:"), true);
                         let icon_r = Rect::from_min_size(pos2(vx, y + 1.0), vec2(26.0, 26.0));
-                        draw_icon(&g_upper, icon_r, track_icon(&p.tracks[ti]));
+                        g_upper.rect_filled(icon_r, 5.0, Color32::from_rgb(0x18, 0x18, 0x1b));
+                        g_upper.rect_stroke(
+                            icon_r,
+                            5.0,
+                            Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
+                            egui::StrokeKind::Inside,
+                        );
+                        draw_icon_tinted(
+                            &g_upper,
+                            icon_r.shrink(4.0),
+                            track_icon(&p.tracks[ti]),
+                            p.tracks[ti].color,
+                        );
                         if ui
                             .interact(icon_r, id("track_icon_click"), Sense::click())
                             .clicked()

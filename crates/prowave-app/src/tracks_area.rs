@@ -8,7 +8,7 @@
 use crate::i18n::{tr, trf};
 use crate::model::HeaderPart;
 use crate::model::{Project, Region, Track, TrackKind, STACK_COLOR};
-use crate::track_icons::{draw_icon, track_icon};
+use crate::track_icons::{draw_icon_tinted, track_icon};
 use crate::widgets::{
     context_click, context_menu, menu_title, popup_button, stroke, todo_item, BLUE, BTN_BG, TEXT,
     TEXT_DIM,
@@ -3169,7 +3169,12 @@ fn header(
             Stroke::new(1.0, Color32::from_rgb(0x34, 0x34, 0x39)),
             egui::StrokeKind::Inside,
         );
-        draw_icon(g, badge_r.shrink(4.5), track_icon(&p.tracks[i]));
+        draw_icon_tinted(
+            g,
+            badge_r.shrink(4.5),
+            track_icon(&p.tracks[i]),
+            p.tracks[i].color,
+        );
     }
 
     let name_x = if show_icon {

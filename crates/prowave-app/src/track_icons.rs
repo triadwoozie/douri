@@ -289,6 +289,11 @@ fn rot(pts: &[(f32, f32)], pivot: (f32, f32), deg: f32, k: f32) -> Vec<(f32, f32
 
 /// Draws a track icon scaled to `r` using crisp Phosphor Fill glyphs.
 pub fn draw_icon(g: &Painter, r: Rect, kind: IconKind) {
+    draw_icon_tinted(g, r, kind, Color32::WHITE);
+}
+
+/// Draws a track icon scaled to `r` tinted with `tint`.
+pub fn draw_icon_tinted(g: &Painter, r: Rect, kind: IconKind, tint: Color32) {
     let glyph = match kind {
         IconKind::Piano | IconKind::WoodKeys => crate::icons::PIANO_KEYS,
         IconKind::Synth | IconKind::Waveform => crate::icons::WAVEFORM,
@@ -301,7 +306,7 @@ pub fn draw_icon(g: &Painter, r: Rect, kind: IconKind) {
         IconKind::Folder => crate::icons::FOLDER_OPEN,
     };
     let sz = (r.width().min(r.height())).clamp(10.0, 24.0);
-    crate::icons::paint_fill(g, r, glyph, sz, Color32::WHITE);
+    crate::icons::paint_fill(g, r, glyph, sz, tint);
 }
 
 const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
