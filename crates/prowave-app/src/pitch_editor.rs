@@ -300,11 +300,47 @@ fn sync_pitchnet_language() {
     }
 }
 
-/// Opens PitchNet for track `ti` (inserting its VST3 if found in the hosted catalog, or launching
-/// the PitchNet standalone app with the region's audio file).
+/// Opens PitchNet for track `ti`. Prefers the PitchNet standalone app with `audio_path` so the
+/// region's audio loads directly into PitchNet's editor without muting or stealing DAW playback,
+/// and falls back to the VST3 plugin only if standalone is not installed.
 pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path: &Path) {
     sync_pitchnet_language();
-    // 1. Check already-loaded PitchNet hosted plugin on the track.
+
+    // 1. Prefer PitchNet standalone with the region's audio file so the audio appears in its UI
+    //    and DAW track playback is never muted/stolen by a non-ARA VST3 insert.
+    if let Some(bin) = find_pitchnet_standalone() {
+        // Remove any leftover PitchNet insert that would silence the track in non-ARA VST3 mode.
+        if let Some(tr) = p.tracks.get_mut(ti) {
+            let before = tr.inserts.len();
+            tr.inserts.retain(|ins| {
+                ins.hosted == 0
+                    || !crate::hosted_plugins::name(ins.hosted)
+                        .to_ascii_lowercase()
+                        .contains("pitchnet")
+            });
+            if tr.inserts.len() != before {
+                p.song_rev += 1;
+            }
+        }
+        match std::process::Command::new(&bin)
+            .arg(audio_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => {
+                s.pitch_ed.pitchnet_status =
+                    Some("Launched PitchNet with region audio".to_string());
+            }
+            Err(e) => {
+                s.pitch_ed.pitchnet_status = Some(format!("Failed to launch PitchNet: {e}"));
+            }
+        }
+        return;
+    }
+
+    // 2. Check already-loaded PitchNet hosted plugin on the track.
     if let Some(slot) = p.tracks.get(ti).and_then(|t| {
         t.inserts.iter().position(|ins| {
             ins.hosted != 0
@@ -356,27 +392,8 @@ pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path:
         }
     }
 
-    // 4. Fallback to PitchNet standalone executable with the region WAV path.
-    if let Some(bin) = find_pitchnet_standalone() {
-        match std::process::Command::new(&bin)
-            .arg(audio_path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(_) => {
-                s.pitch_ed.pitchnet_status = Some("Launched PitchNet standalone".to_string());
-            }
-            Err(e) => {
-                s.pitch_ed.pitchnet_status = Some(format!("Failed to launch PitchNet: {e}"));
-            }
-        }
-        return;
-    }
-
     s.pitch_ed.pitchnet_status =
-        Some("Install PitchNet.vst3 into ~/.vst3 or set PITCHNET_VST3".to_string());
+        Some("Install PitchNet into ~/.local/bin/pitchnet or ~/.vst3/PitchNet.vst3".to_string());
 }
 
 #[derive(Clone, Copy)]
@@ -445,13 +462,13 @@ fn apply_cleanup_to_region(
     Ok(label.to_string())
 }
 
-const BG: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x1e);
-const SURFACE: Color32 = Color32::from_rgb(0x25, 0x25, 0x26);
-const CARD: Color32 = Color32::from_rgb(0x30, 0x30, 0x30);
-const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
+const BG: Color32 = crate::theme::CANVAS_BG;
+const SURFACE: Color32 = crate::theme::CHROME_BG;
+const CARD: Color32 = crate::theme::CARD_BG;
+const BORDER: Color32 = crate::theme::BORDER;
 const ACCENT: Color32 = Color32::from_rgb(0x12, 0x69, 0xcc);
-const TEXT: Color32 = Color32::from_rgb(0xff, 0xff, 0xff);
-const DIM: Color32 = Color32::from_rgb(0x8e, 0x8e, 0x93);
+const TEXT: Color32 = crate::theme::TEXT;
+const DIM: Color32 = crate::theme::TEXT_MUTED;
 const INSPECTOR_W: f32 = 236.0;
 const RULER_H: f32 = 22.0;
 const REGION_STRIP_H: f32 = 16.0;

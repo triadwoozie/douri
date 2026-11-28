@@ -1731,17 +1731,18 @@ impl RunLoop {
                 .collect();
             // SAFETY: `fds` is writable and holds only descriptors the plug-in registered.
             let ready = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 0) };
-            if ready > 0 {
-                for ((handler, fd), polled) in events.iter().zip(&fds) {
-                    if polled.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
-                        && self.hold_event(*handler, *fd)
-                    {
-                        // SAFETY: `hold_event` took a reference, so the handler stays alive for
-                        // this callback even if it unregisters itself there.
-                        unsafe {
-                            (table::<EventHandlerTable>(*handler).on_fd_is_set)(*handler, *fd);
-                            release(*handler);
-                        }
+            for ((handler, fd), polled) in events.iter().zip(&fds) {
+                // Also wake handlers when `poll` returns 0 because Xlib can buffer events in
+                // userspace after `attached`/`on_size`; JUCE returns immediately if none are queued.
+                if (ready <= 0
+                    || polled.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0)
+                    && self.hold_event(*handler, *fd)
+                {
+                    // SAFETY: `hold_event` took a reference, so the handler stays alive for
+                    // this callback even if it unregisters itself there.
+                    unsafe {
+                        (table::<EventHandlerTable>(*handler).on_fd_is_set)(*handler, *fd);
+                        release(*handler);
                     }
                 }
             }
