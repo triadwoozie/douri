@@ -143,6 +143,9 @@ pub struct PianoView {
     centered_for: Option<(usize, usize)>,
     /// Edits waiting for the mouse to be released before the engine song is rebuilt.
     dirty: bool,
+    pub catch_playhead: bool,
+    was_playing: bool,
+    catch_jump: bool,
 }
 
 impl PianoView {
@@ -173,6 +176,9 @@ impl Default for PianoView {
             drag: Drag::None,
             centered_for: None,
             dirty: false,
+            catch_playhead: true,
+            was_playing: false,
+            catch_jump: false,
         }
     }
 }
@@ -483,6 +489,37 @@ fn toolbar(
             v.tool = tool;
         }
     }
+    // Catch Playhead toggle button
+    let catch_r = Rect::from_min_size(pos2(bar.left() + 266.0, cy - 10.0), vec2(52.0, 20.0));
+    let catch_resp = ui.interact(catch_r, uid("catch"), Sense::click());
+    g.rect_filled(
+        catch_r,
+        4.0,
+        if v.catch_playhead {
+            Color32::from_rgb(0x12, 0x69, 0xcc)
+        } else if catch_resp.hovered() {
+            Color32::from_rgb(0x3a, 0x3b, 0x42)
+        } else {
+            Color32::from_rgb(0x2c, 0x2e, 0x34)
+        },
+    );
+    g.text(
+        catch_r.center(),
+        Align2::CENTER_CENTER,
+        tr("Catch"),
+        FontId::proportional(11.0),
+        if v.catch_playhead {
+            Color32::WHITE
+        } else {
+            TEXT_DIM
+        },
+    );
+    if catch_resp.clicked() {
+        v.catch_playhead = !v.catch_playhead;
+        if v.catch_playhead {
+            v.catch_jump = true;
+        }
+    }
 
     // Right side: zoom sliders, then Snap.
     let (lo, hi) = (12f32.ln(), 400f32.ln());
@@ -791,8 +828,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let pointer_in_editor = hover
         .or_else(|| ui.input(|i| i.pointer.interact_pos()))
         .is_some_and(|pt| editor.contains(pt));
+    let is_running = p.playing || p.recording;
+    if !v.was_playing && is_running {
+        v.catch_playhead = true;
+    }
+    v.was_playing = is_running;
+
     if middle_down && pointer_in_editor {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if middle_delta.x != 0.0 && is_running {
+            v.catch_playhead = false;
+        }
         v.scroll_x = (v.scroll_x - middle_delta.x).clamp(0.0, (content_w - grid.width()).max(0.0));
         v.scroll_y = (v.scroll_y - middle_delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));
     }
@@ -839,6 +885,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             } else {
                 delta.x
             };
+            if dx != 0.0 && is_running {
+                v.catch_playhead = false;
+            }
             v.scroll_x = (v.scroll_x - dx).clamp(0.0, (content_w - grid.width()).max(0.0));
         } else if delta.y != 0.0 {
             v.scroll_y = (v.scroll_y - delta.y).clamp(0.0, (content_h - grid.height()).max(0.0));
@@ -863,6 +912,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
         let r = ui.interact(thumb, id("hthumb"), Sense::drag());
         if r.dragged() {
+            if is_running && r.drag_delta().x != 0.0 {
+                v.catch_playhead = false;
+            }
             v.scroll_x += r.drag_delta().x * max_x / (tw - thumb_w).max(1.0);
         }
         gs.rect_filled(
@@ -897,10 +949,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
             }),
         );
     }
-    // While the transport plays or records, the view follows the playhead (see `follow_scroll`).
-    if (p.playing || p.recording) && (0.0..=f64::from(len_beats)).contains(&position) {
+    // While the transport plays or records, the view follows the playhead when Catch is active.
+    if (v.catch_jump || (v.catch_playhead && is_running))
+        && (0.0..=f64::from(len_beats)).contains(&position)
+    {
         v.scroll_x = follow_scroll(v.scroll_x, grid.width(), position as f32 * v.beat_px);
     }
+    v.catch_jump = false;
     v.scroll_y = v.scroll_y.clamp(0.0, (content_h - grid.height()).max(0.0));
     v.scroll_x = v.scroll_x.clamp(0.0, (content_w - grid.width()).max(0.0));
     let (beat_px, key_h, scroll_x, scroll_y) = (v.beat_px, v.key_h, v.scroll_x, v.scroll_y);

@@ -1095,6 +1095,9 @@ pub struct PitchView {
     /// When true, `Fit` frames the full region; when false (default), an 8-bar active phrase.
     pub fit_full: bool,
     fitted_notes: bool,
+    pub catch_playhead: bool,
+    was_playing: bool,
+    catch_jump: bool,
     error: Arc<Mutex<Option<String>>>,
     /// Where the notes were last drawn.
     pub plot: Rect,
@@ -1124,6 +1127,9 @@ impl Default for PitchView {
             fitted: None,
             fit_full: false,
             fitted_notes: false,
+            catch_playhead: true,
+            was_playing: false,
+            catch_jump: false,
             error: Arc::default(),
             plot: Rect::NOTHING,
         }
@@ -1462,6 +1468,26 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         v.fitted = None;
                         v.fitted_notes = false;
                     }
+                    let catch_btn = ui.add(
+                        egui::Button::new(egui::RichText::new(tr("Catch")).size(11.0).color(
+                            if v.catch_playhead {
+                                Color32::WHITE
+                            } else {
+                                DIM
+                            },
+                        ))
+                        .fill(if v.catch_playhead {
+                            Color32::from_rgb(0x12, 0x69, 0xcc)
+                        } else {
+                            Color32::from_rgb(0x2c, 0x2e, 0x34)
+                        }),
+                    );
+                    if catch_btn.clicked() {
+                        v.catch_playhead = !v.catch_playhead;
+                        if v.catch_playhead {
+                            v.catch_jump = true;
+                        }
+                    }
                 });
             });
         });
@@ -1476,12 +1502,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     );
     let editor_rect = Rect::from_min_max(pos2(insp_rect.right(), body_rect.top()), body_rect.max);
 
-    // ---- Analysis Check
-    let analysis = analysis_ready(&file, algorithm, ui.ctx(), &s.pitch_ed.error);
-    let notes = analysis
-        .as_ref()
-        .map(|found| notes_of(p, t, r, algorithm, found))
-        .unwrap_or_default();
+    // Flex Pitch editor removed for drop-in replacement; keep Audio Track Editor UI shell.
+    let analysis: Option<Arc<NoteAnalysis>> = None;
+    let notes: Vec<NoteEdit> = Vec::new();
 
     // ---- Left Audio Track Editor Inspector (Logic Pro manual pp. 490-492)
     let v = &mut s.pitch_ed;
@@ -1692,27 +1715,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let resp = ui.allocate_rect(plot, Sense::click_and_drag());
     let g = ui.painter_at(canvas);
     g.rect_filled(canvas, 0.0, BG);
-
-    let Some(found) = analysis else {
-        let msg = s
-            .pitch_ed
-            .error
-            .lock()
-            .ok()
-            .and_then(|e| e.clone())
-            .map_or_else(
-                || tr("Analysing…").to_string(),
-                |e| trf("Flex Pitch: {}", &[&e]),
-            );
-        g.text(
-            canvas.center(),
-            egui::Align2::CENTER_CENTER,
-            msg,
-            FontId::proportional(14.0),
-            TEXT,
-        );
-        return;
-    };
+    let _ = &resp;
 
     if create_midi_cmd {
         create_midi_track_from_flex_pitch(p, t, r, &notes);
@@ -1788,7 +1791,22 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         v.top = (center + plot.height() / v.row_h * 0.5).clamp(24.0, 108.0);
     }
 
-    // Scrolling and cursor-anchored Ctrl+Scroll zooming
+    let is_running = p.playing || p.recording;
+    if !v.was_playing && is_running {
+        v.catch_playhead = true;
+    }
+    v.was_playing = is_running;
+
+    // Middle-mouse panning and scrolling + cursor-anchored Ctrl+Scroll zooming
+    let (middle_down, middle_delta) = ui.input(|i| (i.pointer.middle_down(), i.pointer.delta()));
+    if middle_down && ui.rect_contains_pointer(canvas) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if middle_delta.x != 0.0 && is_running {
+            v.catch_playhead = false;
+        }
+        v.scroll = (v.scroll - f64::from(middle_delta.x / v.zoom)).max(0.0);
+        v.top = (v.top + middle_delta.y / v.row_h).clamp(24.0, 108.0);
+    }
     if ui.rect_contains_pointer(canvas) {
         let (scroll_delta, zoom_delta, modifiers, pointer_pos) = ui.input(|i| {
             (
@@ -1823,9 +1841,27 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 v.zoom = new_zoom;
                 v.scroll = f64::from(new_scroll_px / new_zoom).max(0.0);
             }
-        } else if scroll_delta.x != 0.0 || scroll_delta.y != 0.0 {
-            v.scroll = (v.scroll - f64::from(scroll_delta.x / v.zoom)).max(0.0);
-            v.top = (v.top + scroll_delta.y / v.row_h).clamp(24.0, 108.0);
+        } else if modifiers.shift || scroll_delta.x != 0.0 || scroll_delta.y != 0.0 {
+            let dx = if modifiers.shift && scroll_delta.x == 0.0 {
+                scroll_delta.y
+            } else {
+                scroll_delta.x
+            };
+            if dx != 0.0 && is_running {
+                v.catch_playhead = false;
+            }
+            v.scroll = (v.scroll - f64::from(dx / v.zoom)).max(0.0);
+            if !modifiers.shift {
+                v.top = (v.top + scroll_delta.y / v.row_h).clamp(24.0, 108.0);
+            }
+        }
+    }
+    if v.catch_jump || (v.catch_playhead && is_running) {
+        v.catch_jump = false;
+        let ph_sec = clock.secs(p.position_beats).max(0.0);
+        let view_secs = f64::from(plot.width().max(40.0) / v.zoom.max(1.0));
+        if ph_sec < v.scroll || ph_sec > v.scroll + view_secs * 0.92 {
+            v.scroll = (ph_sec - view_secs * 0.1).max(0.0);
         }
     }
     let (scroll, zoom) = (v.scroll, v.zoom);
@@ -2015,439 +2051,28 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         );
     }
 
-    // Helper for the 6 hotspots around a note rect
-    let hotspot_positions = |n: &NoteEdit| -> [(Hotspot, Pos2); 6] {
-        let x0 = x_of(n.new_start);
-        let x1 = x_of(n.new_end).max(x0 + 18.0);
-        let yc = y_of(row_of(n));
-        let hh = (row_h * 0.44).clamp(6.0, 12.0);
-        let xm = (x0 + x1) * 0.5;
-        let xl = x0 + ((x1 - x0) * 0.16).clamp(5.0, 14.0);
-        let xr = x1 - ((x1 - x0) * 0.16).clamp(5.0, 14.0);
-        let yt = yc - hh - 7.0;
-        let yb = yc + hh + 7.0;
-        [
-            (Hotspot::DriftStart, pos2(xl, yt)),
-            (Hotspot::Vibrato, pos2(xm, yt)),
-            (Hotspot::DriftEnd, pos2(xr, yt)),
-            (Hotspot::Gain, pos2(xl, yb)),
-            (Hotspot::FinePitch, pos2(xm, yb)),
-            (Hotspot::FormantShift, pos2(xr, yb)),
-        ]
-    };
-
-    // Interaction
-    let shown: Vec<NoteEdit> = v.preview.clone().unwrap_or_else(|| notes.clone());
-    let hit = |pt: Pos2, list: &[NoteEdit]| -> Option<usize> {
-        list.iter().position(|n| {
-            let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
-            let y = y_of(row_of(n));
-            pt.x >= x0 && pt.x <= x1 && (pt.y - y).abs() <= row_h.max(10.0) * 0.75
-        })
-    };
-    let hit_hotspot =
-        |pt: Pos2, list: &[NoteEdit], selected: &[usize]| -> Option<(usize, Hotspot)> {
-            for &i in selected {
-                if let Some(n) = list.get(i) {
-                    let yc = y_of(row_of(n));
-                    let hh = (row_h * 0.44).clamp(5.0, 12.0);
-                    if (pt.y - yc).abs() <= hh * 0.7 {
-                        continue;
-                    }
-                    for (hs, pos) in hotspot_positions(n) {
-                        if pt.distance(pos) <= 5.5 {
-                            return Some((i, hs));
-                        }
-                    }
-                }
-            }
-            None
-        };
-
-    let modifiers = ui.input(|i| i.modifiers);
-    let pointer = resp.interact_pointer_pos().or_else(|| resp.hover_pos());
-    let mut commit_notes: Option<Vec<NoteEdit>> = None;
-    let zone = |n: &NoteEdit, x: f32| -> Option<Edge> {
-        let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
-        let w = ((x1 - x0) * 0.2).clamp(3.0, 8.0);
-        if x - x0 < w {
-            Some(Edge::Start)
-        } else if x1 - x < w {
-            Some(Edge::End)
-        } else {
-            None
-        }
-    };
-
-    let hovered_note = pointer.and_then(|pt| hit(pt, &shown));
-    let hovered_hotspot = pointer.and_then(|pt| hit_hotspot(pt, &shown, &v.selected));
-
-    if let (Some(pt), true) = (pointer, resp.hovered() && v.drag.is_none()) {
-        if hovered_hotspot.is_some() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-        } else if let Some(i) = hovered_note {
-            ui.ctx().set_cursor_icon(match v.tool {
-                Tool::Pointer => match zone(&shown[i], pt.x) {
-                    Some(_) => egui::CursorIcon::ResizeHorizontal,
-                    None => egui::CursorIcon::Grab,
-                },
-                Tool::Scissors => egui::CursorIcon::Crosshair,
-                Tool::Join => egui::CursorIcon::PointingHand,
-                Tool::Vibrato | Tool::Volume => egui::CursorIcon::ResizeVertical,
-            });
-        }
-    }
-
-    // Cmd+J or Edit > Join Selected Notes
-    if join_cmd || (modifiers.command && ui.input(|i| i.key_pressed(egui::Key::J))) {
-        if v.selected.len() >= 2 {
-            let mut list = notes.clone();
-            let mut sorted = v.selected.clone();
-            sorted.sort_unstable();
-            let first = sorted[0];
-            let count = sorted.len().saturating_sub(1);
-            let mut joined = false;
-            for _ in 0..count {
-                if join(&mut list, first, Some(&found.track)) {
-                    joined = true;
-                }
-            }
-            if joined {
-                v.selected = vec![first];
-                commit_notes = Some(list);
-            }
-        }
-    }
-
-    if resp.double_clicked() {
-        if let Some(pt) = pointer {
-            let mut list = notes.clone();
-            if let Some(i) = hit(pt, &list) {
-                let n = &mut list[i];
-                if n.pitch > 0.0 {
-                    n.shift = n.heard().round() - n.pitch;
-                } else {
-                    n.shift = 0.0;
-                }
-                commit_notes = Some(list);
-            }
-        }
-    } else if resp.clicked() {
-        if let Some(pt) = pointer {
-            match hit(pt, &notes) {
-                Some(i) if v.tool == Tool::Scissors => {
-                    let mut list = notes.clone();
-                    let n = list[i];
-                    let at = n.start
-                        + (sec_of(pt.x) - n.new_start) * (n.end - n.start)
-                            / (n.new_end - n.new_start).max(1e-9);
-                    if split(&mut list, i, at, Some(&found.track)) {
-                        v.selected = vec![i + 1];
-                        commit_notes = Some(list);
-                    }
-                }
-                Some(i) if v.tool == Tool::Join => {
-                    let mut list = notes.clone();
-                    if join(&mut list, i, Some(&found.track)) {
-                        v.selected = vec![i];
-                        commit_notes = Some(list);
-                    }
-                }
-                Some(i) => {
-                    if modifiers.shift || modifiers.command {
-                        if let Some(k) = v.selected.iter().position(|x| *x == i) {
-                            v.selected.remove(k);
-                        } else {
-                            v.selected.push(i);
-                        }
-                    } else {
-                        v.selected = vec![i];
-                    }
-                }
-                None => v.selected.clear(),
-            }
-        }
-    }
-
-    if resp.drag_started() {
-        if let Some(pt) = resp.interact_pointer_pos() {
-            if let Some((i, hs)) = hit_hotspot(pt, &notes, &v.selected) {
-                v.drag = Some(Drag {
-                    kind: DragKind::Hotspot(hs),
-                    from: pt,
-                    before: notes.clone(),
-                    note: i,
-                });
-            } else if let Some(i) = hit(pt, &notes) {
-                if !v.selected.contains(&i) {
-                    v.selected = vec![i];
-                }
-                let kind = match v.tool {
-                    Tool::Pointer => {
-                        zone(&notes[i], pt.x).map_or(DragKind::Pointer, DragKind::Edge)
-                    }
-                    Tool::Vibrato => DragKind::Value(Tool::Vibrato),
-                    Tool::Volume => DragKind::Value(Tool::Volume),
-                    other => DragKind::Value(other),
-                };
-                v.drag = Some(Drag {
-                    kind,
-                    from: pt,
-                    before: notes.clone(),
-                    note: i,
-                });
-            }
-        }
-    }
-
-    if let (Some(d), Some(pt)) = (v.drag.as_mut(), resp.interact_pointer_pos()) {
-        let delta = pt - d.from;
-        if d.kind == DragKind::Pointer && delta.length() > 4.0 {
-            d.kind = if delta.y.abs() > delta.x.abs() {
-                DragKind::Pitch
-            } else {
-                DragKind::Time
-            };
-        }
-        let mut list = d.before.clone();
-        let free = modifiers.shift || modifiers.alt;
-        let grid = if v.grid > 0.0 { v.grid } else { 0.25 };
-        let snap_time = |sec: f64| clock.secs((clock.beat(sec) / grid).round() * grid);
-        match d.kind {
-            DragKind::Pointer | DragKind::Value(Tool::Scissors) | DragKind::Value(Tool::Join) => {}
-            DragKind::Pitch => {
-                move_pitch(
-                    &mut list,
-                    &d.before,
-                    &v.selected,
-                    -delta.y / row_h,
-                    v.snap,
-                    fifths,
-                    free,
-                );
-            }
-            DragKind::Time => {
-                let snap: Option<&dyn Fn(f64) -> f64> = if free || v.grid <= 0.0 {
-                    None
-                } else {
-                    Some(&snap_time)
-                };
-                move_time(
-                    &mut list,
-                    &d.before,
-                    &v.selected,
-                    f64::from(delta.x / zoom),
-                    snap,
-                    duration,
-                );
-            }
-            DragKind::Edge(edge) => {
-                let n = d.before[d.note];
-                let at = match edge {
-                    Edge::Start => n.new_start,
-                    Edge::End => n.new_end,
-                } + f64::from(delta.x / zoom);
-                let at = if free || v.grid <= 0.0 {
-                    at
-                } else {
-                    snap_time(at)
-                };
-                stretch(&mut list, &d.before, d.note, edge, at, duration);
-            }
-            DragKind::Value(tool) => {
-                drag_value(&mut list, &d.before, &v.selected, tool, -delta.y);
-            }
-            DragKind::Hotspot(spot) => {
-                drag_hotspot(&mut list, &d.before, &v.selected, spot, -delta.y, row_h);
-            }
-        }
-        v.preview = Some(list);
-    }
-
-    if resp.drag_stopped() {
-        if let Some(list) = v.preview.take() {
-            if list != notes {
-                commit_notes = Some(list);
-            }
-        }
-        v.drag = None;
-    }
-
-    let target_notes: Vec<usize> = if v.selected.is_empty() {
-        (0..notes.len()).collect()
-    } else {
-        v.selected.clone()
-    };
-    if correct && pitched {
-        let mut list = notes.clone();
-        for &i in &target_notes {
-            if let Some(n) = list.get_mut(i) {
-                if n.pitch > 0.0 {
-                    let target = quantize_to_scale(n.heard(), v.scale_root, v.scale_idx);
-                    n.shift += (target - n.heard()) * v.centre;
-                }
-            }
-        }
-        commit_notes = Some(list);
-    }
-    if quantize && v.grid > 0.0 {
-        let mut list = notes.clone();
-        let grid = v.grid;
-        let to_grid = |sec: f64| clock.secs((clock.beat(sec) / grid).round() * grid);
-        quantize_time(
-            &mut list,
-            &target_notes,
-            &to_grid,
-            f64::from(v.strength),
-            duration,
-        );
-        commit_notes = Some(list);
-    }
-    if let Some(new_db) = apply_gain_db {
-        let mut list = notes.clone();
-        for &i in &target_notes {
-            if let Some(n) = list.get_mut(i) {
-                n.gain_db = new_db.clamp(-24.0, 24.0);
-            }
-        }
-        commit_notes = Some(list);
-    }
-    v.selected.retain(|i| *i < notes.len() + 1);
-
-    // ---- Draw Flex Pitch Note Beams, Continuous Pitch Curve & 6 Hotspots
-    let gp = ui.painter_at(plot);
-    let shown: Vec<NoteEdit> = v.preview.clone().unwrap_or(notes);
-    let track = &found.track;
-    let changes: Vec<NoteChange> = shown.iter().map(NoteEdit::change).collect();
-    let curve = note_render::targets_with(track, &changes, pitched);
-
-    if v.show_flex || flex_mode == FlexMode::FlexPitch {
-        let mut prev_tail: Option<(f64, Pos2)> = None;
-        for (i, n) in shown.iter().enumerate() {
-            let (x0, x1) = (x_of(n.new_start), x_of(n.new_end));
-            if x1 < plot.left() || x0 > plot.right() {
-                prev_tail = None;
-                continue;
-            }
-            let sel = v.selected.contains(&i);
-            let hov = hovered_note == Some(i);
-            let yc = y_of(row_of(n));
-            let hh = (row_h * 0.44).clamp(5.0, 12.0);
-            let beam = Rect::from_min_max(pos2(x0, yc - hh), pos2(x1.max(x0 + 4.0), yc + hh));
-
-            gp.rect_filled(beam, 3.0, if sel { BLOB_SEL } else { BLOB });
-            gp.rect_stroke(
-                beam,
-                3.0,
-                Stroke::new(
-                    if sel { 1.5 } else { 1.0 },
-                    if sel { Color32::WHITE } else { BLOB_BORDER },
-                ),
-                egui::StrokeKind::Inside,
-            );
-
-            // Continuous detected/edited pitch curve
-            if pitched {
-                let (fa, fb) = (
-                    PitchTrack::frame_at(n.start),
-                    PitchTrack::frame_at(n.end).min(track.len()),
-                );
-                let line_pts: Vec<Pos2> = (fa..fb)
-                    .filter_map(|f| {
-                        let m = track.midi(f)?;
-                        let ratio = curve.ratio.get(f).copied().unwrap_or(1.0);
-                        let m = m + 12.0 * ratio.log2();
-                        Some(pos2(x_of(n.place(PitchTrack::time_of(f))), y_of(m)))
-                    })
-                    .collect();
-                if let (Some((prev_end, prev_pt)), Some(&first_pt)) = (prev_tail, line_pts.first())
-                {
-                    if (n.new_start - prev_end).abs() < 0.15 {
-                        gp.line_segment(
-                            [prev_pt, first_pt],
-                            Stroke::new(1.2, CURVE.gamma_multiply(0.7)),
-                        );
-                    }
-                }
-                for w in line_pts.windows(2) {
-                    if (w[1].x - w[0].x).abs() < 12.0 {
-                        gp.line_segment([w[0], w[1]], Stroke::new(1.5, CURVE));
-                    }
-                }
-                prev_tail = line_pts.last().map(|&pt| (n.new_end, pt));
-            }
-
-            // 6 interactive hotspots on selected or hovered note (manual p. 487)
-            if sel || hov {
-                for (hs, pos) in hotspot_positions(n) {
-                    let active_hs = hovered_hotspot == Some((i, hs))
-                        || v.drag
-                            .as_ref()
-                            .is_some_and(|d| d.kind == DragKind::Hotspot(hs) && d.note == i);
-                    gp.circle_filled(
-                        pos,
-                        if active_hs { 4.2 } else { 3.2 },
-                        if active_hs {
-                            Color32::from_rgb(0x51, 0xee, 0xfc)
-                        } else {
-                            Color32::from_rgb(0x6e, 0x76, 0x85)
-                        },
-                    );
-                    gp.circle_stroke(
-                        pos,
-                        if active_hs { 4.2 } else { 3.2 },
-                        Stroke::new(1.0, Color32::from_rgb(0xd8, 0xdc, 0xe4)),
-                    );
-                }
-            }
-        }
-    }
-
-    // Floating drag tooltip (e.g., Formant Shift, Fine Pitch, Pitch: D3)
-    if let (Some(d), Some(pt)) = (v.drag.as_ref(), pointer) {
-        if let Some(n) = shown.get(d.note) {
-            let tip = match d.kind {
-                DragKind::Hotspot(hs) => match hs {
-                    Hotspot::DriftStart | Hotspot::DriftEnd => {
-                        format!("{}: {:.0}%", hs.label(), n.drift * 100.0)
-                    }
-                    Hotspot::Vibrato => format!("Vibrato: {:.0}%", n.modulation * 100.0),
-                    Hotspot::Gain => format!("Gain: {:+.1} dB", n.gain_db),
-                    Hotspot::FinePitch => {
-                        let cents = ((n.heard() - n.heard().round()) * 100.0).round();
-                        format!("Fine Pitch: {cents:+.0} ct")
-                    }
-                    Hotspot::FormantShift => format!("Formant Shift: {:+.1} st", n.formant),
-                },
-                DragKind::Pitch => format!("Pitch: {}", note_name(n.heard())),
-                _ => String::new(),
-            };
-            if !tip.is_empty() {
-                let tip_r = Rect::from_min_size(
-                    pt + egui::vec2(12.0, 14.0),
-                    egui::vec2((tip.len() as f32 * 6.8 + 14.0).max(90.0), 22.0),
-                );
-                gp.rect_filled(
-                    tip_r,
-                    4.0,
-                    Color32::from_rgba_unmultiplied(0x16, 0x16, 0x1a, 230),
-                );
-                gp.rect_stroke(
-                    tip_r,
-                    4.0,
-                    Stroke::new(1.0, Color32::from_rgb(0x45, 0x45, 0x50)),
-                    egui::StrokeKind::Inside,
-                );
-                gp.text(
-                    tip_r.center(),
-                    egui::Align2::CENTER_CENTER,
-                    tip,
-                    FontId::proportional(11.0),
-                    Color32::WHITE,
-                );
-            }
-        }
-    }
+    // Flex Pitch editor removed for drop-in replacement; Audio Track Editor shell preserved.
+    let _ = (
+        &analysis,
+        &notes,
+        &clock,
+        &file,
+        &row_of,
+        m_of(plot.top()),
+        create_midi_cmd,
+        join_cmd,
+        correct,
+        quantize,
+        apply_gain_db,
+    );
+    ui.allocate_rect(plot, Sense::hover());
+    ui.painter_at(plot).text(
+        plot.center(),
+        egui::Align2::CENTER_CENTER,
+        "Flex Pitch editor removed — ready for drop-in replacement",
+        FontId::proportional(13.0),
+        DIM,
+    );
 
     // Playhead & interactive ruler scrubbing
     if time_resp.hovered() {
@@ -2493,31 +2118,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     // Status line
     let status = Rect::from_min_max(pos2(canvas.left(), plot.bottom()), canvas.max);
     g.rect_filled(status, 0.0, Color32::from_rgb(0x16, 0x17, 0x1a));
-    let text = match v.selected.as_slice() {
-        [] => trf("{} notes", &[&shown.len()]),
-        [i] => match shown.get(*i) {
-            Some(n) => {
-                let pitch = if n.pitch > 0.0 {
-                    let cents = ((n.heard() - n.heard().round()) * 100.0).round();
-                    format!("{} {cents:+.0} ct", note_name(n.heard()))
-                } else {
-                    format!("{:+.2} st", n.shift)
-                };
-                trf(
-                    "{}  ·  drift {} %  ·  modulation {} %  ·  formant {} st  ·  {} dB",
-                    &[
-                        &pitch,
-                        &format!("{:.0}", n.drift * 100.0),
-                        &format!("{:.0}", n.modulation * 100.0),
-                        &format!("{:+.1}", n.formant),
-                        &format!("{:+.1}", n.gain_db),
-                    ],
-                )
-            }
-            None => String::new(),
-        },
-        many => trf("{} notes selected", &[&many.len()]),
-    };
     let busy = if s.flex.busy() {
         format!("  ·  {}", tr("rendering…"))
     } else {
@@ -2526,18 +2126,15 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     g.text(
         pos2(status.left() + 8.0, status.center().y),
         egui::Align2::LEFT_CENTER,
-        format!("{text}{busy}"),
+        format!("Audio Track Editor{busy}"),
         FontId::proportional(11.0),
         TEXT,
     );
-    if let Some(list) = commit_notes {
-        commit(p, t, r, algorithm, list);
-    }
 }
 
 /// Renders and handles interactive Flex Pitch deviation bars (`±0.50` semitones) over an
 /// audio region in the Tracks Area when Flex Pitch is active on the track (manual pp. 488-489).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unreachable_code)]
 pub(crate) fn tracks_pitch_overlay(
     ui: &mut Ui,
     g: &egui::Painter,
@@ -2547,6 +2144,9 @@ pub(crate) fn tracks_pitch_overlay(
     body_rect: Rect,
     x_of: &dyn Fn(f64) -> f32,
 ) {
+    let _ = (ui, g, p, ti, ri, body_rect, x_of);
+    // Flex Pitch editor removed for drop-in replacement.
+    return;
     let Some(track_ref) = p.tracks.get(ti) else {
         return;
     };
@@ -2790,6 +2390,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Flex Pitch editor pulled out for drop-in replacement"]
     fn the_editor_drags_a_note_up_a_minor_third_and_draws_readably() {
         use crate::ui_test::Harness;
         let dir = tempfile::tempdir().unwrap();

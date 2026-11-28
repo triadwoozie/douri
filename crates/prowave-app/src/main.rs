@@ -1934,8 +1934,9 @@ impl eframe::App for App {
             .exact_size(58.0)
             .frame(egui::Frame::new().fill(crate::theme::CHROME_BG))
             .show(ui, |ui| transport::control_bar(ui, p, s, master_peaks));
-        let opaque_panel_frame =
-            egui::Frame::side_top_panel(ui.style()).fill(egui::Color32::from_rgb(28, 28, 30));
+        let opaque_panel_frame = egui::Frame::side_top_panel(ui.style())
+            .fill(egui::Color32::from_rgb(28, 28, 30))
+            .inner_margin(egui::Margin::ZERO);
         if s.show_library {
             let library_frame = egui::Frame::new()
                 .fill(egui::Color32::from_rgb(0x18, 0x18, 0x1a))

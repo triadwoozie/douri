@@ -323,6 +323,8 @@ pub struct TracksView {
     /// A Pencil drag in progress: the (track, region) it is drawing.
     pub pencil_drag: Option<(usize, usize)>,
     pub catch: bool,
+    pub was_playing: bool,
+    pub catch_jump: bool,
     pub show_tempo: bool,
     pub show_markers: bool,
     pub selected_marker: Option<usize>,
@@ -563,6 +565,8 @@ impl Default for TracksView {
             drag_origin: None,
             pencil_drag: None,
             catch: true,
+            was_playing: false,
+            catch_jump: false,
             show_tempo: false,
             show_markers: false,
             selected_marker: None,
@@ -1281,6 +1285,9 @@ fn toolbar(ui: &Ui, p: &mut Project, s: &mut UiState, bar: Rect, lanes_w: f32) {
     let r = Rect::from_center_size(pos2(x + 69.0, cy), vec2(26.0, 20.0));
     if icon_button(ui, &g, r, "catch", v.catch, draw_catch_icon).clicked() {
         v.catch = !v.catch;
+        if v.catch {
+            v.catch_jump = true;
+        }
     }
     let left_end = x + 90.0;
 
@@ -3441,8 +3448,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     let pointer_in_lanes = hover
         .or_else(|| ui.input(|i| i.pointer.interact_pos()))
         .is_some_and(|pt| lanes.contains(pt) || headers.contains(pt));
+    if !v.was_playing && p.playing {
+        v.catch = true;
+    }
+    v.was_playing = p.playing;
+
     if middle_down && pointer_in_lanes {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if middle_delta.x != 0.0 && p.playing {
+            v.catch = false;
+            v.zoom.scroll_in_play = false;
+        }
         v.scroll_x = (v.scroll_x - middle_delta.x).max(0.0);
         v.scroll_y = (v.scroll_y - middle_delta.y).max(0.0);
     }
@@ -3454,8 +3470,17 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
         if crate::arrange_zoom::wheel_zoom(p, v, lanes, pt, (delta, zoom, mods)) {
             // the zoom took the wheel
         } else if mods.shift {
-            v.scroll_x -= delta.y + delta.x;
+            let dx = delta.y + delta.x;
+            if dx != 0.0 && p.playing {
+                v.catch = false;
+                v.zoom.scroll_in_play = false;
+            }
+            v.scroll_x -= dx;
         } else {
+            if delta.x != 0.0 && p.playing {
+                v.catch = false;
+                v.zoom.scroll_in_play = false;
+            }
             v.scroll_x -= delta.x;
             v.scroll_y -= delta.y;
         }
@@ -3468,6 +3493,13 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
     v.scroll_x = v.scroll_x.clamp(0.0, 1000.0 * v.bar_w);
 
     let beat_px = v.bar_w / bpb as f32;
+    if v.catch_jump {
+        v.catch_jump = false;
+        let px = p.position_beats as f32 * beat_px - v.scroll_x;
+        if px > lanes.width() - 30.0 || px < 0.0 {
+            v.scroll_x = (p.position_beats as f32 * beat_px - lanes.width() * 0.1).max(0.0);
+        }
+    }
     // Scroll in Play: the playhead stays in the middle and the song moves; else Catch: page
     // the view when the playhead leaves it.
     if let Some(x) = crate::arrange_zoom::scroll_in_play(p, v, beat_px) {
