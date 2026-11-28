@@ -2469,7 +2469,9 @@ impl App {
                 ui.set_width(380.0);
                 ui.heading("Dōri");
                 ui.add_space(6.0);
-                ui.label(i18n::tr("Pro-Wave settings were found on this computer."));
+                ui.label(i18n::tr(
+                    "Settings from Pro-Wave or an older version of Dōri were found on this computer.",
+                ));
                 ui.label(i18n::tr(
                     "Do you want to import your recent projects, audio preferences, and settings into Dōri?",
                 ));
@@ -2502,7 +2504,9 @@ impl App {
             if let Ok(n) = recent_files::migrate_from_prowave() {
                 self.ui.recent = recent_files::Recent::load();
                 self.ui.ui_scale = ui_scale::load();
-                self.ui.status = Some(format!("Migrated {n} settings file(s) from Pro-Wave."));
+                self.ui.status = Some(format!(
+                    "Migrated {n} settings file(s) from Pro-Wave / older Dōri."
+                ));
             }
         } else if self.ui.migrate_dont_show_again {
             recent_files::dismiss_migration();
