@@ -1845,30 +1845,20 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         pos2(canvas.left(), plot.top()),
         pos2(plot.left(), plot.bottom()),
     );
-    g.rect_filled(ruler_rect, 0.0, Color32::from_rgb(0x16, 0x17, 0x1a));
+    g.rect_filled(ruler_rect, 0.0, Color32::from_rgb(0xe4, 0xe6, 0xeb));
+    const WHITE: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
+    // Pass 1: semitone lane backgrounds + natural key dividers
     for m in lo_m..=hi_m {
         let y0 = y_of(m as f32 + 0.5);
         let row = Rect::from_min_max(pos2(plot.left(), y0), pos2(plot.right(), y0 + row_h));
-        const WHITE: [i32; 7] = [0, 2, 4, 5, 7, 9, 11];
-        let is_white = WHITE.contains(&m.rem_euclid(12));
+        let pc = m.rem_euclid(12);
+        let is_white = WHITE.contains(&pc);
         g.rect_filled(
             row.intersect(plot),
             0.0,
             if is_white { ROW_IN } else { ROW_OUT },
         );
-        // Piano key in ruler
-        let key_r =
-            Rect::from_min_max(pos2(canvas.left(), y0), pos2(plot.left() - 1.0, y0 + row_h));
-        g.rect_filled(
-            key_r.intersect(ruler_rect),
-            0.0,
-            if is_white {
-                Color32::from_rgb(0xd4, 0xd6, 0xdc)
-            } else {
-                Color32::from_rgb(0x28, 0x2a, 0x30)
-            },
-        );
-        if m.rem_euclid(12) == 0 && pitched {
+        if pc == 0 && pitched {
             g.line_segment(
                 [
                     pos2(plot.left(), y0 + row_h),
@@ -1876,15 +1866,64 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                 ],
                 Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3d, 0x46)),
             );
+        }
+        // Key separator lines across the full white-key bed
+        let sep_y = if matches!(pc, 0 | 5) {
+            Some(y0 + row_h) // bottom of C (above B) and F (above E)
+        } else if !is_white {
+            Some(y0 + row_h * 0.5) // midpoint under each black key
+        } else {
+            None
+        };
+        if let Some(sy) = sep_y {
+            if sy >= ruler_rect.top() && sy <= ruler_rect.bottom() {
+                g.line_segment(
+                    [
+                        pos2(ruler_rect.left(), sy),
+                        pos2(ruler_rect.right() - 1.0, sy),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgb(0x9a, 0xa0, 0xa8)),
+                );
+            }
+        }
+    }
+    // Pass 2: raised dark black keys (left 60% of keyboard) + crisp C2..C6 octave labels
+    let black_w = (ruler_rect.width() * 0.60).round();
+    for m in lo_m..=hi_m {
+        let y0 = y_of(m as f32 + 0.5);
+        let pc = m.rem_euclid(12);
+        if !WHITE.contains(&pc) {
+            let black_r = Rect::from_min_max(
+                pos2(ruler_rect.left(), y0 + 0.5),
+                pos2(ruler_rect.left() + black_w, y0 + row_h - 0.5),
+            )
+            .intersect(ruler_rect);
+            if black_r.height() > 1.0 {
+                g.rect_filled(black_r, 1.5, Color32::from_rgb(0x1a, 0x1a, 0x1e));
+                g.rect_stroke(
+                    black_r,
+                    1.5,
+                    Stroke::new(1.0, Color32::from_rgb(0x0c, 0x0c, 0x0f)),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        } else if pc == 0 && pitched {
             g.text(
-                pos2(canvas.left() + 4.0, y_of(m as f32)),
-                egui::Align2::LEFT_CENTER,
+                pos2(ruler_rect.right() - 4.0, y_of(m as f32)),
+                egui::Align2::RIGHT_CENTER,
                 note_name(m as f32),
-                FontId::proportional((row_h * 0.72).clamp(8.5, 11.0)),
-                Color32::from_rgb(0x20, 0x20, 0x24),
+                FontId::proportional((row_h * 0.65).clamp(8.5, 11.0)),
+                Color32::from_rgb(0x28, 0x2a, 0x30),
             );
         }
     }
+    g.line_segment(
+        [
+            pos2(ruler_rect.right() - 1.0, ruler_rect.top()),
+            pos2(ruler_rect.right() - 1.0, ruler_rect.bottom()),
+        ],
+        Stroke::new(1.0, Color32::from_rgb(0x3a, 0x3d, 0x46)),
+    );
 
     // Time ruler, Region Title Strip & beat grid
     g.rect_filled(time_ruler_rect, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x20));
@@ -1946,7 +1985,7 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
         if !peaks.is_empty() && duration > 0.0 {
             let gp = ui.painter_at(plot);
             let mid_y = plot.center().y;
-            let amp_h = plot.height() * 0.38;
+            let amp_h = (plot.height() * 0.25).clamp(28.0, 56.0);
             let px_step = 2.0f32;
             let mut x = plot.left();
             while x < plot.right() {

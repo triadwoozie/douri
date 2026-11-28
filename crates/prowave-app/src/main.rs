@@ -2074,9 +2074,14 @@ impl eframe::App for App {
             } else if s.bottom == Bottom::SessionPlayer {
                 420.0
             } else if s.bottom == Bottom::PitchEditor {
-                260.0
+                240.0
             } else {
                 160.0
+            };
+            let max_h = if s.bottom == Bottom::PitchEditor {
+                (room * 0.75).max(420.0)
+            } else {
+                (room * 0.85).max(540.0)
             };
             let panel_id = match s.bottom {
                 Bottom::Mixer => "bottom_mixer",
@@ -2088,11 +2093,11 @@ impl eframe::App for App {
             let panel = egui::Panel::bottom(panel_id)
                 .resizable(true)
                 .min_size(min_h)
-                .max_size((room * 0.85).max(540.0))
+                .max_size(max_h)
                 .default_size(match s.bottom {
                     Bottom::MacroControls => 260.0,
                     Bottom::SessionPlayer => 460.0,
-                    Bottom::PitchEditor => 340.0,
+                    Bottom::PitchEditor => 360.0,
                     _ => 240.0,
                 })
                 .frame(opaque_panel_frame);
