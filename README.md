@@ -145,6 +145,9 @@ Dōri is free software licensed under the **GNU General Public License v3.0 or l
 - **[Phosphor Icons](https://phosphoricons.com/)** (MIT License, Helena Zhang & Tobias Fried): Vector studio icons via `phosphor-egui`.
 - **[JackMechem/marbble](https://github.com/JackMechem/marbble)** (MIT License, Copyright (c) 2026 Jack Mechem): 17 built-in DSP effects, plug-in delay compensation (PDC), six vintage/modern synthesizers (`Tre`, `Sei`, `Cinque`, `Uno`, `Sedici`, `Onda`), Marbble Sampler, denormal/NaN audio guards, and floating panel bridge.
 - **[facebookresearch/demucs](https://github.com/facebookresearch/demucs)** (MIT License, Meta Platforms, Inc.): HTDemucs neural stem separation integration and ONNX stem model compatibility.
+- **[SessionLoops/PitchNet](https://github.com/SessionLoops/PitchNet)** (AGPLv3, Session Loops & HachiTune contributors): External VST3 / standalone vocal pitch editor integration.
+- **[aubio/aubio](https://github.com/aubio/aubio)** (GPL-3.0, Paul Brossier): Fast YIN pitch estimation and spectral-flux onset detection algorithms (`audio_cleanup.rs`).
+- **[audacity/audacity](https://github.com/audacity/audacity)** (GPL-2.0/3.0, Audacity Team): DC offset removal, click removal, and spectral noise reduction DSP (`audio_cleanup.rs`).
 
 See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) for full attributions and [`LICENSE`](LICENSE) for complete license terms.
 

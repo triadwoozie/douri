@@ -4252,15 +4252,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState, meters: &crate::mixer
                 ti as u32 * 77 + ri as u32 * 13 + 3,
                 v.waveform_display,
             );
-            if tr.kind == TrackKind::Audio
-                && tr.params.flex_mode == Some(prowave_engine::FlexMode::FlexPitch)
-            {
-                let body_r =
-                    Rect::from_min_max(pos2(rr.left(), (rr.top() + 18.0).min(rr.bottom())), rr.max);
-                if body_r.height() > 14.0 && body_r.width() > 8.0 {
-                    crate::pitch_editor::tracks_pitch_overlay(ui, &g, p, ti, ri, body_r, &x_of);
-                }
-            }
         }
     }
     // Ghost preview of Alt/Option copy or cross-track move

@@ -11,6 +11,7 @@
 static ALLOC_GUARD: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 mod analysis;
+pub mod audio_cleanup;
 pub mod auto_pan;
 pub mod bass808;
 pub mod calibration;

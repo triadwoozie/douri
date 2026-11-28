@@ -74,6 +74,21 @@ Dōri builds upon and incorporates open-source software, artwork, and resources 
 - **License**: MIT License
 - **Description**: Hybrid Transformer Demucs (HTDemucs) neural stem separation and ONNX model compatibility for Dōri's Stem Splitter (`stems.rs`).
 
+- **Project**: PitchNet ([SessionLoops/PitchNet](https://github.com/SessionLoops/PitchNet))
+- **Copyright**: (c) 2026 Session Loops and HachiTune contributors
+- **License**: GNU Affero General Public License v3.0 (AGPLv3)
+- **Description**: External VST3 / standalone vocal pitch editor integration in Dōri's Audio Track Editor (`pitch_editor.rs`).
+
+- **Project**: aubio ([aubio/aubio](https://github.com/aubio/aubio))
+- **Copyright**: (c) Paul Brossier and contributors
+- **License**: GNU General Public License v3.0 (GPLv3)
+- **Description**: Fast YIN pitch estimation (`pitchyinfast`) and spectral-flux onset detection (`onset`) ported to Rust (`crates/prowave-engine/src/audio_cleanup.rs`).
+
+- **Project**: Audacity ([audacity/audacity](https://github.com/audacity/audacity))
+- **Copyright**: (c) Audacity Team and contributors
+- **License**: GNU General Public License v2.0 / v3.0 (GPLv2/v3)
+- **Description**: DC offset removal, click removal, and spectral noise reduction DSP ported to Rust (`crates/prowave-engine/src/audio_cleanup.rs`).
+
 - **Artwork**: Dōri 3D Studio App Icon & Custom Artwork
 - **Creator**: triadwoozie
 - **Description**: Blender-rendered high-resolution application icon and 3D studio visual assets.
