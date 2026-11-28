@@ -1385,22 +1385,15 @@ pub fn get_or_create_asset_audio(
             installed.main_file.clone(),
         ];
         for cand in &candidates {
-            if cand.is_file() {
-                if cand.extension().is_some_and(|e| {
-                    e.eq_ignore_ascii_case("wav")
-                        || e.eq_ignore_ascii_case("flac")
-                        || e.eq_ignore_ascii_case("ogg")
-                        || e.eq_ignore_ascii_case("aiff")
-                }) {
-                    if let Ok(sd) = prowave_engine::sample_file::read_sample(cand) {
-                        let mut inter = Vec::with_capacity(sd.frames.len() * 2);
-                        for f in &sd.frames {
-                            inter.push(f[0]);
-                            inter.push(f[1]);
-                        }
-                        loaded_audio = Some((inter, sd.sample_rate));
-                        break;
+            if cand.is_file() && crate::import::is_audio_path(cand) {
+                if let Ok(sd) = prowave_engine::sample_file::read_sample(cand) {
+                    let mut inter = Vec::with_capacity(sd.frames.len() * 2);
+                    for f in &sd.frames {
+                        inter.push(f[0]);
+                        inter.push(f[1]);
                     }
+                    loaded_audio = Some((inter, sd.sample_rate));
+                    break;
                 }
             }
         }

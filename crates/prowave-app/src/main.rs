@@ -925,7 +925,7 @@ impl App {
                 i18n::tr("Audio File…"),
                 &[
                     "wav", "wave", "aif", "aiff", "aifc", "flac", "mp3", "caf", "ogg", "oga",
-                    "m4a", "mp4",
+                    "opus", "m4a", "mp4",
                 ],
             )
             .pick_file()
@@ -1803,15 +1803,7 @@ impl eframe::App for App {
                 self.open(&path, &ctx);
                 continue;
             }
-            let is_audio = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|ext| {
-                    matches!(
-                        ext.to_ascii_lowercase().as_str(),
-                        "wav" | "aif" | "aiff" | "flac" | "mp3" | "ogg" | "m4a" | "caf" | "opus"
-                    )
-                });
+            let is_audio = import::is_audio_path(&path);
             if over_headers && is_audio {
                 let name = path
                     .file_stem()

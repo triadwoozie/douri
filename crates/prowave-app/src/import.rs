@@ -20,6 +20,7 @@ pub fn is_audio_path(path: &Path) -> bool {
                 | "caf"
                 | "ogg"
                 | "oga"
+                | "opus"
                 | "m4a"
                 | "mp4"
         )
@@ -170,5 +171,35 @@ mod tests {
         import_audio_at(&mut p, &wav, Some(audio_idx), Some(8.0), &ctx).unwrap();
         assert_eq!(p.tracks[audio_idx].regions.len(), 1);
         assert!((p.tracks[audio_idx].regions[0].start_bar - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn audio_formats_case_insensitive_and_flac_wav_decode() {
+        for ext in [
+            "wav", "WAV", "flac", "FLAC", "ogg", "OGG", "aif", "AIF", "aiff", "AIFF", "mp3", "MP3",
+            "m4a", "M4A", "opus", "OPUS",
+        ] {
+            let p = std::path::PathBuf::from(format!("loop.{ext}"));
+            assert!(is_audio_path(&p), "expected {ext} to be accepted");
+        }
+        assert!(!is_audio_path(Path::new("project.douri")));
+
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("float32.WAV");
+        let flac = dir.path().join("test.FLAC");
+        let mono = vec![0.25f32; 4_800];
+        prowave_engine::stems::write_wav_stereo(&wav, &mono, &mono, 48_000).unwrap();
+        let stereo = vec![0.25f32; 9_600];
+        prowave_engine::write_flac(&flac, &stereo, 48_000).unwrap();
+
+        let ctx = egui::Context::default();
+        let mut p = Project::empty();
+        import_audio(&mut p, &wav, &ctx).unwrap();
+        import_audio(&mut p, &flac, &ctx).unwrap();
+        let last = p.tracks.len() - 1;
+        let wav_af = &p.tracks[last - 1].regions[0].audio.as_ref().unwrap().file;
+        let flac_af = &p.tracks[last].regions[0].audio.as_ref().unwrap().file;
+        assert_eq!((wav_af.sample_rate, wav_af.channels), (48_000, 2));
+        assert_eq!((flac_af.sample_rate, flac_af.channels), (48_000, 2));
     }
 }
