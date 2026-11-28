@@ -42,8 +42,8 @@ const BLOCKS_PER_SERVICE: usize = 8;
 const RELEASE_AFTER: Duration = Duration::from_secs(30);
 // Imports must not drain an unbounded queue before active clips get a refill.
 const MESSAGES_PER_SERVICE: usize = 8;
-// Native-rate frames retained ahead of the next reverse block (~64 KiB stereo).
-const REVERSE_CACHE_FRAMES: u64 = 8192;
+// Native-rate frames retained ahead of the next reverse block (~512 KiB stereo).
+const REVERSE_CACHE_FRAMES: u64 = 65_536;
 const MAX_SAMPLE_RATE: u32 = 192_000;
 const MAX_CHANNELS: usize = 64;
 
@@ -581,9 +581,13 @@ impl Stream {
 
     fn seek_out(&mut self, frame: u64) {
         self.out_frame = frame.min(self.out_len);
-        let s = self.src_pos(self.out_frame as f64) as u64;
         self.buf.clear();
         self.eof = false;
+        if self.reverse {
+            self.buf_base = 0;
+            return;
+        }
+        let s = self.src_pos(self.out_frame as f64) as u64;
         match self.src.seek(s) {
             Ok(actual) => self.buf_base = actual,
             Err(e) => {
@@ -616,6 +620,9 @@ impl Stream {
     }
 
     fn ensure_reverse_window(&mut self, lo: u64, hi: u64) -> Result<(), AudioError> {
+        if self.src.frames == 0 {
+            return Ok(());
+        }
         // The final interpolation frame may be just beyond EOF; frame() repeats the
         // last source frame there, so it need not trigger another decoder seek.
         let needed_hi = hi.min(self.src.frames.saturating_sub(1));
@@ -623,7 +630,14 @@ impl Stream {
         if lo >= self.buf_base && needed_hi < buffered_end {
             return Ok(());
         }
-        let actual = self.src.seek(lo.saturating_sub(REVERSE_CACHE_FRAMES))?;
+        let mut target = lo.saturating_sub(REVERSE_CACHE_FRAMES);
+        let mut actual = self.src.seek(target)?;
+        // Compressed decoders (MP3/OGG/AAC) can land slightly past `target`; step back until
+        // `actual <= lo` so reverse playback never clamps frames at the start of the block.
+        while actual > lo && target > 0 {
+            target = target.saturating_sub(REVERSE_CACHE_FRAMES);
+            actual = self.src.seek(target)?;
+        }
         self.buf.clear();
         self.buf_base = actual;
         self.eof = false;

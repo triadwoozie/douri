@@ -83,8 +83,9 @@ pub fn apply(ctx: &egui::Context) {
         Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 20));
     v.widgets.active.fg_stroke = Stroke::new(1.0, Color32::from_rgb(0xf5, 0xf5, 0xf7));
 
-    // Selection
-    v.selection.bg_fill = Color32::from_rgba_premultiplied(0x3a, 0x7b, 0xd5, 130);
+    // Selection & slider fill
+    v.slider_trailing_fill = true;
+    v.selection.bg_fill = Color32::from_rgb(0x12, 0x69, 0xcc);
     v.selection.stroke = Stroke::new(1.0, ACCENT_BLUE);
 
     // Corner radius

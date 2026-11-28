@@ -258,10 +258,14 @@ pub fn find_pitchnet_standalone() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut candidates = Vec::new();
     if let Some(h) = home {
+        candidates.push(h.join(".local/bin/pitchnet"));
         candidates.push(h.join(".local/bin/PitchNet"));
+        candidates.push(h.join(".local/share/Session Loops/PitchNet/PitchNet"));
         candidates.push(h.join(".config/douri/plugins/PitchNet"));
     }
+    candidates.push(PathBuf::from("/usr/bin/pitchnet"));
     candidates.push(PathBuf::from("/usr/bin/PitchNet"));
+    candidates.push(PathBuf::from("/usr/local/bin/pitchnet"));
     candidates.push(PathBuf::from("/usr/local/bin/PitchNet"));
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -278,6 +282,7 @@ pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path:
                     .contains("pitchnet")
         })
     }) {
+        s.mixer.plugin_controls = false;
         s.mixer.fx_window = Some((ti, slot));
         s.pitch_ed.pitchnet_status = Some("Opened PitchNet VST3 editor".to_string());
         return;
@@ -293,6 +298,7 @@ pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path:
             tr.inserts
                 .push(Insert::new_hosted(crate::hosted_plugins::add(&info, None)));
             p.song_rev += 1;
+            s.mixer.plugin_controls = false;
             s.mixer.fx_window = Some((ti, slot));
             s.pitch_ed.pitchnet_status = Some("Inserted PitchNet plugin on track".to_string());
             return;
@@ -310,6 +316,7 @@ pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path:
                     tr.inserts
                         .push(Insert::new_hosted(crate::hosted_plugins::add(&info, None)));
                     p.song_rev += 1;
+                    s.mixer.plugin_controls = false;
                     s.mixer.fx_window = Some((ti, slot));
                     s.pitch_ed.pitchnet_status = Some("Loaded PitchNet.vst3".to_string());
                     return;
@@ -999,5 +1006,128 @@ mod tests {
         crate::ui_test::render_png(1120.0, 360.0, 1.0, BG, |ui| show(ui, &mut p, &mut s), &out)
             .unwrap();
         assert!(std::fs::metadata(&out).unwrap().len() > 5_000);
+    }
+
+    #[test]
+    fn audio_editor_panel_resizes_without_snap_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("vocals.wav");
+        let mono: Vec<f32> = (0..24_000)
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 220.0 * i as f32 / 48_000.0).sin())
+            .collect();
+        prowave_engine::stems::write_wav_stereo(&wav, &mono, &mono, 48_000).unwrap();
+        let file = AudioFile::open(&wav).unwrap();
+        let peaks = Arc::new(OnceLock::new());
+        let _ = peaks.set(file.peaks(128).unwrap());
+
+        let mut p = Project::empty();
+        let mut tr = crate::model::Track::new("Vocals", TrackKind::Audio);
+        tr.regions.push(crate::model::Region {
+            name: "Vocals_01".to_string(),
+            start_bar: 1.0,
+            len_bars: 2.0,
+            notes: Vec::new(),
+            controls: Vec::new(),
+            folder: None,
+            generated: None,
+            audio: Some(crate::model::AudioRegion::whole(file, peaks)),
+            missing: None,
+            params: crate::model::RegionParams::default(),
+        });
+        p.tracks.push(tr);
+        p.selected_track = 0;
+        let mut s = UiState::new();
+        s.bottom = Bottom::PitchEditor;
+        s.pitch_ed.region = Some((0, 0));
+        s.tracks.select_only(0, 0);
+
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(1280.0, 800.0));
+        let mut heights = Vec::new();
+        for frame in 0..10 {
+            let mut input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            if frame == 1 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 440.0)));
+                input.events.push(egui::Event::PointerButton {
+                    pos: pos2(400.0, 440.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            } else if frame == 2 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+            } else if frame == 3 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+                input.events.push(egui::Event::PointerButton {
+                    pos: pos2(400.0, 300.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            } else if frame == 5 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 300.0)));
+                input.events.push(egui::Event::PointerButton {
+                    pos: pos2(400.0, 300.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            } else if frame == 6 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 540.0)));
+            } else if frame == 7 {
+                input
+                    .events
+                    .push(egui::Event::PointerMoved(pos2(400.0, 540.0)));
+                input.events.push(egui::Event::PointerButton {
+                    pos: pos2(400.0, 540.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            let mut out = ctx.run_ui(input, |ui| {
+                let room = ui.available_height();
+                let resp = egui::Panel::bottom("bottom_pitch_editor")
+                    .resizable(true)
+                    .min_size(240.0)
+                    .max_size((room * 0.75).max(420.0))
+                    .default_size(360.0)
+                    .show(ui, |ui| show(ui, &mut p, &mut s));
+                heights.push(resp.response.rect.height());
+                egui::CentralPanel::default().show(ui, |_ui| {});
+            });
+            out.textures_delta.clear();
+        }
+        eprintln!("panel heights: {heights:?}");
+        assert!(
+            heights[4] > 450.0 && (heights[9] - 260.0).abs() < 5.0,
+            "expected [4]>450 and [9]~260, got {heights:?}"
+        );
+    }
+
+    #[test]
+    fn pitchnet_vst3_is_discoverable_and_scannable() {
+        if let Some(vst3) = find_pitchnet_vst3() {
+            let scanned = prowave_plugin_host::scan_file(prowave_plugin_host::Format::Vst3, &vst3);
+            eprintln!("pitchnet vst3: {vst3:?} -> {scanned:?}");
+            assert!(scanned.is_ok(), "scan_file failed: {scanned:?}");
+            assert!(
+                !scanned.unwrap().is_empty(),
+                "no plugins found in PitchNet.vst3"
+            );
+        }
     }
 }

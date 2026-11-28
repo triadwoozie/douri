@@ -2078,16 +2078,10 @@ impl eframe::App for App {
                 200.0
             } else if s.bottom == Bottom::SessionPlayer {
                 420.0
-            } else if s.bottom == Bottom::PitchEditor {
-                240.0
             } else {
                 160.0
             };
-            let max_h = if s.bottom == Bottom::PitchEditor {
-                (room * 0.75).max(420.0)
-            } else {
-                (room * 0.85).max(540.0)
-            };
+            let max_h = (room * 0.85).max(540.0);
             let panel_id = match s.bottom {
                 Bottom::Mixer => "bottom_mixer",
                 Bottom::PianoRoll => "bottom_piano_roll",
