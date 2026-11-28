@@ -2004,6 +2004,61 @@ impl eframe::App for App {
                 .show(ui, |ui| event_list::show(ui, p, s));
         }
 
+        if matches!(
+            s.bottom,
+            Bottom::PianoRoll | Bottom::PitchEditor | Bottom::SessionPlayer
+        ) {
+            if let Some(track) = p.tracks.get(p.selected_track) {
+                match track.kind {
+                    model::TrackKind::Audio => {
+                        if s.bottom != Bottom::PitchEditor {
+                            s.bottom = Bottom::PitchEditor;
+                        }
+                        let sel_on_track = s
+                            .tracks
+                            .selected
+                            .filter(|&(t, r)| {
+                                t == p.selected_track
+                                    && track.regions.get(r).is_some_and(|reg| reg.audio.is_some())
+                            })
+                            .map(|(_, r)| r);
+                        let reg_idx = sel_on_track.or_else(|| {
+                            track
+                                .regions
+                                .iter()
+                                .position(|reg| {
+                                    reg.audio.is_some()
+                                        && p.region_start_beats(reg) <= p.position_beats
+                                        && p.region_end_beats(reg) >= p.position_beats
+                                })
+                                .or_else(|| {
+                                    track.regions.iter().position(|reg| reg.audio.is_some())
+                                })
+                        });
+                        if let Some(ri) = reg_idx {
+                            if s.tracks.selected != Some((p.selected_track, ri)) {
+                                s.tracks.select_only(p.selected_track, ri);
+                            }
+                            if s.pitch_ed.region.is_none_or(|(t, _)| t != p.selected_track) {
+                                s.pitch_ed.region = Some((p.selected_track, ri));
+                            }
+                        }
+                    }
+                    model::TrackKind::Drummer => {
+                        if s.bottom == Bottom::PitchEditor {
+                            s.bottom = Bottom::SessionPlayer;
+                        }
+                    }
+                    model::TrackKind::Instrument => {
+                        if s.bottom == Bottom::PitchEditor {
+                            s.bottom = Bottom::PianoRoll;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if s.show_mixer
             || matches!(
                 s.bottom,
@@ -2026,6 +2081,8 @@ impl eframe::App for App {
                 200.0
             } else if s.bottom == Bottom::SessionPlayer {
                 420.0
+            } else if s.bottom == Bottom::PitchEditor {
+                260.0
             } else {
                 160.0
             };
@@ -2043,6 +2100,7 @@ impl eframe::App for App {
                 .default_size(match s.bottom {
                     Bottom::MacroControls => 260.0,
                     Bottom::SessionPlayer => 460.0,
+                    Bottom::PitchEditor => 340.0,
                     _ => 240.0,
                 })
                 .frame(opaque_panel_frame);

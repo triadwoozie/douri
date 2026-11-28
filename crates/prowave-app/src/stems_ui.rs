@@ -70,6 +70,7 @@ pub struct StemSplitterState {
     pub show_advanced: bool,
     pub job_running: bool,
     pub progress: Arc<Mutex<(f32, String)>>,
+    pub progress_bits: Arc<std::sync::atomic::AtomicU32>,
     pub result_rx: Option<mpsc::Receiver<Result<StemSplitOutput, String>>>,
     pub download_running: bool,
     pub download_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
@@ -90,6 +91,7 @@ impl Default for StemSplitterState {
             show_advanced: false,
             job_running: false,
             progress: Arc::new(Mutex::new((0.0, String::new()))),
+            progress_bits: Arc::new(std::sync::atomic::AtomicU32::new(0.0f32.to_bits())),
             result_rx: None,
             download_running: false,
             download_rx: None,
@@ -209,12 +211,12 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .default_width(420.0)
-        .min_width(420.0)
-        .max_width(420.0)
+        .default_width(380.0)
+        .min_width(380.0)
+        .max_width(380.0)
         .show(ctx, |ui| {
-            ui.set_width(392.0);
-            ui.set_max_width(392.0);
+            ui.set_width(352.0);
+            ui.set_max_width(352.0);
 
             // Top header bar: circular X | centered "Stem Splitter" | circular blue checkmark
             ui.horizontal(|ui| {
@@ -492,20 +494,37 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
 
             // Target region & collapsible options
             ui.horizontal(|ui| {
-                if let Some((ti, ri)) = target {
-                    let track_name = &project.tracks[ti].name;
-                    let reg_name = &project.tracks[ti].regions[ri].name;
-                    ui.label(
-                        RichText::new(format!("Region: {track_name} › {reg_name}"))
-                            .size(11.0)
-                            .color(Color32::from_rgb(0x98, 0x98, 0xa2)),
-                    );
-                } else {
-                    ui.colored_label(
-                        Color32::from_rgb(0xff, 0x9b, 0x4a),
-                        "Select or import an audio region first.",
-                    );
-                }
+                let opt_w = 88.0;
+                let label_w = (ui.available_width() - opt_w).max(120.0);
+                ui.allocate_ui_with_layout(
+                    vec2(label_w, 18.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if let Some((ti, ri)) = target {
+                            let track_name = &project.tracks[ti].name;
+                            let reg_name = &project.tracks[ti].regions[ri].name;
+                            let full_text = format!("Region: {track_name} › {reg_name}");
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&full_text)
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0x98, 0x98, 0xa2)),
+                                )
+                                .truncate(),
+                            )
+                            .on_hover_text(full_text);
+                        } else {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new("Select or import an audio region first.")
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0xff, 0x9b, 0x4a)),
+                                )
+                                .truncate(),
+                            );
+                        }
+                    },
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let label = if s.stem_splitter.show_advanced {
                         "Hide Options"
@@ -641,20 +660,35 @@ pub fn show(ctx: &egui::Context, project: &mut Project, s: &mut UiState) {
 
             if s.stem_splitter.job_running {
                 ui.add_space(6.0);
-                let (prog, msg) = s
+                let prog = f32::from_bits(
+                    s.stem_splitter
+                        .progress_bits
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                )
+                .clamp(0.0, 1.0);
+                let msg = s
                     .stem_splitter
                     .progress
                     .lock()
-                    .map(|g| g.clone())
-                    .unwrap_or((0.0, "Separating stems…".to_string()));
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(msg)
-                            .size(11.0)
-                            .color(Color32::from_rgb(0xb8, 0xb8, 0xc0)),
-                    )
-                    .truncate(),
-                );
+                    .map(|g| g.1.clone())
+                    .unwrap_or_else(|_| "Separating stems…".to_string());
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&msg)
+                                .size(11.0)
+                                .color(Color32::from_rgb(0xb8, 0xb8, 0xc0)),
+                        )
+                        .truncate(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("{:.0}%", prog * 100.0))
+                                .size(11.0)
+                                .color(Color32::from_rgb(0x98, 0x98, 0xa2)),
+                        );
+                    });
+                });
                 ui.add_space(3.0);
                 ui.add(
                     egui::ProgressBar::new(prog)
@@ -749,21 +783,32 @@ fn start_stem_split_job(
 
     s.stem_splitter.job_running = true;
     s.stem_splitter.last_error = None;
+    s.stem_splitter
+        .progress_bits
+        .store(0.02f32.to_bits(), std::sync::atomic::Ordering::Relaxed);
     if let Ok(mut g) = s.stem_splitter.progress.lock() {
-        *g = (0.02, "Decoding audio file…".to_string());
+        *g = (0.02, "Decoding audio…".to_string());
     }
 
     let progress_arc = s.stem_splitter.progress.clone();
+    let progress_bits = s.stem_splitter.progress_bits.clone();
     let (tx, rx) = mpsc::channel();
     s.stem_splitter.result_rx = Some(rx);
     let ctx = ctx.clone();
 
     std::thread::spawn(move || {
         let res = (|| -> Result<StemSplitOutput, String> {
-            let (left, right) = read_audio_stereo(&audio_path)?;
+            let (left, right, decoded_sr) = read_audio_stereo(&audio_path)?;
+            let sr = if decoded_sr > 0 {
+                decoded_sr
+            } else {
+                sample_rate
+            };
             let prog_cb = |pct: f32, msg: &str| {
+                let clamped = pct.clamp(0.0, 1.0);
+                progress_bits.store(clamped.to_bits(), std::sync::atomic::Ordering::Relaxed);
                 if let Ok(mut g) = progress_arc.lock() {
-                    *g = (pct, msg.to_string());
+                    *g = (clamped, msg.to_string());
                 }
                 ctx.request_repaint();
             };
@@ -771,14 +816,15 @@ fn start_stem_split_job(
             let stems = separate_stems_with_model(
                 &left,
                 &right,
-                sample_rate,
+                sr,
                 debleed_pct,
                 model_path.as_deref(),
                 Some(&prog_cb),
             )?;
 
+            prog_cb(0.96, "Writing tracks…");
             let recipe = StemRecipe {
-                source_hash: format!("{:x}", frames ^ (sample_rate as u64)),
+                source_hash: format!("{:x}", frames ^ (sr as u64)),
                 start_frame,
                 len_frames,
                 model_id,
@@ -800,6 +846,7 @@ fn start_stem_split_job(
                 )?;
                 stem_paths[i] = Some(wav_path);
             }
+            prog_cb(1.0, "Stem separation complete");
 
             Ok(StemSplitOutput {
                 track_idx: ti,
@@ -968,15 +1015,13 @@ pub fn split_region_stems_in_place(
         .audio
         .as_ref()
         .ok_or_else(|| "Selected region has no audio".to_string())?;
-    let (left, right) = read_audio_stereo(&audio.file.path)?;
-    let stems = separate_stems_with_model(
-        &left,
-        &right,
-        audio.file.sample_rate,
-        debleed_pct,
-        None,
-        None,
-    )?;
+    let (left, right, decoded_sr) = read_audio_stereo(&audio.file.path)?;
+    let sr = if decoded_sr > 0 {
+        decoded_sr
+    } else {
+        audio.file.sample_rate
+    };
+    let stems = separate_stems_with_model(&left, &right, sr, debleed_pct, None, None)?;
 
     let recipe = StemRecipe {
         source_hash: format!("{:x}", audio.file.frames ^ (audio.file.sample_rate as u64)),
@@ -1010,8 +1055,13 @@ pub fn extract_kit_and_groove_to_project(
         .audio
         .as_ref()
         .ok_or_else(|| "Selected region has no audio".to_string())?;
-    let (left, right) = read_audio_stereo(&audio.file.path)?;
-    let stems = separate_stems_with_model(&left, &right, audio.file.sample_rate, 0.0, None, None)?;
+    let (left, right, decoded_sr) = read_audio_stereo(&audio.file.path)?;
+    let sr = if decoded_sr > 0 {
+        decoded_sr
+    } else {
+        audio.file.sample_rate
+    };
+    let stems = separate_stems_with_model(&left, &right, sr, 0.0, None, None)?;
     let (drums_l, drums_r) = &stems.stems[StemKind::Drums as usize];
 
     let kit = extract_drum_kit_and_groove(drums_l, drums_r, audio.file.sample_rate, project.tempo);
@@ -1062,8 +1112,9 @@ pub fn extract_kit_and_groove_to_project(
     ))
 }
 
-fn read_audio_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>), String> {
+fn read_audio_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>, u32), String> {
     let file = AudioFile::open(path).map_err(|e| e.to_string())?;
+    let sr = file.sample_rate;
     let interleaved = file.read_stereo().map_err(|e| e.to_string())?;
     let frames = interleaved.len() / 2;
     let mut left = Vec::with_capacity(frames);
@@ -1072,7 +1123,7 @@ fn read_audio_stereo(path: &Path) -> Result<(Vec<f32>, Vec<f32>), String> {
         left.push(chunk[0]);
         right.push(chunk[1]);
     }
-    Ok((left, right))
+    Ok((left, right, sr))
 }
 
 /// Track Template & FX Chain Preset saved as a `.douri-chain` JSON asset in the Music Library.
@@ -1114,5 +1165,66 @@ impl DouriChainAsset {
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(&path, json).map_err(|e| e.to_string())?;
         Ok(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stem_splitter_modal_truncates_long_region_and_renders_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("long_mix.wav");
+        crate::flex_edit::tests::write_notes(&wav, &[(0.1, 0.5, 60.0)], 0.8);
+        let file = AudioFile::open(&wav).unwrap();
+        let peaks = Arc::new(std::sync::OnceLock::new());
+
+        let mut p = Project::empty();
+        let mut tr = Track::new(
+            "Vocals & Full Mix Master Track With Very Long Name",
+            TrackKind::Audio,
+        );
+        tr.regions.push(Region {
+            name: "Final_Mixdown_v14_48kHz_24bit_Master_Bounce_2026".to_string(),
+            start_bar: 1.0,
+            len_bars: 2.0,
+            notes: Vec::new(),
+            controls: Vec::new(),
+            folder: None,
+            generated: None,
+            audio: Some(AudioRegion::whole(file, peaks)),
+            missing: None,
+            params: RegionParams::default(),
+        });
+        let ti = p.tracks.len();
+        p.tracks.push(tr);
+        p.selected_track = ti;
+
+        let mut s = UiState::new();
+        s.tracks.select_only(ti, 0);
+        s.stem_splitter.open = true;
+        s.stem_splitter.job_running = true;
+        s.stem_splitter
+            .progress_bits
+            .store(0.42f32.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut g) = s.stem_splitter.progress.lock() {
+            *g = (0.42, "Separating stems…".to_string());
+        }
+
+        let out = std::env::var_os("PROWAVE_UI_PNG_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("shot_stem_splitter.png");
+        crate::ui_test::render_png(
+            520.0,
+            520.0,
+            1.0,
+            Color32::from_rgb(0x18, 0x18, 0x1a),
+            |ui| show(ui.ctx(), &mut p, &mut s),
+            &out,
+        )
+        .unwrap();
+        assert!(std::fs::metadata(&out).unwrap().len() > 5_000);
     }
 }

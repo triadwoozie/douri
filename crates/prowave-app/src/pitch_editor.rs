@@ -250,7 +250,7 @@ pub fn from_doc(d: &prowave_project::MelodyDoc) -> Option<MelodyEdit> {
 // ------------------------------------------------------------------ analysis, cached
 
 /// Bumped when the analysis changes, so old cached files are not used.
-const ANALYSIS_VERSION: u32 = 1;
+const ANALYSIS_VERSION: u32 = 2;
 
 type MemoKey = (PathBuf, u64, u64, Algorithm);
 type Memo = Mutex<HashMap<MemoKey, (u64, Arc<NoteAnalysis>)>>;
@@ -1092,6 +1092,9 @@ pub struct PitchView {
     drag: Option<Drag>,
     /// The region the view was last fitted to.
     fitted: Option<(usize, usize, PathBuf)>,
+    /// When true, `Fit` frames the full region; when false (default), an 8-bar active phrase.
+    pub fit_full: bool,
+    fitted_notes: bool,
     error: Arc<Mutex<Option<String>>>,
     /// Where the notes were last drawn.
     pub plot: Rect,
@@ -1114,11 +1117,13 @@ impl Default for PitchView {
             show_flex: true,
             zoom: 120.0,
             scroll: 0.0,
-            row_h: 16.0,
+            row_h: 20.0,
             top: 76.0,
             preview: None,
             drag: None,
             fitted: None,
+            fit_full: false,
+            fitted_notes: false,
             error: Arc::default(),
             plot: Rect::NOTHING,
         }
@@ -1139,13 +1144,45 @@ pub fn open_in(v: &mut PitchView, bottom: &mut Bottom, t: usize, r: usize) {
     *bottom = Bottom::PitchEditor;
 }
 
-/// The audio region the editor shows: the one it was opened on, else the selected one.
+/// The audio region the editor shows: prefers the selected audio track's active/selected region.
 pub fn target(p: &Project, s: &UiState) -> Option<(usize, usize)> {
     let audio = |(t, r): (usize, usize)| {
         p.tracks.get(t).is_some_and(|tr| {
             tr.kind == TrackKind::Audio && tr.regions.get(r).is_some_and(|x| x.audio.is_some())
         })
     };
+    if let Some(tr) = p.tracks.get(p.selected_track) {
+        if tr.kind == TrackKind::Audio {
+            if let Some(sel) = s
+                .tracks
+                .selected
+                .filter(|&(t, _)| t == p.selected_track)
+                .filter(|x| audio(*x))
+            {
+                return Some(sel);
+            }
+            if let Some(reg) = s
+                .pitch_ed
+                .region
+                .filter(|&(t, _)| t == p.selected_track)
+                .filter(|x| audio(*x))
+            {
+                return Some(reg);
+            }
+            if let Some(ri) = tr
+                .regions
+                .iter()
+                .position(|x| {
+                    x.audio.is_some()
+                        && p.region_start_beats(x) <= p.position_beats
+                        && p.region_end_beats(x) >= p.position_beats
+                })
+                .or_else(|| tr.regions.iter().position(|x| x.audio.is_some()))
+            {
+                return Some((p.selected_track, ri));
+            }
+        }
+    }
     s.pitch_ed
         .region
         .filter(|x| audio(*x))
@@ -1421,7 +1458,9 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                     );
                     crate::quick_help::hover(ui.ctx(), &fit_btn, "flex_fit");
                     if fit_btn.clicked() {
+                        v.fit_full = !v.fit_full;
                         v.fitted = None;
+                        v.fitted_notes = false;
                     }
                 });
             });
@@ -1690,30 +1729,63 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
     let v = &mut s.pitch_ed;
     v.plot = plot;
 
-    // Fit the view to the region on open or when Fit is clicked.
-    if v.fitted.as_ref() != Some(&region_key) && plot.width() > 10.0 {
+    // Fit the view to an 8-bar active phrase (or full region when `fit_full`) on open / Fit click.
+    let has_notes = !notes.is_empty();
+    let needs_fit = v.fitted.as_ref() != Some(&region_key) || (has_notes && !v.fitted_notes);
+    if needs_fit && plot.width() > 10.0 {
         v.fitted = Some(region_key.clone());
-        let len = region_secs.clamp(0.5, duration.max(0.5));
-        let target_w = (plot.width() * 0.85).max(40.0);
-        v.zoom = (target_w / len as f32).clamp(10.0, 2000.0);
-        v.scroll = (clock.offset - len * 0.05).max(0.0);
-        let (a, b) = (clock.offset, clock.offset + len);
-        let pitched: Vec<f32> = notes
+        v.fitted_notes = has_notes;
+        let full_len = region_secs.clamp(0.5, duration.max(0.5));
+        let target_w = (plot.width() * 0.88).max(40.0);
+        let (win_start, win_len) = if v.fit_full {
+            ((clock.offset - full_len * 0.04).max(0.0), full_len)
+        } else {
+            let start_beat = p.region_start_beats(region);
+            let eight_bars_secs = (clock.map.seconds_at(start_beat + 32.0)
+                - clock.map.seconds_at(start_beat))
+            .min(full_len)
+            .max(0.5);
+            let anchor = notes
+                .first()
+                .map(|n| n.new_start)
+                .unwrap_or_else(|| clock.secs(p.position_beats).max(clock.offset));
+            let s = (anchor - eight_bars_secs * 0.04).clamp(
+                clock.offset,
+                (clock.offset + full_len - eight_bars_secs).max(clock.offset),
+            );
+            (s.max(0.0), eight_bars_secs)
+        };
+        v.zoom = (target_w / win_len as f32).clamp(10.0, 2000.0);
+        v.scroll = win_start;
+        let (a, b) = (win_start, win_start + win_len);
+        let mut pitched: Vec<f32> = notes
             .iter()
             .filter(|n| n.pitch > 0.0 && n.new_end > a && n.new_start < b)
             .map(NoteEdit::heard)
             .collect();
-        let (lo, hi) = if pitched.is_empty() {
-            (54.0, 66.0)
+        if pitched.is_empty() {
+            pitched = notes
+                .iter()
+                .filter(|n| n.pitch > 0.0)
+                .map(NoteEdit::heard)
+                .collect();
+        }
+        let (lo, hi, center) = if pitched.is_empty() {
+            (54.0, 66.0, 60.0)
         } else {
-            (
-                pitched.iter().copied().fold(f32::MAX, f32::min),
-                pitched.iter().copied().fold(f32::MIN, f32::max),
-            )
+            pitched.sort_by(f32::total_cmp);
+            let med = pitched[pitched.len() / 2];
+            let lo = pitched[0].max(med - 10.0);
+            let hi = pitched[pitched.len() - 1].min(med + 10.0);
+            (lo, hi, med)
         };
         let span = ((hi + 4.0) - (lo - 4.0)).max(10.0);
-        v.row_h = (plot.height() / span).clamp(18.0, 24.0);
-        v.top = (hi + lo) * 0.5 + plot.height() / v.row_h * 0.5;
+        v.row_h = if v.fit_full {
+            (plot.height() / span).clamp(16.0, 24.0)
+        } else {
+            (plot.height() / span).clamp(18.0, 22.0)
+        };
+        v.top = (center + plot.height() / v.row_h * 0.5).clamp(24.0, 108.0);
     }
 
     // Scrolling and cursor-anchored Ctrl+Scroll zooming
@@ -2944,5 +3016,58 @@ mod tests {
         assert_ne!(h1, h3);
         assert_eq!(a3.blobs.len(), 1);
         assert!((a3.blobs[0].pitch - 67.0).abs() < 0.2);
+    }
+
+    #[test]
+    fn flex_pitch_renders_notes_and_inspector_cleanly() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("vocals.wav");
+        crate::flex_edit::tests::write_notes(
+            &wav,
+            &[
+                (0.1, 0.55, 60.0),
+                (0.65, 1.15, 64.0),
+                (1.25, 1.75, 67.0),
+                (1.85, 2.35, 64.0),
+                (2.45, 2.95, 62.0),
+            ],
+            3.2,
+        );
+        let file = AudioFile::open(&wav).unwrap();
+        let _ = analysis_for(&file, Algorithm::Melodic).unwrap();
+        let peaks = Arc::new(std::sync::OnceLock::new());
+        let _ = peaks.set(file.peaks(128).unwrap());
+
+        let mut p = Project::empty();
+        let mut tr = crate::model::Track::new("Vocals", TrackKind::Audio);
+        tr.regions.push(crate::model::Region {
+            name: "Vocals_01".to_string(),
+            start_bar: 1.0,
+            len_bars: 2.0,
+            notes: Vec::new(),
+            controls: Vec::new(),
+            folder: None,
+            generated: None,
+            audio: Some(crate::model::AudioRegion::whole(file, peaks)),
+            missing: None,
+            params: crate::model::RegionParams::default(),
+        });
+        let ti = p.tracks.len();
+        p.tracks.push(tr);
+        p.selected_track = ti;
+
+        let mut s = UiState::new();
+        s.bottom = Bottom::PitchEditor;
+        s.pitch_ed.region = Some((ti, 0));
+        s.pitch_ed.selected = vec![1];
+        s.tracks.select_only(ti, 0);
+
+        let out = std::env::var_os("PROWAVE_UI_PNG_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("shot_flex_pitch.png");
+        crate::ui_test::render_png(1120.0, 360.0, 1.0, BG, |ui| show(ui, &mut p, &mut s), &out)
+            .unwrap();
+        assert!(std::fs::metadata(&out).unwrap().len() > 5_000);
     }
 }

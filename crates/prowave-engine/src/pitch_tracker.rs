@@ -18,7 +18,8 @@ const BIN_CENTS: f64 = 10.0;
 /// How far the pitch may move in one frame without going through the unvoiced state, in bins.
 const MAX_STEP: usize = 25;
 /// Frames quieter than this (dBFS) are not looked at: silence.
-const SILENCE_DB: f32 = -60.0;
+/// Silence floor (dB RMS) below which a frame is unvoiced.
+const SILENCE_DB: f32 = -66.0;
 /// The longest run of frames decoded at once (longer runs are cut at their weakest frame).
 const MAX_CHUNK: usize = 2000;
 
@@ -92,7 +93,7 @@ impl Default for TrackerSettings {
 /// The settings [`track_pitch`] uses (chosen on re-sung real vocals with known notes, see
 /// `examples/note_render_eval.rs`).
 pub const DEFAULT_SETTINGS: TrackerSettings = TrackerSettings {
-    threshold_mean: 0.2,
+    threshold_mean: 0.25,
     no_dip_weight: 0.3,
     octave_ratio: 0.5,
     octave_margin: 0.005,

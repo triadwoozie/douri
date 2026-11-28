@@ -70,9 +70,9 @@ pub struct NoteAnalysis {
 }
 
 /// Bridged: unvoiced gaps inside a note at most this long (s).
-const GAP: f64 = 0.03;
+const GAP: f64 = 0.045;
 /// The shortest note kept (s).
-const SHORTEST: f64 = 0.05;
+const SHORTEST: f64 = 0.04;
 /// How far a consonant before a note may reach back (s).
 const CONSONANT: f64 = 0.15;
 /// Two neighbouring notes closer than this in pitch centre (semitones) are one note.

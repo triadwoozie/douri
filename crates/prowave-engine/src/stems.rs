@@ -178,6 +178,16 @@ fn median_of(buf: &mut [f32]) -> f32 {
 /// `debleed_pct` (0.0..=100.0) sharpens stem separation masks to suppress cross-stem bleed
 /// while preserving phase coherence and partition-of-unity reconstruction.
 pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct: f32) -> StemSet {
+    separate_stems_with_progress(left, right, sample_rate, debleed_pct, None)
+}
+
+pub fn separate_stems_with_progress(
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+    debleed_pct: f32,
+    progress: StemProgress<'_>,
+) -> StemSet {
     let n_frames = left.len().min(right.len());
     if n_frames == 0 {
         return StemSet {
@@ -226,7 +236,14 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
     };
 
     // Forward STFT over center-padded signal
+    let report_step = (num_stft_frames / 32).max(1);
     for t in 0..num_stft_frames {
+        if t % report_step == 0 {
+            if let Some(p) = progress {
+                let frac = t as f32 / num_stft_frames.max(1) as f32;
+                p(0.10 + frac * 0.30, "Separating stems…");
+            }
+        }
         let start = t * HOP;
 
         for i in 0..FFT_N {
@@ -444,6 +461,12 @@ pub fn separate_stems(left: &[f32], right: &[f32], sample_rate: u32, debleed_pct
             let norm = win_norm[PAD + i].max(1e-6);
             out_stems[stem_idx].0[i] = padded_l[PAD + i] / norm;
             out_stems[stem_idx].1[i] = padded_r[PAD + i] / norm;
+        }
+        if let Some(p) = progress {
+            p(
+                0.55 + ((stem_idx + 1) as f32 / 4.0) * 0.38,
+                "Separating stems…",
+            );
         }
     }
 
@@ -716,15 +739,55 @@ fn separate_stems_demucs(
     write_wav_stereo(&in_wav, &left[..n_frames], &right[..n_frames], sample_rate)?;
 
     if let Some(p) = progress {
-        p(0.2, "Running HTDemucs neural stem separation…");
+        p(0.15, "Separating stems…");
     }
 
-    let status = std::process::Command::new(demucs_bin)
+    let mut child = std::process::Command::new(demucs_bin)
         .args(["-n", "htdemucs", "--out"])
         .arg(&out_dir)
         .arg(&in_wav)
-        .status()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to launch demucs: {e}"))?;
+
+    if let Some(mut stderr) = child.stderr.take() {
+        use std::io::Read;
+        let mut buf = [0u8; 512];
+        let mut tail = String::new();
+        while let Ok(n) = stderr.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            tail.push_str(&String::from_utf8_lossy(&buf[..n]));
+            if let Some(pct_pos) = tail.rfind('%') {
+                let prefix = &tail[..pct_pos];
+                let digits: String = prefix
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if let Ok(pct) = digits.parse::<f32>() {
+                    if let Some(p) = progress {
+                        p(
+                            0.15 + (pct.clamp(0.0, 100.0) / 100.0) * 0.70,
+                            "Separating stems…",
+                        );
+                    }
+                }
+                if tail.len() > 256 {
+                    tail.drain(..tail.len() - 128);
+                }
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed waiting for demucs: {e}"))?;
 
     if !status.success() {
         let _ = std::fs::remove_dir_all(&work_dir);
@@ -732,7 +795,7 @@ fn separate_stems_demucs(
     }
 
     if let Some(p) = progress {
-        p(0.85, "Loading separated HTDemucs stems…");
+        p(0.88, "Loading separated HTDemucs stems…");
     }
 
     let stem_dir = out_dir.join("htdemucs").join("input");
@@ -751,6 +814,7 @@ fn separate_stems_demucs(
                 return Err(e.to_string());
             }
         };
+        let stem_sr = af.sample_rate.max(1);
         let interleaved = match af.read_stereo() {
             Ok(s) => s,
             Err(e) => {
@@ -758,18 +822,25 @@ fn separate_stems_demucs(
                 return Err(e.to_string());
             }
         };
-        let mut sl = vec![0.0f32; n_frames];
-        let mut sr_vec = vec![0.0f32; n_frames];
-        for (i, chunk) in interleaved
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .take(n_frames)
-            .enumerate()
-        {
-            sl[i] = chunk[0];
-            sr_vec[i] = chunk[1];
+        let raw_frames = interleaved.len() / 2;
+        let mut raw_l = Vec::with_capacity(raw_frames);
+        let mut raw_r = Vec::with_capacity(raw_frames);
+        for chunk in interleaved.as_chunks::<2>().0 {
+            raw_l.push(chunk[0]);
+            raw_r.push(chunk[1]);
         }
+        // Resample if Demucs wrote a different sample rate (e.g. 44100 Hz vs 48000 Hz input)
+        // so separated stems never play sped up or pitch-shifted.
+        let (mut sl, mut sr_vec) = if stem_sr != sample_rate {
+            (
+                resample_linear(&raw_l, stem_sr, sample_rate),
+                resample_linear(&raw_r, stem_sr, sample_rate),
+            )
+        } else {
+            (raw_l, raw_r)
+        };
+        sl.resize(n_frames, 0.0);
+        sr_vec.resize(n_frames, 0.0);
         out_stems[idx] = (sl, sr_vec);
     }
 
@@ -816,11 +887,11 @@ pub fn separate_stems_with_model(
                 }
             }
             if let Some(p) = progress {
-                p(0.25, "Running built-in local AI hybrid separation...");
+                p(0.08, "Separating stems…");
             }
-            let set = separate_stems(left, right, sample_rate, debleed_pct);
+            let set = separate_stems_with_progress(left, right, sample_rate, debleed_pct, progress);
             if let Some(p) = progress {
-                p(1.0, "Stem separation complete");
+                p(0.95, "Stem separation complete");
             }
             Ok(set)
         }
