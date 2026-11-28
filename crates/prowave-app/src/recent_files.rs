@@ -5,27 +5,100 @@ use std::path::{Path, PathBuf};
 /// How many projects the menu remembers.
 const MAX: usize = 10;
 
-/// `<config folder>/prowave/recent.txt`.
+/// `<config folder>/douri/recent.txt`.
 fn default_file() -> Option<PathBuf> {
     Some(config_dir()?.join("recent.txt"))
 }
 
-/// `<config folder>/prowave`: %APPDATA% on Windows, ~/Library/Application Support on macOS,
-/// $XDG_CONFIG_HOME or ~/.config elsewhere. `None` when no home folder is known.
-pub(crate) fn config_dir() -> Option<PathBuf> {
+fn config_root() -> Option<PathBuf> {
     let var = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
-    let base = if cfg!(windows) {
-        var("APPDATA")?
+    if cfg!(windows) {
+        var("APPDATA")
     } else if cfg!(target_os = "macos") {
-        var("HOME")?.join("Library").join("Application Support")
+        var("HOME").map(|h| h.join("Library").join("Application Support"))
     } else {
-        var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|h| h.join(".config")))?
+        var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|h| h.join(".config")))
+    }
+}
+
+/// `<config folder>/douri`: %APPDATA% on Windows, ~/Library/Application Support on macOS,
+/// $XDG_CONFIG_HOME or ~/.config elsewhere. `None` when no home folder is known.
+pub(crate) fn config_dir() -> Option<PathBuf> {
+    Some(config_root()?.join("douri"))
+}
+
+/// Legacy `<config folder>/prowave` directory for one-time migration.
+pub(crate) fn legacy_prowave_config_dir() -> Option<PathBuf> {
+    Some(config_root()?.join("prowave"))
+}
+
+const MIGRATION_MARKER: &str = "migration-done";
+const MIGRATE_FILES: &[&str] = &[
+    "recent.txt",
+    "audio.txt",
+    "keymap.txt",
+    "language.txt",
+    "ui-scale.txt",
+    "plugins.txt",
+    "plugin-paths.txt",
+    "sound-library.txt",
+    "sound_library.json",
+    "loop-folder",
+    "nudge-value",
+    "audio-input",
+];
+
+pub fn migration_needed_in(douri_dir: &Path, prowave_dir: &Path) -> bool {
+    if !prowave_dir.is_dir() || douri_dir.join(MIGRATION_MARKER).is_file() {
+        return false;
+    }
+    MIGRATE_FILES
+        .iter()
+        .any(|name| prowave_dir.join(name).is_file())
+}
+
+pub fn migration_needed() -> bool {
+    let (Some(douri_dir), Some(prowave_dir)) = (config_dir(), legacy_prowave_config_dir()) else {
+        return false;
     };
-    Some(base.join("prowave"))
+    migration_needed_in(&douri_dir, &prowave_dir)
+}
+
+pub fn dismiss_migration_in(douri_dir: &Path) {
+    let _ = std::fs::create_dir_all(douri_dir);
+    let _ = std::fs::write(douri_dir.join(MIGRATION_MARKER), b"dismissed\n");
+}
+
+pub fn dismiss_migration() {
+    if let Some(douri_dir) = config_dir() {
+        dismiss_migration_in(&douri_dir);
+    }
+}
+
+pub fn migrate_from_prowave_in(douri_dir: &Path, prowave_dir: &Path) -> Result<usize, String> {
+    std::fs::create_dir_all(douri_dir).map_err(|e| e.to_string())?;
+    let mut copied = 0usize;
+    for name in MIGRATE_FILES {
+        let src = prowave_dir.join(name);
+        let dst = douri_dir.join(name);
+        if src.is_file() && !dst.exists() {
+            std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
+            copied += 1;
+        }
+    }
+    let _ = std::fs::write(douri_dir.join(MIGRATION_MARKER), b"migrated\n");
+    Ok(copied)
+}
+
+pub fn migrate_from_prowave() -> Result<usize, String> {
+    let douri_dir = config_dir().ok_or_else(|| "No config directory".to_string())?;
+    let prowave_dir =
+        legacy_prowave_config_dir().ok_or_else(|| "No Pro-Wave directory".to_string())?;
+    migrate_from_prowave_in(&douri_dir, &prowave_dir)
 }
 
 /// The recent-projects list. `Recent::default()` is an in-memory list that never touches disk
@@ -160,5 +233,29 @@ mod tests {
         let mut r = Recent::from_file(Some(dir.path().to_path_buf()));
         r.add(&touch(dir.path(), "a.prowave"));
         assert_eq!(r.paths().len(), 1);
+    }
+
+    #[test]
+    fn migration_copies_prowave_config_and_respects_dismiss_flag() {
+        let root = tempfile::tempdir().unwrap();
+        let prowave = root.path().join("prowave");
+        let douri = root.path().join("douri");
+        std::fs::create_dir_all(&prowave).unwrap();
+        assert!(!migration_needed_in(&douri, &prowave));
+
+        std::fs::write(prowave.join("recent.txt"), "/tmp/song.douri\n").unwrap();
+        std::fs::write(prowave.join("audio.txt"), "48000\n").unwrap();
+        assert!(migration_needed_in(&douri, &prowave));
+
+        let copied = migrate_from_prowave_in(&douri, &prowave).unwrap();
+        assert_eq!(copied, 2);
+        assert!(douri.join("recent.txt").is_file());
+        assert!(douri.join("audio.txt").is_file());
+        assert!(!migration_needed_in(&douri, &prowave));
+
+        let douri2 = root.path().join("douri2");
+        assert!(migration_needed_in(&douri2, &prowave));
+        dismiss_migration_in(&douri2);
+        assert!(!migration_needed_in(&douri2, &prowave));
     }
 }

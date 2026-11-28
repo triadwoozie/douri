@@ -350,6 +350,8 @@ pub struct UiState {
     pub recent_pick: Option<std::path::PathBuf>,
     /// File > Open Recent. In memory only until `main` loads the saved list.
     pub recent: recent_files::Recent,
+    pub ask_migrate_prowave: bool,
+    pub migrate_dont_show_again: bool,
     /// DSP load shown by the LCD's CPU meter (1.0 = full budget); peak-held, falls slowly.
     pub cpu_load: f32,
     /// Disk streaming load shown by the LCD's HD meter (1.0 = the thread busy all the time).
@@ -569,6 +571,8 @@ impl UiState {
             ask_revert: false,
             recent_pick: None,
             recent: recent_files::Recent::default(),
+            ask_migrate_prowave: false,
+            migrate_dont_show_again: false,
             cpu_load: 0.0,
             hd_load: 0.0,
             light_menus: false,
@@ -2441,6 +2445,7 @@ impl eframe::App for App {
         eclipsa_ui::show(&ctx, &mut self.project, &mut self.ui);
         self.show_save_prompt(&ctx);
         self.show_revert_prompt(&ctx);
+        self.show_migrate_prompt(&ctx);
         if let Some(url) = self.ui.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(&url));
         }
@@ -2449,6 +2454,60 @@ impl eframe::App for App {
         show_lcd_customize_dialog(&ctx, &mut self.ui);
         self.track_history(&ctx);
         window_chrome::resize_edges(&ctx);
+    }
+}
+
+impl App {
+    fn show_migrate_prompt(&mut self, ctx: &egui::Context) {
+        if !self.ui.ask_migrate_prowave {
+            return;
+        }
+        let mut answer: Option<bool> = None;
+        let modal = egui::Modal::new(egui::Id::unique(("file", "migrate_prowave_prompt"))).show(
+            ctx,
+            |ui| {
+                ui.set_width(380.0);
+                ui.heading("Dōri");
+                ui.add_space(6.0);
+                ui.label(i18n::tr("Pro-Wave settings were found on this computer."));
+                ui.label(i18n::tr(
+                    "Do you want to import your recent projects, audio preferences, and settings into Dōri?",
+                ));
+                ui.add_space(8.0);
+                ui.checkbox(
+                    &mut self.ui.migrate_dont_show_again,
+                    i18n::tr("Do not show this again"),
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button(i18n::tr("Start Fresh")).clicked() {
+                        answer = Some(false);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(i18n::tr("Migrate")).clicked() {
+                            answer = Some(true);
+                        }
+                    });
+                });
+            },
+        );
+        if modal.should_close() && answer.is_none() {
+            answer = Some(false);
+        }
+        let Some(migrate) = answer else {
+            return;
+        };
+        self.ui.ask_migrate_prowave = false;
+        if migrate {
+            if let Ok(n) = recent_files::migrate_from_prowave() {
+                self.ui.recent = recent_files::Recent::load();
+                self.ui.ui_scale = ui_scale::load();
+                self.ui.status = Some(format!("Migrated {n} settings file(s) from Pro-Wave."));
+            }
+        } else if self.ui.migrate_dont_show_again {
+            recent_files::dismiss_migration();
+        }
+        ctx.request_repaint();
     }
 }
 
@@ -3465,6 +3524,7 @@ fn main() -> eframe::Result {
             if !measuring {
                 app.ui.recent = recent_files::Recent::load();
                 app.ui.ui_scale = ui_scale::load();
+                app.ui.ask_migrate_prowave = recent_files::migration_needed();
             }
             let scene = std::env::var("PROWAVE_SHOT_SCENE").unwrap_or_default();
             if scene == "chooser" {
