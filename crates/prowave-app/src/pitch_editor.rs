@@ -300,10 +300,15 @@ fn sync_pitchnet_language() {
     }
 }
 
+static PITCHNET_PROC: std::sync::Mutex<Option<std::process::Child>> = std::sync::Mutex::new(None);
+
 /// Opens PitchNet for track `ti`. Prefers the PitchNet standalone app with `audio_path` so the
 /// region's audio loads directly into PitchNet's editor without muting or stealing DAW playback,
 /// and falls back to the VST3 plugin only if standalone is not installed.
 pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path: &Path) {
+    // Pause DAW playback/recording whenever PitchNet is opened.
+    p.playing = false;
+    p.recording = false;
     sync_pitchnet_language();
 
     // 1. Prefer PitchNet standalone with the region's audio file so the audio appears in its UI
@@ -322,19 +327,28 @@ pub fn open_in_pitchnet(p: &mut Project, s: &mut UiState, ti: usize, audio_path:
                 p.song_rev += 1;
             }
         }
-        match std::process::Command::new(&bin)
-            .arg(audio_path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            Ok(_) => {
-                s.pitch_ed.pitchnet_status =
-                    Some("Launched PitchNet with region audio".to_string());
+        if let Ok(mut guard) = PITCHNET_PROC.lock() {
+            if let Some(ref mut child) = *guard {
+                if matches!(child.try_wait(), Ok(None)) {
+                    s.pitch_ed.pitchnet_status = Some("PitchNet is already running".to_string());
+                    return;
+                }
             }
-            Err(e) => {
-                s.pitch_ed.pitchnet_status = Some(format!("Failed to launch PitchNet: {e}"));
+            match std::process::Command::new(&bin)
+                .arg(audio_path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    *guard = Some(child);
+                    s.pitch_ed.pitchnet_status =
+                        Some("Launched PitchNet with region audio".to_string());
+                }
+                Err(e) => {
+                    s.pitch_ed.pitchnet_status = Some(format!("Failed to launch PitchNet: {e}"));
+                }
             }
         }
         return;
@@ -554,19 +568,6 @@ pub fn show(ui: &mut Ui, p: &mut Project, s: &mut UiState) {
                         p.tracks[t].params.flex_mode = Some(FlexMode::Monophonic);
                     }
                     p.song_rev += 1;
-                }
-
-                ui.separator();
-                let pitchnet_btn = ui.add(
-                    egui::Button::new(
-                        egui::RichText::new(tr("Open PitchNet Editor"))
-                            .size(11.5)
-                            .color(Color32::WHITE),
-                    )
-                    .fill(ACCENT),
-                );
-                if pitchnet_btn.clicked() {
-                    open_pitchnet = true;
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

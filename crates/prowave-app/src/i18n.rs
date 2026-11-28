@@ -27,6 +27,7 @@ pub enum Lang {
     PtBr,
     Fil,
     Id,
+    Ms,
     Hi,
     Uk,
     Nb,
@@ -38,7 +39,7 @@ pub enum Lang {
 }
 
 impl Lang {
-    pub const ALL: [Lang; 19] = [
+    pub const ALL: [Lang; 20] = [
         Lang::En,
         Lang::ZhHans,
         Lang::Ja,
@@ -50,6 +51,7 @@ impl Lang {
         Lang::PtBr,
         Lang::Fil,
         Lang::Id,
+        Lang::Ms,
         Lang::Hi,
         Lang::Uk,
         Lang::Nb,
@@ -74,6 +76,7 @@ impl Lang {
             Lang::PtBr => "pt-BR",
             Lang::Fil => "fil",
             Lang::Id => "id",
+            Lang::Ms => "ms",
             Lang::Hi => "hi",
             Lang::Uk => "uk",
             Lang::Nb => "nb",
@@ -99,6 +102,7 @@ impl Lang {
             Lang::PtBr => "Português (Brasil)",
             Lang::Fil => "Filipino",
             Lang::Id => "Bahasa Indonesia",
+            Lang::Ms => "Bahasa Melayu",
             Lang::Hi => "हिन्दी",
             Lang::Uk => "Українська",
             Lang::Nb => "Norsk",
@@ -128,6 +132,7 @@ impl Lang {
             Lang::PtBr => include_str!("../locales/pt-BR.txt"),
             Lang::Fil => include_str!("../locales/fil.txt"),
             Lang::Id => include_str!("../locales/id.txt"),
+            Lang::Ms => include_str!("../locales/ms.txt"),
             Lang::Hi => include_str!("../locales/hi.txt"),
             Lang::Uk => include_str!("../locales/uk.txt"),
             Lang::Nb => include_str!("../locales/nb.txt"),
@@ -157,8 +162,8 @@ fn parse(src: &'static str) -> HashMap<&'static str, &'static str> {
 }
 
 fn table(lang: Lang) -> Option<&'static HashMap<&'static str, &'static str>> {
-    static TABLES: [OnceLock<HashMap<&'static str, &'static str>>; 19] =
-        [const { OnceLock::new() }; 19];
+    static TABLES: [OnceLock<HashMap<&'static str, &'static str>>; Lang::ALL.len()] =
+        [const { OnceLock::new() }; Lang::ALL.len()];
     let i = Lang::ALL.iter().position(|l| *l == lang)?;
     let src = lang.source()?;
     Some(TABLES[i].get_or_init(|| parse(src)))
