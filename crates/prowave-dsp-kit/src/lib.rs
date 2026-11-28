@@ -43,19 +43,26 @@ pub mod align;
 pub mod allpass;
 pub mod args;
 pub mod biquad;
+pub mod capn;
 pub mod catalog;
 pub mod chain;
 pub mod crossfeed;
 pub mod decorrelate;
 pub mod delay;
+mod delay_est;
 pub mod dither;
 pub mod effect;
 pub mod error;
+mod filter_bank;
 pub mod fir;
 pub mod fir_p;
 pub mod fir_util;
 pub mod gain;
 pub mod hilbert;
+pub mod levels;
+pub mod matrix4;
+mod matrix4_common;
+pub mod matrix4_mb;
 mod mod_tables;
 pub mod noise;
 mod optimize;
@@ -65,7 +72,10 @@ pub mod reverse_iir;
 pub mod rng;
 pub mod selector;
 pub mod sinc;
+pub mod smoothing;
 pub mod st2ms;
+pub mod stats;
+pub mod watch;
 pub mod window;
 
 /// Starts the program-wide random sequences over (the delays of `decorrelate` and the noise of
@@ -76,6 +86,6 @@ pub fn reset_random_seeds() {
     delay::reset_seed();
 }
 
-pub use chain::Chain;
-pub use effect::{get_effect_info, Buf, Effect, EffectInfo, Stream};
+pub use chain::{full_path, split_words, Chain, EffectsFiles};
+pub use effect::{get_effect_info, Buf, Effect, EffectInfo, Report, Stream};
 pub use error::Error;

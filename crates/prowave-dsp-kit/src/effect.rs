@@ -97,6 +97,31 @@ pub trait Effect: Send {
     fn opt_selector(&self) -> Option<&[bool]> {
         None
     }
+    /// Whether [`Effect::merge`] can take a source whose channels an effect in between has
+    /// moved, given the map from its channels to this effect's (`EFFECT_FLAG_OPT_ALLOW_REMAP`).
+    fn allow_remap(&self) -> bool {
+        false
+    }
+    /// The effect as `Any`, for [`Effect::merge`] to reach the source's state.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
+    }
+    /// `merge`: joins `src`, an effect with the same [`Effect::merge_id`] further down the
+    /// chain, into this one. `ch_map[k]` is this effect's channel for `src`'s channel `k`
+    /// (-1: none). A partial merge leaves the rest in `src`. By default it goes through
+    /// [`Effect::merge_take`] and [`Effect::merge_put`], which merge everything or nothing.
+    fn merge(&mut self, src: &mut dyn Effect, _ch_map: &[i32]) -> Merge {
+        match src.merge_take() {
+            Some(data) => {
+                if self.merge_put(data) {
+                    Merge::Full
+                } else {
+                    Merge::None
+                }
+            }
+            None => Merge::None,
+        }
+    }
     /// Effects with the same merge id can be merged by the optimiser (`merge` of the original
     /// is the same function); `None`: this one cannot be merged.
     fn merge_id(&self) -> Option<&'static str> {
@@ -116,6 +141,29 @@ pub trait Effect: Send {
     fn drain_samples(&self, _samples: &mut [isize]) -> bool {
         false
     }
+    /// What a measuring effect found (`stats`, `levels`); `None` for the others.
+    fn report(&mut self) -> Option<Report> {
+        None
+    }
+}
+
+/// What [`Effect::merge`] did (`EFFECT_MERGE_NONE`, `_FULL`, `_PARTIAL`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Merge {
+    None,
+    /// All of the source is now in this effect; the source goes.
+    Full,
+    /// Some channels were taken; the source keeps the others.
+    Partial,
+}
+
+/// The findings of a measuring effect, from [`crate::Chain::reports`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum Report {
+    /// `stats`: over the whole signal (asking ends the measurement).
+    Stats(crate::stats::StatsReport),
+    /// `levels`: the meters at the end of the last block.
+    Levels(Vec<crate::levels::LevelReading>),
 }
 
 /// The function that makes the effects of a command from its arguments: usually one, but
@@ -152,6 +200,8 @@ pub fn effects() -> impl Iterator<Item = &'static EffectInfo> {
         .chain(crate::st2ms::INFO.iter())
         .chain(crate::delay::INFO.iter())
         .chain(crate::resample::INFO.iter())
+        .chain(crate::matrix4::INFO.iter())
+        .chain(crate::matrix4_mb::INFO.iter())
         .chain(crate::fir::INFO.iter())
         .chain(crate::fir_p::INFO.iter())
         .chain(crate::hilbert::INFO.iter())
@@ -159,6 +209,8 @@ pub fn effects() -> impl Iterator<Item = &'static EffectInfo> {
         .chain(crate::decorrelate::INFO.iter())
         .chain(crate::noise::INFO.iter())
         .chain(crate::dither::INFO.iter())
+        .chain(crate::stats::INFO.iter())
+        .chain(crate::levels::INFO.iter())
 }
 
 /// The effect called `name`, if there is one.

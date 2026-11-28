@@ -880,7 +880,7 @@ fn on_disk_files() -> Vec<Found> {
     let mut files = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for format in [Format::Clap, Format::Vst3] {
+    for format in [Format::Clap, Format::Vst3, Format::Lv2] {
         for path in host::installed(format) {
             if seen.insert((format, path.clone())) {
                 files.push(Found {
@@ -893,7 +893,7 @@ fn on_disk_files() -> Vec<Found> {
     }
 
     for custom_dir in custom_paths() {
-        for format in [Format::Clap, Format::Vst3] {
+        for format in [Format::Clap, Format::Vst3, Format::Lv2] {
             for path in host::installed_in(&custom_dir, format) {
                 if seen.insert((format, path.clone())) {
                     files.push(Found {

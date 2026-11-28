@@ -31,7 +31,7 @@ macro_rules! e {
 }
 
 /// Every component of the original.
-pub static ENTRIES: [Entry; 40] = [
+pub static ENTRIES: [Entry; 41] = [
     e!(
         "lowpass_1",
         "Lattice One-Pole Low-Pass",
@@ -150,13 +150,13 @@ pub static ENTRIES: [Entry; 40] = [
         "matrix4",
         "Quartet Upmixer",
         "active matrix upmixer for music (2/2 and 2/4)",
-        false
+        true
     ),
     e!(
         "matrix4_mb",
         "Quartet Multiband Upmixer",
         "the upmixer steered in many frequency bands",
-        false
+        true
     ),
     e!(
         "remix",
@@ -224,13 +224,19 @@ pub static ENTRIES: [Entry; 40] = [
         "stats",
         "Gauge Statistics",
         "peak, RMS, DC offset and crest factor of each channel",
-        false
+        true
     ),
     e!(
         "levels",
         "Gauge Meters",
         "real-time level meter per channel",
-        false
+        true
+    ),
+    e!(
+        "watch",
+        "Hot-Reload Rack",
+        "effects from a file, reloaded with a crossfade when it changes",
+        true
     ),
 ];
 
@@ -281,7 +287,8 @@ mod tests {
         }
         for e in ENTRIES.iter().filter(|e| e.ported) {
             assert!(
-                crate::effect::effects().any(|i| i.name == e.command),
+                crate::effect::effects().any(|i| i.name == e.command)
+                    || crate::chain::PARSER_EFFECTS.contains(&e.command),
                 "{} is marked ported but missing",
                 e.command
             );

@@ -135,3 +135,83 @@ riir_same_pole | 48000 | lowpass -r 1k 0.7q lowpass -r 1k 0.7q
 riir_bw4 | 48000 | lowpass -r 2k bw4.0 lowpass -r 2k bw4.1
 riir_selector_one | 48000 | :1 lowpass -r 1k 0.7q
 riir_44k | 44100 | lowpass -r 8k 0.5q
+matrix4 | 48000 | matrix4
+long_matrix4 | 48000 | matrix4
+long_matrix4_level | 48000 | matrix4 -2/0
+long_matrix4_2_4 | 48000 | matrix4 layout=2/4
+long_matrix4_dp_event | 48000 | matrix4 direct_path=event
+long_matrix4_dp_static_2_4 | 48000 | matrix4 layout=2/4,direct_path=static
+long_matrix4_v1 | 48000 | matrix4 matrix=v1
+long_matrix4_v3 | 48000 | matrix4 matrix=v3
+long_matrix4_v4 | 48000 | matrix4 matrix=v4:0.3:0.8
+long_matrix4_shelf | 48000 | matrix4 shelf=-3:800,lowpass=4k:0.8
+long_matrix4_flat | 48000 | matrix4 shelf=none,lowpass=none
+long_matrix4_phase_flip | 48000 | matrix4 phase_flip
+long_matrix4_dpwr | 48000 | matrix4 dpwr_decouple=false,contour_pwrcmp=0.5
+long_matrix4_lookahead | 44100 | matrix4 lookahead=1.0,rear_event_mask=2
+long_matrix4_mb | 48000 | matrix4_mb
+long_matrix4_mb_13band | 48000 | matrix4_mb filter_bank=13band
+long_matrix4_mb_13band_lfx | 48000 | matrix4_mb filter_bank=13band_lfx
+long_matrix4_mb_2_4 | 48000 | matrix4_mb layout=2/4 -4/-1
+long_matrix4_mb_dp | 48000 | matrix4_mb layout=2/4,direct_path=event
+long_matrix4_mb_none | 48000 | matrix4_mb unaligned_event_action=none
+long_matrix4_mb_neutralize | 48000 | matrix4_mb unaligned_event_action=neutralize
+long_matrix4_mb_butterworth | 48000 | matrix4_mb filter_bank=13band,filter_type=butterworth
+long_matrix4_mb_cheby1 | 48000 | matrix4_mb filter_bank=13band,filter_type=chebyshev1:30
+long_matrix4_mb_cheby2 | 48000 | matrix4_mb filter_bank=13band,filter_type=chebyshev2:28
+long_matrix4_mb_elliptic | 44100 | matrix4_mb filter_type=elliptic:40:55
+long_matrix4_mb_fir_p | 48000 | matrix4_mb filter_bank=13band,use_fir_p
+long_matrix4_mb_phase_flip | 48000 | matrix4_mb phase_flip,matrix=v3
+long_matrix4_mb_shelf | 48000 | matrix4_mb shelf=-4:700,lowpass=5k:0.7,dpwr_decouple=false
+long_matrix4_mb_xtc | 48000 | matrix4_mb filter_bank=13band,xtc=14:300:100-3k
+long_matrix4_mb_32k | 32000 | matrix4_mb filter_bank=13band
+spaced_matrix4_mb | 48000 | matrix4_mb
+spaced_matrix4_mb_13band | 48000 | matrix4_mb filter_bank=13band
+spaced_matrix4_mb_neutralize | 48000 | matrix4_mb unaligned_event_action=neutralize
+spaced_matrix4_mb_none | 48000 | matrix4_mb unaligned_event_action=none
+spaced_matrix4_mb_2_4_dp | 48000 | matrix4_mb layout=2/4,direct_path
+spaced_matrix4_mb_44k | 44100 | matrix4_mb filter_bank=13band_lfx,rear_event_mask=1
+spaced_matrix4 | 48000 | matrix4
+block_gain | 48000 | :1 { gain -6 }
+block_masked | 48000 | :0,1 { :1 gain -6 :0 lowpass 1k 0.7q }
+block_nested | 48000 | { :1 { :0 gain -3 } lowpass 2k 0.7q }
+block_remix | 48000 | :1 { remix 0 0 :1 gain -6 } gain -1
+block_after_remix | 48000 | remix 0 1 0 :2 gain -6 { :0 gain 3 }
+block_shrink | 48000 | remix 0 1 0 { remix 0,2 1 :1 gain 2 }
+block_shrink_mask | 48000 | remix 0 1 0 1 :1-3 { remix 0 1,2 :1 gain -4 } :2 gain -2
+allow_fail_unknown | 48000 | ! nonexistent 1 2 gain -3
+allow_fail_init | 48000 | ! lowpass 99999k 0.7q gain -3
+levels_pass | 48000 | levels gain -3 levels -t 1
+stats_plain | 48000 | stats
+stats_interp | 48000 | stats -i
+stats_ref | 48000 | stats 0.5
+stats_narrow | 48000 | stats -w 40 -i
+stats_sel | 48000 | :1 stats -i
+stats_two | 48000 | stats gain -6 stats -i
+stats_block | 48000 | :1 { gain -2 stats } stats -w 0
+merge_gain | 48000 | gain -3 mult 0.8 :1 gain 2
+merge_add | 48000 | add 0.1 :0 add -0.05
+merge_delay_frac | 48000 | delay -f 2.3S delay -f 1.4S
+merge_delay_sel | 48000 | :0 delay -f 1.3S :1 delay -f2 0.6S :0 delay -f 0.5S
+merge_delay_across | 48000 | :0 delay -f 1.3S :1 noise -40 :0 delay -f 0.4S
+merge_delay_blocked | 48000 | :0 delay -f 1.3S :0 noise -40 :0 delay -f 0.4S
+merge_dither | 48000 | :0 dither 16 :1 dither 16
+merge_dither_shaped | 44100 | :0 dither lipshitz 16 :1 dither flat 12
+merge_biquad | 48000 | :0 lowpass 1k 0.7q :1 lowpass 1k 0.7q
+merge_biquad_remix | 48000 | lowpass 1k 0.7q remix 1 0 :0 highpass 200 0.7q
+merge_biquad_partial | 48000 | :0 lowpass 1k 0.7q :0,1 remix 0 0 1 :0-2 highpass 300 0.7q
+merge_mixed | 48000 | :1 gain -2 lowpass 2k 0.7q :0 gain -4 :1 delay -f 0.7S highpass 100 0.7q :0 delay -f 0.2S
+file_basic | 48000 | @effects/basic.txt gain -1
+file_subst | 48000 | @effects/rate_%r_%c.txt
+file_khz | 44100 | @effects/rate_%k.txt
+file_sel | 48000 | :1 @effects/nested/inner.txt gain -1
+file_block | 48000 | @effects/block_file.txt gain -1
+thread_barrier | 48000 | delay -f 2.3S new_thread delay -f 1.4S
+thread_plain | 48000 | lowpass 1k 0.7q new_thread gain -3 new_thread
+watch_basic | 48000 | watch effects/basic.txt gain -1
+watch_sel | 48000 | :1 watch effects/nested/inner.txt gain -1
+watch_eof | 48000 | watch -e effects/eof.txt
+watch_delay | 48000 | watch effects/delay.txt gain -2
+watch_dither | 48000 | watch effects/dither.txt
+watch_channels | 48000 | watch effects/block_file.txt :2 gain 1
+watch_rate | 48000 | watch effects/rate.txt

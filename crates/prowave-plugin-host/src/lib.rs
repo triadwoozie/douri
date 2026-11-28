@@ -35,6 +35,8 @@ mod au;
 mod clap;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(all(target_os = "linux", feature = "lv2"))]
+mod lv2;
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(unix)]
@@ -115,6 +117,7 @@ pub enum Format {
     Clap,
     Vst3,
     AudioUnit,
+    Lv2,
 }
 
 impl Format {
@@ -124,12 +127,13 @@ impl Format {
             Format::Clap => "CLAP",
             Format::Vst3 => "VST3",
             Format::AudioUnit => "Audio Unit",
+            Format::Lv2 => "LV2",
         }
     }
 
     /// The format for a name written by [`Format::name`].
     pub fn from_name(name: &str) -> Option<Format> {
-        [Format::Clap, Format::Vst3, Format::AudioUnit]
+        [Format::Clap, Format::Vst3, Format::AudioUnit, Format::Lv2]
             .into_iter()
             .find(|f| f.name() == name)
     }
@@ -736,6 +740,17 @@ pub fn folders(format: Format) -> Vec<PathBuf> {
         Format::Clap => ("CLAP", "CLAP_PATH"),
         Format::Vst3 => ("VST3", "VST3_PATH"),
         Format::AudioUnit => return Vec::new(),
+        Format::Lv2 => {
+            let mut out: Vec<PathBuf> = std::env::var_os("LV2_PATH")
+                .map(|v| std::env::split_paths(&v).collect())
+                .unwrap_or_default();
+            out.push(PathBuf::from("/usr/lib/lv2"));
+            out.push(PathBuf::from("/usr/local/lib/lv2"));
+            if let Some(h) = home.as_ref() {
+                out.push(h.join(".lv2"));
+            }
+            return out;
+        }
     };
     let mut out: Vec<PathBuf> = std::env::var_os(env)
         .map(|v| std::env::split_paths(&v).collect())
@@ -782,6 +797,7 @@ pub fn installed_in(dir: &Path, format: Format) -> Vec<PathBuf> {
         Format::Clap => "clap",
         Format::Vst3 => "vst3",
         Format::AudioUnit => return Vec::new(),
+        Format::Lv2 => "lv2",
     };
     let mut out = Vec::new();
     walk(dir, ext, 2, &mut out);
@@ -808,6 +824,10 @@ pub fn scan_file(format: Format, path: &Path) -> Result<Vec<PluginInfo>, Error> 
         Format::Clap => clap::scan(path),
         Format::Vst3 => vst3::scan(path),
         Format::AudioUnit => Err(Error::Unsupported),
+        #[cfg(all(target_os = "linux", feature = "lv2"))]
+        Format::Lv2 => lv2::scan(path),
+        #[cfg(not(all(target_os = "linux", feature = "lv2")))]
+        Format::Lv2 => Err(Error::Unsupported),
     }
 }
 
@@ -839,6 +859,10 @@ pub fn load(info: &PluginInfo, sample_rate: f64, max_block: usize) -> Result<Ins
         Format::AudioUnit => Box::new(au::load(&info.id, rate, block)?),
         #[cfg(not(target_os = "macos"))]
         Format::AudioUnit => return Err(Error::Unsupported),
+        #[cfg(all(target_os = "linux", feature = "lv2"))]
+        Format::Lv2 => Box::new(lv2::load(&info.path, &info.id, rate, block)?),
+        #[cfg(not(all(target_os = "linux", feature = "lv2")))]
+        Format::Lv2 => return Err(Error::Unsupported),
     };
     Ok(Instance(Kind::Local(LocalInstance::new(
         backend,
